@@ -173,7 +173,7 @@ PENALTY_SCORE_PROB = 0.80     # P(score) per shot = an honest keeper saving a fa
 PENALTY_MAX_WIN = 0           # payout ceiling; 0 = no cap (the ~2.99x top multiplier is already
                               # self-limiting, so a max bet can't dwarf the bank).
 
-# Penny Falls, the activity's coin pusher (lib/activities/casino/games/pennyfalls.py). The
+# Davy Jones' Locker, the activity's penny falls coin pusher (lib/activities/casino/games/pennyfalls.py). The
 # machine runs on the player's screen, so the bot keeps count and caps what it will pay.
 PENNYFALLS_ENABLED = True
 PENNYFALLS_COIN = 10                 # UKPence a coin

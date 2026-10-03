@@ -485,6 +485,36 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_user ON casino_results(user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_casino_results_game ON casino_results(game)")
 
+        # Davy Jones' Locker (the activity's penny falls machine): one row per cashed-out cup,
+        # with what went in and came off, so the machine's payout can be judged from real play.
+        # The aim counts come from the player's page and are for reading habits, not money.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pennyfalls_cups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                started INTEGER NOT NULL,
+                ended INTEGER NOT NULL,
+                bought INTEGER NOT NULL,
+                staked INTEGER NOT NULL,
+                payout INTEGER NOT NULL,
+                dropped INTEGER NOT NULL,
+                coins_won INTEGER NOT NULL,
+                golds_won INTEGER NOT NULL,
+                coins_lost INTEGER NOT NULL,
+                golds_lost INTEGER NOT NULL,
+                golds_given INTEGER NOT NULL,
+                board_before INTEGER NOT NULL,
+                board_after INTEGER NOT NULL,
+                trimmed INTEGER NOT NULL,
+                note TEXT,
+                aim_left INTEGER NOT NULL DEFAULT 0,
+                aim_middle INTEGER NOT NULL DEFAULT 0,
+                aim_right INTEGER NOT NULL DEFAULT 0,
+                aim_tap INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_pennyfalls_cups_user ON pennyfalls_cups(user_id)")
+
         # National Lottery: one row per round, plus aggregated per-user entries. A round
         # is 'open' (selling tickets) then 'drawn' (winner picked, pot paid). tickets_sold
         # is SUM(lottery_entries.tickets); the draw weights by ticket count.

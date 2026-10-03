@@ -265,14 +265,19 @@ def test_penny_falls_buys_plays_and_cashes_out(em, pf):
     assert out["table"]["cup"] == 20 and em.get_bb(UID) == 9_800
     assert out["table"]["board"] == {"coins": 110, "golds": 0, "fed": 0, "every": 150}
     pf.clock[0] += 10
-    out = play("pennyfalls", "sync", {"dropped": 12, "won": 9, "lost": 1})
+    out = play("pennyfalls", "sync", {"dropped": 12, "won": 9, "lost": 1, "aims": {"middle": 10, "left": 2, "tap": 99}})
     assert out["table"]["cup"] == 20 - 12 + 9 and out["table"]["board"]["coins"] == 110 + 12 - 10
     pf.clock[0] += 5
     out = play("pennyfalls", "cashout", {"dropped": 2})
     assert out["round"]["payout"] == 15 * 10 and em.get_bb(UID) == 9_800 + 150
     assert rows() == [("pennyfalls", 200, 150, "lose")]
-    assert "Penny Falls coins" in reasons() and "Penny Falls cashout" in reasons()
+    assert "Davy Jones' Locker coins" in reasons() and "Davy Jones' Locker cashout" in reasons()
     assert pf.machine(UID)["coins"] == 112 + 2 and pf.machine(UID)["fed"] == 14
+    from database import DatabaseManager
+    row = DatabaseManager.fetch_one(
+        "SELECT bought, staked, payout, dropped, coins_won, coins_lost, golds_given, board_before, board_after, "
+        "trimmed, aim_left, aim_middle, aim_right, aim_tap FROM pennyfalls_cups WHERE user_id = ?", (str(UID),))
+    assert tuple(row) == (20, 200, 150, 14, 9, 1, 0, 110, 114, 0, 2, 10, 0, 12)   # aims capped at what was dropped
 
 
 def test_penny_falls_tops_up_a_cup(em, pf):

@@ -32,7 +32,7 @@ GAME_LABELS = {
     "glass": "The Glass Bridge",
     "blockade": "Blockade Run",
     "darts": "Darts",
-    "pennyfalls": "Penny Falls",
+    "pennyfalls": "Davy Jones' Locker",
 }
 
 

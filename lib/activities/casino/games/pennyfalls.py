@@ -1,4 +1,4 @@
-"""Penny Falls: a coin pusher, only in the activity.
+"""Davy Jones' Locker: a penny falls coin pusher, only in the activity.
 
 The machine runs on the player's screen (three.js and Rapier): they drop coins, the pusher
 shoves the pile, and whatever goes over the front edge comes back into their cup. Every few
@@ -36,8 +36,8 @@ from lib.economy.economy_manager import get_bb, remove_bb
 
 log = logging.getLogger(__name__)
 
-LABEL = "Penny Falls"
-REASON = "Penny Falls"              # how the economy log names its money
+LABEL = "Davy Jones' Locker"
+REASON = "Davy Jones' Locker"       # how the economy log names its money
 
 
 def _cfg(name, default):
@@ -115,6 +115,16 @@ class Cup:
     over: bool = False
     payout: int = 0
     note: str = ""
+    # for the log: how the cup went, beyond the money
+    started: float = 0.0
+    coins_won: int = 0
+    golds_won: int = 0
+    coins_lost: int = 0
+    golds_lost: int = 0
+    golds_given: int = 0
+    board_before: int = 0           # coins on the machine when the cup was bought, gold at GOLD each
+    trimmed: int = 0                # reports that didn't add up
+    aims: dict | None = None        # drops by left, middle, right and tap, as the page tells it
     release: int = 0                # gold coins to drop now (this move only)
 
     def to_dict(self) -> dict:
@@ -141,6 +151,23 @@ def _settle(cup: Cup) -> None:
                   "win" if cup.payout > cup.staked else "push" if cup.payout == cup.staked else "lose")
 
 
+def _log(cup: Cup, board_after: int) -> None:
+    """One row per cup in pennyfalls_cups, for judging the machine's payout from real play."""
+    try:
+        from database import DatabaseManager
+        aims = cup.aims or {}
+        DatabaseManager.execute(
+            "INSERT INTO pennyfalls_cups (user_id, started, ended, bought, staked, payout, dropped, coins_won, "
+            "golds_won, coins_lost, golds_lost, golds_given, board_before, board_after, trimmed, note, "
+            "aim_left, aim_middle, aim_right, aim_tap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(cup.uid), int(cup.started), int(time.time()), cup.bought, cup.staked, cup.payout, cup.dropped,
+             cup.coins_won, cup.golds_won, cup.coins_lost, cup.golds_lost, cup.golds_given, cup.board_before,
+             board_after, cup.trimmed, cup.note or None, aims.get("left", 0), aims.get("middle", 0),
+             aims.get("right", 0), aims.get("tap", 0)))
+    except Exception:
+        log.error("couldn't log a penny falls cup", exc_info=True)
+
+
 class PennyFalls(Adapter):
     key = "pennyfalls"
     command = "pennyfalls"
@@ -159,8 +186,10 @@ class PennyFalls(Adapter):
             raise Refuse(f"Coins are {value()} UKPence each: buy a whole number of them.")
         if not remove_bb(uid, bet, reason=f"{REASON} coins"):
             raise Refuse("You don't have enough UKPence.")
-        machine(uid)
-        return Cup(uuid.uuid4().hex[:12], int(uid), coins, coins, bet, synced=time.time())
+        m = machine(uid)
+        now = time.time()
+        return Cup(uuid.uuid4().hex[:12], int(uid), coins, coins, bet, synced=now, started=now,
+                   board_before=m["coins"] + m["golds"] * GOLD, aims={})
 
     def act(self, cup, action, body):
         cup.release = 0
@@ -204,8 +233,13 @@ class PennyFalls(Adapter):
                 lost = min(lost, off_cap - won)
             dropped = min(dropped, cup.coins + won + won_gold * GOLD)
         if (dropped, won, lost, won_gold, lost_gold) != claimed:
+            cup.trimmed += 1
             log.warning("penny falls: trimmed %s's report %s to %s", cup.uid, claimed,
                         (dropped, won, lost, won_gold, lost_gold))
+        aims = body.get("aims") if isinstance(body.get("aims"), dict) else {}
+        cup.aims = cup.aims or {}
+        for lane in ("left", "middle", "right", "tap"):
+            cup.aims[lane] = cup.aims.get(lane, 0) + min(_count(aims, lane), dropped)
 
         m["coins"] += dropped - won - lost
         m["golds"] -= won_gold + lost_gold
@@ -213,12 +247,17 @@ class PennyFalls(Adapter):
         cup.coins += back - dropped
         cup.dropped += dropped
         cup.won += back
+        cup.coins_won += won
+        cup.golds_won += won_gold
+        cup.coins_lost += lost
+        cup.golds_lost += lost_gold
         cup.synced = now
         # a gold coin for every GOLD_EVERY that go in, counted across cups
         every = gold_every()
         m["fed"] += dropped
         cup.release, m["fed"] = divmod(m["fed"], every)
         m["golds"] += cup.release
+        cup.golds_given += cup.release
         _save_machines()
 
     def _cash_out(self, cup: Cup) -> None:
@@ -235,6 +274,7 @@ class PennyFalls(Adapter):
         m["day_net"] += payout - cup.staked
         _save_machines()
         after_save(_settle, cup)
+        after_save(_log, cup, m["coins"] + m["golds"] * GOLD)
 
     def over(self, cup):
         return cup.over
