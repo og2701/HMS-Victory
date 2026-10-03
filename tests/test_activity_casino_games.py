@@ -254,6 +254,8 @@ def pf(em, tmp_path, monkeypatch):
     monkeypatch.setattr(PF, "_FILE", str(tmp_path / "activity_pennyfalls.json"))
     monkeypatch.setattr(PF, "_loaded", True)
     monkeypatch.setattr(config, "PENNYFALLS_SEED_COINS", 110)
+    monkeypatch.setattr(config, "PENNYFALLS_GOLD_COINS", 10)       # the tests' sums were written for 10
+    monkeypatch.setattr(config, "PENNYFALLS_GOLD_EVERY", 150)
     PF._machines.clear()
     PF._live.clear()
     casino._watchers.clear()
@@ -267,6 +269,7 @@ def test_penny_falls_buys_plays_and_cashes_out(em, pf):
     out = play("pennyfalls", "deal", {"bet": 200})
     assert out["table"]["cup"] == 20 and em.get_bb(UID) == 9_800
     assert out["table"]["board"] == {"coins": 110, "golds": 0, "fed": 0, "every": 150}
+    assert casino.table(UID, "pennyfalls")["goldValue"] == 10
     pf.clock[0] += 10
     out = play("pennyfalls", "sync", {"dropped": 12, "won": 9, "lost": 1, "aims": {"middle": 10, "left": 2, "tap": 99}})
     assert out["table"]["cup"] == 20 - 12 + 9 and out["table"]["board"]["coins"] == 110 + 12 - 10

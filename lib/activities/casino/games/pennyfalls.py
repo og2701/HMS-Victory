@@ -57,12 +57,16 @@ def value() -> int:
 
 
 def gold_every() -> int:
-    """Coins dropped for each gold one. A gold coin is worth GOLD coins, so this hands back
-    GOLD / it of what goes in, against what the side gaps take."""
-    return max(1, int(_cfg("GOLD_EVERY", 150)))
+    """Coins dropped for each gold one. A gold coin is worth gold_value() coins, so this hands
+    back gold_value() / it of what goes in, against what the side gaps take."""
+    return max(1, int(_cfg("GOLD_EVERY", 300)))
 
 
-GOLD = 10                           # a gold coin is worth this many coins
+def gold_value() -> int:
+    """Coins a gold coin pays when it's pushed over the edge."""
+    return max(1, int(_cfg("GOLD_COINS", 20)))
+
+
 LAYOUT_MAX = 12_000                 # characters: about 550 coins, well past a full machine
 DROPS_PER_SECOND = 6                # the page allows one every 200ms; a little slack on top
 TOP_UP_MAX = 100
@@ -166,7 +170,7 @@ class Cup:
     bought: int
     staked: int
     dropped: int = 0
-    won: int = 0                    # coins back, gold counted at GOLD each
+    won: int = 0                    # coins back, gold counted at gold_value() each
     synced: float = 0.0
     over: bool = False
     payout: int = 0
@@ -178,7 +182,7 @@ class Cup:
     coins_lost: int = 0
     golds_lost: int = 0
     golds_given: int = 0
-    board_before: int = 0           # coins on the machine when the cup was bought, gold at GOLD each
+    board_before: int = 0           # coins on the machine when the cup was bought, gold at its value
     trimmed: int = 0                # reports that didn't add up
     aims: dict | None = None        # drops by left, middle, right and tap, as the page tells it
     release: int = 0                # gold coins to drop now (this move only)
@@ -245,7 +249,7 @@ class PennyFalls(Adapter):
         m = machine(uid)
         now = time.time()
         return Cup(uuid.uuid4().hex[:12], int(uid), coins, coins, bet, synced=now, started=now,
-                   board_before=m["coins"] + m["golds"] * GOLD, aims={})
+                   board_before=m["coins"] + m["golds"] * gold_value(), aims={})
 
     def act(self, cup, action, body):
         cup.release = 0
@@ -287,7 +291,7 @@ class PennyFalls(Adapter):
             if won + lost > off_cap:
                 won = max(0, won - (won + lost - off_cap))
                 lost = min(lost, off_cap - won)
-            dropped = min(dropped, cup.coins + won + won_gold * GOLD)
+            dropped = min(dropped, cup.coins + won + won_gold * gold_value())
         self._keep_layout(cup.uid, body, m["coins"] + dropped - won - lost, m["golds"] - won_gold - lost_gold)
         if isinstance(body.get("live"), dict):
             _keep_live(cup.uid, body["live"])
@@ -302,7 +306,7 @@ class PennyFalls(Adapter):
 
         m["coins"] += dropped - won - lost
         m["golds"] -= won_gold + lost_gold
-        back = won + won_gold * GOLD
+        back = won + won_gold * gold_value()
         cup.coins += back - dropped
         cup.dropped += dropped
         cup.won += back
@@ -354,7 +358,7 @@ class PennyFalls(Adapter):
         m["day_net"] += payout - cup.staked
         _save_machines()
         after_save(_settle, cup)
-        after_save(_log, cup, m["coins"] + m["golds"] * GOLD)
+        after_save(_log, cup, m["coins"] + m["golds"] * gold_value())
 
     def over(self, cup):
         return cup.over
@@ -386,7 +390,7 @@ class PennyFalls(Adapter):
         return Cup.from_dict(data)
 
     def extras(self, uid):
-        return {"coinValue": value(), "board": self._board(uid)}
+        return {"coinValue": value(), "goldValue": gold_value(), "board": self._board(uid)}
 
     def progress(self, cup):
         """A cup in play: what cashing out now would net, and what's in it."""
@@ -420,7 +424,8 @@ class PennyFalls(Adapter):
             ("Coins", f"Every coin is {value()} UKPence. Buy a cup of them, play them, and cash out "
                       "what's left in your cup whenever you like."),
             ("Gold", f"Every {gold_every()} coins you drop, a gold coin drops in after them. Push it "
-                     f"over and it pays {GOLD} coins. The count carries on between cups."),
+                     f"over and it pays {gold_value()} coins ({gold_value() * value():,} UKPence). The count "
+                     "carries on between cups."),
             ("The sides", "Coins that fall down the gaps in the front corners go to the house."),
             ("Your machine", "The coins on the shelves stay as you left them for next time."),
             ("Limits", f"A cup can win at most {int(_cfg('CUP_MAX_NET', 1_000)):,} UKPence and a day "

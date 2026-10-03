@@ -6,7 +6,7 @@ pennyfalls_cups. Read-only.
 Coins only leave a machine over the front edge (to the player) or down the side gaps (to the
 house), and gold coins add value from outside, so in the long run a machine pays back
 100% + what gold adds - what the sides take. "Return" below is coins back per coin dropped,
-counting a gold coin as 10, and adjusted for coins left on (or taken from) the boards over the
+counting a gold coin at its value, and adjusted for coins left on (or taken from) the boards over the
 period. The question this answers: does any way of aiming beat the house? If players who drop
 mostly down the middle come out above 100%, gold coins need to be rarer
 (PENNYFALLS_GOLD_EVERY in config.py).
@@ -19,9 +19,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("OPENAI_TOKEN", "report")
 
+import config  # noqa: E402
 from database import DatabaseManager  # noqa: E402
 
-GOLD = 10
+GOLD = int(getattr(config, "PENNYFALLS_GOLD_COINS", 20))     # what a gold coin pays now (it was 10 until 2026-10-03)
 
 
 def style(row) -> str:

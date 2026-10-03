@@ -180,8 +180,10 @@ PENNYFALLS_COIN = 10                 # UKPence a coin
 PENNYFALLS_MIN_BET = 100             # a cup: 10 to 100 coins
 PENNYFALLS_MAX_BET = 1_000
 PENNYFALLS_SEED_COINS = 130          # on a new player's machine
-PENNYFALLS_GOLD_EVERY = 150          # a gold coin (worth 10) drops in after this many coins:
-                                     # hands back ~7% of what goes in, against ~10% lost at the sides
+PENNYFALLS_GOLD_COINS = 20           # a gold coin pays this many coins (200 UKP) when pushed off...
+PENNYFALLS_GOLD_EVERY = 300          # ...and drops in after this many coins: together they hand back
+                                     # COINS / EVERY (~7%) of what goes in, against ~10% lost at the
+                                     # sides. Raise COINS without raising EVERY and the bank loses.
 PENNYFALLS_CUP_MAX_NET = 1_000       # the most one cup can win
 PENNYFALLS_DAY_MAX_NET = 5_000       # the most a player can win in a day
 
