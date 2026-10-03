@@ -352,6 +352,11 @@ def test_a_spectator_sees_the_table_but_not_the_hole_card_or_the_balance(economy
     assert out["balance"] == 0 and out["career"] == 0 and out["watching"]["playing"]
     assert out["you"] == str(UID) and [w["uid"] for w in out["spectators"]] == [str(UID)]
     assert casino.spectators(other, "blackjack") == [UID]
+    assert casino.table(other, "blackjack")["spectators"] == [str(UID)]      # the player hears who's watching
+    line = sessions._sittings[other]
+    assert line.watchers == [UID]
+    head = sessions.live_view(line, sessions.IMAGE).children[0].content
+    assert head.endswith(f"· <@{UID}> watching")
     status, _ = _call(client, "GET", f"/api/casino/watch/{other}/nope")
     assert status == 404
 

@@ -60,6 +60,7 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
         "career": _career(uid),
         "rules": [{"label": k, "text": v} for k, v in a.rules()],
         **a.extras(uid),
+        "spectators": [str(w) for w in spectators(uid, key) if w],     # who's watching this player
     }
     if opening:
         out.update(a.opening(uid))
@@ -96,6 +97,7 @@ def watch(uid: int, key: str, name: str | None = None, watcher: int = 0) -> dict
     if a is None or not a.watchable:
         raise Refuse("That table can't be watched.")
     _watchers.setdefault((int(uid), key), {})[int(watcher)] = time.time()
+    sessions.spectated(uid, key, spectators(uid, key))
     game = base.in_play(uid, key, registry()) or base.last_finished(uid, key)
     low, high = a.limits()
     return {

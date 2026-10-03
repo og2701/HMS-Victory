@@ -183,7 +183,7 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
     if game.startswith("casino:"):
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
-        return {"game": game, "casino": casino.table(uid, game[7:])}
+        return {"game": game, "casino": _named(client, uid, casino.table(uid, game[7:]))}
     if game.startswith("watch:"):
         player, key = _watched(game)
         if not _casino_open(channel):
@@ -366,7 +366,7 @@ async def casino_state(request):
     who, key, err = _casino_request(request)
     if err is not None:
         return err
-    return _json(casino.table(who["uid"], key))
+    return _json(_named(request.app[CLIENT], who["uid"], casino.table(who["uid"], key)))
 
 
 async def casino_move(request):
@@ -374,9 +374,10 @@ async def casino_move(request):
     if err is not None:
         return err
     presence = {"here": casino.sessions.here, "leave": casino.sessions.leave}.get(request.match_info["action"])
-    if presence is not None:            # the open table checking in, or closing
+    if presence is not None:            # the open table checking in (and hearing who's watching), or closing
         presence(who["uid"], key)
-        return _json({"ok": True})
+        out = {"ok": True, "spectators": [str(w) for w in casino.spectators(who["uid"], key) if w]}
+        return _json(_named(request.app[CLIENT], who["uid"], out))
     try:
         body = await request.json()
     except Exception:
@@ -386,8 +387,8 @@ async def casino_move(request):
     member = guild.get_member(who["uid"]) if guild else None
     name = member.display_name if member else "Player"
     try:
-        return _json(await casino.move(who["uid"], name, key, request.match_info["action"],
-                                       body if isinstance(body, dict) else {}))
+        return _json(_named(client, who["uid"], await casino.move(who["uid"], name, key, request.match_info["action"],
+                                                                  body if isinstance(body, dict) else {})))
     except casino.Busy as e:
         return _error(str(e), 429)
     except casino.Refuse as e:

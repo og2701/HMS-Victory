@@ -69,6 +69,7 @@ class Sitting:
     last_view: dict | None = None                   # the last round's table, for its board
     open_net: int = 0                               # a round still going: its net so far...
     open_note: str = ""                             # ...and what to say about it ("23 coins in the cup")
+    watchers: list = field(default_factory=list)    # who's spectating, for the line
 
 
 _sittings: dict[int, Sitting] = {}
@@ -98,6 +99,16 @@ def _watchable(key: str) -> bool:
     return bool(a and a.watchable)
 
 
+def _names(uids: list) -> str:
+    """'<@a>', '<@a> and <@b>', '<@a>, <@b> and 3 others' (mentions; the posts ping nobody)."""
+    tags = [f"<@{int(u)}>" for u in uids]
+    if len(tags) <= 2:
+        return " and ".join(tags)
+    if len(tags) == 3:
+        return f"{tags[0]}, {tags[1]} and {tags[2]}"
+    return f"{tags[0]}, {tags[1]} and {len(tags) - 2} others"
+
+
 def _gallery(image: str) -> discord.ui.MediaGallery:
     gallery = discord.ui.MediaGallery()
     gallery.add_item(media=f"attachment://{image}")
@@ -117,6 +128,8 @@ def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
         accent = WIN if s.net > 0 else (LOSS if s.net < 0 else GOLD)
     else:
         head = f"<@{s.uid}> is playing **{s.label}**"
+        if s.watchers:
+            head += f" · {_names(s.watchers)} watching"
         accent = GOLD
     view = discord.ui.LayoutView(timeout=None)
     if s.done and not s.rounds and not s.open_note:
@@ -362,13 +375,26 @@ def leave(uid: int, key: str) -> None:
         _finish(s)
 
 
+def spectated(uid: int, key: str, watchers: list) -> None:
+    """Who's watching this player's table changed: say so on their line."""
+    s = _sittings.get(int(uid))
+    watchers = [int(w) for w in watchers if w]
+    if s is not None and s.key == key and not s.done and s.watchers != watchers:
+        s.watchers = watchers
+        _schedule(s)
+
+
 def sweep() -> None:
     """Close sittings nobody has played at for IDLE_AFTER seconds, or whose table stopped
-    checking in GONE_AFTER seconds ago (the activity was closed without saying so)."""
+    checking in GONE_AFTER seconds ago (the activity was closed without saying so), and drop
+    spectators who've stopped looking from the lines."""
+    from lib.activities import casino
     now = time.time()
     for s in list(_sittings.values()):
         if now - s.last > IDLE_AFTER or now - s.seen > GONE_AFTER:
             _finish(s)
+        else:
+            spectated(s.uid, s.key, casino.spectators(s.uid, s.key))
 
 
 async def run_sweeper() -> None:
