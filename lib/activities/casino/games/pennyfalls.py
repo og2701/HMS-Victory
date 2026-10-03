@@ -86,7 +86,7 @@ def machine(uid: int) -> dict:
             log.error("couldn't read %s; machines start fresh", _FILE, exc_info=True)
     m = _machines.get(str(int(uid)))
     if m is None:
-        m = _machines[str(int(uid))] = {"coins": int(_cfg("SEED_COINS", 110)), "golds": int(_cfg("SEED_GOLDS", 0)),
+        m = _machines[str(int(uid))] = {"coins": int(_cfg("SEED_COINS", 130)), "golds": int(_cfg("SEED_GOLDS", 0)),
                                         "fed": 0, "day": _today(), "day_net": 0}
     m.setdefault("fed", 0)
     if m.get("day") != _today():

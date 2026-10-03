@@ -179,7 +179,7 @@ PENNYFALLS_ENABLED = True
 PENNYFALLS_COIN = 10                 # UKPence a coin
 PENNYFALLS_MIN_BET = 100             # a cup: 10 to 100 coins
 PENNYFALLS_MAX_BET = 1_000
-PENNYFALLS_SEED_COINS = 110          # on a new player's machine
+PENNYFALLS_SEED_COINS = 130          # on a new player's machine
 PENNYFALLS_GOLD_EVERY = 150          # a gold coin (worth 10) drops in after this many coins:
                                      # hands back ~7% of what goes in, against ~10% lost at the sides
 PENNYFALLS_CUP_MAX_NET = 1_000       # the most one cup can win

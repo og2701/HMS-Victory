@@ -253,6 +253,7 @@ def pf(em, tmp_path, monkeypatch):
     from lib.activities.casino.games import pennyfalls as PF
     monkeypatch.setattr(PF, "_FILE", str(tmp_path / "activity_pennyfalls.json"))
     monkeypatch.setattr(PF, "_loaded", True)
+    monkeypatch.setattr(config, "PENNYFALLS_SEED_COINS", 110)
     PF._machines.clear()
     clock = [1_000_000.0]
     monkeypatch.setattr(PF.time, "time", lambda: clock[0])
