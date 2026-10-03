@@ -123,6 +123,10 @@ class Adapter:
         """Anything else the idle table needs (a paytable, the odds)."""
         return {}
 
+    def opening(self, uid: int) -> dict:
+        """Anything the table needs only when it's opened, too big to send with every move."""
+        return {}
+
 
 # The bot's client, for the badge awards that need it. Set when the API starts.
 CLIENT = None

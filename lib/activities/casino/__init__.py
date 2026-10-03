@@ -45,6 +45,7 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
     """Everything the table screen needs: the hand (if any), balance, limits and ledger."""
     from lib.economy.economy_manager import get_bb
     a = adapter(key)
+    opening = game is None                  # the table being opened, not a move's answer
     if game is None:
         game = base.in_play(uid, key, registry()) or base.last_finished(uid, key)
     low, high = a.limits()
@@ -60,6 +61,8 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
         "rules": [{"label": k, "text": v} for k, v in a.rules()],
         **a.extras(uid),
     }
+    if opening:
+        out.update(a.opening(uid))
     if round_ is not None:
         out["round"] = {"staked": round_.staked, "payout": round_.payout, "net": round_.net,
                         "outcome": round_.outcome}

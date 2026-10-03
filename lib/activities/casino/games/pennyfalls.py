@@ -12,6 +12,8 @@ it keeps the books and won't accept what can't be true:
   player feeds their machine. The bot counts the coins, so it alone says when one is due.
 - A cup (one round: the coins you buy, play and cash out) nets at most PENNYFALLS_CUP_MAX_NET
   and a day at most PENNYFALLS_DAY_MAX_NET.
+- Each player's board is kept here too, coin by coin, so it's the same on every device and
+  can't be reset to a fresh one. A layout is only kept if its coins match the bot's count.
 
 So a doctored page can at worst empty its own machine, inside the caps, and honest play
 keeps the house edge the machine's side gaps give it. Anything that doesn't add up is
@@ -20,9 +22,11 @@ trimmed to what could have happened, and logged.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
+import struct
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -56,6 +60,7 @@ def gold_every() -> int:
 
 
 GOLD = 10                           # a gold coin is worth this many coins
+LAYOUT_MAX = 12_000                 # characters: about 550 coins, well past a full machine
 DROPS_PER_SECOND = 6                # the page allows one every 200ms; a little slack on top
 TOP_UP_MAX = 100
 
@@ -99,6 +104,22 @@ def _save_machines() -> None:
         atomic_write_json(_FILE, _machines)
     except Exception:
         log.error("couldn't save the penny falls machines", exc_info=True)
+
+
+def layout_counts(layout: str) -> tuple[int, int] | None:
+    """(coins, gold coins) in a board the page packed, or None if it isn't one. The page packs
+    each coin as eight little-endian int16s: kind (0 coin, 1 gold), position in hundredths of a
+    centimetre, rotation as a quaternion scaled by 32767."""
+    try:
+        raw = base64.b64decode(layout, validate=True)
+    except Exception:
+        return None
+    if not raw or len(raw) % 16:
+        return None
+    kinds = [struct.unpack_from("<h", raw, i)[0] for i in range(0, len(raw), 16)]
+    if any(k not in (0, 1) for k in kinds):
+        return None
+    return kinds.count(0), kinds.count(1)
 
 
 # --- a cup ---------------------------------------------------------------------------------
@@ -232,6 +253,7 @@ class PennyFalls(Adapter):
                 won = max(0, won - (won + lost - off_cap))
                 lost = min(lost, off_cap - won)
             dropped = min(dropped, cup.coins + won + won_gold * GOLD)
+        self._keep_layout(cup.uid, body, m["coins"] + dropped - won - lost, m["golds"] - won_gold - lost_gold)
         if (dropped, won, lost, won_gold, lost_gold) != claimed:
             cup.trimmed += 1
             log.warning("penny falls: trimmed %s's report %s to %s", cup.uid, claimed,
@@ -259,6 +281,27 @@ class PennyFalls(Adapter):
         m["golds"] += cup.release
         cup.golds_given += cup.release
         _save_machines()
+
+    @staticmethod
+    def _keep_layout(uid: int, body: dict, coins: int, golds: int) -> None:
+        """Store the board the page sent with this report (if it did), provided it holds exactly
+        the coins the bot says are on the machine once the report is booked."""
+        layout = body.get("layout")
+        if not isinstance(layout, str) or not layout or len(layout) > LAYOUT_MAX:
+            return
+        counts = layout_counts(layout)
+        if counts != (coins, golds):
+            log.info("penny falls: %s's board %s doesn't match the count %s; not kept", uid, counts, (coins, golds))
+            return
+        try:
+            phase = float(body.get("phase") or 0)
+            from database import DatabaseManager
+            DatabaseManager.execute(
+                "INSERT INTO pennyfalls_boards (user_id, layout, phase, updated) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET layout = excluded.layout, phase = excluded.phase, "
+                "updated = excluded.updated", (str(int(uid)), layout, phase, int(time.time())))
+        except Exception:
+            log.error("couldn't keep %s's penny falls board", uid, exc_info=True)
 
     def _cash_out(self, cup: Cup) -> None:
         m = machine(cup.uid)
@@ -306,6 +349,17 @@ class PennyFalls(Adapter):
 
     def extras(self, uid):
         return {"coinValue": value(), "board": self._board(uid)}
+
+    def opening(self, uid):
+        """The board as the player left it, for the page to rebuild."""
+        try:
+            from database import DatabaseManager
+            row = DatabaseManager.fetch_one(
+                "SELECT layout, phase FROM pennyfalls_boards WHERE user_id = ?", (str(int(uid)),))
+        except Exception:
+            log.error("couldn't read %s's penny falls board", uid, exc_info=True)
+            row = None
+        return {"layout": row[0], "phase": row[1]} if row else {}
 
     def rules(self):
         low, high = self.limits()

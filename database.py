@@ -514,6 +514,16 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_pennyfalls_cups_user ON pennyfalls_cups(user_id)")
+        # Each player's machine as they left it: every coin's position, packed by the page, and
+        # where the pusher was in its sweep. The bot only keeps one whose coin count matches its own.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS pennyfalls_boards (
+                user_id TEXT PRIMARY KEY,
+                layout TEXT NOT NULL,
+                phase REAL NOT NULL,
+                updated INTEGER NOT NULL
+            )
+        ''')
 
         # National Lottery: one row per round, plus aggregated per-user entries. A round
         # is 'open' (selling tickets) then 'drawn' (winner picked, pot paid). tickets_sold

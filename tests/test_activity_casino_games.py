@@ -315,6 +315,28 @@ def test_penny_falls_trims_what_cant_have_happened(em, pf):
     assert out["table"]["won"] == 120 and pf.machine(UID)["coins"] == 0 and pf.machine(UID)["golds"] == 0
 
 
+def _layout(coins, golds):
+    import base64
+    import struct
+    packed = [struct.pack("<8h", 0, i, 30, 0, 0, 0, 0, 32767) for i in range(coins)]
+    packed += [struct.pack("<8h", 1, i, 30, 0, 0, 0, 0, 32767) for i in range(golds)]
+    return base64.b64encode(b"".join(packed)).decode()
+
+
+def test_penny_falls_keeps_the_board_only_if_it_adds_up(em, pf):
+    play("pennyfalls", "deal", {"bet": 100})
+    pf.clock[0] += 10
+    play("pennyfalls", "sync", {"dropped": 5, "won": 2, "layout": _layout(999, 0), "phase": 1.5})   # wrong count
+    assert "layout" not in casino.table(UID, "pennyfalls")
+    pf.clock[0] += 10
+    play("pennyfalls", "sync", {"dropped": 2, "layout": _layout(115, 0), "phase": 2.5})           # 110 + 5 - 2 + 2
+    t = casino.table(UID, "pennyfalls")
+    assert t["layout"] == _layout(115, 0) and t["phase"] == 2.5
+    out = play("pennyfalls", "sync", {"dropped": 1, "layout": "not a board"})
+    assert "layout" not in out                                                        # moves don't carry it
+    assert casino.table(UID, "pennyfalls")["layout"] == _layout(115, 0)
+
+
 def test_penny_falls_caps_a_cup_and_a_day(em, pf, monkeypatch):
     monkeypatch.setattr(config, "PENNYFALLS_CUP_MAX_NET", 300)
     monkeypatch.setattr(config, "PENNYFALLS_DAY_MAX_NET", 500)
