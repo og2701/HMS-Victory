@@ -191,6 +191,30 @@ def test_the_live_line_shows_its_picture_and_falls_back_to_text():
     assert [type(c).__name__ for c in text.children] == ["Container", "ActionRow"]
 
 
+def test_a_channel_that_refuses_files_still_gets_the_text_line(monkeypatch):
+    import discord
+    from lib.activities import launcher
+    sent = []
+
+    async def post_view(ch, view, files=None):
+        if files:
+            raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "Missing Permissions")
+        sent.append([type(c).__name__ for c in view.children])
+        return 99
+
+    async def picture(s):
+        return b"png"
+
+    monkeypatch.setattr(launcher, "post_view", post_view)
+    monkeypatch.setattr(sessions, "_channel", lambda: 1)
+    monkeypatch.setattr(sessions, "_picture", picture)
+    monkeypatch.setattr(sessions, "_no_files_until", 0.0)
+    s = sessions.Sitting(1, "mines", "Mines", "rounds", rounds=1, net=50, dirty=True)
+    asyncio.run(sessions._flush(s))
+    assert s.message_id == 99 and sent == [["Container", "ActionRow"]]
+    assert sessions._no_files_until > 0
+
+
 def test_the_live_strip_is_drawn_without_a_browser():
     from PIL import Image
     from lib.activities.casino import cards

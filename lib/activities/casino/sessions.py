@@ -69,6 +69,8 @@ class Sitting:
 
 _sittings: dict[int, Sitting] = {}
 _closing = False        # shutting down: text only, so the last edits land inside the drain
+_no_files_until = 0.0   # the app can't attach files in the channel: text only until then
+NO_FILES_RETRY = 600    # seconds before trying pictures again after a permissions refusal
 
 
 def _signed(n: int) -> str:
@@ -189,7 +191,7 @@ def _schedule(s: Sitting) -> None:
 
 async def _picture(s: Sitting) -> bytes | None:
     from lib.activities.casino import cards
-    if _closing:
+    if _closing or time.time() < _no_files_until:
         return None
     if s.done:
         return await cards.final_png(s.key, s.label, s.unit, s.history, s.last_view, s.started, s.last)
@@ -202,7 +204,6 @@ def _files(png: bytes | None) -> list[discord.File] | None:
 
 async def _flush(s: Sitting) -> None:
     """Post the live line, or edit it, no more often than EDIT_GAP."""
-    from lib.activities import launcher
     ch = _channel()
     if not ch:
         return
@@ -217,30 +218,53 @@ async def _flush(s: Sitting) -> None:
         except Exception:
             log.warning("couldn't draw the casino line for %s", s.uid, exc_info=True)
             png = None
-        view = live_view(s, IMAGE if png else None)
         try:
-            if s.message_id is None:
-                s.message_id = await launcher.post_view(ch, view, files=_files(png))
-            else:
-                await launcher.edit_view(ch, s.message_id, view, files=_files(png))
+            await _send(ch, s.message_id, lambda image: live_view(s, image), png,
+                        lambda mid: setattr(s, "message_id", mid))
         except Exception:
             log.warning("couldn't update the casino line for %s", s.uid, exc_info=True)
 
 
-async def _post_big(uid, key, label, rnd, table: dict | None = None) -> None:
+async def _send(ch: int, message_id: int | None, make_view, png: bytes | None, posted=None) -> None:
+    """Post or edit with the picture. If the channel won't take files (the app is missing
+    Attach Files there), send the text version instead and stop drawing pictures for a while,
+    so the lines keep appearing."""
+    global _no_files_until
     from lib.activities import launcher
+
+    async def go(with_picture: bool):
+        view = make_view(IMAGE if with_picture else None)
+        files = _files(png) if with_picture else None
+        if message_id is None:
+            mid = await launcher.post_view(ch, view, files=files)
+            if posted is not None:
+                posted(mid)
+        else:
+            await launcher.edit_view(ch, message_id, view, files=files)
+
+    try:
+        await go(png is not None)
+    except discord.Forbidden:
+        if png is None:
+            raise
+        _no_files_until = time.time() + NO_FILES_RETRY
+        log.warning("the activities app can't attach files in #casino; posting text instead")
+        await go(False)
+
+
+async def _post_big(uid, key, label, rnd, table: dict | None = None) -> None:
     from lib.activities.casino import cards
     ch = _channel()
     if not ch:
         return
+    png = None
+    if time.time() >= _no_files_until:
+        try:
+            png = await cards.big_win_png(key, label, _entry(rnd, True), table)
+        except Exception:
+            log.warning("couldn't draw a casino big win for %s", uid, exc_info=True)
     try:
-        png = await cards.big_win_png(key, label, _entry(rnd, True), table)
-    except Exception:
-        log.warning("couldn't draw a casino big win for %s", uid, exc_info=True)
-        png = None
-    try:
-        await launcher.post_view(ch, big_win_view(uid, key, label, rnd, IMAGE if png else None),
-                                 files=_files(png))
+        await _send(ch, None, lambda image: big_win_view(uid, key, label, rnd, image), png)
     except Exception:
         log.warning("couldn't post a casino big win for %s", uid, exc_info=True)
 
