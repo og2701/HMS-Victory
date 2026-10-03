@@ -384,6 +384,8 @@ def init_db():
                 total_darts_out INTEGER NOT NULL DEFAULT 0,
                 total_glass_in INTEGER NOT NULL DEFAULT 0,
                 total_glass_out INTEGER NOT NULL DEFAULT 0,
+                total_pennyfalls_in INTEGER NOT NULL DEFAULT 0,
+                total_pennyfalls_out INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
@@ -410,6 +412,29 @@ def init_db():
                 c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
+        # Davy Jones' Locker (the activity's penny falls machine) was played before the bank had
+        # columns for it. On the boot that adds them (and only then: the ALTER fails on every
+        # later one), count what it has already taken in and paid out from the durable
+        # user_transactions ledger, which records each cup's coins and cash-out by reason.
+        _locker_added = False
+        for _col in ("total_pennyfalls_in", "total_pennyfalls_out"):
+            try:
+                c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
+                _locker_added = True
+            except sqlite3.OperationalError:
+                pass
+        if _locker_added:
+            try:
+                c.execute("SELECT COALESCE(-SUM(amount), 0) FROM user_transactions "
+                          "WHERE reason = 'Davy Jones'' Locker coins' AND amount < 0")
+                _in = int(c.fetchone()[0] or 0)
+                c.execute("SELECT COALESCE(SUM(amount), 0) FROM user_transactions "
+                          "WHERE reason = 'Davy Jones'' Locker cashout' AND amount > 0")
+                _out = int(c.fetchone()[0] or 0)
+                c.execute("UPDATE bank SET total_pennyfalls_in = ?, total_pennyfalls_out = ? WHERE id = 1",
+                          (_in, _out))
+            except sqlite3.OperationalError:
+                pass        # a brand-new database: no ledger yet, nothing to count
         # One-time backfill: deposit_tax historically only credited total_tax_collected for
         # "Wealth tax" descriptions, so the inactivity tax + wealth demurrage were dropped from the
         # tax figure. Fold those missing amounts (from the durable user_transactions ledger - taxes

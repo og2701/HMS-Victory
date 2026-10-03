@@ -286,6 +286,34 @@ def test_penny_falls_buys_plays_and_cashes_out(em, pf):
     assert tuple(row) == (20, 200, 150, 14, 9, 1, 0, 110, 114, 0, 2, 10, 0, 12)   # aims capped at what was dropped
 
 
+def test_penny_falls_counts_in_the_banks_figures(em, pf):
+    from lib.economy.bank_manager import BankManager
+    play("pennyfalls", "deal", {"bet": 200})
+    pf.clock[0] += 10
+    play("pennyfalls", "cashout", {"dropped": 5, "won": 4})
+    ledger = BankManager.get_ledger_stats()
+    assert (ledger["pennyfalls_in"], ledger["pennyfalls_out"], ledger["pennyfalls_net"]) == (200, 190, 10)
+    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-1] == 100
+
+
+def test_the_bank_backfills_penny_falls_from_the_ledger_once(em):
+    import database
+    from database import DatabaseManager
+    from lib.economy.bank_manager import BankManager
+    for reason, amount in (("Davy Jones' Locker coins", -300), ("Davy Jones' Locker cashout", 250),
+                           ("Davy Jones' Locker coins", -100), ("Mines bet", -50)):
+        DatabaseManager.execute("INSERT INTO user_transactions (user_id, ts, amount, balance_after, reason) "
+                                "VALUES (?, 0, ?, 0, ?)", (str(UID), amount, reason))
+    # the bank as it was before it had columns for the game
+    DatabaseManager.execute("ALTER TABLE bank DROP COLUMN total_pennyfalls_in")
+    DatabaseManager.execute("ALTER TABLE bank DROP COLUMN total_pennyfalls_out")
+    database.init_db()
+    ledger = BankManager.get_ledger_stats()
+    assert (ledger["pennyfalls_in"], ledger["pennyfalls_out"]) == (400, 250)
+    database.init_db()                                   # a later boot doesn't count it again
+    assert BankManager.get_ledger_stats()["pennyfalls_in"] == 400
+
+
 def test_penny_falls_tops_up_a_cup(em, pf):
     play("pennyfalls", "deal", {"bet": 100})
     out = play("pennyfalls", "buy", {"coins": 20})
