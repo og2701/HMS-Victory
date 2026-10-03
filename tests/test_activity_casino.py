@@ -241,6 +241,7 @@ def test_every_game_has_a_final_board_and_a_summary():
         "blockade": {"outcome": "lose", "mult": 1.5, "caught": 1.62},
         "darts": {"throws": [{"label": "T20", "value": 60}], "total": 60},
         "penalty": {"goals": 2, "shots": 5},
+        "pennyfalls": {"dropped": 40, "won": 31},
     }
     assert set(tables) == set(casino.ORDER)
     for key, table in tables.items():

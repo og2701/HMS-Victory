@@ -173,6 +173,18 @@ PENALTY_SCORE_PROB = 0.80     # P(score) per shot = an honest keeper saving a fa
 PENALTY_MAX_WIN = 0           # payout ceiling; 0 = no cap (the ~2.99x top multiplier is already
                               # self-limiting, so a max bet can't dwarf the bank).
 
+# Penny Falls, the activity's coin pusher (lib/activities/casino/games/pennyfalls.py). The
+# machine runs on the player's screen, so the bot keeps count and caps what it will pay.
+PENNYFALLS_ENABLED = True
+PENNYFALLS_COIN = 10                 # UKPence a coin
+PENNYFALLS_MIN_BET = 100             # a cup: 10 to 100 coins
+PENNYFALLS_MAX_BET = 1_000
+PENNYFALLS_SEED_COINS = 110          # on a new player's machine
+PENNYFALLS_GOLD_EVERY = 150          # a gold coin (worth 10) drops in after this many coins:
+                                     # hands back ~7% of what goes in, against ~10% lost at the sides
+PENNYFALLS_CUP_MAX_NET = 1_000       # the most one cup can win
+PENNYFALLS_DAY_MAX_NET = 5_000       # the most a player can win in a day
+
 # --- Skyrim (standalone persistent RPG - NOT a casino game, no UKPence anywhere) ---
 # Every member gets a persistent Dovahkiin: skills that level by use, gear tiers, dragon
 # souls and shout words. /skyrim opens an ephemeral hub; delves (dungeon runs) post as

@@ -1,4 +1,4 @@
-"""The HMS casino inside the activity: the bot's 13 house games behind a JSON API.
+"""The HMS casino inside the activity: the bot's house games behind a JSON API.
 
 base.py holds the shared plumbing (bets, stakes, the in-play store, one move at a time),
 sessions.py the #casino posts, and games/ one adapter per game. This module ties them
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 # Home lists games in this order until a player has history to sort by.
 ORDER = ("blackjack", "slots", "mines", "roulette", "higherlower", "videopoker", "reddog",
-         "tcp", "chest", "glass", "blockade", "darts", "penalty")
+         "tcp", "chest", "glass", "blockade", "darts", "penalty", "pennyfalls")
 
 _registry: dict | None = None
 

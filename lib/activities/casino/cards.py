@@ -44,10 +44,11 @@ SCENE = {
     "blockade": "linear-gradient(180deg, #071226 0%, #0e2747 50%, #1b4a73 64%, #061a2e 100%)",
     "darts": "radial-gradient(ellipse 100% 80% at 50% 50%, #4a1b1b 0%, #2a0f0f 60%, #150707 100%)",
     "penalty": "linear-gradient(180deg, #0a1f12 0%, #123a21 40%, #1b5a2e 70%, #164d27 100%)",
+    "pennyfalls": "radial-gradient(ellipse 100% 80% at 60% 20%, #4a1650 0%, #24103a 55%, #120a26 100%)",
 }
 # A flat colour per game, for when a tile can't be rendered.
 SOLID = {"mines": "#102650", "slots": "#1a3580", "chest": "#2b1a0b", "glass": "#0b0b0e", "blockade": "#0e2747",
-         "darts": "#2a0f0f", "penalty": "#123a21"}
+         "darts": "#2a0f0f", "penalty": "#123a21", "pennyfalls": "#24103a"}
 
 SUIT = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 ANCHOR = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
@@ -71,6 +72,13 @@ WHEEL = ('<svg viewBox="0 0 30 30"><circle cx="15" cy="15" r="14.5" fill="#8a6a2
          '<circle cx="15" cy="15" r="11" fill="none" stroke="#c8202f" stroke-width="5" stroke-dasharray="1.87 1.87"/>'
          '<circle cx="15" cy="15" r="7.2" fill="#145040"/><circle cx="15" cy="15" r="2.6" fill="#e2be78"/>'
          '<circle cx="21.5" cy="9.5" r="1.1" fill="#fff"/></svg>')
+PENNY = ('<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#c8784a"/>'
+         '<circle cx="20" cy="20" r="16" fill="none" stroke="#8f4d28" stroke-width="2.4"/>'
+         '<circle cx="20" cy="20" r="11.5" fill="none" stroke="#a65f37" stroke-width="1.3" stroke-dasharray="1.6 1.6"/>'
+         '<g fill="none" stroke="#7a3d1a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" '
+         'transform="translate(11.5 10.5) scale(.72)"><circle cx="12" cy="4.6" r="2.1"/><path d="M12 6.7V21"/>'
+         '<path d="M8.6 9.6h6.8"/><path d="M4.6 13.6c.6 4.6 3.6 7.2 7.4 7.4c3.8-.2 6.8-2.8 7.4-7.4"/></g>'
+         '<path d="M9 13A12.5 12.5 0 0 1 17 7" fill="none" stroke="#f0b27e" stroke-width="1.6" stroke-linecap="round"/></svg>')
 CHERRIES = ('<svg viewBox="0 0 26 26"><path d="M9 17 C10 10 14 6 19 4 M17 17 C17 11 18 7 19 4" stroke="#5fbf4a" '
             'stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M19 4 C21 3 23 4 24 6 C22 6 20 5.5 19 4 Z" '
             'fill="#5fbf4a"/><circle cx="8" cy="19" r="5" fill="#e02a44"/><circle cx="18" cy="19" r="5" fill="#b5172c"/>'
@@ -141,6 +149,8 @@ def art(key: str) -> str:
         return _img("darts-board.webp", "pic")
     if key == "penalty":
         return _img("ball.webp", "pic ball")
+    if key == "pennyfalls":
+        return f'<div class="pennies"><i>{PENNY}</i><i>{PENNY}</i><i>{PENNY}</i></div>'
     return ""
 
 
@@ -172,6 +182,12 @@ html, body {{ background: {INK}; font-family: 'ArchivoV', 'Archivo', system-ui, 
 .panes i {{ width: 56px; height: 92px; border-radius: 6px; background: rgba(255,255,255,.22); box-shadow: inset 0 0 0 2px rgba(255,255,255,.5); }}
 .panes i.held {{ background: #2f8f5b; box-shadow: inset 0 0 0 2px rgba(134,239,172,.8); }}
 .pic {{ display: block; object-fit: contain; }}
+.pennies {{ position: relative; width: 150px; height: 130px; }}
+.pennies i {{ position: absolute; width: 84px; height: 84px; filter: drop-shadow(0 8px 10px rgba(0,0,0,.45)); }}
+.pennies i svg {{ display: block; width: 100%; height: 100%; }}
+.pennies i:nth-child(1) {{ right: 0; bottom: 0; transform: scaleY(.55); }}
+.pennies i:nth-child(2) {{ right: 8px; bottom: 13px; transform: scaleY(.55); }}
+.pennies i:nth-child(3) {{ right: 54px; top: 0; transform: rotate(-24deg) scaleY(.8); }}
 """
 
 
@@ -260,6 +276,11 @@ def board_html(key: str, v: dict) -> str:
                          for t in v.get("throws", []))
         return (f'<div class="stack">{_img("darts-board.webp", "pic hero-pic")}<div class="chips">{throws}</div>'
                 f'<div class="caption">Total {v.get("total", 0)}</div></div>')
+    if key == "pennyfalls":
+        dropped, won = int(v.get("dropped", 0)), int(v.get("won", 0))
+        pile = "".join(f"<i>{PENNY}</i>" for _ in range(min(12, max(3, won // 4))))
+        return (f'<div class="stack"><div class="pile">{pile}</div>'
+                f'<div class="caption">{won:,} coin{"s" if won != 1 else ""} back from {dropped:,}</div></div>')
     if key == "penalty":
         goals, shots = int(v.get("goals", 0)), int(v.get("shots", 5))
         dots = "".join(f'<i class="{"on" if k < goals else ""}"></i>' for k in range(shots))
@@ -317,6 +338,9 @@ CARD_CSS = f"""
 .ladder .step.on {{ background: {GOLD}; color: #1a1205; }}
 .glass {{ width: 100%; display: flex; justify-content: center; }}
 .glass svg {{ width: 100%; max-height: 560px; height: auto; }}
+.pile {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 560px; }}
+.pile i {{ width: 82px; height: 82px; filter: drop-shadow(0 8px 10px rgba(0,0,0,.4)); }}
+.pile i svg {{ display: block; width: 100%; height: 100%; }}
 .dots {{ display: flex; gap: 14px; }}
 .dots i {{ width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.18); }}
 .dots i.on {{ background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.25); }}

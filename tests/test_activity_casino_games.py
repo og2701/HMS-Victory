@@ -247,6 +247,79 @@ def test_penalties_score_and_cash_out(em, monkeypatch):
     assert "Penalty cashout" in reasons()
 
 
+# --- penny falls ---------------------------------------------------------------------------
+@pytest.fixture
+def pf(em, tmp_path, monkeypatch):
+    from lib.activities.casino.games import pennyfalls as PF
+    monkeypatch.setattr(PF, "_FILE", str(tmp_path / "activity_pennyfalls.json"))
+    monkeypatch.setattr(PF, "_loaded", True)
+    PF._machines.clear()
+    clock = [1_000_000.0]
+    monkeypatch.setattr(PF.time, "time", lambda: clock[0])
+    PF.clock = clock
+    return PF
+
+
+def test_penny_falls_buys_plays_and_cashes_out(em, pf):
+    out = play("pennyfalls", "deal", {"bet": 200})
+    assert out["table"]["cup"] == 20 and em.get_bb(UID) == 9_800
+    assert out["table"]["board"] == {"coins": 110, "golds": 0, "fed": 0, "every": 150}
+    pf.clock[0] += 10
+    out = play("pennyfalls", "sync", {"dropped": 12, "won": 9, "lost": 1})
+    assert out["table"]["cup"] == 20 - 12 + 9 and out["table"]["board"]["coins"] == 110 + 12 - 10
+    pf.clock[0] += 5
+    out = play("pennyfalls", "cashout", {"dropped": 2})
+    assert out["round"]["payout"] == 15 * 10 and em.get_bb(UID) == 9_800 + 150
+    assert rows() == [("pennyfalls", 200, 150, "lose")]
+    assert "Penny Falls coins" in reasons() and "Penny Falls cashout" in reasons()
+    assert pf.machine(UID)["coins"] == 112 + 2 and pf.machine(UID)["fed"] == 14
+
+
+def test_penny_falls_tops_up_a_cup(em, pf):
+    play("pennyfalls", "deal", {"bet": 100})
+    out = play("pennyfalls", "buy", {"coins": 20})
+    assert out["table"]["cup"] == 30 and out["table"]["staked"] == 300 and em.get_bb(UID) == 9_700
+    play("pennyfalls", "cashout")
+    with pytest.raises(casino.Refuse, match="whole number"):
+        play("pennyfalls", "deal", {"bet": 105})
+
+
+def test_penny_falls_drops_a_gold_coin_every_so_often_across_cups(em, pf, monkeypatch):
+    monkeypatch.setattr(config, "PENNYFALLS_GOLD_EVERY", 10)
+    play("pennyfalls", "deal", {"bet": 1_000})
+    pf.clock[0] += 60
+    out = play("pennyfalls", "sync", {"dropped": 25})
+    assert out["table"]["release"] == 2 and out["table"]["board"]["golds"] == 2 and out["table"]["board"]["fed"] == 5
+    pf.clock[0] += 60
+    out = play("pennyfalls", "cashout", {"dropped": 4, "wonGold": 1})
+    assert out["table"]["release"] == 0 and pf.machine(UID)["fed"] == 9 and pf.machine(UID)["golds"] == 1
+    assert out["round"]["payout"] == (100 - 29 + 10) * 10          # a gold coin is worth 10 coins
+    play("pennyfalls", "deal", {"bet": 100})
+    pf.clock[0] += 60
+    out = play("pennyfalls", "sync", {"dropped": 1})               # the count carried over the cups
+    assert out["table"]["release"] == 1 and pf.machine(UID)["fed"] == 0
+
+
+def test_penny_falls_trims_what_cant_have_happened(em, pf):
+    play("pennyfalls", "deal", {"bet": 100})
+    pf.clock[0] += 1
+    out = play("pennyfalls", "sync", {"dropped": 50})                   # 10 in the cup, 1s to drop them
+    assert out["table"]["dropped"] == 10 and out["table"]["cup"] == 0
+    out = play("pennyfalls", "sync", {"won": 500, "wonGold": 3})         # more than the machine holds
+    assert out["table"]["won"] == 120 and pf.machine(UID)["coins"] == 0 and pf.machine(UID)["golds"] == 0
+
+
+def test_penny_falls_caps_a_cup_and_a_day(em, pf, monkeypatch):
+    monkeypatch.setattr(config, "PENNYFALLS_CUP_MAX_NET", 300)
+    monkeypatch.setattr(config, "PENNYFALLS_DAY_MAX_NET", 500)
+    play("pennyfalls", "deal", {"bet": 100})
+    out = play("pennyfalls", "cashout", {"won": 60})
+    assert out["round"]["payout"] == 100 + 300 and "cup limit" in out["round"]["outcome"]
+    play("pennyfalls", "deal", {"bet": 100})
+    out = play("pennyfalls", "cashout", {"won": 40})
+    assert out["round"]["payout"] == 100 + 200 and "daily limit" in out["round"]["outcome"]
+
+
 def test_every_game_has_rules_and_a_label(em):
     for key, a in casino.registry().items():
         assert a.label and a.rules(), key
