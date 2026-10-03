@@ -233,6 +233,32 @@ def test_a_channel_that_refuses_files_still_gets_the_text_line(monkeypatch):
     assert sessions._no_files_until > 0
 
 
+def test_shutdown_closes_a_line_even_while_it_waits_between_edits(monkeypatch):
+    import time as clock
+    from lib.activities import launcher
+    edits = []
+
+    async def edit_view(ch, mid, view, files=None):
+        edits.append(view)
+
+    monkeypatch.setattr(launcher, "edit_view", edit_view)
+    monkeypatch.setattr(sessions, "_channel", lambda: 1)
+    monkeypatch.setattr(sessions, "_closing", False)
+
+    async def run():
+        sessions._sittings.clear()
+        s = sessions.Sitting(9, "mines", "Mines", "rounds", rounds=1, message_id=5, edited=clock.time())
+        sessions._sittings[9] = s
+        sessions._schedule(s)                       # this edit waits out the gap between edits...
+        await asyncio.sleep(0.05)
+        started = clock.time()
+        await sessions.close_all(timeout=2)         # ...which shutdown can't afford
+        return s, clock.time() - started
+
+    s, took = asyncio.run(run())
+    assert s.done and edits and took < 1
+
+
 def test_the_live_strip_is_drawn_without_a_browser():
     from PIL import Image
     from lib.activities.casino import cards
@@ -355,8 +381,10 @@ def test_a_spectator_sees_the_table_but_not_the_hole_card_or_the_balance(economy
     assert casino.table(other, "blackjack")["spectators"] == [str(UID)]      # the player hears who's watching
     line = sessions._sittings[other]
     assert line.watchers == [UID]
-    head = sessions.live_view(line, sessions.IMAGE).children[0].content
-    assert head.endswith(f"· <@{UID}> watching")
+    pictured = sessions.live_view(line, sessions.IMAGE).children[0].content
+    assert "watching" not in pictured                                   # the picture names them
+    text = sessions.live_view(line).children[0].children[0].content       # no picture: the text does
+    assert f"· <@{UID}> watching" in text
     status, _ = _call(client, "GET", f"/api/casino/watch/{other}/nope")
     assert status == 404
 

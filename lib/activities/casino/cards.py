@@ -520,7 +520,7 @@ def _hex(c: str):
 
 
 def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes | None,
-              open_net: int = 0, note: str = "", status: str = "PLAYING NOW") -> bytes:
+              open_net: int = 0, note: str = "", status: str = "PLAYING NOW", watchers: list[str] = ()) -> bytes:
     """The strip shown while someone plays: game, rounds so far, net, and a chip per round.
     ``open_net`` and ``note`` describe a round still going (a cup of coins half played), and
     ``status`` heads it (STEPPED AWAY when they've left one unfinished)."""
@@ -557,6 +557,19 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
     while size > 60 and d.textlength(label, font=_font(size, 900)) > W - x - 60:
         size -= 6
     d.text((x - 4, 150), label, font=_font(size, 900), fill=_hex(TEXT))
+    # who's spectating: "Watched by Pooja, Tyler and 2 more", cut to fit
+    if watchers:
+        lead, small = "Watched by ", _font(40, 600)
+        d.text((x, 300), lead, font=small, fill=_hex(MUTED))
+        room = W - 60 - (x + d.textlength(lead, font=small))
+        shown = list(watchers)
+        while True:
+            more = len(watchers) - len(shown)
+            names = ", ".join(shown) + (f" and {more} more" if more else "")
+            if len(shown) <= 1 or d.textlength(names, font=_font(40, 800)) <= room:
+                break
+            shown.pop()
+        d.text((x + d.textlength(lead, font=small), 300), names, font=_font(40, 800), fill=_hex(GOLD))
     # net so far
     net = sum(int(h["net"]) for h in history) + int(open_net)
     d.text((x, 410), "Net so far", font=_font(44, 600), fill=_hex(MUTED))
@@ -576,12 +589,12 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
 
 
 async def live_png(key: str, label: str, unit: str, history: list[dict], open_net: int = 0, note: str = "",
-                   status: str = "PLAYING NOW") -> bytes | None:
+                   status: str = "PLAYING NOW", watchers: list[str] = ()) -> bytes | None:
     try:
         tile = await tile_png(key)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, draw_live, key, label, unit, list(history), tile,
-                                          open_net, note, status)
+                                          open_net, note, status, list(watchers))
     except Exception:
         log.warning("couldn't draw the casino live strip", exc_info=True)
         return None

@@ -128,7 +128,7 @@ def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
         accent = WIN if s.net > 0 else (LOSS if s.net < 0 else GOLD)
     else:
         head = f"<@{s.uid}> is playing **{s.label}**"
-        if s.watchers:
+        if s.watchers and not image:            # with a picture, it names them itself
             head += f" · {_names(s.watchers)} watching"
         accent = GOLD
     view = discord.ui.LayoutView(timeout=None)
@@ -278,7 +278,19 @@ async def _picture(s: Sitting) -> bytes | None:
         if not s.history and s.open_note:
             return await cards.live_png(s.key, s.label, s.unit, s.history, s.open_net, s.open_note, "STEPPED AWAY")
         return await cards.final_png(s.key, s.label, s.unit, s.history, s.last_view, s.started, s.last)
-    return await cards.live_png(s.key, s.label, s.unit, s.history, s.open_net, s.open_note)
+    return await cards.live_png(s.key, s.label, s.unit, s.history, s.open_net, s.open_note,
+                                watchers=_display_names(s.watchers))
+
+
+def _display_names(uids: list) -> list[str]:
+    """Spectators' names as the server shows them, for the picture (it can't hold mentions)."""
+    from lib.activities.casino import base
+    guild = base.CLIENT.get_guild(config.GUILD_ID) if base.CLIENT is not None else None
+    names = []
+    for u in uids:
+        member = guild.get_member(int(u)) if guild else None
+        names.append(getattr(member, "display_name", None) or "someone")
+    return names
 
 
 def _files(png: bytes | None) -> list[discord.File] | None:
@@ -292,7 +304,7 @@ async def _flush(s: Sitting) -> None:
         return
     while s.dirty:
         wait = s.edited + EDIT_GAP - time.time()
-        if wait > 0 and s.message_id is not None:
+        if wait > 0 and s.message_id is not None and not _closing:     # shutting down: no time to space edits
             await asyncio.sleep(wait)
         s.dirty = False
         s.edited = time.time()
@@ -412,6 +424,10 @@ async def close_all(timeout: float = 4.0) -> None:
     _closing = True
     tasks = []
     for s in list(_sittings.values()):
+        # a line mid-way through spacing out its edits would sleep past the shutdown: start afresh
+        if s.task is not None and not s.task.done():
+            s.task.cancel()
+        s.task = None
         _finish(s)
         if s.task is not None:
             tasks.append(s.task)
