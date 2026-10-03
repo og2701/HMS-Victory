@@ -6,6 +6,7 @@ Runnable under pytest or straight from the stdlib (`python3 tests/test_skyrim.py
 """
 import os
 import sys
+import contextlib
 import types
 import random
 import datetime
@@ -44,6 +45,19 @@ def _restore_random():
 
 def _profile(class_key="warrior"):
     return E.create_profile(1, "Tester", class_key)
+
+
+@contextlib.contextmanager
+def _frozen_day(day="2026-07-08"):
+    """Pin the engine's UK day. Streaks, the Voice, first-delve comforts, route
+    rolls and weather all count days by E._today_str(), so "yesterday" has to come
+    from here: the machine's local date can sit a day either side of the UK one."""
+    real = E._today_str
+    E._today_str = lambda: day
+    try:
+        yield datetime.date.fromisoformat(day)
+    finally:
+        E._today_str = real
 
 
 def _enemy_room_delve(profile, enemy_key="bandit", boss=False, extra_rooms=1):
@@ -305,22 +319,23 @@ def test_stirred_band_scaling():
 
 
 def test_streaks_grow_and_forgive():
-    p = _profile()
-    count, first = E.update_streak(p)
-    assert (count, first) == (1, True)
-    assert E.update_streak(p) == (1, False)            # same day: no double-dip
-    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-    p["streak"] = {"count": 4, "date": yesterday, "grace": None}
-    assert E.update_streak(p) == (5, True)             # consecutive day extends
-    # one missed day per week is quietly forgiven...
-    two_ago = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
-    p["streak"] = {"count": 6, "date": two_ago, "grace": None}
-    assert E.update_streak(p)[0] == 7
-    # ...but only once: a second gap the same week resets
-    p["streak"]["date"] = two_ago
-    assert E.update_streak(p)[0] == 1
-    assert E.streak_bonus_pct(3) == 6 and E.streak_bonus_pct(99) == 20
-    assert (p.get("records") or {}).get("streak", 0) >= 1
+    with _frozen_day() as today:
+        p = _profile()
+        count, first = E.update_streak(p)
+        assert (count, first) == (1, True)
+        assert E.update_streak(p) == (1, False)            # same day: no double-dip
+        yesterday = (today - datetime.timedelta(days=1)).isoformat()
+        p["streak"] = {"count": 4, "date": yesterday, "grace": None}
+        assert E.update_streak(p) == (5, True)             # consecutive day extends
+        # one missed day per week is quietly forgiven...
+        two_ago = (today - datetime.timedelta(days=2)).isoformat()
+        p["streak"] = {"count": 6, "date": two_ago, "grace": None}
+        assert E.update_streak(p)[0] == 7
+        # ...but only once: a second gap the same week resets
+        p["streak"]["date"] = two_ago
+        assert E.update_streak(p)[0] == 1
+        assert E.streak_bonus_pct(3) == 6 and E.streak_bonus_pct(99) == 20
+        assert (p.get("records") or {}).get("streak", 0) >= 1
 
 
 def test_records_and_collection():
@@ -620,45 +635,46 @@ def test_meditation_sink():
 
 
 def test_voice_is_persistent():
-    p = _profile()
-    p["words"] = 3
-    assert E.voice_charges(p) == 3                     # grandfathered in at full breath
-    # spend the whole Voice in one delve...
-    d = _enemy_room_delve(p, "troll", extra_rooms=3)
-    assert d.shout_charges == 3
-    d.act_shout(p, 2)                                  # FUS RO deals two damage
-    d.act_shout(p, 1)                                  # FUS spends the final charge
-    assert d.shout_charges == 0 and E.voice_charges(p) == 0
-    # ...and the next delve starts empty: no free refill at the door
-    d2 = E.Delve.start(p, 0, "embershard")
-    assert d2.shout_charges == 0
-    # a new dawn returns one charge (two days -> two)
-    p["voice"]["date"] = "2000-01-01"
-    p["voice"]["charges"] = 0
-    assert E.voice_charges(p) == 3                     # long gap caps at words known
-    p["voice"]["date"] = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-    p["voice"]["charges"] = 0
-    assert E.voice_charges(p) == 1
-    # absorbing a dragon soul renews the Thu'um in full
-    p["voice"]["charges"] = 0
-    d3 = _enemy_room_delve(p, "dragon", boss=False, extra_rooms=1)
-    d3.shout_charges = 0
-    d3.enemy_hp = 1
-    E.random = _fixed_rolls(0.0, 0.99)
-    try:
-        d3.act_attack(p)                               # the kill
-    finally:
-        _restore_random()
-    assert d3.shout_charges == 3 and E.voice_charges(p) == 3
-    # Skuldafn grants a full Voice at the gate - as a loan, not a refill
-    p["voice"]["charges"] = 0
-    p["voice"]["date"] = E._today_str()
-    p["xp"] = 60_000
-    p["stats"]["dragons"] = 5
-    d4 = E.start_delve(p, 0, "skuldafn", kind="alduin")
-    assert d4.shout_charges == 3
-    d4.act_shout(p, 1)                                 # grounding Alduin's trash floor... spends the loan
-    assert E.voice_charges(p) == 0                     # your own breath untouched
+    with _frozen_day() as today:
+        p = _profile()
+        p["words"] = 3
+        assert E.voice_charges(p) == 3                     # grandfathered in at full breath
+        # spend the whole Voice in one delve...
+        d = _enemy_room_delve(p, "troll", extra_rooms=3)
+        assert d.shout_charges == 3
+        d.act_shout(p, 2)                                  # FUS RO deals two damage
+        d.act_shout(p, 1)                                  # FUS spends the final charge
+        assert d.shout_charges == 0 and E.voice_charges(p) == 0
+        # ...and the next delve starts empty: no free refill at the door
+        d2 = E.Delve.start(p, 0, "embershard")
+        assert d2.shout_charges == 0
+        # a new dawn returns one charge (two days -> two)
+        p["voice"]["date"] = "2000-01-01"
+        p["voice"]["charges"] = 0
+        assert E.voice_charges(p) == 3                     # long gap caps at words known
+        p["voice"]["date"] = (today - datetime.timedelta(days=1)).isoformat()
+        p["voice"]["charges"] = 0
+        assert E.voice_charges(p) == 1
+        # absorbing a dragon soul renews the Thu'um in full
+        p["voice"]["charges"] = 0
+        d3 = _enemy_room_delve(p, "dragon", boss=False, extra_rooms=1)
+        d3.shout_charges = 0
+        d3.enemy_hp = 1
+        E.random = _fixed_rolls(0.0, 0.99)
+        try:
+            d3.act_attack(p)                               # the kill
+        finally:
+            _restore_random()
+        assert d3.shout_charges == 3 and E.voice_charges(p) == 3
+        # Skuldafn grants a full Voice at the gate - as a loan, not a refill
+        p["voice"]["charges"] = 0
+        p["voice"]["date"] = E._today_str()
+        p["xp"] = 60_000
+        p["stats"]["dragons"] = 5
+        d4 = E.start_delve(p, 0, "skuldafn", kind="alduin")
+        assert d4.shout_charges == 3
+        d4.act_shout(p, 1)                                 # grounding Alduin's trash floor... spends the loan
+        assert E.voice_charges(p) == 0                     # your own breath untouched
 
 
 def test_bosses_answer_your_blows():
@@ -959,11 +975,18 @@ def test_property_chain_and_comforts():
     assert E.buy_home(p, "breezehome") is not None       # no double-buy
     assert E.buy_home(p, "alchemy_lab") is None
     p["potions"] = 0
-    d = E.start_delve(p, 0, "embershard")
-    assert d.blessed                                     # well-rested
-    assert p["potions"] == 1                             # the lab brewed one
-    d2 = E.start_delve(p, 0, "embershard")
-    assert not d2.blessed                                # only the first delve of the day
+    # a plain road, or a Quiet Roads day blesses every delve from the door
+    real = E.route_condition
+    try:
+        E.route_condition = lambda loc, date_str=None: None
+        with _frozen_day():
+            d = E.start_delve(p, 0, "embershard")
+            assert d.blessed                             # well-rested
+            assert p["potions"] == 1                     # the lab brewed one
+            d2 = E.start_delve(p, 0, "embershard")
+            assert not d2.blessed                        # only the first delve of the day
+    finally:
+        E.route_condition = real
 
 
 def test_sneak_success_and_spotted():
@@ -1608,7 +1631,7 @@ def test_expedition_log_dispatches_and_window():
     # the default window shows only the latest 10
     assert E.expedition_log(p) == full[-E.EXPEDITION_LOG_SHOW:]
     # a trip started today only shows dispatches whose time has already passed
-    p["expedition"]["start"] = datetime.date.today().isoformat()
+    p["expedition"]["start"] = E._today_str()
     today_log = E.expedition_log(p, limit=0)
     assert len(today_log) <= 7 and all(l.startswith("Day 1") for l in today_log)
 
