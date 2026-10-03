@@ -169,6 +169,24 @@ def test_rounds_add_up_into_one_sitting_and_a_big_win_gets_its_own_post(monkeypa
     assert s.done and sessions._sittings[1].key == "mines"
 
 
+def test_the_line_goes_up_when_play_starts_and_moves_keep_it_open(economy, monkeypatch):
+    sessions._sittings.clear()
+    posted = []
+    monkeypatch.setattr(sessions, "_schedule", lambda s: posted.append(s.rounds))
+    stack(monkeypatch, ["TH", "6C"], ["9S", "7D"], rest=["2C"] * 10)
+    move("deal", {"bet": 100})                                   # no round finished yet
+    s = sessions._sittings[UID]
+    assert s.rounds == 0 and posted == [0]
+    s.last -= sessions.IDLE_AFTER - 5
+    move("hit")                                                  # a move, not a round
+    sessions.sweep()
+    assert not s.done and posted == [0]
+    move("stand")
+    assert s.rounds == 1 and posted == [0, 1]
+    left = sessions.live_view(sessions.Sitting(UID, "mines", "Mines", "rounds", done=True))
+    assert "left the **Mines** table" in left.children[0].content
+
+
 def test_a_sitting_keeps_each_round_and_the_last_table_for_its_picture(monkeypatch):
     sessions._sittings.clear()
     monkeypatch.setattr(sessions, "_schedule", lambda s: None)

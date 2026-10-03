@@ -1,7 +1,7 @@
 """What the activity's casino posts to #casino.
 
 Play happens privately in the activity, so the channel gets a summary instead of a message
-per hand: one live line per player per sitting, posted after their first round and edited
+per hand: one live line per player per sitting, posted when they start playing and edited
 as they go, then marked as left once they leave the table (the activity says so, or stops
 checking in while the table is open), go idle, or move to another game. A round that pays at least BIG_WIN_MULTIPLE times the stake (or nets BIG_WIN_NET)
 also gets a post of its own with a Play button, so the moments worth seeing still stand
@@ -101,7 +101,10 @@ def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
         head = f"<@{s.uid}> is playing **{s.label}**"
         accent = GOLD
     view = discord.ui.LayoutView(timeout=None)
-    if image:
+    if s.done and not s.rounds:
+        # sat down, never finished a round: nothing to show but that they've gone
+        view.add_item(discord.ui.TextDisplay(f"<@{s.uid}> left the **{s.label}** table"))
+    elif image:
         view.add_item(discord.ui.TextDisplay(head))
         view.add_item(_gallery(image))
     else:
@@ -153,17 +156,41 @@ def summary(uid: int, key: str) -> dict:
     return {"rounds": s.rounds, "net": s.net}
 
 
+def _sitting(uid: int, key: str, label: str, unit: str, now: float) -> tuple[Sitting, bool]:
+    """The player's sitting at this table, starting one (and closing any other) if need be.
+    Returns it and whether it's new."""
+    s = _sittings.get(uid)
+    if s is not None and (s.key != key or now - s.last > IDLE_AFTER):
+        _finish(s)
+        s = None
+    if s is not None:
+        return s, False
+    s = _sittings[uid] = Sitting(uid, key, label, unit)
+    return s, True
+
+
+def begin(uid: int, key: str, label: str, unit: str) -> None:
+    """A player has started a round: their line goes up now, not when the round ends (which
+    for a cup of coins can be many minutes later)."""
+    s, new = _sitting(int(uid), key, label, unit, time.time())
+    s.last = s.seen = time.time()
+    if new:
+        _schedule(s)
+
+
+def touch(uid: int, key: str) -> None:
+    """Any move at the table counts as still playing, round finished or not."""
+    s = _sittings.get(int(uid))
+    if s is not None and s.key == key and not s.done:
+        s.last = s.seen = time.time()
+
+
 def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = None) -> None:
     """Count a finished round towards the player's sitting and update #casino. ``view`` is
     the finished table (the adapter's view), drawn as the board if this is the only round."""
     uid = int(uid)
     now = time.time()
-    s = _sittings.get(uid)
-    if s is not None and (s.key != key or now - s.last > IDLE_AFTER):
-        _finish(s)
-        s = None
-    if s is None:
-        s = _sittings[uid] = Sitting(uid, key, label, unit)
+    s, _ = _sitting(uid, key, label, unit, now)
     s.rounds += 1
     s.net += rnd.net
     s.last = s.seen = now

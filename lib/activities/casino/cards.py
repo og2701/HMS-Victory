@@ -547,7 +547,7 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
     for ch in "PLAYING NOW":
         d.text((cx, 86), ch, font=head, fill=_hex(RED))
         cx += d.textlength(ch, font=head) + 5
-    d.text((cx + 22, 86), f"{n} {unit if n != 1 else one}", font=_font(40, 600), fill=_hex(MUTED))
+    d.text((cx + 22, 86), f"{n} {unit if n != 1 else one}" if n else "just sat down", font=_font(40, 600), fill=_hex(MUTED))
     # the game's name, shrunk to fit
     size = 108
     while size > 60 and d.textlength(label, font=_font(size, 900)) > W - x - 60:

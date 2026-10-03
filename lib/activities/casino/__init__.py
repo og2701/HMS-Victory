@@ -82,7 +82,11 @@ def _on_round(uid: int, key: str, rnd, game=None) -> None:
 
 async def move(uid: int, name: str, key: str, action: str, body: dict) -> dict:
     """Play one move and return the table after it. Raises Refuse with the reason."""
-    _, game, finished = await base.play(registry(), uid, name, key, action, body, on_round=_on_round)
+    a, game, finished = await base.play(registry(), uid, name, key, action, body, on_round=_on_round)
+    if action == "deal" and finished is None:
+        sessions.begin(uid, key, a.label, getattr(a, "unit", "rounds"))
+    else:
+        sessions.touch(uid, key)
     return table(uid, key, game, finished)
 
 
