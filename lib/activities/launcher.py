@@ -98,6 +98,24 @@ class CasinoPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:p
         await _launch(interaction, f"casino:{self.key}")
 
 
+class CasinoWatch(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r"ukplace:watch:(?P<uid>[0-9]+):(?P<key>[a-z]+)"):
+    """The Spectate button on a #casino line: opens the activity watching that player's table."""
+
+    def __init__(self, uid: int, key: str):
+        super().__init__(discord.ui.Button(label="Spectate", style=discord.ButtonStyle.secondary,
+                                           custom_id=f"ukplace:watch:{uid}:{key}"))
+        self.uid, self.key = int(uid), key
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(int(match["uid"]), match["key"])
+
+    async def callback(self, interaction: discord.Interaction):
+        mine = interaction.user.id == self.uid          # watching yourself is just playing
+        await _launch(interaction, f"casino:{self.key}" if mine else f"watch:{self.uid}:{self.key}")
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
@@ -114,7 +132,7 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
-        self.add_dynamic_items(CasinoPlay)
+        self.add_dynamic_items(CasinoPlay, CasinoWatch)
 
 
 async def _register(session) -> None:

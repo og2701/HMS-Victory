@@ -338,6 +338,34 @@ def test_a_table_that_stops_checking_in_is_closed_by_the_sweep(monkeypatch):
     assert s.done
 
 
+def test_a_spectator_sees_the_table_but_not_the_hole_card_or_the_balance(economy, monkeypatch):
+    client = _client(monkeypatch)
+    sessions._sittings.clear()
+    monkeypatch.setattr(sessions, "_schedule", lambda s: None)
+    import lib.economy.economy_manager as em
+    other = 777
+    assert em.add_bb(other, 1_000, reason="seed", taxable=False)
+    stack(monkeypatch, ["TH", "6C"], ["9S", "7D"], rest=["2C"] * 10)
+    asyncio.run(casino.move(other, "Them", "blackjack", "deal", {"bet": 100}))
+    status, out = _call(client, "GET", f"/api/casino/watch/{other}/blackjack")
+    assert status == 200 and out["table"]["dealer"] == ["9S", None] and out["inPlay"]
+    assert out["balance"] == 0 and out["career"] == 0 and out["watching"]["playing"]
+    status, _ = _call(client, "GET", f"/api/casino/watch/{other}/pennyfalls")
+    assert status == 404
+
+
+def test_the_live_line_offers_spectate_while_someone_plays():
+    def buttons(s):
+        return [c.label for row in s.children if isinstance(row, __import__("discord").ui.ActionRow) for c in row.children]
+    live = sessions.live_view(sessions.Sitting(5, "mines", "Mines", "rounds", rounds=1))
+    assert buttons(live) == ["Play", "Spectate"]
+    done = sessions.live_view(sessions.Sitting(5, "mines", "Mines", "rounds", rounds=1, done=True))
+    assert buttons(done) == ["Play"]
+    locker = sessions.live_view(sessions.Sitting(5, "pennyfalls", "Davy Jones' Locker", "cups", rounds=1))
+    assert buttons(locker) == ["Play"]
+    assert server._watched("watch:5:mines") == (5, "mines") and server._watched("watch:5:pennyfalls") is None
+
+
 def test_the_casino_stays_shut_outside_its_test_channels(economy, monkeypatch):
     client = _client(monkeypatch)
     status, out = _call(client, "GET", "/api/casino/blackjack", ch=999)

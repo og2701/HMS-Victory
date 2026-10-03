@@ -200,6 +200,7 @@ class PennyFalls(Adapter):
     max_cfg = "PENNYFALLS_MAX_BET"
     default_min = 100
     default_max = 1_000
+    watchable = False       # the bot only sees the board every 30s: nothing live to watch
 
     def deal(self, uid, name, bet, body):
         coins, rest = divmod(bet, value())

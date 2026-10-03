@@ -64,6 +64,7 @@ class Adapter:
     default_max = 10_000
     max_multiplier = None    # set only where the slash command scales its max to the bank's
                              # reserves (max_casino_bet with this payout multiple); else static
+    watchable = True         # others can spectate a hand in play (its view hides nothing secret)
 
     # --- limits ---------------------------------------------------------------------
     def enabled(self) -> bool:

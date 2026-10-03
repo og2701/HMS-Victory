@@ -69,6 +69,29 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
     return out
 
 
+def watch(uid: int, key: str, name: str | None = None) -> dict:
+    """Someone else's table, for a spectator: the view the player has (which shows nothing they
+    haven't seen: no hole card, no mine layout), without their balance or career."""
+    a = adapter(key)
+    if a is None or not a.watchable:
+        raise Refuse("That table can't be watched.")
+    game = base.in_play(uid, key, registry()) or base.last_finished(uid, key)
+    low, high = a.limits()
+    return {
+        "key": key,
+        "label": a.label,
+        "table": a.view(game) if game is not None else None,
+        "inPlay": game is not None and not a.over(game),
+        "balance": 0,
+        "limits": {"min": low, "max": high},
+        "session": sessions.summary(uid, key),
+        "career": 0,
+        "rules": [{"label": k, "text": v} for k, v in a.rules()],
+        **a.extras(uid),
+        "watching": {"uid": str(uid), "name": name or "A player", "playing": sessions.playing(uid, key)},
+    }
+
+
 def _on_round(uid: int, key: str, rnd, game=None) -> None:
     a = adapter(key)
     view = None
@@ -90,4 +113,4 @@ async def move(uid: int, name: str, key: str, action: str, body: dict) -> dict:
     return table(uid, key, game, finished)
 
 
-__all__ = ["Busy", "Refuse", "ORDER", "adapter", "move", "registry", "table"]
+__all__ = ["Busy", "Refuse", "ORDER", "adapter", "move", "registry", "table", "watch"]

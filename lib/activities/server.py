@@ -14,6 +14,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
     POST /casino/<game>/here|leave the open table checking in, or closing (for #casino)
+    GET  /casino/watch/<uid>/<game>   someone else's table, for a spectator
     GET  /health
 """
 
@@ -133,11 +134,30 @@ def _game_for(uid: int, body: dict) -> str:
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
+    if _watched(asked) is not None:
+        return asked
     return "home"
+
+
+def _watched(game: str) -> tuple[int, str] | None:
+    """(player, table) for a watch:<uid>:<game> screen, if it's one that can be watched."""
+    parts = game.split(":")
+    if len(parts) != 3 or parts[0] != "watch" or not parts[1].isdigit():
+        return None
+    a = casino.adapter(parts[2])
+    return (int(parts[1]), parts[2]) if a is not None and a.watchable else None
+
+
+def _name(client, uid: int) -> str | None:
+    guild = client.get_guild(config.GUILD_ID)
+    member = guild.get_member(int(uid)) if guild else None
+    return getattr(member, "display_name", None)
 
 
 def _gate_name(game: str) -> str:
     """The name lib.core.restrictions knows a screen by."""
+    if game.startswith("watch:"):
+        return "home"       # watching isn't playing
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
         return a.command if a else "casino"
@@ -157,6 +177,11 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
         return {"game": game, "casino": casino.table(uid, game[7:])}
+    if game.startswith("watch:"):
+        player, key = _watched(game)
+        if not _casino_open(channel):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        return {"game": game, "casino": casino.watch(player, key, _name(client, player))}
     date = _today()
     _STATE[game].opened(client, uid, date)
     return {"game": game, game: _STATE[game].state(uid, date)}
@@ -365,6 +390,23 @@ async def casino_move(request):
         return _error("Something went wrong at the table. Your stake is safe; try again.", 500)
 
 
+async def casino_watch(request):
+    """Someone else's table, for a spectator."""
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    if not _casino_open(who["ch"]):
+        return _error("The casino isn't open in this channel.", 403)
+    try:
+        player = int(request.match_info["uid"])
+    except ValueError:
+        return _error("That isn't a player.", 404)
+    try:
+        return _json(casino.watch(player, request.match_info["game"], _name(request.app[CLIENT], player)))
+    except casino.Refuse as e:
+        return _error(str(e), 404)
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -384,6 +426,7 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
         app.router.add_get(f"{prefix}/home", home_state)
         app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
+        app.router.add_get(f"{prefix}/casino/watch/{{uid}}/{{game}}", casino_watch)
         app.router.add_post(f"{prefix}/casino/{{game}}/{{action}}", casino_move)
     return app
 

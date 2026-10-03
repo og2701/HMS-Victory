@@ -79,11 +79,21 @@ def _signed(n: int) -> str:
     return f"+{n:,}" if n >= 0 else f"−{abs(n):,}"
 
 
-def _play_row(key: str) -> discord.ui.ActionRow:
+def _play_row(key: str, watch: int | None = None) -> discord.ui.ActionRow:
+    """Play, and while someone's at the table, Spectate (to watch them in the activity)."""
     row = discord.ui.ActionRow()
     row.add_item(discord.ui.Button(label="Play", style=discord.ButtonStyle.success,
                                    custom_id=f"ukplace:play:casino:{key}"))
+    if watch is not None and _watchable(key):
+        row.add_item(discord.ui.Button(label="Spectate", style=discord.ButtonStyle.secondary,
+                                       custom_id=f"ukplace:watch:{int(watch)}:{key}"))
     return row
+
+
+def _watchable(key: str) -> bool:
+    from lib.activities import casino
+    a = casino.adapter(key)
+    return bool(a and a.watchable)
 
 
 def _gallery(image: str) -> discord.ui.MediaGallery:
@@ -115,7 +125,7 @@ def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
         box = discord.ui.Container(accent_colour=discord.Colour(accent))
         box.add_item(discord.ui.TextDisplay(f"{head}\n{line}"))
         view.add_item(box)
-    view.add_item(_play_row(s.key))
+    view.add_item(_play_row(s.key, None if s.done else s.uid))
     return view
 
 
@@ -146,6 +156,12 @@ def is_big(rnd) -> bool:
     return (rnd.multiple >= _cfg("ACTIVITIES_CASINO_BIG_WIN_MULTIPLE", 5.0)
             and rnd.net >= _cfg("ACTIVITIES_CASINO_BIG_WIN_MIN", 250)) \
         or rnd.net >= _cfg("ACTIVITIES_CASINO_BIG_WIN_NET", 5_000)
+
+
+def playing(uid: int, key: str) -> bool:
+    """Is this player at this table right now (for spectators)?"""
+    s = _sittings.get(int(uid))
+    return s is not None and s.key == key and not s.done and time.time() - s.last <= IDLE_AFTER
 
 
 def summary(uid: int, key: str) -> dict:
