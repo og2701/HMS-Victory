@@ -66,9 +66,15 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
     return out
 
 
-def _on_round(uid: int, key: str, rnd) -> None:
+def _on_round(uid: int, key: str, rnd, game=None) -> None:
     a = adapter(key)
-    sessions.record(uid, key, a.label, getattr(a, "unit", "rounds"), rnd)
+    view = None
+    if game is not None:
+        try:
+            view = a.view(game)
+        except Exception:
+            log.warning("couldn't read the finished %s table", key, exc_info=True)
+    sessions.record(uid, key, a.label, getattr(a, "unit", "rounds"), rnd, view)
 
 
 async def move(uid: int, name: str, key: str, action: str, body: dict) -> dict:

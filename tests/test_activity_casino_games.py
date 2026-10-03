@@ -160,7 +160,7 @@ def test_mines_reveal_cash_out_and_boom(em, monkeypatch):
     monkeypatch.setattr(config, "MINES_DEFAULT_MINES", 3)
     out = play("mines", "deal", {"bet": 100})
     assert out["table"]["minesAt"] is None                  # layout stays on the server
-    with pytest.raises(casino.Refuse, match="at least one gem"):
+    with pytest.raises(casino.Refuse, match="at least one coin"):
         play("mines", "cashout")
     out = play("mines", "reveal", {"tile": 10})
     value = out["table"]["value"]

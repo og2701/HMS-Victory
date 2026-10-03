@@ -150,20 +150,22 @@ async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
         log.warning("couldn't post the activity message in %s", channel_id, exc_info=True)
 
 
-async def post_view(channel_id: int, view: discord.ui.LayoutView) -> int | None:
+async def post_view(channel_id: int, view: discord.ui.LayoutView, files=None) -> int | None:
     """Post a Components V2 message as the activities bot; returns its id."""
     if _client is None or not _client.is_ready():
         return None
     msg = await _client.get_partial_messageable(int(channel_id)).send(
-        view=view, allowed_mentions=discord.AllowedMentions.none())
+        view=view, files=files or [], allowed_mentions=discord.AllowedMentions.none())
     return msg.id
 
 
-async def edit_view(channel_id: int, message_id: int, view: discord.ui.LayoutView) -> None:
+async def edit_view(channel_id: int, message_id: int, view: discord.ui.LayoutView, files=None) -> None:
+    """Edit a message posted with post_view. ``files`` replaces its attachments; without
+    them it keeps none, so a line that loses its picture doesn't show a stale one."""
     if _client is None or not _client.is_ready():
         return
     await _client.get_partial_messageable(int(channel_id)).get_partial_message(int(message_id)).edit(
-        view=view, allowed_mentions=discord.AllowedMentions.none())
+        view=view, attachments=files or [], allowed_mentions=discord.AllowedMentions.none())
 
 
 async def start(session) -> None:

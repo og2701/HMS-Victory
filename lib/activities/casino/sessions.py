@@ -7,6 +7,10 @@ game. A round that pays at least BIG_WIN_MULTIPLE times the stake (or nets BIG_W
 also gets a post of its own with a Play button, so the moments worth seeing still stand
 out.
 
+Each line carries a picture from cards.py: a small strip while they play, then, once they
+leave, the final board if they played one round or a summary of the sitting if they played
+more. If a picture can't be made the line falls back to text.
+
 Posting is best-effort and never holds up a move: edits are batched a few seconds apart
 and run as background tasks.
 """
@@ -14,6 +18,7 @@ and run as background tasks.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import time
 from dataclasses import dataclass, field
@@ -25,7 +30,8 @@ import config
 log = logging.getLogger(__name__)
 
 IDLE_AFTER = 300        # seconds without a round before a sitting is over
-EDIT_GAP = 4.0          # seconds between edits of one live line
+EDIT_GAP = 6.0          # seconds between edits of one live line
+IMAGE = "casino.png"
 GOLD, WIN, LOSS = 0xE2BE78, 0x23A55A, 0xF87171
 
 
@@ -56,9 +62,13 @@ class Sitting:
     dirty: bool = False
     task: asyncio.Task | None = None
     edited: float = 0.0
+    started: float = field(default_factory=time.time)
+    history: list = field(default_factory=list)     # one dict per round, for the pictures
+    last_view: dict | None = None                   # the last round's table, for its board
 
 
 _sittings: dict[int, Sitting] = {}
+_closing = False        # shutting down: text only, so the last edits land inside the drain
 
 
 def _signed(n: int) -> str:
@@ -72,35 +82,55 @@ def _play_row(key: str) -> discord.ui.ActionRow:
     return row
 
 
-def live_view(s: Sitting) -> discord.ui.LayoutView:
+def _gallery(image: str) -> discord.ui.MediaGallery:
+    gallery = discord.ui.MediaGallery()
+    gallery.add_item(media=f"attachment://{image}")
+    return gallery
+
+
+def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
+    """The sitting's line. With a picture the numbers are in it, so the text is one line."""
     if s.done:
         head = f"<@{s.uid}> played **{s.label}** · left the table"
         accent = WIN if s.net > 0 else (LOSS if s.net < 0 else GOLD)
     else:
-        head = f"<@{s.uid}> is at the **{s.label}** table · \U0001F7E2 playing"
+        head = f"<@{s.uid}> is playing **{s.label}**"
         accent = GOLD
-    plural = s.unit if s.rounds != 1 else s.unit.rstrip("s")
-    line = f"**{s.rounds:,}** {plural} · net **{_signed(s.net)}** UKP"
-    if s.best_net is not None and s.best_net > 0:
-        line += f" · best **{_signed(s.best_net)}**" + (f" ({s.best_text})" if s.best_text else "")
     view = discord.ui.LayoutView(timeout=None)
-    box = discord.ui.Container(accent_colour=discord.Colour(accent))
-    box.add_item(discord.ui.TextDisplay(f"{head}\n{line}"))
-    view.add_item(box)
+    if image:
+        view.add_item(discord.ui.TextDisplay(head))
+        view.add_item(_gallery(image))
+    else:
+        plural = s.unit if s.rounds != 1 else s.unit.rstrip("s")
+        line = f"**{s.rounds:,}** {plural} · net **{_signed(s.net)}** UKP"
+        if s.best_net is not None and s.best_net > 0:
+            line += f" · best **{_signed(s.best_net)}**" + (f" ({s.best_text})" if s.best_text else "")
+        box = discord.ui.Container(accent_colour=discord.Colour(accent))
+        box.add_item(discord.ui.TextDisplay(f"{head}\n{line}"))
+        view.add_item(box)
     view.add_item(_play_row(s.key))
     return view
 
 
-def big_win_view(uid: int, key: str, label: str, rnd) -> discord.ui.LayoutView:
+def big_win_view(uid: int, key: str, label: str, rnd, image: str | None = None) -> discord.ui.LayoutView:
     what = f" ({rnd.outcome})" if rnd.outcome else ""
+    head = f"<@{uid}> won **{_signed(rnd.net)} UKP** at **{label}**{what}"
     view = discord.ui.LayoutView(timeout=None)
-    box = discord.ui.Container(accent_colour=discord.Colour(GOLD))
-    box.add_item(discord.ui.TextDisplay(
-        f"<@{uid}> won **{_signed(rnd.net)} UKP** at **{label}**{what}\n"
-        f"-# {rnd.payout:,} back from a {rnd.staked:,} stake · {rnd.multiple:.2f}x"))
-    view.add_item(box)
+    if image:
+        view.add_item(discord.ui.TextDisplay(head))
+        view.add_item(_gallery(image))
+    else:
+        box = discord.ui.Container(accent_colour=discord.Colour(GOLD))
+        box.add_item(discord.ui.TextDisplay(
+            f"{head}\n-# {rnd.payout:,} back from a {rnd.staked:,} stake · {rnd.multiple:.2f}x"))
+        view.add_item(box)
     view.add_item(_play_row(key))
     return view
+
+
+def _entry(rnd, big: bool) -> dict:
+    return {"net": rnd.net, "staked": rnd.staked, "payout": rnd.payout,
+            "multiple": rnd.multiple, "outcome": rnd.outcome, "big": big}
 
 
 def is_big(rnd) -> bool:
@@ -119,8 +149,9 @@ def summary(uid: int, key: str) -> dict:
     return {"rounds": s.rounds, "net": s.net}
 
 
-def record(uid: int, key: str, label: str, unit: str, rnd) -> None:
-    """Count a finished round towards the player's sitting and update #casino."""
+def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = None) -> None:
+    """Count a finished round towards the player's sitting and update #casino. ``view`` is
+    the finished table (the adapter's view), drawn as the board if this is the only round."""
     uid = int(uid)
     now = time.time()
     s = _sittings.get(uid)
@@ -134,9 +165,12 @@ def record(uid: int, key: str, label: str, unit: str, rnd) -> None:
     s.last = now
     if rnd.net > 0 and (s.best_net is None or rnd.net > s.best_net):
         s.best_net, s.best_text = rnd.net, rnd.outcome
+    big = is_big(rnd)
+    s.history.append(_entry(rnd, big))
+    s.last_view = view
     _schedule(s)
-    if is_big(rnd):
-        _spawn(_post_big(uid, key, label, rnd))
+    if big:
+        _spawn(_post_big(uid, key, label, rnd, view))
 
 
 def _spawn(coro) -> asyncio.Task | None:
@@ -153,6 +187,19 @@ def _schedule(s: Sitting) -> None:
         s.task = _spawn(_flush(s))
 
 
+async def _picture(s: Sitting) -> bytes | None:
+    from lib.activities.casino import cards
+    if _closing:
+        return None
+    if s.done:
+        return await cards.final_png(s.key, s.label, s.unit, s.history, s.last_view, s.started, s.last)
+    return await cards.live_png(s.key, s.label, s.unit, s.history)
+
+
+def _files(png: bytes | None) -> list[discord.File] | None:
+    return [discord.File(io.BytesIO(png), filename=IMAGE)] if png else None
+
+
 async def _flush(s: Sitting) -> None:
     """Post the live line, or edit it, no more often than EDIT_GAP."""
     from lib.activities import launcher
@@ -166,22 +213,36 @@ async def _flush(s: Sitting) -> None:
         s.dirty = False
         s.edited = time.time()
         try:
+            png = await _picture(s)
+        except Exception:
+            log.warning("couldn't draw the casino line for %s", s.uid, exc_info=True)
+            png = None
+        view = live_view(s, IMAGE if png else None)
+        try:
             if s.message_id is None:
-                s.message_id = await launcher.post_view(ch, live_view(s))
+                s.message_id = await launcher.post_view(ch, view, files=_files(png))
             else:
-                await launcher.edit_view(ch, s.message_id, live_view(s))
+                await launcher.edit_view(ch, s.message_id, view, files=_files(png))
         except Exception:
             log.warning("couldn't update the casino line for %s", s.uid, exc_info=True)
 
 
-async def _post_big(uid, key, label, rnd) -> None:
+async def _post_big(uid, key, label, rnd, table: dict | None = None) -> None:
     from lib.activities import launcher
+    from lib.activities.casino import cards
     ch = _channel()
-    if ch:
-        try:
-            await launcher.post_view(ch, big_win_view(uid, key, label, rnd))
-        except Exception:
-            log.warning("couldn't post a casino big win for %s", uid, exc_info=True)
+    if not ch:
+        return
+    try:
+        png = await cards.big_win_png(key, label, _entry(rnd, True), table)
+    except Exception:
+        log.warning("couldn't draw a casino big win for %s", uid, exc_info=True)
+        png = None
+    try:
+        await launcher.post_view(ch, big_win_view(uid, key, label, rnd, IMAGE if png else None),
+                                 files=_files(png))
+    except Exception:
+        log.warning("couldn't post a casino big win for %s", uid, exc_info=True)
 
 
 def _finish(s: Sitting) -> None:
@@ -212,6 +273,8 @@ async def run_sweeper() -> None:
 
 async def close_all(timeout: float = 4.0) -> None:
     """On shutdown: mark every open sitting as left, so no line says playing forever."""
+    global _closing
+    _closing = True
     tasks = []
     for s in list(_sittings.values()):
         _finish(s)

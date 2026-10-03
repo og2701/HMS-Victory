@@ -292,7 +292,7 @@ async def play(registry: dict, uid: int, name: str, key: str, action: str, body:
                 fn(*args, **kwargs)
             if finished is not None and on_round is not None:
                 try:
-                    on_round(uid, key, finished)
+                    on_round(uid, key, finished, game)
                 except Exception:
                     log.error("activity casino round hook failed", exc_info=True)
             return adapter, game, finished

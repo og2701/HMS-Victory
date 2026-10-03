@@ -169,6 +169,67 @@ def test_rounds_add_up_into_one_sitting_and_a_big_win_gets_its_own_post(monkeypa
     assert s.done and sessions._sittings[1].key == "mines"
 
 
+def test_a_sitting_keeps_each_round_and_the_last_table_for_its_picture(monkeypatch):
+    sessions._sittings.clear()
+    monkeypatch.setattr(sessions, "_schedule", lambda s: None)
+    monkeypatch.setattr(sessions, "_spawn", lambda coro: coro.close())
+    sessions.record(1, "mines", "Mines", "rounds", base.Round(100, 149, "1.49x"), {"revealed": [1]})
+    sessions.record(1, "mines", "Mines", "rounds", base.Round(100, 900, "9.00x"), {"revealed": [2]})
+    s = sessions._sittings[1]
+    assert [h["net"] for h in s.history] == [49, 800]
+    assert [h["big"] for h in s.history] == [False, True]
+    assert s.last_view == {"revealed": [2]}
+
+
+def test_the_live_line_shows_its_picture_and_falls_back_to_text():
+    s = sessions.Sitting(1, "mines", "Mines", "rounds", rounds=2, net=50)
+    pictured = sessions.live_view(s, sessions.IMAGE)
+    kinds = [type(c).__name__ for c in pictured.children]
+    assert kinds == ["TextDisplay", "MediaGallery", "ActionRow"]
+    assert "is playing **Mines**" in pictured.children[0].content
+    text = sessions.live_view(s)
+    assert [type(c).__name__ for c in text.children] == ["Container", "ActionRow"]
+
+
+def test_the_live_strip_is_drawn_without_a_browser():
+    from PIL import Image
+    from lib.activities.casino import cards
+    history = [{"net": n, "big": False} for n in (50, -100, 30)]
+    png = cards.draw_live("mines", "Mines", "rounds", history, None)
+    assert Image.open(__import__("io").BytesIO(png)).size == (1640, 680)
+
+
+def test_every_game_has_a_final_board_and_a_summary():
+    from lib.activities.casino import cards
+    round_ = {"net": 50, "staked": 100, "payout": 150, "multiple": 1.5, "outcome": "Win", "big": False}
+    tables = {
+        "blackjack": {"player": ["AS", "KH"], "dealer": ["9C", "TD"], "playerTotal": 21, "dealerTotal": 19},
+        "higherlower": {"run": ["9H", "4C"], "steps": 1},
+        "videopoker": {"cards": ["JS", "JH", "KC", "4D", "2D"], "held": [True, True, False, False, False],
+                       "hand": "Jacks or Better"},
+        "reddog": {"first": "4C", "second": "JH", "third": "8S", "spread": 6, "pair": False, "consecutive": False},
+        "tcp": {"player": ["QH", "QS", "4D"], "dealer": ["KC", "8D", "2S"], "playerHand": "Pair", "dealerHand": "King high"},
+        "roulette": {"number": 17, "color": "black", "bets": {"black": 50, "straight:17": 10}, "won": ["black"]},
+        "slots": {"reels": ["crown", "lion", "cherry"], "mult": 0},
+        "mines": {"tiles": 24, "cols": 4, "revealed": [1], "hit": 2, "minesAt": [2, 7, 9]},
+        "chest": {"tier": 1, "tiers": [{"name": "Wood", "mult": 1}, {"name": "Silver", "mult": 1.8}], "outcome": "win"},
+        "glass": {"scene": "<svg></svg>"},
+        "blockade": {"outcome": "lose", "mult": 1.5, "caught": 1.62},
+        "darts": {"throws": [{"label": "T20", "value": 60}], "total": 60},
+        "penalty": {"goals": 2, "shots": 5},
+    }
+    assert set(tables) == set(casino.ORDER)
+    for key, table in tables.items():
+        page = cards.result_html(key, key.title(), "1 round", round_, table)
+        assert "class=\"panel\"" in page and "+50" in page, key
+        assert cards.tile_html(key).count("class=\"tile\"") == 1
+    mines = cards.board_html("mines", tables["mines"])
+    assert mines.count("mt coin") == 1 and mines.count("mt boom") == 1 and mines.count("mt mine") == 2
+    history = [dict(round_, net=n) for n in (50, -100, 0, 150)]
+    page = cards.summary_html("blackjack", "Blackjack", "hands", history, 12)
+    assert "2 won · 1 lost" in page and "4 hands · 12 min" in page and "+100" in page
+
+
 # --- the API -------------------------------------------------------------------------------
 def _client(monkeypatch):
     monkeypatch.setenv("ACTIVITIES_SESSION_SECRET", SECRET)

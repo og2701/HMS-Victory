@@ -4,7 +4,7 @@ the same reason strings and casino_results rows as the slash command.
 
 All of them settle the same way the bot does: the finished game leaves the store before
 the payout is credited (after_save), so a crash can't leave a paid game that still
-resumes. Cash-out guards the bot only enforces in its buttons (at least one gem, panel or
+resumes. Cash-out guards the bot only enforces in its buttons (at least one coin, panel or
 goal first; Stand only after a dart) are enforced here."""
 
 import math
@@ -63,7 +63,7 @@ class Mines(Adapter):
             raise Refuse("That board is over.")
         if action == "cashout":
             if game.revealed_count < 1:
-                raise Refuse("Reveal at least one gem before cashing out.")
+                raise Refuse("Find at least one coin before cashing out.")
             game.cash_out()
             after_save(_won, game.player_id, "mines", game.bet, game.payout, "Mines cashout")
             return
@@ -83,7 +83,7 @@ class Mines(Adapter):
         return game.state != "playing"
 
     def result(self, game):
-        text = f"{game.multiplier():.2f}x after {game.revealed_count} gems" if game.outcome == "win" else ""
+        text = f"{game.multiplier():.2f}x after {game.revealed_count} coins" if game.outcome == "win" else ""
         return Round(game.bet, game.payout if game.outcome == "win" else 0, text)
 
     def view(self, game):
@@ -109,11 +109,12 @@ class Mines(Adapter):
         low, high = self.limits()
         mines = int(getattr(config, "MINES_DEFAULT_MINES", 3))
         return [
-            ("Aim", f"A {MI.TILES}-tile grid hides {mines} mines. Reveal gems to build your "
-                    "multiplier, then cash out before you hit one."),
-            ("Gems", "Each gem raises your cash-out multiplier, but any tile could be a mine."),
-            ("Cash out", "Cash out any time after your first gem to take stake x multiplier. Hit "
-                         "a mine and you lose the stake."),
+            ("Aim", f"A {MI.TILES}-tile grid hides {mines} cannonballs. Find coins to build "
+                    "your multiplier, then cash out before you hit one."),
+            ("Coins", "Each coin raises your cash-out multiplier, but any tile could be a "
+                      "cannonball."),
+            ("Cash out", "Cash out any time after your first coin to take stake x multiplier. Hit "
+                         "a cannonball and you lose the stake."),
             ("Clear it", "Clear every safe tile and you cash out automatically at the top multiplier."),
             ("Edge", "The house keeps about 2% whatever you do."),
             ("Bets", f"{low:,} to {high:,} UKPence."),
