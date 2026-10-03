@@ -59,7 +59,7 @@ def value() -> int:
 def gold_every() -> int:
     """Coins dropped for each gold one. A gold coin is worth gold_value() coins, so this hands
     back gold_value() / it of what goes in, against what the side gaps take."""
-    return max(1, int(_cfg("GOLD_EVERY", 300)))
+    return max(1, int(_cfg("GOLD_EVERY", 150)))
 
 
 def gold_value() -> int:
