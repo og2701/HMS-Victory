@@ -148,6 +148,13 @@ def _watched(game: str) -> tuple[int, str] | None:
     return (int(parts[1]), parts[2]) if a is not None and a.watchable else None
 
 
+def _named(client, viewer: int, table: dict) -> dict:
+    """A watched table with its spectators' names, and which of them is the one asking."""
+    table["spectators"] = [{"uid": w, "name": _name(client, int(w)) or "Someone"} for w in table.get("spectators", [])]
+    table["you"] = str(viewer)
+    return table
+
+
 def _name(client, uid: int) -> str | None:
     guild = client.get_guild(config.GUILD_ID)
     member = guild.get_member(int(uid)) if guild else None
@@ -181,7 +188,7 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
         player, key = _watched(game)
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
-        return {"game": game, "casino": casino.watch(player, key, _name(client, player))}
+        return {"game": game, "casino": _named(client, uid, casino.watch(player, key, _name(client, player), uid))}
     date = _today()
     _STATE[game].opened(client, uid, date)
     return {"game": game, game: _STATE[game].state(uid, date)}
@@ -402,7 +409,9 @@ async def casino_watch(request):
     except ValueError:
         return _error("That isn't a player.", 404)
     try:
-        return _json(casino.watch(player, request.match_info["game"], _name(request.app[CLIENT], player)))
+        client = request.app[CLIENT]
+        return _json(_named(client, who["uid"], casino.watch(player, request.match_info["game"],
+                                                             _name(client, player), who["uid"])))
     except casino.Refuse as e:
         return _error(str(e), 404)
 

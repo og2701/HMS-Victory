@@ -128,6 +128,15 @@ class Adapter:
         """Anything the table needs only when it's opened, too big to send with every move."""
         return {}
 
+    def progress(self, game) -> dict | None:
+        """How a round that's still going is doing, for #casino: {"net": UKP so far, "note":
+        a few words}. Only games with long rounds (a cup of coins) need it."""
+        return None
+
+    def spectate(self, uid: int) -> dict:
+        """Anything a spectator needs beyond the player's view of the table."""
+        return {}
+
 
 # The bot's client, for the badge awards that need it. Set when the API starts.
 CLIENT = None

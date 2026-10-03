@@ -519,8 +519,11 @@ def _hex(c: str):
     return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes | None) -> bytes:
-    """The strip shown while someone plays: game, rounds so far, net, and a chip per round."""
+def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes | None,
+              open_net: int = 0, note: str = "", status: str = "PLAYING NOW") -> bytes:
+    """The strip shown while someone plays: game, rounds so far, net, and a chip per round.
+    ``open_net`` and ``note`` describe a round still going (a cup of coins half played), and
+    ``status`` heads it (STEPPED AWAY when they've left one unfinished)."""
     from PIL import Image, ImageDraw
     W, H = 1640, 680
     img = Image.new("RGB", (W, H), _hex(INK))
@@ -544,17 +547,18 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
     one = unit.rstrip("s")
     head = _font(40, 900)
     cx = x
-    for ch in "PLAYING NOW":
-        d.text((cx, 86), ch, font=head, fill=_hex(RED))
+    for ch in status:
+        d.text((cx, 86), ch, font=head, fill=_hex(RED if status == "PLAYING NOW" else MUTED))
         cx += d.textlength(ch, font=head) + 5
-    d.text((cx + 22, 86), f"{n} {unit if n != 1 else one}" if n else "just sat down", font=_font(40, 600), fill=_hex(MUTED))
+    aside = note or (f"{n} {unit if n != 1 else one}" if n else "just sat down")
+    d.text((cx + 22, 86), aside, font=_font(40, 600), fill=_hex(MUTED))
     # the game's name, shrunk to fit
     size = 108
     while size > 60 and d.textlength(label, font=_font(size, 900)) > W - x - 60:
         size -= 6
     d.text((x - 4, 150), label, font=_font(size, 900), fill=_hex(TEXT))
     # net so far
-    net = sum(int(h["net"]) for h in history)
+    net = sum(int(h["net"]) for h in history) + int(open_net)
     d.text((x, 410), "Net so far", font=_font(44, 600), fill=_hex(MUTED))
     d.text((x - 4, 462), signed(net), font=_font(128, 900), fill=_hex(_colour(net)))
     # a chip per round, newest on the right
@@ -571,11 +575,13 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
     return out.getvalue()
 
 
-async def live_png(key: str, label: str, unit: str, history: list[dict]) -> bytes | None:
+async def live_png(key: str, label: str, unit: str, history: list[dict], open_net: int = 0, note: str = "",
+                   status: str = "PLAYING NOW") -> bytes | None:
     try:
         tile = await tile_png(key)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, draw_live, key, label, unit, list(history), tile)
+        return await loop.run_in_executor(None, draw_live, key, label, unit, list(history), tile,
+                                          open_net, note, status)
     except Exception:
         log.warning("couldn't draw the casino live strip", exc_info=True)
         return None

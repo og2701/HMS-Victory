@@ -14,6 +14,9 @@ it keeps the books and won't accept what can't be true:
   and a day at most PENNYFALLS_DAY_MAX_NET.
 - Each player's board is kept here too, coin by coin, so it's the same on every device and
   can't be reset to a fresh one. A layout is only kept if its coins match the bot's count.
+- While someone's spectating, the page also sends each few seconds of play (the board at the
+  start and every drop) for the spectator's screen to replay. That's for watching only: it
+  isn't checked against the books and never touches the money.
 
 So a doctored page can at worst empty its own machine, inside the caps, and honest play
 keeps the house edge the machine's side gaps give it. Anything that doesn't add up is
@@ -122,6 +125,38 @@ def layout_counts(layout: str) -> tuple[int, int] | None:
     return kinds.count(0), kinds.count(1)
 
 
+# --- spectating ----------------------------------------------------------------------------
+# The latest few seconds of each watched machine: the board at the start, how long it ran,
+# and each drop (when, and exactly how the coin left the slot), for spectators to replay.
+_live: dict[int, dict] = {}
+LIVE_FOR = 20                       # seconds a batch stays worth replaying
+LIVE_DROPS = 80                     # most drops in one batch (they come every 200ms at most)
+
+
+def _is_watched(uid: int) -> bool:
+    from lib.activities import casino
+    return casino.watched(uid, "pennyfalls")
+
+
+def _keep_live(uid: int, live: dict) -> None:
+    layout, drops = live.get("layout"), live.get("drops")
+    if not isinstance(layout, str) or len(layout) > LAYOUT_MAX or layout_counts(layout) is None:
+        return
+    if not isinstance(drops, list) or len(drops) > LIVE_DROPS:
+        return
+    clean = []
+    for d in drops:
+        if not isinstance(d, list) or len(d) > 10 or not all(isinstance(n, (int, float)) for n in d):
+            return
+        clean.append([round(float(n), 3) for n in d])
+    try:
+        span, phase = max(0, min(10_000, int(live.get("span") or 0))), float(live.get("phase") or 0)
+    except (TypeError, ValueError):
+        return
+    seq = _live.get(int(uid), {}).get("seq", 0) + 1
+    _live[int(uid)] = {"seq": seq, "layout": layout, "phase": phase, "span": span, "drops": clean, "at": time.time()}
+
+
 # --- a cup ---------------------------------------------------------------------------------
 @dataclass
 class Cup:
@@ -200,7 +235,6 @@ class PennyFalls(Adapter):
     max_cfg = "PENNYFALLS_MAX_BET"
     default_min = 100
     default_max = 1_000
-    watchable = False       # the bot only sees the board every 30s: nothing live to watch
 
     def deal(self, uid, name, bet, body):
         coins, rest = divmod(bet, value())
@@ -255,6 +289,8 @@ class PennyFalls(Adapter):
                 lost = min(lost, off_cap - won)
             dropped = min(dropped, cup.coins + won + won_gold * GOLD)
         self._keep_layout(cup.uid, body, m["coins"] + dropped - won - lost, m["golds"] - won_gold - lost_gold)
+        if isinstance(body.get("live"), dict):
+            _keep_live(cup.uid, body["live"])
         if (dropped, won, lost, won_gold, lost_gold) != claimed:
             cup.trimmed += 1
             log.warning("penny falls: trimmed %s's report %s to %s", cup.uid, claimed,
@@ -334,6 +370,7 @@ class PennyFalls(Adapter):
             "id": cup.id, "cup": cup.coins, "bought": cup.bought, "staked": cup.staked,
             "dropped": cup.dropped, "won": cup.won, "value": value(), "release": cup.release,
             "board": self._board(cup.uid), "over": cup.over, "payout": cup.payout,
+            "watched": _is_watched(cup.uid),
             "net": cup.payout - cup.staked if cup.over else 0, "note": cup.note,
         }
 
@@ -350,6 +387,19 @@ class PennyFalls(Adapter):
 
     def extras(self, uid):
         return {"coinValue": value(), "board": self._board(uid)}
+
+    def progress(self, cup):
+        """A cup in play: what cashing out now would net, and what's in it."""
+        return {"net": cup.coins * value() - cup.staked,
+                "note": f"{cup.coins:,} coin{'s' if cup.coins != 1 else ''} in the cup"}
+
+    def spectate(self, uid):
+        """The board as last kept, and the latest few seconds of play to replay on it."""
+        out = self.opening(uid)
+        live = _live.get(int(uid))
+        if live and time.time() - live["at"] < LIVE_FOR:
+            out["live"] = {k: live[k] for k in ("seq", "layout", "phase", "span", "drops")}
+        return out
 
     def opening(self, uid):
         """The board as the player left it, for the page to rebuild."""

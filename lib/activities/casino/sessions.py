@@ -67,6 +67,8 @@ class Sitting:
     started: float = field(default_factory=time.time)
     history: list = field(default_factory=list)     # one dict per round, for the pictures
     last_view: dict | None = None                   # the last round's table, for its board
+    open_net: int = 0                               # a round still going: its net so far...
+    open_note: str = ""                             # ...and what to say about it ("23 coins in the cup")
 
 
 _sittings: dict[int, Sitting] = {}
@@ -104,14 +106,20 @@ def _gallery(image: str) -> discord.ui.MediaGallery:
 
 def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
     """The sitting's line. With a picture the numbers are in it, so the text is one line."""
-    if s.done:
+    if s.done and not s.rounds and s.open_note:
+        # left a long round unfinished (a cup half played): it waits for them
+        head = f"<@{s.uid}> stepped away from **{s.label}** with {s.open_note}"
+        accent = GOLD
+    elif s.done:
         head = f"<@{s.uid}> played **{s.label}** · left the table"
+        if s.open_note:
+            head += f" with {s.open_note}"
         accent = WIN if s.net > 0 else (LOSS if s.net < 0 else GOLD)
     else:
         head = f"<@{s.uid}> is playing **{s.label}**"
         accent = GOLD
     view = discord.ui.LayoutView(timeout=None)
-    if s.done and not s.rounds:
+    if s.done and not s.rounds and not s.open_note:
         # sat down, never finished a round: nothing to show but that they've gone
         view.add_item(discord.ui.TextDisplay(f"<@{s.uid}> left the **{s.label}** table"))
     elif image:
@@ -119,7 +127,7 @@ def live_view(s: Sitting, image: str | None = None) -> discord.ui.LayoutView:
         view.add_item(_gallery(image))
     else:
         plural = s.unit if s.rounds != 1 else s.unit.rstrip("s")
-        line = f"**{s.rounds:,}** {plural} · net **{_signed(s.net)}** UKP"
+        line = f"**{s.rounds:,}** {plural} · net **{_signed(s.net + s.open_net)}** UKP"
         if s.best_net is not None and s.best_net > 0:
             line += f" · best **{_signed(s.best_net)}**" + (f" ({s.best_text})" if s.best_text else "")
         box = discord.ui.Container(accent_colour=discord.Colour(accent))
@@ -185,20 +193,34 @@ def _sitting(uid: int, key: str, label: str, unit: str, now: float) -> tuple[Sit
     return s, True
 
 
-def begin(uid: int, key: str, label: str, unit: str) -> None:
+def begin(uid: int, key: str, label: str, unit: str, progress: dict | None = None) -> None:
     """A player has started a round: their line goes up now, not when the round ends (which
     for a cup of coins can be many minutes later)."""
     s, new = _sitting(int(uid), key, label, unit, time.time())
     s.last = s.seen = time.time()
-    if new:
+    if _progress(s, progress) or new:
         _schedule(s)
 
 
-def touch(uid: int, key: str) -> None:
-    """Any move at the table counts as still playing, round finished or not."""
+def touch(uid: int, key: str, progress: dict | None = None) -> None:
+    """Any move at the table counts as still playing, round finished or not. ``progress`` is
+    how a long round is going (the adapter's progress()), shown on the line as it changes."""
     s = _sittings.get(int(uid))
     if s is not None and s.key == key and not s.done:
         s.last = s.seen = time.time()
+        if _progress(s, progress):
+            _schedule(s)
+
+
+def _progress(s: Sitting, progress: dict | None) -> bool:
+    """Take in a round-in-progress report; True if it changed what the line shows."""
+    if not progress:
+        return False
+    net, note = int(progress.get("net", 0)), str(progress.get("note", ""))
+    if (net, note) == (s.open_net, s.open_note):
+        return False
+    s.open_net, s.open_note = net, note
+    return True
 
 
 def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = None) -> None:
@@ -207,6 +229,7 @@ def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = N
     uid = int(uid)
     now = time.time()
     s, _ = _sitting(uid, key, label, unit, now)
+    s.open_net, s.open_note = 0, ""
     s.rounds += 1
     s.net += rnd.net
     s.last = s.seen = now
@@ -239,8 +262,10 @@ async def _picture(s: Sitting) -> bytes | None:
     if _closing or time.time() < _no_files_until:
         return None
     if s.done:
+        if not s.history and s.open_note:
+            return await cards.live_png(s.key, s.label, s.unit, s.history, s.open_net, s.open_note, "STEPPED AWAY")
         return await cards.final_png(s.key, s.label, s.unit, s.history, s.last_view, s.started, s.last)
-    return await cards.live_png(s.key, s.label, s.unit, s.history)
+    return await cards.live_png(s.key, s.label, s.unit, s.history, s.open_net, s.open_note)
 
 
 def _files(png: bytes | None) -> list[discord.File] | None:

@@ -255,6 +255,8 @@ def pf(em, tmp_path, monkeypatch):
     monkeypatch.setattr(PF, "_loaded", True)
     monkeypatch.setattr(config, "PENNYFALLS_SEED_COINS", 110)
     PF._machines.clear()
+    PF._live.clear()
+    casino._watchers.clear()
     clock = [1_000_000.0]
     monkeypatch.setattr(PF.time, "time", lambda: clock[0])
     PF.clock = clock
@@ -335,6 +337,36 @@ def test_penny_falls_keeps_the_board_only_if_it_adds_up(em, pf):
     out = play("pennyfalls", "sync", {"dropped": 1, "layout": "not a board"})
     assert "layout" not in out                                                        # moves don't carry it
     assert casino.table(UID, "pennyfalls")["layout"] == _layout(115, 0)
+
+
+def test_penny_falls_shows_the_open_cup_and_who_stepped_away(em, pf):
+    play("pennyfalls", "deal", {"bet": 200})
+    s = sessions._sittings[UID]
+    assert (s.open_net, s.open_note) == (0, "20 coins in the cup")
+    pf.clock[0] += 10
+    play("pennyfalls", "sync", {"dropped": 5, "won": 8})
+    assert (s.open_net, s.open_note) == (30, "23 coins in the cup")
+    sessions._finish(s)
+    head = sessions.live_view(s, sessions.IMAGE).children[0].content
+    assert "stepped away from **Davy Jones' Locker** with 23 coins in the cup" in head
+    from lib.activities.casino import cards
+    assert cards.draw_live("pennyfalls", "Davy Jones' Locker", "cups", [], None, 30, "23 coins in the cup", "STEPPED AWAY")
+
+
+def test_penny_falls_can_be_spectated_from_replayed_batches(em, pf):
+    import lib.activities.casino as casino_mod
+    play("pennyfalls", "deal", {"bet": 100})
+    pf.clock[0] += 5
+    assert play("pennyfalls", "sync", {"dropped": 1})["table"]["watched"] is False
+    casino_mod.watch(UID, "pennyfalls", "Tester")                               # someone looks
+    pf.clock[0] += 5
+    live = {"layout": _layout(111, 0), "phase": 3.5, "span": 2500, "drops": [[120, 0, 1.5, 0.3, 0, 0, 0, 7, 4, 0]]}
+    out = play("pennyfalls", "sync", {"dropped": 1, "live": live})
+    assert out["table"]["watched"] is True
+    seen = casino_mod.watch(UID, "pennyfalls", "Tester")
+    assert seen["live"]["seq"] == 1 and seen["live"]["drops"] == [[120, 0, 1.5, 0.3, 0, 0, 0, 7, 4, 0]]
+    play("pennyfalls", "sync", {"dropped": 1, "live": {**live, "drops": "nonsense"}})   # ignored
+    assert casino_mod.watch(UID, "pennyfalls", "Tester")["live"]["seq"] == 1
 
 
 def test_penny_falls_caps_a_cup_and_a_day(em, pf, monkeypatch):

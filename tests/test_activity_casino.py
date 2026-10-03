@@ -350,7 +350,9 @@ def test_a_spectator_sees_the_table_but_not_the_hole_card_or_the_balance(economy
     status, out = _call(client, "GET", f"/api/casino/watch/{other}/blackjack")
     assert status == 200 and out["table"]["dealer"] == ["9S", None] and out["inPlay"]
     assert out["balance"] == 0 and out["career"] == 0 and out["watching"]["playing"]
-    status, _ = _call(client, "GET", f"/api/casino/watch/{other}/pennyfalls")
+    assert out["you"] == str(UID) and [w["uid"] for w in out["spectators"]] == [str(UID)]
+    assert casino.spectators(other, "blackjack") == [UID]
+    status, _ = _call(client, "GET", f"/api/casino/watch/{other}/nope")
     assert status == 404
 
 
@@ -361,9 +363,7 @@ def test_the_live_line_offers_spectate_while_someone_plays():
     assert buttons(live) == ["Play", "Spectate"]
     done = sessions.live_view(sessions.Sitting(5, "mines", "Mines", "rounds", rounds=1, done=True))
     assert buttons(done) == ["Play"]
-    locker = sessions.live_view(sessions.Sitting(5, "pennyfalls", "Davy Jones' Locker", "cups", rounds=1))
-    assert buttons(locker) == ["Play"]
-    assert server._watched("watch:5:mines") == (5, "mines") and server._watched("watch:5:pennyfalls") is None
+    assert server._watched("watch:5:mines") == (5, "mines") and server._watched("watch:5:nope") is None
 
 
 def test_the_casino_stays_shut_outside_its_test_channels(economy, monkeypatch):

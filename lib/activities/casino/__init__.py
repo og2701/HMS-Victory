@@ -69,12 +69,33 @@ def table(uid: int, key: str, game=None, round_=None) -> dict:
     return out
 
 
-def watch(uid: int, key: str, name: str | None = None) -> dict:
+_watchers: dict[tuple[int, str], dict[int, float]] = {}    # (player, table) -> {spectator: last look}
+WATCHED_FOR = 6          # seconds a spectator's last look counts as still watching
+
+
+def spectators(uid: int, key: str) -> list[int]:
+    """Who's watching this player's table right now, earliest first."""
+    import time
+    now = time.time()
+    looks = _watchers.get((int(uid), key), {})
+    for w in [w for w, at in looks.items() if now - at >= WATCHED_FOR]:
+        del looks[w]
+    return list(looks)
+
+
+def watched(uid: int, key: str) -> bool:
+    """Is anyone spectating this player's table right now?"""
+    return bool(spectators(uid, key))
+
+
+def watch(uid: int, key: str, name: str | None = None, watcher: int = 0) -> dict:
     """Someone else's table, for a spectator: the view the player has (which shows nothing they
     haven't seen: no hole card, no mine layout), without their balance or career."""
+    import time
     a = adapter(key)
     if a is None or not a.watchable:
         raise Refuse("That table can't be watched.")
+    _watchers.setdefault((int(uid), key), {})[int(watcher)] = time.time()
     game = base.in_play(uid, key, registry()) or base.last_finished(uid, key)
     low, high = a.limits()
     return {
@@ -88,7 +109,9 @@ def watch(uid: int, key: str, name: str | None = None) -> dict:
         "career": 0,
         "rules": [{"label": k, "text": v} for k, v in a.rules()],
         **a.extras(uid),
+        **a.spectate(uid),
         "watching": {"uid": str(uid), "name": name or "A player", "playing": sessions.playing(uid, key)},
+        "spectators": [str(w) for w in spectators(uid, key)],
     }
 
 
@@ -106,10 +129,11 @@ def _on_round(uid: int, key: str, rnd, game=None) -> None:
 async def move(uid: int, name: str, key: str, action: str, body: dict) -> dict:
     """Play one move and return the table after it. Raises Refuse with the reason."""
     a, game, finished = await base.play(registry(), uid, name, key, action, body, on_round=_on_round)
+    progress = a.progress(game) if game is not None and not a.over(game) else None
     if action == "deal" and finished is None:
-        sessions.begin(uid, key, a.label, getattr(a, "unit", "rounds"))
+        sessions.begin(uid, key, a.label, getattr(a, "unit", "rounds"), progress)
     else:
-        sessions.touch(uid, key)
+        sessions.touch(uid, key, progress)
     return table(uid, key, game, finished)
 
 
