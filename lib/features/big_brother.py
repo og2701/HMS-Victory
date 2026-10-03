@@ -3375,7 +3375,8 @@ def _public_vote_control_embed(guild: Optional[discord.Guild]) -> discord.Embed:
             f"**Status:** ⚪ **IDLE (No vote open)**\n"
             f"**Voting Channel:** <#{public_vote_channel_id()}>\n\n"
             f"When nominations are complete, press **Open Public Vote** below to select the 6 nominees "
-            f"and launch the Vote to Save in <#{public_vote_channel_id()}>.{last_info}"
+            f"and launch the Vote to Save in <#{public_vote_channel_id()}>.\n\n"
+            f"-# Press **Who Nominated** to check which housemates have completed their nominations.{last_info}"
         )
         embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control", description=desc, colour=ACCENT)
 
@@ -3390,7 +3391,9 @@ class PublicVoteControlView(discord.ui.View):
         rnd = open_round(KIND_PUBLIC_VOTE)
         last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
         has_pending = bool(last.get("pending_evictions"))
+        rnd_noms = open_round(KIND_NOMINATIONS) or latest_round(KIND_NOMINATIONS)
 
+        self.btn_who_noms.disabled = not bool(rnd_noms)
         if rnd:
             self.btn_open.disabled = True
             self.btn_tally.disabled = False
@@ -3410,6 +3413,78 @@ class PublicVoteControlView(discord.ui.View):
         if open_round(KIND_PUBLIC_VOTE):
             await interaction.response.send_message("A public vote is already running. Close it first.", ephemeral=True)
             return
+
+    @discord.ui.button(label="Who Nominated", style=discord.ButtonStyle.secondary, emoji="📝", custom_id="bb_pv_who_noms", row=0)
+    async def btn_who_noms(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        rnd = open_round(KIND_NOMINATIONS) or latest_round(KIND_NOMINATIONS)
+        if not rnd:
+            await interaction.response.send_message("No nominations round found.", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        ins = housemates()
+        n_each = nominations_each()
+
+        pairs = nominations_for(rnd["id"])
+        cast_counts: dict[int, int] = {}
+        for nominator, _ in pairs:
+            cast_counts[nominator] = cast_counts.get(nominator, 0) + 1
+
+        completed = [u for u in ins if cast_counts.get(u, 0) >= n_each]
+        partial = [u for u in ins if 0 < cast_counts.get(u, 0) < n_each]
+        missing = [u for u in ins if cast_counts.get(u, 0) == 0]
+
+        received_counts: dict[int, list[int]] = {}
+        for nominator, nominee in pairs:
+            received_counts.setdefault(nominee, []).append(nominator)
+
+        ranked = sorted(received_counts.items(), key=lambda kv: (-len(kv[1]), _name(guild, kv[0]).lower()))
+
+        status_str = "🟢 Open" if rnd["status"] == "open" else "🔒 Closed"
+        embed = discord.Embed(
+            title=f"📝 Nomination Status (Round #{rnd['id']})",
+            colour=ACCENT
+        )
+
+        desc_lines = [
+            f"**Round Status:** {status_str}",
+            f"**Turnout:** `{len(completed)}/{len(ins)}` housemates completed ({len(pairs)} nominations cast)",
+            ""
+        ]
+
+        if missing:
+            desc_lines.append(f"### ❌ Still to Nominate ({len(missing)}):")
+            for u in missing:
+                desc_lines.append(f"• ⚠️ **{_name(guild, u)}** (0/{n_each})")
+            desc_lines.append("")
+
+        if partial:
+            desc_lines.append(f"### ⏳ Partially Nominated ({len(partial)}):")
+            for u in partial:
+                desc_lines.append(f"• ⏳ **{_name(guild, u)}** ({cast_counts.get(u, 0)}/{n_each})")
+            desc_lines.append("")
+
+        if completed:
+            desc_lines.append(f"### ✅ Completed ({len(completed)}):")
+            for u in completed:
+                desc_lines.append(f"• ✅ **{_name(guild, u)}** ({cast_counts.get(u, 0)}/{n_each})")
+            desc_lines.append("")
+
+        if ranked:
+            desc_lines.append("### 📊 Current Nomination Standings:")
+            for i, (nominee, nominators) in enumerate(ranked):
+                marker = "👉 " if i < 6 else "   "
+                noms_names = ", ".join(_name(guild, nom) for nom in nominators)
+                desc_lines.append(f"{marker}`#{i+1}` **{_name(guild, nominee)}** — **{len(nominators)}** nom{'s' if len(nominators) != 1 else ''} -# ({noms_names})")
+        else:
+            desc_lines.append("### 📊 Current Nomination Standings:\n*No nominations cast yet.*")
+
+        embed.description = "\n".join(desc_lines)[:4000]
+        embed.set_footer(text="Confidential · Host & Operators only")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         ins = housemates()
         if len(ins) < 2:
             await interaction.response.send_message("Need at least two housemates in the house.", ephemeral=True)
