@@ -2031,3 +2031,19 @@ def test_public_vote_control_view_who_nominated_button(bb):
     who_btn2 = next((b for b in view2.children if getattr(b, "custom_id", None) == "bb_pv_who_noms"), None)
     assert who_btn2 is not None
     assert who_btn2.disabled is False
+
+
+def test_public_vote_control_view_who_voted_button(bb):
+    # Before any public vote round exists
+    view = bb.PublicVoteControlView()
+    who_btn = next((b for b in view.children if getattr(b, "custom_id", None) == "bb_pv_who_voted"), None)
+    assert who_btn is not None
+    assert who_btn.disabled is True
+
+    # After a public vote round is created
+    bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=[101, 102, 103, 104])
+    view2 = bb.PublicVoteControlView()
+    who_btn2 = next((b for b in view2.children if getattr(b, "custom_id", None) == "bb_pv_who_voted"), None)
+    assert who_btn2 is not None
+    assert who_btn2.disabled is False
+
