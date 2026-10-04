@@ -1961,13 +1961,13 @@ def test_public_vote_embed_contents(bb):
     rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
 
     open_embed = bb._public_vote_embed(nominees, None, rid, closed=False)
-    assert "Public Vote to Save" in open_embed.description
-    assert "3 housemates with the fewest votes" in open_embed.description
+    assert "Public Vote to Evict" in open_embed.description
+    assert "most votes to evict" in open_embed.description
     assert "Total votes cast: 0" in open_embed.footer.text
 
     closed_embed = bb._public_vote_embed(nominees, None, rid, closed=True)
     assert "PUBLIC VOTE CLOSED" in closed_embed.title
-    assert "fewest save votes" in closed_embed.description
+    assert "most votes to evict" in closed_embed.description
 
 
 def test_public_vote_control_embed_states(bb):
@@ -1991,7 +1991,7 @@ def test_public_vote_control_embed_states(bb):
     })
     pending_embed = bb._public_vote_control_embed(None)
     assert "EVICTIONS PENDING" in pending_embed.description
-    assert "Evict Bottom 3" in pending_embed.description
+    assert "Evict Nominee(s)" in pending_embed.description
 
 
 def test_drop_outsider_votes_does_not_affect_public_vote(bb):
@@ -2067,5 +2067,31 @@ def test_public_vote_control_view_reset_button(bb):
 
     embed = bb._public_vote_control_embed(None)
     assert "Last public vote:" not in embed.description
+
+
+def test_public_vote_to_evict_ranking_and_buttons(bb):
+    nominees = [10, 20, 30, 40]
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
+
+    # 3 votes to evict 10, 2 votes to evict 20, 1 vote to evict 30, 0 votes to evict 40
+    bb.cast_vote(rid, 101, 10)
+    bb.cast_vote(rid, 102, 10)
+    bb.cast_vote(rid, 103, 10)
+    bb.cast_vote(rid, 104, 20)
+    bb.cast_vote(rid, 105, 20)
+    bb.cast_vote(rid, 106, 30)
+
+    # Evict 1 housemate (default)
+    bb.set_state(bb.STATE_PUBLIC_VOTE_EVICT_COUNT, 1)
+    tally = bb.vote_tally(rid)
+    sorted_nominees = sorted(nominees, key=lambda n: (-tally.get(n, 0), n))
+    assert sorted_nominees == [10, 20, 30, 40]
+
+    # Verify buttons use bb:pubevict
+    view = bb._public_vote_view(rid, nominees, None)
+    btn_ids = [getattr(b, "custom_id", None) for b in view.children]
+    assert f"bb:pubevict:{rid}:10" in btn_ids
+    assert f"bb:pubevict:{rid}:20" in btn_ids
+
 
 
