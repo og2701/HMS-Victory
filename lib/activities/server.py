@@ -10,9 +10,9 @@ mapping's prefix isn't worth betting the launch on:
     GET  /wordle         today's board for the session's player
     POST /wordle/guess   {guess} -> the board after it
     GET  /crossword, POST /crossword/answer, POST /crossword/hint
-    GET  /climb          Climb HMS Victory: today's seed and the player's best and pay so far
-    POST /climb/start, POST /climb/finish {height, time, bounces, seed}
-    GET  /climb/board    today's top climbers and the best ever, with names
+    GET  /climb, /spitfire   a daily score game: today's seed and the player's best and pay so far
+    POST /<game>/start, POST /<game>/finish {score, time, count, seed, run}
+    GET  /<game>/board   today's top scores and the best ever, with names
     GET  /home           balance, today's puzzles, the casino in last-played order
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
@@ -28,7 +28,9 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, climb, crossword_api, wordle_api
+from lib.activities import auth, casino, crossword_api, wordle_api
+from lib.activities.daily_score import GAMES as SCORE_GAMES
+from lib.activities.daily_score import Refuse as ScoreRefuse
 
 log = logging.getLogger(__name__)
 
@@ -125,7 +127,7 @@ async def token(request):
                   **_opening(client, uid, game, channel)})
 
 
-_STATE = {"wordle": wordle_api, "crossword": crossword_api, "climb": climb}
+_STATE = {"wordle": wordle_api, "crossword": crossword_api, **SCORE_GAMES}
 
 
 def _game_for(uid: int, body: dict) -> str:
@@ -345,41 +347,41 @@ async def crossword_hint(request):
     return await _crossword_move(request, lambda client, uid, date, body: crossword_api.hint(client, uid, date))
 
 
-async def climb_state(request):
+def _score_game(request):
+    """(who, game, error) for a daily score game's route."""
     who = _player(request)
     if who is None:
-        return _error("Sign in again.", 401)
-    gated = _gate(request.app[CLIENT], who["uid"], "climb")
-    if gated is not None:
-        return gated
-    return _json(climb.state(who["uid"], _today()))
+        return None, None, _error("Sign in again.", 401)
+    game = SCORE_GAMES[next(p for p in request.path.strip("/").split("/") if p in SCORE_GAMES)]
+    return who, game, _gate(request.app[CLIENT], who["uid"], game.key)
 
 
-async def climb_board(request):
-    who = _player(request)
-    if who is None:
-        return _error("Sign in again.", 401)
+async def score_state(request):
+    who, game, err = _score_game(request)
+    if err is not None:
+        return err
+    return _json(game.state(who["uid"], _today()))
+
+
+async def score_board(request):
+    who, game, err = _score_game(request)
+    if err is not None:
+        return err
     client = request.app[CLIENT]
-    gated = _gate(client, who["uid"], "climb")
-    if gated is not None:
-        return gated
-    b = climb.board(who["uid"], _today())
+    b = game.board(who["uid"], _today())
     names: dict[str, str] = {}
     for row in b["today"] + b["allTime"]:
         if row["uid"] not in names:
-            names[row["uid"]] = _name(client, int(row["uid"])) or "A sailor"
+            names[row["uid"]] = _name(client, int(row["uid"])) or game.nobody
         row["name"] = names[row["uid"]]
         row["me"] = row["uid"] == str(who["uid"])
     return _json(b)
 
 
-async def climb_run(request):
-    who = _player(request)
-    if who is None:
-        return _error("Sign in again.", 401)
-    gated = _gate(request.app[CLIENT], who["uid"], "climb")
-    if gated is not None:
-        return gated
+async def score_run(request):
+    who, game, err = _score_game(request)
+    if err is not None:
+        return err
     action = request.match_info["action"]
     try:
         body = await request.json()
@@ -387,20 +389,20 @@ async def climb_run(request):
         body = {}
     try:
         if action == "start":
-            return _json(climb.start(who["uid"], _today()))
+            return _json(game.start(who["uid"], _today()))
         if action == "finish":
-            board, result = climb.finish(who["uid"], _today(), body if isinstance(body, dict) else {})
+            board, result = game.finish(who["uid"], _today(), body if isinstance(body, dict) else {})
             if result["newBest"]:
                 if who["ch"]:
-                    climb.post_best(who["uid"], who["ch"], board["date"])
+                    game.post_best(who["uid"], who["ch"], board["date"])
                 else:
-                    log.info("climb best for %s not posted: the session has no channel", who["uid"])
+                    log.info("%s best for %s not posted: the session has no channel", game.key, who["uid"])
             return _json({**board, "result": result})
-    except climb.Refuse as e:
+    except ScoreRefuse as e:
         return _error(str(e), 422)
     except Exception:
-        log.error("climb %s failed", action, exc_info=True)
-        return _error("Something went wrong saving that climb.", 500)
+        log.error("%s %s failed", game.key, action, exc_info=True)
+        return _error("Something went wrong saving that run.", 500)
     return _error("Not found.", 404)
 
 
@@ -503,9 +505,10 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/crossword/answer", crossword_answer)
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
         app.router.add_get(f"{prefix}/home", home_state)
-        app.router.add_get(f"{prefix}/climb", climb_state)
-        app.router.add_get(f"{prefix}/climb/board", climb_board)
-        app.router.add_post(f"{prefix}/climb/{{action}}", climb_run)
+        for key in SCORE_GAMES:
+            app.router.add_get(f"{prefix}/{key}", score_state)
+            app.router.add_get(f"{prefix}/{key}/board", score_board)
+            app.router.add_post(f"{prefix}/{key}/{{action}}", score_run)
         app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
         app.router.add_get(f"{prefix}/casino/watch/{{uid}}/{{game}}", casino_watch)
         app.router.add_post(f"{prefix}/casino/{{game}}/{{action}}", casino_move)
