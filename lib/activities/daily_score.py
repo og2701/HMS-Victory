@@ -328,7 +328,7 @@ CLIMB = ScoreGame(
 
 SPITFIRE = ScoreGame(
     key="spitfire", label="Spitfire", prefix="SPITFIRE", days="spitfire_days", runs="spitfire_runs",
-    score_col="score", count_col="flaps", rate=3, cap=150, max_rate=1.25, max_score=1000, slack=3,
+    score_col="score", count_col="flaps", rate=3, cap=150, max_rate=1.5, max_score=1000, slack=3,
     post="flew the **Spitfire** past **{score} balloons**", emoji="✈️", nobody="A pilot")
 
 GAMES = {g.key: g for g in (CLIMB, SPITFIRE)}

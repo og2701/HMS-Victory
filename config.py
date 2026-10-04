@@ -467,12 +467,12 @@ CLIMB_CAP = 150
 CLIMB_MAX_SPEED = 9.0
 CLIMB_MAX_HEIGHT = 2_000                       # no climb counts for more than this (well past the hardest rigging)
 # Spitfire (the activity's Flappy Bird style flight through the barrage balloons): the same
-# rules as the climb, a point for each pair of balloons passed. Balloons come no faster than
-# about one a second, so SPITFIRE_MAX_SPEED (points a second) bounds a score by the time taken.
+# rules as the climb, a point for each gap passed. It speeds up forever but never past 1.25 gaps
+# a second, so SPITFIRE_MAX_SPEED (points a second, with room to spare) bounds a score by the time taken.
 SPITFIRE_ENABLED = True
 SPITFIRE_RATE = 3
 SPITFIRE_CAP = 150
-SPITFIRE_MAX_SPEED = 1.25
+SPITFIRE_MAX_SPEED = 1.5
 SPITFIRE_MAX_HEIGHT = 1_000
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a
