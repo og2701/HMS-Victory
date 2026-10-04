@@ -2047,3 +2047,25 @@ def test_public_vote_control_view_who_voted_button(bb):
     assert who_btn2 is not None
     assert who_btn2.disabled is False
 
+
+def test_public_vote_control_view_reset_button(bb):
+    view = bb.PublicVoteControlView()
+    reset_btn = next((b for b in view.children if getattr(b, "custom_id", None) == "bb_pv_reset"), None)
+    assert reset_btn is not None
+
+    # When round exists and is closed, but state is reset (empty dict)
+    bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=[101, 102])
+    rid = bb.latest_round(bb.KIND_PUBLIC_VOTE)["id"]
+    bb.close_round(rid)
+    bb.set_state(bb.STATE_LAST_PUBLIC_VOTE_RESULT, {})
+
+    view_reset = bb.PublicVoteControlView()
+    tally_btn = next((b for b in view_reset.children if getattr(b, "custom_id", None) == "bb_pv_tally"), None)
+    who_btn = next((b for b in view_reset.children if getattr(b, "custom_id", None) == "bb_pv_who_voted"), None)
+    assert tally_btn.disabled is True
+    assert who_btn.disabled is True
+
+    embed = bb._public_vote_control_embed(None)
+    assert "Last public vote:" not in embed.description
+
+

@@ -3392,7 +3392,7 @@ class PublicVoteControlView(discord.ui.View):
         last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
         has_pending = bool(last.get("pending_evictions"))
         rnd_noms = open_round(KIND_NOMINATIONS) or latest_round(KIND_NOMINATIONS)
-        rnd_pv = rnd or latest_round(KIND_PUBLIC_VOTE)
+        rnd_pv = rnd or (latest_round(KIND_PUBLIC_VOTE) if (rnd or last.get("round_id")) else None)
 
         self.btn_who_noms.disabled = not bool(rnd_noms)
         self.btn_who_voted.disabled = not bool(rnd_pv)
@@ -3812,6 +3812,41 @@ class PublicVoteControlView(discord.ui.View):
         await refresh_public_vote_control(interaction.client)
         await interaction.response.send_message("Public vote control refreshed.", ephemeral=True)
 
+    @discord.ui.button(label="Reset", style=discord.ButtonStyle.secondary, emoji="🧹", custom_id="bb_pv_reset", row=1)
+    async def btn_reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        if open_round(KIND_PUBLIC_VOTE):
+            await interaction.response.send_message("A public vote is currently active. Close it first before resetting.", ephemeral=True)
+            return
+
+        view = discord.ui.View(timeout=60)
+        async def confirm_cb(inter: discord.Interaction):
+            await inter.response.defer(ephemeral=True)
+            set_state(STATE_LAST_PUBLIC_VOTE_RESULT, {})
+            set_state(STATE_PUBLIC_VOTE_BOARD_MSG, None)
+            await refresh_public_vote_control(inter.client)
+            await inter.followup.send("✅ Public vote control panel reset to fresh idle state.", ephemeral=True)
+
+        async def cancel_cb(inter: discord.Interaction):
+            await inter.response.edit_message(content="Cancelled reset.", view=None)
+
+        c_btn = discord.ui.Button(label="🧹 Confirm Reset", style=discord.ButtonStyle.danger)
+        c_btn.callback = confirm_cb
+        x_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+        x_btn.callback = cancel_cb
+        view.add_item(c_btn)
+        view.add_item(x_btn)
+
+        await interaction.response.send_message(
+            "⚠️ **Reset Public Vote Panel?**\n"
+            "This will clear previous vote results from the panel display and reset all buttons to a clean idle state.\n"
+            "(Historical round records in the database will be preserved).",
+            view=view,
+            ephemeral=True
+        )
+
 
 async def ensure_public_vote_control(client: discord.Client) -> None:
     """Post the public vote control panel in the host control channel once, then keep editing that message."""
@@ -3832,7 +3867,11 @@ async def ensure_public_vote_control(client: discord.Client) -> None:
             await msg.edit(embed=embed, view=view)
             return
         except discord.HTTPException:
-            pass
+            try:
+                msg = await ch.fetch_message(int(mid))
+                await msg.delete()
+            except discord.HTTPException:
+                pass
     msg = await ch.send(embed=embed, view=view)
     set_state(STATE_PUBLIC_VOTE_CTRL_MSG, msg.id)
     log.info("Big Brother: posted public vote control panel %s in %s", msg.id, ch.id)
@@ -3849,6 +3888,11 @@ async def refresh_public_vote_control(client: discord.Client) -> None:
             return
         except discord.HTTPException as e:
             log.info("Big Brother: public vote control refresh failed: %s", e)
+            try:
+                msg = await ch.fetch_message(int(mid))
+                await msg.delete()
+            except discord.HTTPException:
+                pass
     await ensure_public_vote_control(client)
 
 
