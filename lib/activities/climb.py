@@ -29,8 +29,10 @@ from database import DatabaseManager
 log = logging.getLogger(__name__)
 
 SLACK = 40                   # metres allowed on top of what the clock says is possible
-START_GAP = 1.5              # seconds between one player's runs
-_runs: dict[int, dict] = {}  # uid -> the run in progress
+START_GAP = 1.0              # seconds between one player's runs
+RUN_MAX_AGE = 30 * 60        # a finish that arrives later than this after its start doesn't count
+_runs: dict[int, dict] = {}  # uid -> the run in progress (for pages from before run receipts)
+_last_start: dict[int, float] = {}
 _posts: dict[int, asyncio.Task] = {}
 
 
@@ -135,27 +137,64 @@ class Refuse(Exception):
     """A run the game won't take, with the reason to show the player."""
 
 
+def _sign(uid: int, started_ms: int, iso: str) -> str:
+    salt = os.getenv("ACTIVITIES_SESSION_SECRET") or "climb"
+    return hmac.new(salt.encode(), f"climbrun:{uid}:{started_ms}:{iso}".encode(), hashlib.sha256).hexdigest()[:20]
+
+
+def _receipt(uid: int, started: float, iso: str) -> str:
+    """A signed note of when a run started, handed to the page so the run can be counted even if
+    the bot restarts or the finish has to be sent again: the page can't forge or move it."""
+    ms = int(started * 1000)
+    return f"{ms}.{iso}.{_sign(uid, ms, iso)}"
+
+
+def _read_receipt(uid: int, receipt: str) -> dict | None:
+    try:
+        ms, iso, sig = receipt.split(".")
+        ms = int(ms)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(sig, _sign(uid, ms, iso)):
+        return None
+    return {"started": ms / 1000, "date": iso, "seed": seed_for(iso)}
+
+
 def start(uid: int, date) -> dict:
     if not enabled():
         raise Refuse("Climb HMS Victory is closed for now.")
     now = time.time()
-    last = _runs.get(uid)
-    if last and now - last["started"] < START_GAP:
+    if now - _last_start.get(uid, 0) < START_GAP:
         raise Refuse("Slow down a little.")
+    _last_start[uid] = now
     iso = date.isoformat()
     _runs[uid] = {"started": now, "date": iso, "seed": seed_for(iso)}
     d = _day(uid, iso)
     d["runs"] += 1
     _save_day(uid, iso, d)
-    return state(uid, date)
+    return {**state(uid, date), "run": _receipt(uid, now, iso)}
 
 
 def finish(uid: int, date, body: dict) -> tuple[dict, dict]:
     """End the player's run. Returns (the new state, what happened: the height counted,
     UKP earned, whether it was a new best today, whether the height was cut down)."""
-    run = _runs.pop(uid, None)
+    receipt = str(body.get("run") or "")
+    if receipt:
+        run = _read_receipt(uid, receipt)
+        if run is None:
+            raise Refuse("That climb's receipt didn't check out.")
+        if _runs.get(uid, {}).get("started") == run["started"]:
+            _runs.pop(uid, None)
+    else:
+        run = _runs.pop(uid, None)
     if run is None:
         raise Refuse("That climb wasn't started properly, so it can't count. Have another go.")
+    if time.time() - run["started"] > RUN_MAX_AGE:
+        raise Refuse("That climb finished too long ago to count now.")
+    if DatabaseManager.fetch_one("SELECT 1 FROM climb_runs WHERE user_id = ? AND started = ?",
+                                 (str(uid), int(run["started"]))):
+        # already counted: the page sent it again because it never heard back the first time
+        return state(uid, date), {"height": 0, "earned": 0, "newBest": False, "trimmed": False, "again": True}
     try:
         reported = max(0, int(body.get("height") or 0))
         said_time = float(body.get("time") or 0)
@@ -167,7 +206,7 @@ def finish(uid: int, date, body: dict) -> tuple[dict, dict]:
     now = time.time()
     elapsed = now - run["started"]
     # what the clock allows: the bot's own time, and never more than the game says it took
-    allowed = int(min(elapsed, said_time + 5) * max_speed() + SLACK)
+    allowed = min(int(min(elapsed, said_time + 5) * max_speed() + SLACK), int(getattr(config, "CLIMB_MAX_HEIGHT", 2000)))
     height = min(reported, allowed)
     trimmed = height < reported
     if trimmed:

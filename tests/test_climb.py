@@ -26,6 +26,7 @@ def climb(tmp_path, monkeypatch):
     economy._HIST_LAST.clear()
     from lib.activities import climb as C
     C._runs.clear()
+    C._last_start.clear()
     clock = {"t": 1_000_000.0}
     monkeypatch.setattr(C.time, "time", lambda: clock["t"])
     monkeypatch.setattr("lib.economy.reserve_policy.scale_reward", lambda n: n, raising=False)
@@ -151,3 +152,26 @@ def test_a_new_best_posts_once_and_then_updates(climb, monkeypatch):
     asyncio.run(go())
     assert calls[0][2] is None and "100 m" in calls[0][1] and "1st today" in calls[0][1]
     assert calls[1][2] == 999 and "150 m" in calls[1][1]
+
+
+def test_a_receipt_survives_a_restart_and_counts_once(climb):
+    st = climb.start(UID, DAY)
+    climb._runs.clear()                       # the bot restarted mid-climb
+    climb.clock["t"] += 40
+    body = {"height": 150, "time": 40, "bounces": 30, "seed": climb.seed_for(DAY.isoformat()), "run": st["run"]}
+    s, r = climb.finish(UID, DAY, body)
+    assert r["newBest"] and r["earned"] == 75
+    s, r = climb.finish(UID, DAY, body)       # sent again after a lost reply
+    assert r.get("again") and r["earned"] == 0 and s["today"]["paid"] == 75
+
+
+def test_receipts_cant_be_forged_or_kept_forever(climb):
+    st = climb.start(UID, DAY)
+    seed = climb.seed_for(DAY.isoformat())
+    with pytest.raises(climb.Refuse):
+        climb.finish(UID + 1, DAY, {"height": 50, "time": 20, "seed": seed, "run": st["run"]})   # someone else's
+    with pytest.raises(climb.Refuse):
+        climb.finish(UID, DAY, {"height": 50, "time": 20, "seed": seed, "run": "1.2026-10-07.abc"})
+    climb.clock["t"] += climb.RUN_MAX_AGE + 5
+    with pytest.raises(climb.Refuse):
+        climb.finish(UID, DAY, {"height": 50, "time": 20, "seed": seed, "run": st["run"]})

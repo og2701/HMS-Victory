@@ -465,6 +465,7 @@ CLIMB_ENABLED = True
 CLIMB_RATE = 0.5
 CLIMB_CAP = 150
 CLIMB_MAX_SPEED = 9.0
+CLIMB_MAX_HEIGHT = 2_000                       # no climb counts for more than this (well past the hardest rigging)
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a
 # Cloudflare Tunnel at ukplace.ogme.dev, and only starts once ACTIVITIES_CLIENT_ID,
