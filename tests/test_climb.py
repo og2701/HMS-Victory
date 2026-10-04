@@ -99,3 +99,51 @@ def test_rank_and_post_text(climb):
     _run(climb, 120, 60, uid=2)
     assert climb.rank(DAY.isoformat(), 120) == 2
     assert climb._ordinal(1) == "1st" and climb._ordinal(2) == "2nd" and climb._ordinal(13) == "13th"
+
+
+def test_the_leaderboard(climb):
+    _run(climb, 200, 60, uid=1)
+    _run(climb, 120, 60, uid=2)
+    _run(climb, 120, 60, uid=3)
+    _run(climb, 90, 60, uid=UID)
+    b = climb.board(UID, DAY)
+    assert [(r["uid"], r["height"], r["rank"]) for r in b["today"]] == [
+        ("1", 200, 1), ("2", 120, 2), ("3", 120, 2), (str(UID), 90, 4)]
+    assert b["you"]["today"] == {"height": 90, "rank": 4}
+    assert b["players"]["today"] == 4
+    # yesterday's best still counts all time
+    climb.start(5, DAY - datetime.timedelta(days=1))
+    climb.clock["t"] += 100
+    climb.finish(5, DAY - datetime.timedelta(days=1),
+                 {"height": 500, "time": 100, "seed": climb.seed_for((DAY - datetime.timedelta(days=1)).isoformat())})
+    b = climb.board(UID, DAY)
+    assert b["allTime"][0]["uid"] == "5" and b["you"]["allTime"]["rank"] == 5
+    s = climb.state(UID, DAY)
+    assert s["rank"] == 4 and s["players"] == 4
+
+
+def test_a_new_best_posts_once_and_then_updates(climb, monkeypatch):
+    import asyncio
+    from lib.activities import launcher
+    calls = []
+
+    async def fake(channel_id, text, game, message_id=None):
+        calls.append((channel_id, text, message_id))
+        return message_id or 999
+
+    monkeypatch.setattr(launcher, "announce_or_edit", fake)
+    climb._sittings.clear()
+
+    async def go():
+        _run(climb, 100, 30)
+        climb.post_best(UID, 55, DAY.isoformat())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        _run(climb, 150, 30)
+        climb.post_best(UID, 55, DAY.isoformat())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(go())
+    assert calls[0][2] is None and "100 m" in calls[0][1] and "1st today" in calls[0][1]
+    assert calls[1][2] == 999 and "150 m" in calls[1][1]

@@ -12,6 +12,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /crossword, POST /crossword/answer, POST /crossword/hint
     GET  /climb          Climb HMS Victory: today's seed and the player's best and pay so far
     POST /climb/start, POST /climb/finish {height, time, bounces, seed}
+    GET  /climb/board    today's top climbers and the best ever, with names
     GET  /home           balance, today's puzzles, the casino in last-played order
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
@@ -354,6 +355,24 @@ async def climb_state(request):
     return _json(climb.state(who["uid"], _today()))
 
 
+async def climb_board(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    gated = _gate(client, who["uid"], "climb")
+    if gated is not None:
+        return gated
+    b = climb.board(who["uid"], _today())
+    names: dict[str, str] = {}
+    for row in b["today"] + b["allTime"]:
+        if row["uid"] not in names:
+            names[row["uid"]] = _name(client, int(row["uid"])) or "A sailor"
+        row["name"] = names[row["uid"]]
+        row["me"] = row["uid"] == str(who["uid"])
+    return _json(b)
+
+
 async def climb_run(request):
     who = _player(request)
     if who is None:
@@ -371,8 +390,11 @@ async def climb_run(request):
             return _json(climb.start(who["uid"], _today()))
         if action == "finish":
             board, result = climb.finish(who["uid"], _today(), body if isinstance(body, dict) else {})
-            if result["newBest"] and who["ch"]:
-                climb.schedule_post(who["uid"], who["ch"], board["date"])
+            if result["newBest"]:
+                if who["ch"]:
+                    climb.post_best(who["uid"], who["ch"], board["date"])
+                else:
+                    log.info("climb best for %s not posted: the session has no channel", who["uid"])
             return _json({**board, "result": result})
     except climb.Refuse as e:
         return _error(str(e), 422)
@@ -482,6 +504,7 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
         app.router.add_get(f"{prefix}/home", home_state)
         app.router.add_get(f"{prefix}/climb", climb_state)
+        app.router.add_get(f"{prefix}/climb/board", climb_board)
         app.router.add_post(f"{prefix}/climb/{{action}}", climb_run)
         app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
         app.router.add_get(f"{prefix}/casino/watch/{{uid}}/{{game}}", casino_watch)

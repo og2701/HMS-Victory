@@ -9,8 +9,9 @@ Only each player's best height of the day pays, at CLIMB_RATE UKP a metre up to 
 your best and you're paid the difference, and runs below it pay nothing. The rigging comes from
 the day's seed (keyed with the activity's secret), so everyone climbs the same layout.
 
-A new best is announced once in the channel the game was opened in, after the player has
-stopped improving on it for a couple of minutes, so a run of attempts makes one post.
+A new best is announced straight away in the channel the game was opened in, and that one line
+is rewritten as the player beats it again within the half hour, so a run of attempts makes one
+post.
 """
 
 from __future__ import annotations
@@ -76,7 +77,47 @@ def state(uid: int, date) -> dict:
     iso = date.isoformat()
     d = _day(uid, iso)
     return {"game": "climb", "date": iso, "dateLabel": f"{date:%A %-d %B}", "seed": seed_for(iso),
-            "rate": rate(), "cap": cap(), "today": d, "best": _ever(uid)}
+            "rate": rate(), "cap": cap(), "today": d, "best": _ever(uid),
+            "rank": rank(iso, d["best"]) if d["best"] else None, "players": _players(iso)}
+
+
+def _players(iso: str) -> int:
+    row = DatabaseManager.fetch_one("SELECT COUNT(*) FROM climb_days WHERE date = ? AND best > 0", (iso,))
+    return int(row[0]) if row else 0
+
+
+BOARD = 10
+
+
+def board(uid: int, date) -> dict:
+    """The day's top climbers and the best ever, by user id (the API puts names to them), and
+    where this player stands in each even when they're outside the top."""
+    iso = date.isoformat()
+    today = DatabaseManager.fetch_all(
+        "SELECT user_id, best FROM climb_days WHERE date = ? AND best > 0 ORDER BY best DESC, user_id LIMIT ?",
+        (iso, BOARD))
+    ever = DatabaseManager.fetch_all(
+        "SELECT user_id, MAX(best) AS top FROM climb_days WHERE best > 0 GROUP BY user_id ORDER BY top DESC, user_id LIMIT ?",
+        (BOARD,))
+    mine, mine_ever = _day(uid, iso)["best"], _ever(uid)
+    row = DatabaseManager.fetch_one(
+        "SELECT COUNT(*) FROM (SELECT MAX(best) AS top FROM climb_days GROUP BY user_id) WHERE top > ?", (mine_ever,))
+    everyone = DatabaseManager.fetch_one("SELECT COUNT(DISTINCT user_id) FROM climb_days WHERE best > 0")
+
+    def rows(found):
+        out, place, last = [], 0, None
+        for i, (u, h) in enumerate(found):
+            if h != last:
+                place, last = i + 1, h
+            out.append({"uid": str(u), "height": int(h), "rank": place})
+        return out
+
+    return {
+        "today": rows(today), "allTime": rows(ever),
+        "you": {"uid": str(uid), "today": {"height": mine, "rank": rank(iso, mine) if mine else None},
+                "allTime": {"height": mine_ever, "rank": (int(row[0]) + 1) if mine_ever and row else None}},
+        "players": {"today": _players(iso), "allTime": int(everyone[0]) if everyone else 0},
+    }
 
 
 def home_card(uid: int, date) -> dict | None:
@@ -164,25 +205,28 @@ def _ordinal(n: int) -> str:
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-def schedule_post(uid: int, channel_id: int, iso: str) -> None:
-    """Announce the player's best today once they've stopped beating it for a while."""
-    old = _posts.pop(uid, None)
-    if old:
-        old.cancel()
+SITTING = 30 * 60            # beat your best again within this long and the same post is updated
+_sittings: dict[int, dict] = {}
 
-    async def later():
-        try:
-            await asyncio.sleep(float(getattr(config, "CLIMB_POST_AFTER", 120)))
-        except asyncio.CancelledError:
-            return
-        _posts.pop(uid, None)
+
+def post_best(uid: int, channel_id: int, iso: str) -> None:
+    """Announce a new best in the channel the game was opened in: straight away, as one line
+    per sitting that's rewritten as the best goes up, so a run of attempts makes one post."""
+    async def send():
         d = _day(uid, iso)
         if not d["best"]:
             return
-        r = rank(iso, d["best"])
-        paid = f" · +{d['paid']:,} UKP" if d["paid"] else ""
-        text = f"⚓ <@{uid}> climbed **HMS Victory** to **{d['best']:,} m** ({_ordinal(r)} today){paid}"
+        paid = f" · +{d['paid']:,} UKP today" if d["paid"] else ""
+        text = (f"⚓ <@{uid}> climbed **HMS Victory** to **{d['best']:,} m** "
+                f"({_ordinal(rank(iso, d['best']))} today){paid}")
+        prev = _sittings.get(uid)
+        reuse = (prev and prev["ch"] == channel_id and prev["date"] == iso and time.time() - prev["at"] < SITTING)
         from lib.activities import launcher
-        await launcher.announce(channel_id, text, "climb")
+        mid = await launcher.announce_or_edit(channel_id, text, "climb", prev["msg"] if reuse else None)
+        if mid:
+            _sittings[uid] = {"ch": channel_id, "date": iso, "msg": mid, "at": time.time()}
+            log.info("climb best for %s %s in %s (%s m)", uid, "updated" if reuse else "posted", channel_id, d["best"])
 
-    _posts[uid] = asyncio.create_task(later())
+    task = asyncio.create_task(send())
+    _posts[uid] = task
+    task.add_done_callback(lambda t: _posts.pop(uid, None) if _posts.get(uid) is t else None)
