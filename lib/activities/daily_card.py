@@ -19,6 +19,8 @@ log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
 FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
+COMIC_FONT = ROOT / "data" / "fonts" / "Bangers.woff2"
+PLANE_ART = ROOT / "data" / "games" / "spitfire-plane.webp"
 W = 800
 
 COIN = ('<svg class="coin" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12" fill="#E2B33C" stroke="#111" stroke-width="2"/>'
@@ -61,70 +63,67 @@ def _ordinal(n: int) -> str:
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-# The Spitfire, side on and flying right as in the game: camouflage, roundel, fin flash, the
-# Sky band round the tail, propeller a blur.
-SPITFIRE = """<svg class="plane" viewBox="0 0 200 80">
-  <ellipse cx="190" cy="40" rx="4" ry="30" fill="rgba(235,238,242,.45)"/>
-  <ellipse cx="22" cy="42" rx="22" ry="5" fill="#4a5a2c" stroke="#111" stroke-width="1.6"/>
-  <path d="M182 34 C160 20 120 18 80 20 C50 22 25 28 8 34 L8 44 C35 52 80 58 120 57 C150 56 170 50 182 46 Z" fill="#5c6b38" stroke="#111" stroke-width="2"/>
-  <path d="M150 26 C140 22 128 22 118 26 C126 32 140 32 150 30 Z M70 24 C60 22 48 24 40 28 C50 32 62 31 70 28 Z M100 50 C90 48 76 48 66 51 C76 55 90 55 100 53 Z" fill="#7c5c36"/>
-  <rect x="22" y="22" width="9" height="30" fill="#c3dccb"/>
-  <path d="M30 32 C26 12 16 4 6 6 L2 36 Z" fill="#5c6b38" stroke="#111" stroke-width="2"/>
-  <rect x="14" y="14" width="5" height="18" fill="#C8102E"/><rect x="9" y="12" width="5" height="20" fill="#fff"/><rect x="4" y="10" width="5" height="22" fill="#1F3A8A"/>
-  <path d="M100 21 C104 6 126 4 136 20 Z" fill="#9fc6dc" stroke="#111" stroke-width="1.8"/>
-  <ellipse cx="112" cy="52" rx="50" ry="6" fill="#4a5a2c" stroke="#111" stroke-width="1.6"/>
-  <circle cx="64" cy="38" r="12" fill="#F2C53D"/><circle cx="64" cy="38" r="10" fill="#1F3A8A"/><circle cx="64" cy="38" r="6.4" fill="#fff"/><circle cx="64" cy="38" r="3.4" fill="#C8102E"/>
-  <path d="M182 33 C192 36 194 39 194 40 C194 41 192 44 182 47 Z" fill="#C8102E" stroke="#111" stroke-width="1.6"/>
-</svg>"""
-
 # A barrage balloon on its cable.
-BALLOON = """<svg class="balloon" viewBox="0 0 80 120">
-  <path d="M40 46 L40 120" stroke="#333" stroke-width="1.5"/>
-  <ellipse cx="40" cy="26" rx="30" ry="16" fill="#c9cdd3" stroke="#111" stroke-width="1.5"/>
-  <path d="M64 22 L76 12 L74 26 Z M64 30 L76 40 L74 26 Z M62 26 L78 26" fill="#aab0b8" stroke="#111" stroke-width="1.2"/>
-  <ellipse cx="30" cy="20" rx="10" ry="4" fill="#eceef1"/>
+BALLOON = """<svg class="balloon" viewBox="0 0 90 130">
+  <path d="M42 44 L42 130" stroke="#111" stroke-width="3"/>
+  <path d="M60 22 Q74 6 86 8 L82 24 Z M60 34 Q74 50 86 48 L82 32 Z" fill="#9AA3AE" stroke="#111" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse cx="38" cy="28" rx="34" ry="16" fill="#D3D8DF" stroke="#111" stroke-width="3.5"/>
+  <ellipse cx="28" cy="21" rx="13" ry="3.6" fill="#fff"/>
 </svg>"""
 
 
-ROUNDEL = ('<svg class="roundel" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#F2C53D" stroke="#111" stroke-width="3"/>'
-           '<circle cx="50" cy="50" r="40" fill="#1F3A8A"/><circle cx="50" cy="50" r="26" fill="#fff"/>'
-           '<circle cx="50" cy="50" r="13" fill="#C8102E"/></svg>')
-SMALL_BALLOON = ('<svg class="unit" viewBox="0 0 30 16"><path d="M20 6 L27 1 L26 8 L27 15 L20 10 Z" fill="#8f97a3" stroke="#111" '
-                 'stroke-width="1.4" stroke-linejoin="round"/><ellipse cx="12" cy="8" rx="11" ry="6" fill="#c9ced6" stroke="#111" '
-                 'stroke-width="1.6"/><ellipse cx="9" cy="5.5" rx="5" ry="1.6" fill="#fff"/></svg>')
+SMALL_BALLOON = ('<svg class="unit" viewBox="0 0 30 16"><path d="M20 6 L27 1 L26 8 L27 15 L20 10 Z" fill="#9AA3AE" stroke="#111" '
+                 'stroke-width="1.6" stroke-linejoin="round"/><ellipse cx="12" cy="8" rx="11" ry="6" fill="#D3D8DF" stroke="#111" '
+                 'stroke-width="1.8"/><ellipse cx="9" cy="5.5" rx="5" ry="1.6" fill="#fff"/></svg>')
 
 
-def _contrails() -> str:
-    """Contrails curling across the top, and the roundel, where Climb has its bunting."""
-    return ('<div class="head"><svg class="trails" viewBox="0 0 800 160" preserveAspectRatio="none">'
-            '<path d="M-20 130 C140 30 300 170 460 70 S680 10 820 50" stroke="rgba(255,255,255,.75)" stroke-width="9" fill="none" stroke-linecap="round"/>'
-            '<path d="M-20 148 C160 70 320 190 480 96 S700 46 820 84" stroke="rgba(255,255,255,.45)" stroke-width="5" fill="none" stroke-linecap="round"/>'
-            f'</svg>{ROUNDEL}</div>')
+def _caption() -> str:
+    """The comic's opening caption, where Climb has its bunting."""
+    return '<div class="head"><div class="caption">Meanwhile, over the Channel…</div></div>'
 
 
-# Spitfire's own colours: navy, roundel red and blue, the pale Sky of the tail band.
-SPITFIRE_CSS = """
-.head { position: relative; height: 123px; margin: 0 -44px; }
-.trails { position: absolute; left: 0; top: 10px; width: 800px; height: 160px; }
-.roundel { position: absolute; right: 40px; top: 34px; width: 150px; height: 150px; transform: rotate(-8deg); filter: drop-shadow(7px 7px 0 #111); }
-.word i { background: #C8102E; color: #fff; border: 4px solid #111; box-shadow: 5px 5px 0 #111; }
-.word b { background: #1F3A8A; color: #fff; border: 5px solid #111; font-size: 76px; letter-spacing: .01em; }
-.name { background: #14214d; box-shadow: 6px 6px 0 #C8102E; }
-.avatar { background: #CFE6D8; }
-.badge.rank { background: #1F3A8A; color: #fff; }
-.badge.pay { background: #CFE6D8; }
-.row b { display: flex; align-items: center; gap: 10px; }
-.unit { width: 44px; height: 24px; }
-.height span { letter-spacing: .04em; }
+def _comic_word() -> str:
+    """SPITFIRE! in comic lettering: yellow, a heavy black outline, a red drop behind."""
+    return ('<svg class="comicword" viewBox="0 0 375 130"><g transform="rotate(-6 187 65)">'
+            '<text x="190" y="104" text-anchor="middle" letter-spacing="2" fill="#E63B2E" stroke="#111" stroke-width="10" '
+            'stroke-linejoin="round" paint-order="stroke">SPITFIRE!</text>'
+            '<text x="184" y="98" text-anchor="middle" letter-spacing="2" fill="#FFD23F" stroke="#111" stroke-width="7" '
+            'stroke-linejoin="round" paint-order="stroke">SPITFIRE!</text></g></svg>')
+
+
+def _comic_art() -> str:
+    bubble = ('<svg class="bubble" viewBox="0 0 170 92"><path d="M3 3 H151 Q167 3 167 19 V47 Q167 63 151 63 H72 L42 89 L50 63 H19 '
+              'Q3 63 3 47 V19 Q3 3 19 3 Z" fill="#fff" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>'
+              '<text x="85" y="45" text-anchor="middle" fill="#111" font-size="30">TALLY HO!</text></svg>')
+    sea = ('<svg class="sea" viewBox="0 0 800 120" preserveAspectRatio="none"><rect y="20" width="800" height="100" fill="#2E7FC0"/>'
+           '<path d="M0 20 H800" stroke="#111" stroke-width="5"/><path d="M30 56 q14 -10 28 0 M150 50 q14 -10 28 0 M290 60 q14 -10 28 0 '
+           'M420 52 q14 -10 28 0 M560 58 q14 -10 28 0 M690 50 q14 -10 28 0 M90 88 q14 -10 28 0 M360 92 q14 -10 28 0 M620 90 q14 -10 28 0" '
+           'stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/></svg>')
+    return f'{sea}<img class="plane" src="file://{PLANE_ART}">{bubble}'
+
+
+# Spitfire is drawn like a comic: a halftone sky in a black panel border, caption boxes and
+# Bangers lettering, yellow and red pops, the game's plane art.
+SPITFIRE_CSS = f"""
+@font-face {{ font-family: 'Bangers'; src: url('file://{COMIC_FONT}') format('woff2'); }}
+.card {{ box-shadow: inset 0 0 0 10px #111; }}
+.head {{ position: relative; height: 96px; margin: 0 -44px; }}
+.caption {{ position: absolute; left: 10px; top: 10px; padding: 16px 24px 12px; background: #FFF3C4; border-right: 6px solid #111;
+            border-bottom: 6px solid #111; font-family: 'Bangers'; font-size: 38px; letter-spacing: .04em; }}
+.comicword {{ position: relative; display: block; width: 640px; height: 222px; margin: -10px 0 -30px -40px; font-family: 'Bangers'; font-size: 100px; }}
+.plane {{ position: absolute; right: 12px; top: 282px; width: 380px; transform: rotate(-8deg); }}
+.bubble {{ position: absolute; right: 26px; top: 150px; width: 190px; height: 103px; font-family: 'Bangers'; }}
+.sea {{ position: absolute; left: 0; right: 0; bottom: 0; width: 800px; height: 120px; }}
+.name {{ max-width: 330px; box-shadow: 6px 6px 0 #FFD23F; }}
+.avatar {{ background: #FFD23F; }}
+.height span {{ font-family: 'Bangers'; font-size: 64px !important; font-weight: 400; letter-spacing: .04em; }}
+.badge.rank {{ background: #111; color: #FFD23F; }}
+.badge.pay {{ background: #FFD23F; }}
+.badge b {{ font-family: 'Bangers'; font-weight: 400; font-size: 62px; letter-spacing: .03em; }}
+.top h4 {{ font-family: 'Bangers'; font-weight: 400; font-size: 34px; letter-spacing: .06em; color: #E63B2E; }}
+.row b {{ display: flex; align-items: center; gap: 10px; }}
+.unit {{ width: 44px; height: 24px; }}
 """
-
-
-def _cliffs() -> str:
-    return ('<svg class="cliffs" viewBox="0 0 800 220" preserveAspectRatio="none"><path d="M0 70 L120 60 L210 80 L300 66 '
-            'L360 90 L360 220 L0 220 Z" fill="#f1ede2"/><path d="M0 70 L120 60 L210 80 L300 66 L360 90" fill="none" '
-            'stroke="#cfc6b4" stroke-width="4"/><path d="M0 150 Q400 130 800 150 L800 220 L0 220 Z" fill="#2f5d7a"/>'
-            '<path d="M40 170 Q120 162 200 170 M300 182 Q400 174 500 182 M560 166 Q660 158 760 166" stroke="rgba(255,255,255,.5)" '
-            'stroke-width="4" fill="none"/></svg>')
 
 
 STYLES = {
@@ -135,10 +134,9 @@ STYLES = {
         "head": _bunting, "css": "",
     },
     "spitfire": {
-        "sky": "linear-gradient(180deg, #3a5a96 0%, #6f5f92 34%, #c9767a 64%, #f0a774 84%, #f6c98f 100%)",
+        "sky": "radial-gradient(#3E97CF 3.2px, transparent 3.7px) 0 0 / 18px 18px, #5EB4E6",
         "small": "FLY THE", "big": "SPITFIRE", "unit": "BALLOONS", "unit_row": SMALL_BALLOON,
-        "art": lambda: f'{_cliffs()}<div class="b1">{BALLOON}</div><div class="b2">{BALLOON}</div>{SPITFIRE}',
-        "top": "TODAY'S TOP PILOTS", "head": _contrails, "css": SPITFIRE_CSS,
+        "art": _comic_art, "top": "TODAY'S TOP PILOTS", "head": _caption, "word": _comic_word, "css": SPITFIRE_CSS,
     },
 }
 
@@ -200,7 +198,7 @@ html, body {{ background: #111; font-family: 'ArchivoV', system-ui, sans-serif; 
 </style></head><body>
 <div class="card">{st["art"]()}
 {st["head"]()}
-<div class="word"><i>{st["small"]}</i><b>{st["big"]}</b></div>
+{st["word"]() if "word" in st else f'<div class="word"><i>{st["small"]}</i><b>{st["big"]}</b></div>'}
 <div class="who">{face}<div class="name">{esc(name)}</div></div>
 <div class="height"><b>{score:,}</b><span>{st["unit"]}</span></div>
 <div class="badges">
