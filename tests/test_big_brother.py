@@ -1985,13 +1985,13 @@ def test_public_vote_control_embed_states(bb):
     bb.close_round(rid)
     bb.set_state(bb.STATE_LAST_PUBLIC_VOTE_RESULT, {
         "round_id": rid,
-        "bottom3": [1, 2, 3],
+        "evicted_ids": [1],
         "standings": [(1, 0), (2, 1), (3, 2), (4, 5), (5, 6), (6, 7)],
         "pending_evictions": True
     })
     pending_embed = bb._public_vote_control_embed(None)
-    assert "EVICTIONS PENDING" in pending_embed.description
-    assert "Evict Nominee(s)" in pending_embed.description
+    assert "EVICTION PENDING" in pending_embed.description
+    assert "Evict Housemate" in pending_embed.description
 
 
 def test_drop_outsider_votes_does_not_affect_public_vote(bb):
@@ -2092,6 +2092,35 @@ def test_public_vote_to_evict_ranking_and_buttons(bb):
     btn_ids = [getattr(b, "custom_id", None) for b in view.children]
     assert f"bb:pubevict:{rid}:10" in btn_ids
     assert f"bb:pubevict:{rid}:20" in btn_ids
+
+
+@pytest.mark.asyncio
+async def test_close_public_vote_ranks_and_sets_pending(bb, monkeypatch):
+    import unittest.mock as mock
+    nominees = [10, 20, 30]
+    rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
+
+    # 5 votes to evict 20, 2 votes to evict 10, 0 votes to evict 30
+    for i in range(5):
+        bb.cast_vote(rid, 100 + i, 20)
+    for i in range(2):
+        bb.cast_vote(rid, 200 + i, 10)
+
+    fake_client = mock.MagicMock()
+    fake_client.get_guild.return_value = None
+    monkeypatch.setattr(bb, "notify_host", mock.AsyncMock())
+    monkeypatch.setattr(bb, "_channel", mock.AsyncMock(return_value=None))
+
+    res = await bb.close_public_vote(fake_client)
+    assert res is not None
+    assert res["round_id"] == rid
+    assert res["evicted_ids"] == [20]
+    assert res["standings"] == [(20, 5), (10, 2), (30, 0)]
+    assert res["pending_evictions"] is True
+
+    last = bb.get_state(bb.STATE_LAST_PUBLIC_VOTE_RESULT)
+    assert last["evicted_ids"] == [20]
+
 
 
 
