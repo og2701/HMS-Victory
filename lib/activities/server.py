@@ -10,6 +10,8 @@ mapping's prefix isn't worth betting the launch on:
     GET  /wordle         today's board for the session's player
     POST /wordle/guess   {guess} -> the board after it
     GET  /crossword, POST /crossword/answer, POST /crossword/hint
+    GET  /climb          Climb HMS Victory: today's seed and the player's best and pay so far
+    POST /climb/start, POST /climb/finish {height, time, bounces, seed}
     GET  /home           balance, today's puzzles, the casino in last-played order
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
@@ -25,7 +27,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, crossword_api, wordle_api
+from lib.activities import auth, casino, climb, crossword_api, wordle_api
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ async def token(request):
                   **_opening(client, uid, game, channel)})
 
 
-_STATE = {"wordle": wordle_api, "crossword": crossword_api}
+_STATE = {"wordle": wordle_api, "crossword": crossword_api, "climb": climb}
 
 
 def _game_for(uid: int, body: dict) -> str:
@@ -342,6 +344,44 @@ async def crossword_hint(request):
     return await _crossword_move(request, lambda client, uid, date, body: crossword_api.hint(client, uid, date))
 
 
+async def climb_state(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    gated = _gate(request.app[CLIENT], who["uid"], "climb")
+    if gated is not None:
+        return gated
+    return _json(climb.state(who["uid"], _today()))
+
+
+async def climb_run(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    gated = _gate(request.app[CLIENT], who["uid"], "climb")
+    if gated is not None:
+        return gated
+    action = request.match_info["action"]
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        if action == "start":
+            return _json(climb.start(who["uid"], _today()))
+        if action == "finish":
+            board, result = climb.finish(who["uid"], _today(), body if isinstance(body, dict) else {})
+            if result["newBest"] and who["ch"]:
+                climb.schedule_post(who["uid"], who["ch"], board["date"])
+            return _json({**board, "result": result})
+    except climb.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("climb %s failed", action, exc_info=True)
+        return _error("Something went wrong saving that climb.", 500)
+    return _error("Not found.", 404)
+
+
 async def home_state(request):
     who = _player(request)
     if who is None:
@@ -441,6 +481,8 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/crossword/answer", crossword_answer)
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
         app.router.add_get(f"{prefix}/home", home_state)
+        app.router.add_get(f"{prefix}/climb", climb_state)
+        app.router.add_post(f"{prefix}/climb/{{action}}", climb_run)
         app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
         app.router.add_get(f"{prefix}/casino/watch/{{uid}}/{{game}}", casino_watch)
         app.router.add_post(f"{prefix}/casino/{{game}}/{{action}}", casino_move)

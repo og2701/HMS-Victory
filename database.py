@@ -541,6 +541,34 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_pennyfalls_cups_user ON pennyfalls_cups(user_id)")
         # Each player's machine as they left it: every coin's position, packed by the page, and
         # where the pusher was in its sweep. The bot only keeps one whose coin count matches its own.
+        # Climb HMS Victory (lib/activities/climb.py): each player's best and pay for the day, and
+        # every run, with the height they reported and the height the bot believed.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS climb_days (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                best INTEGER NOT NULL DEFAULT 0,
+                paid INTEGER NOT NULL DEFAULT 0,
+                runs INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS climb_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                started INTEGER NOT NULL,
+                ended INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                reported INTEGER NOT NULL,
+                game_time REAL NOT NULL,
+                bounces INTEGER NOT NULL,
+                earned INTEGER NOT NULL,
+                trimmed INTEGER NOT NULL
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_climb_runs_user ON climb_runs(user_id, date)")
         c.execute('''
             CREATE TABLE IF NOT EXISTS pennyfalls_boards (
                 user_id TEXT PRIMARY KEY,

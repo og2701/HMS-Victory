@@ -457,6 +457,15 @@ WORDLE_IMAGE_ENABLED = True
 WORDLE_ANSWERS_FILE = os.path.join("data", "words", "answers.txt")
 WORDLE_VALID_FILE = os.path.join("data", "words", "valid.txt")
 WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to solve (1..6)
+# Climb HMS Victory (the activity's climb up the rigging): only a player's best height of the
+# day pays, at CLIMB_RATE UKP a metre up to CLIMB_CAP. A height counts only up to what the time the
+# bot saw allows, at CLIMB_MAX_SPEED metres a second (a strong run averages about 6). New bests are
+# announced in the channel once the player stops improving for CLIMB_POST_AFTER seconds.
+CLIMB_ENABLED = True
+CLIMB_RATE = 0.5
+CLIMB_CAP = 150
+CLIMB_MAX_SPEED = 9.0
+CLIMB_POST_AFTER = 120
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a
 # Cloudflare Tunnel at ukplace.ogme.dev, and only starts once ACTIVITIES_CLIENT_ID,
@@ -476,6 +485,7 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     "wordle": ("wordle", "Play today's HMS Wordle - guess the 5-letter word for UKPence"),
     "crossword": ("crossword", "Play today's HMS Crossword - the daily mini for UKPence"),
     "games": ("home", "Open HMS Games: the daily puzzles and the casino"),
+    "climb": ("climb", "Climb HMS Victory - bounce up the rigging for UKPence"),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),

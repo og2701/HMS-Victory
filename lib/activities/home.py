@@ -1,5 +1,5 @@
-"""The activity's home screen: balance, today's two puzzles, and the casino in the order
-the player last played its games.
+"""The activity's home screen: balance, today's daily games (Wordle, the crossword and Climb HMS
+Victory), and the casino in the order the player last played its games.
 
 The puzzle cards only carry what the card shows (colours for Wordle, the grid's shape for
 the crossword), never letters, so the home screen can't give an answer away.
@@ -34,6 +34,17 @@ def _crossword(uid: int, date) -> dict:
         "done": s["done"], "paid": s["paid"], "reward": s["reward"],
         "started": solved > 0 or s["hints"]["used"] > 0 or s["wrong"]["count"] > 0,
     }
+
+
+def _climb(uid: int, date) -> dict | None:
+    """The climb's tile; a problem with it never takes the home screen down."""
+    from lib.activities import climb
+    try:
+        return climb.home_card(uid, date)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("couldn't load the climb's home card", exc_info=True)
+        return None
 
 
 def _casino(uid: int) -> list[dict]:
@@ -75,5 +86,6 @@ def state(client, uid: int) -> dict:
         "dateLabel": f"{date:%A %-d %B}",
         "wordle": _wordle(uid, date),
         "crossword": _crossword(uid, date),
+        "climb": _climb(uid, date),
         "casino": _casino(uid),
     }
