@@ -102,7 +102,7 @@ def _comic_art() -> str:
     return f'{sea}<img class="plane" src="file://{PLANE_ART}">{bubble}'
 
 
-# Spitfire is drawn like a comic: a halftone sky in a black panel border, caption boxes and
+# Spitfire is drawn like a comic: a flat sky in a black panel border, caption boxes and
 # Bangers lettering, yellow and red pops, the game's plane art.
 SPITFIRE_CSS = f"""
 @font-face {{ font-family: 'Bangers'; src: url('file://{COMIC_FONT}') format('woff2'); }}
@@ -134,7 +134,7 @@ STYLES = {
         "head": _bunting, "css": "",
     },
     "spitfire": {
-        "sky": "radial-gradient(#3E97CF 3.2px, transparent 3.7px) 0 0 / 18px 18px, #5EB4E6",
+        "sky": "#5EB4E6",
         "small": "FLY THE", "big": "SPITFIRE", "unit": "BALLOONS", "unit_row": SMALL_BALLOON,
         "art": _comic_art, "top": "TODAY'S TOP PILOTS", "head": _caption, "word": _comic_word, "css": SPITFIRE_CSS,
     },
