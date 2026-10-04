@@ -209,6 +209,41 @@ SITTING = 30 * 60            # beat your best again within this long and the sam
 _sittings: dict[int, dict] = {}
 
 
+def _member(uid: int):
+    """The player as the main bot sees them (it has the member list; the activities bot doesn't)."""
+    try:
+        from lib.activities.casino import base
+        guild = base.CLIENT.get_guild(config.GUILD_ID) if base.CLIENT else None
+        return guild.get_member(int(uid)) if guild else None
+    except Exception:
+        return None
+
+
+async def _picture(uid: int, iso: str, d: dict) -> bytes | None:
+    """The card for the post: avatar, name, height, place, pay, and today's top three."""
+    try:
+        from lib.activities import climb_card
+        member = _member(uid)
+        avatar = None
+        if member is not None:
+            try:
+                avatar = await member.display_avatar.replace(size=256, format="png").read()
+            except Exception:
+                avatar = None
+        top = DatabaseManager.fetch_all(
+            "SELECT user_id, best FROM climb_days WHERE date = ? AND best > 0 ORDER BY best DESC, user_id LIMIT 3", (iso,))
+        names = []
+        for u, h in top:
+            m = _member(int(u))
+            names.append((getattr(m, "display_name", None) or "A sailor", int(h), str(u) == str(uid)))
+        return await climb_card.card_png(name=getattr(member, "display_name", None) or "A sailor", avatar=avatar,
+                                         height=d["best"], rank=rank(iso, d["best"]), players=_players(iso),
+                                         paid=d["paid"], cap=cap(), top=names)
+    except Exception:
+        log.warning("couldn't make the climb picture", exc_info=True)
+        return None
+
+
 def post_best(uid: int, channel_id: int, iso: str) -> None:
     """Announce a new best in the channel the game was opened in: straight away, as one line
     per sitting that's rewritten as the best goes up, so a run of attempts makes one post."""
@@ -221,8 +256,9 @@ def post_best(uid: int, channel_id: int, iso: str) -> None:
                 f"({_ordinal(rank(iso, d['best']))} today){paid}")
         prev = _sittings.get(uid)
         reuse = (prev and prev["ch"] == channel_id and prev["date"] == iso and time.time() - prev["at"] < SITTING)
+        png = await _picture(uid, iso, d)
         from lib.activities import launcher
-        mid = await launcher.announce_or_edit(channel_id, text, "climb", prev["msg"] if reuse else None)
+        mid = await launcher.announce_or_edit(channel_id, text, "climb", prev["msg"] if reuse else None, png=png)
         if mid:
             _sittings[uid] = {"ch": channel_id, "date": iso, "msg": mid, "at": time.time()}
             log.info("climb best for %s %s in %s (%s m)", uid, "updated" if reuse else "posted", channel_id, d["best"])

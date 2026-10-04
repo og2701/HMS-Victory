@@ -14,6 +14,7 @@ to send, and Discord refuses a bulk update that drops it.
 """
 
 import asyncio
+import io
 import logging
 import time
 
@@ -168,21 +169,25 @@ async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
         log.warning("couldn't post the activity message in %s", channel_id, exc_info=True)
 
 
-async def announce_or_edit(channel_id: int, text: str, game: str, message_id: int | None = None) -> int | None:
-    """Post a line with a Play button, or rewrite the one already posted. Returns the message's
-    id, or None if it couldn't be posted (logged)."""
+async def announce_or_edit(channel_id: int, text: str, game: str, message_id: int | None = None,
+                           png: bytes | None = None) -> int | None:
+    """Post a line with a Play button (and a picture, if given), or rewrite the one already
+    posted. Returns the message's id, or None if it couldn't be posted (logged)."""
     if _client is None or not _client.is_ready():
         log.warning("couldn't post the activity message in %s: the activities bot isn't connected", channel_id)
         return None
     channel = _client.get_partial_messageable(int(channel_id))
     try:
+        picture = (lambda: [discord.File(io.BytesIO(png), filename=f"{game}.png")]) if png else (lambda: [])
         if message_id:
             try:
-                await channel.get_partial_message(int(message_id)).edit(content=text, view=PlayView(game))
+                await channel.get_partial_message(int(message_id)).edit(content=text, view=PlayView(game),
+                                                                        attachments=picture())
                 return int(message_id)
             except discord.NotFound:
                 pass                # deleted: post a fresh one
-        msg = await channel.send(text, view=PlayView(game), allowed_mentions=discord.AllowedMentions.none())
+        msg = await channel.send(text, view=PlayView(game), files=picture(),
+                                 allowed_mentions=discord.AllowedMentions.none())
         return msg.id
     except Exception:
         log.warning("couldn't post the activity message in %s", channel_id, exc_info=True)

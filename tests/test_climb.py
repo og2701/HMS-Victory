@@ -127,11 +127,15 @@ def test_a_new_best_posts_once_and_then_updates(climb, monkeypatch):
     from lib.activities import launcher
     calls = []
 
-    async def fake(channel_id, text, game, message_id=None):
+    async def fake(channel_id, text, game, message_id=None, png=None):
         calls.append((channel_id, text, message_id))
         return message_id or 999
 
+    async def no_picture(*a):
+        return None
+
     monkeypatch.setattr(launcher, "announce_or_edit", fake)
+    monkeypatch.setattr(climb, "_picture", no_picture)
     climb._sittings.clear()
 
     async def go():
