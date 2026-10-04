@@ -94,7 +94,7 @@ def _comic_word() -> str:
 def _comic_art() -> str:
     bubble = ('<svg class="bubble" viewBox="0 0 170 92"><path d="M3 3 H151 Q167 3 167 19 V47 Q167 63 151 63 H72 L42 89 L50 63 H19 '
               'Q3 63 3 47 V19 Q3 3 19 3 Z" fill="#fff" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>'
-              '<text x="85" y="45" text-anchor="middle" fill="#111" font-size="30">TALLY HO!</text></svg>')
+              '<text x="85" y="45" text-anchor="middle" fill="#111" font-size="26">FOR UKPENCE!</text></svg>')
     sea = ('<svg class="sea" viewBox="0 0 800 120" preserveAspectRatio="none"><rect y="20" width="800" height="100" fill="#2E7FC0"/>'
            '<path d="M0 20 H800" stroke="#111" stroke-width="5"/><path d="M30 56 q14 -10 28 0 M150 50 q14 -10 28 0 M290 60 q14 -10 28 0 '
            'M420 52 q14 -10 28 0 M560 58 q14 -10 28 0 M690 50 q14 -10 28 0 M90 88 q14 -10 28 0 M360 92 q14 -10 28 0 M620 90 q14 -10 28 0" '
