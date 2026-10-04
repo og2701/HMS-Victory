@@ -88,7 +88,7 @@ def _players(iso: str) -> int:
     return int(row[0]) if row else 0
 
 
-BOARD = 10
+BOARD = 100                  # rows on each leaderboard tab (the page scrolls them)
 
 
 def board(uid: int, date) -> dict:
