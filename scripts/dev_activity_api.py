@@ -6,7 +6,10 @@ HMS Games page against the real game code without Discord.
 Everything it writes goes to a temp folder: a fresh database with one funded player, and the
 puzzle and casino state files. It prints a session token; open the page with
 http://localhost:5174/?local=<token> (the Vite dev server proxies /api here). Nothing here
-can touch the live bot's data, and #casino posts go nowhere (no Discord connection)."""
+can touch the live bot's data, and #casino posts go nowhere (no Discord connection).
+
+There are two funded players, Tester and Rival, so a Broadside duel can be played from two tabs:
+open each printed link in its own tab, with &game=duel to go straight to the duels."""
 
 import asyncio
 import os
@@ -19,6 +22,7 @@ os.environ.setdefault("OPENAI_TOKEN", "dev")
 os.environ["ACTIVITIES_SESSION_SECRET"] = "dev-activity-secret"
 
 PLAYER = 4242
+RIVAL = 4343
 WORKSHOP = 1141037835445616640
 
 
@@ -38,15 +42,19 @@ def main(port: int) -> None:
     database.init_db()
     from lib.economy import economy_manager as em
     em.add_bb(PLAYER, 50_000, reason="dev seed", taxable=False)
+    em.add_bb(RIVAL, 50_000, reason="dev seed", taxable=False)
 
     from lib.activities import auth, server
     from lib.activities.casino import base
     base._FILE = os.path.join(tmp, "activity_casino.json")
+    from lib.activities import duel
+    duel._FILE = os.path.join(tmp, "activity_duels.json")
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
-    member = SimpleNamespace(display_name="Tester")
-    guild = SimpleNamespace(get_member=lambda uid: member)
+    members = {PLAYER: SimpleNamespace(id=PLAYER, display_name="Tester", bot=False),
+               RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False)}
+    guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)
 
     async def run():
@@ -54,9 +62,11 @@ def main(port: int) -> None:
         runner = web.AppRunner(server.build_app(client))
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
-        token = auth.make_session(PLAYER, WORKSHOP)
         print(f"activity API on http://127.0.0.1:{port} (data in {tmp})")
-        print(f"open: http://localhost:5174/?local={token}", flush=True)
+        print(f"open: http://localhost:5174/?local={auth.make_session(PLAYER, WORKSHOP)}")
+        print(f"rival (a second tab, for duels): http://localhost:5174/?local={auth.make_session(RIVAL, WORKSHOP)}&game=duel",
+              flush=True)
+        asyncio.get_running_loop().create_task(duel.run_sweeper())
         await asyncio.Event().wait()
 
     asyncio.run(run())

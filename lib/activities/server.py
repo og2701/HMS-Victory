@@ -18,6 +18,10 @@ mapping's prefix isn't worth betting the launch on:
     POST /casino/<game>/<action>   deal {bet} or a move -> the table after it
     POST /casino/<game>/here|leave the open table checking in, or closing (for #casino)
     GET  /casino/watch/<uid>/<game>   someone else's table, for a spectator
+    GET  /duel                Broadside: your duel, your challenge, and the ones you could take
+    POST /duel/challenge {stake, to?}, /duel/accept|cancel {id}
+    GET  /duel/people?q=      members to challenge
+    GET  /duel/match/<id>, POST /duel/match/<id>/pick {move}, /duel/match/<id>/forfeit
     GET  /health
 """
 
@@ -28,7 +32,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, crossword_api, wordle_api
+from lib.activities import auth, casino, crossword_api, duel, wordle_api
 from lib.activities.daily_score import GAMES as SCORE_GAMES
 from lib.activities.daily_score import Refuse as ScoreRefuse
 
@@ -36,6 +40,7 @@ log = logging.getLogger(__name__)
 
 _runner: web.AppRunner | None = None
 _sweeper: asyncio.Task | None = None
+_duel_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -135,7 +140,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked == "home":
+    if asked in _STATE or asked in ("home", "duel"):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
@@ -170,6 +175,8 @@ def _gate_name(game: str) -> str:
     """The name lib.core.restrictions knows a screen by."""
     if game.startswith("watch:"):
         return "home"       # watching isn't playing
+    if game == "duel":
+        return duel.GAME
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
         return a.command if a else "casino"
@@ -189,6 +196,10 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
         return {"game": game, "casino": _named(client, uid, casino.table(uid, game[7:]))}
+    if game == "duel":
+        if not _casino_open(channel):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        return {"game": game, "duel": _duel_lobby(client, uid)}
     if game.startswith("watch:"):
         player, key = _watched(game)
         if not _casino_open(channel):
@@ -487,6 +498,96 @@ async def casino_watch(request):
         return _error(str(e), 404)
 
 
+# ---- Broadside duels ------------------------------------------------------------------------
+
+def _duel_lobby(client, uid: int) -> dict:
+    from lib.economy.economy_manager import get_bb
+    return duel.lobby(uid, lambda u: _name(client, u), get_bb(uid))
+
+
+def _duel_request(request):
+    """(who, error response) for a duel route."""
+    who = _player(request)
+    if who is None:
+        return None, _error("Sign in again.", 401)
+    if not _casino_open(who["ch"]):
+        return who, _error("Duels only open in #bot-workshop while they're being tested.", 403)
+    return who, _gate(request.app[CLIENT], who["uid"], duel.GAME)
+
+
+async def _duel_body(request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+async def duel_lobby(request):
+    who, err = _duel_request(request)
+    if err is not None:
+        return err
+    return _json(_duel_lobby(request.app[CLIENT], who["uid"]))
+
+
+async def duel_people(request):
+    who, err = _duel_request(request)
+    if err is not None:
+        return err
+    guild = request.app[CLIENT].get_guild(config.GUILD_ID)
+    return _json({"people": duel.people(who["uid"], request.query.get("q", ""), getattr(guild, "members", []) or [])})
+
+
+async def duel_action(request):
+    """challenge / accept / cancel; answers with the lobby as it now stands."""
+    who, err = _duel_request(request)
+    if err is not None:
+        return err
+    body, action = await _duel_body(request), request.match_info["action"]
+    try:
+        if action == "challenge":
+            to = body.get("to")
+            if to is not None:
+                to = int(to)
+                guild = request.app[CLIENT].get_guild(config.GUILD_ID)
+                if guild is None or guild.get_member(to) is None:
+                    return _error("They aren't in the server.", 404)
+            duel.challenge(who["uid"], body.get("stake"), to)
+        elif action == "accept":
+            duel.accept(who["uid"], str(body.get("id") or ""))
+        elif action == "cancel":
+            duel.cancel(who["uid"], str(body.get("id") or ""))
+        else:
+            return _error("That isn't a duel action.", 404)
+    except (duel.Refuse, ValueError) as e:
+        return _error(str(e) if isinstance(e, duel.Refuse) else "Bad request.", 422)
+    except Exception:
+        log.error("duel %s failed", action, exc_info=True)
+        return _error("Something went wrong. Your stake is safe; try again.", 500)
+    return _json(_duel_lobby(request.app[CLIENT], who["uid"]))
+
+
+async def duel_match(request):
+    who, err = _duel_request(request)
+    if err is not None:
+        return err
+    client = request.app[CLIENT]
+    mid, action = request.match_info["id"], request.match_info.get("action")
+    try:
+        if action == "pick":
+            duel.pick(who["uid"], mid, str((await _duel_body(request)).get("move") or ""))
+        elif action == "forfeit":
+            duel.forfeit(who["uid"], mid)
+        elif action is not None:
+            return _error("That isn't a duel action.", 404)
+        return _json(duel.match(who["uid"], mid, lambda u: _name(client, u)))
+    except duel.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("duel match %s %s failed", mid, action, exc_info=True)
+        return _error("Something went wrong. Your stake is safe; try again.", 500)
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -512,6 +613,11 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/casino/{{game}}", casino_state)
         app.router.add_get(f"{prefix}/casino/watch/{{uid}}/{{game}}", casino_watch)
         app.router.add_post(f"{prefix}/casino/{{game}}/{{action}}", casino_move)
+        app.router.add_get(f"{prefix}/duel", duel_lobby)
+        app.router.add_get(f"{prefix}/duel/people", duel_people)
+        app.router.add_get(f"{prefix}/duel/match/{{id}}", duel_match)
+        app.router.add_post(f"{prefix}/duel/match/{{id}}/{{action}}", duel_match)
+        app.router.add_post(f"{prefix}/duel/{{action}}", duel_action)
     return app
 
 
@@ -548,6 +654,7 @@ async def start(client) -> bool:
         log.info("ukplace activities API not started: ACTIVITIES_* secrets aren't in .env")
         return False
     casino.base.CLIENT = client          # badge awards need the bot's client
+    duel.CLIENT = client
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))
@@ -558,6 +665,8 @@ async def start(client) -> bool:
     await launcher.start(client.session)
     global _sweeper
     _sweeper = asyncio.create_task(casino.sessions.run_sweeper())
+    global _duel_sweeper
+    _duel_sweeper = asyncio.create_task(duel.run_sweeper())
     return True
 
 
@@ -567,6 +676,10 @@ async def stop() -> None:
     if _sweeper is not None:
         _sweeper.cancel()
         _sweeper = None
+    global _duel_sweeper
+    if _duel_sweeper is not None:
+        _duel_sweeper.cancel()
+        _duel_sweeper = None
     try:
         await casino.sessions.close_all()
     except Exception:
