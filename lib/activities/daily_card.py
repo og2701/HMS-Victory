@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 COMIC_FONT = ROOT / "data" / "fonts" / "Bangers.woff2"
 PLANE_ART = ROOT / "data" / "games" / "spitfire-plane.webp"
+RIDER_ART = ROOT / "data" / "games" / "paperboy-rider.webp"
 UKP_ART = ROOT / "data" / "ukpence.svg"
 W = 800
 
@@ -125,6 +126,31 @@ SPITFIRE_CSS = f"""
 """
 
 
+def _round_art() -> str:
+    """Paperboy: the rider mid-throw, the sun coming up behind a row of terraced roofs."""
+    roofs = "".join(f'<rect x="{x}" y="{y}" width="14" height="22" fill="#2a2240"/><rect x="{x + 18}" y="{y + 4}" width="10" height="18" fill="#2a2240"/>'
+                    for x, y in ((40, 26), (190, 30), (340, 24), (490, 28), (640, 26)))
+    skyline = (f'<svg class="roofs" viewBox="0 0 800 120" preserveAspectRatio="none">{roofs}'
+               '<path d="M0 60 L75 34 L150 60 L225 34 L300 60 L375 34 L450 60 L525 34 L600 60 L675 34 L750 60 L800 44 V120 H0Z" fill="#2a2240"/></svg>')
+    return f'<div class="sun"></div>{skyline}<img class="rider" src="file://{RIDER_ART}">'
+
+
+def _round_head() -> str:
+    return '<div class="head"></div>'
+
+
+ROUND_CSS = """
+.head { height: 120px; }
+.sun { position: absolute; right: 120px; top: 120px; width: 240px; height: 240px; border-radius: 50%;
+       background: radial-gradient(circle, #FFE9B0 0%, #FFC27A 55%, rgba(255,194,122,0) 72%); }
+.roofs { position: absolute; left: 0; right: 0; top: 300px; width: 100%; height: 120px; }
+.rider { position: absolute; right: 18px; top: 96px; width: 230px; }
+.word i { background: #2a2240; color: #FFC94A; }
+.badge.pay { background: #FFC94A; }
+.top h4 { color: #B8462E; }
+"""
+
+
 STYLES = {
     "climb": {
         "sky": "linear-gradient(180deg, #b85a78 0%, #e9805e 48%, #ffcf96 100%)",
@@ -136,6 +162,11 @@ STYLES = {
         "sky": "#5EB4E6",
         "small": "FLY THE", "big": "SPITFIRE", "unit": "BALLOONS", "unit_row": SMALL_BALLOON,
         "art": _comic_art, "top": "TODAY'S TOP PILOTS", "head": _caption, "word": _comic_word, "css": SPITFIRE_CSS,
+    },
+    "paperboy": {
+        "sky": "linear-gradient(180deg, #3a2f6a 0%, #b9677a 34%, #f59e5b 62%, #ffd39a 100%)",
+        "small": "THE MORNING ROUND", "big": "PAPERBOY", "unit": "POINTS", "unit_row": "pts",
+        "art": _round_art, "top": "TODAY'S TOP PAPERBOYS", "head": _round_head, "css": ROUND_CSS,
     },
 }
 

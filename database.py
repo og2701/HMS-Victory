@@ -599,6 +599,34 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_spitfire_runs_user ON spitfire_runs(user_id, date)")
+        # Paperboy (lib/activities/daily_score.py): the same shape again; its score is the bot's own,
+        # from replaying the run's inputs (lib/activities/paperboy_sim.py).
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS paperboy_days (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                best INTEGER NOT NULL DEFAULT 0,
+                paid INTEGER NOT NULL DEFAULT 0,
+                runs INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS paperboy_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                started INTEGER NOT NULL,
+                ended INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                reported INTEGER NOT NULL,
+                game_time REAL NOT NULL,
+                throws INTEGER NOT NULL,
+                earned INTEGER NOT NULL,
+                trimmed INTEGER NOT NULL
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_paperboy_runs_user ON paperboy_runs(user_id, date)")
         c.execute('''
             CREATE TABLE IF NOT EXISTS pennyfalls_boards (
                 user_id TEXT PRIMARY KEY,

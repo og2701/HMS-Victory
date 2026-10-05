@@ -200,3 +200,59 @@ def test_the_post_pictures_draw():
         html = daily_card.card_html(key, name="Pooja", avatar=None, score=23, rank=1, players=4, paid=43,
                                     top=[("Pooja", 23, True)])
         assert "Pooja" in html and daily_card.STYLES[key]["big"] in html
+
+
+def _deliveries(seed: str, secs: float) -> list[list[int]]:
+    """Inputs that throw as each lit door comes up (and don't dodge), from the bot's own copy."""
+    from lib.activities import paperboy_sim as S
+    run, inputs = S.Run(seed), []
+    while not run.over and run.step < secs * 120:
+        for h in run.street.houses:
+            if h["wants"] and not h["delivered"] and abs(h["door"] - run.dist - S.speed_at(run.step) * S.FLIGHT) <= S.speed_at(run.step) // 2:
+                code = S.THROW_LEFT if h["side"] < 0 else S.THROW_RIGHT
+                run.input(code)
+                inputs.append([run.step, code])
+        run.tick()
+    return inputs
+
+
+def test_paperboy_scores_what_the_rules_give_for_the_runs_inputs(clock):
+    from lib.activities import daily_score, paperboy_sim
+    g = daily_score.PAPERBOY
+    g.clock = clock
+    seed = g.seed_for(DAY.isoformat())
+    inputs = _deliveries(seed, 60)
+    played = paperboy_sim.replay(seed, inputs, 120 * 60)
+    assert played["score"] > 0
+    st = g.start(UID, DAY)
+    clock["t"] += played["steps"] / 120 + 1
+    s, r = g.finish(UID, DAY, {"score": played["score"], "time": played["steps"] / 120, "count": played["throws"],
+                               "seed": seed, "run": st["run"], "inputs": inputs})
+    assert r["height"] == played["score"] and not r["trimmed"]
+    # a page that claims more than its inputs earn gets what they earn
+    clock["t"] += 5
+    st = g.start(UID, DAY)
+    clock["t"] += played["steps"] / 120 + 1
+    s, r = g.finish(UID, DAY, {"score": 999, "time": played["steps"] / 120, "count": 1, "seed": seed, "run": st["run"],
+                               "inputs": inputs})
+    assert r["height"] == played["score"] and r["trimmed"]
+    # and with no inputs at all, nothing
+    clock["t"] += 5
+    st = g.start(UID, DAY)
+    clock["t"] += 30
+    s, r = g.finish(UID, DAY, {"score": 50, "time": 30, "count": 9, "seed": seed, "run": st["run"]})
+    assert r["height"] == 0 and r["trimmed"]
+
+
+def test_a_paperboy_replay_is_cut_off_at_the_bots_clock(clock):
+    from lib.activities import daily_score, paperboy_sim
+    g = daily_score.PAPERBOY
+    g.clock = clock
+    seed = g.seed_for(DAY.isoformat())
+    inputs = _deliveries(seed, 60)
+    full = paperboy_sim.replay(seed, inputs, 120 * 60)
+    st = g.start(UID, DAY)
+    clock["t"] += 10                      # the page says the run took far longer than the bot saw
+    s, r = g.finish(UID, DAY, {"score": full["score"], "time": full["steps"] / 120, "count": full["throws"],
+                               "seed": seed, "run": st["run"], "inputs": inputs})
+    assert r["height"] == paperboy_sim.replay(seed, inputs, int((10 + daily_score.GRACE) * 120))["score"] < full["score"]

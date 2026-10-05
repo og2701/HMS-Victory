@@ -129,6 +129,7 @@ def main(port: int) -> None:
               flush=True)
         print(f"third player (Countdown): http://localhost:5174/?local={auth.make_session(THIRD, WORKSHOP)}&game=countdown",
               flush=True)
+        print(f"paperboy: http://localhost:5174/?local={auth.make_session(PLAYER, WORKSHOP)}&game=paperboy", flush=True)
         asyncio.get_running_loop().create_task(duel.run_sweeper())
         asyncio.get_running_loop().create_task(countdown.run_sweeper())
         await asyncio.Event().wait()

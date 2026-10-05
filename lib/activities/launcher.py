@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 _client: "Launcher | None" = None
 _requested: dict[int, tuple[str, float]] = {}
 REQUEST_TTL = 120   # seconds between asking for a game and the page signing in
-GAMES = ("wordle", "crossword", "climb", "spitfire")
+GAMES = ("wordle", "crossword", "climb", "spitfire", "paperboy")
 
 
 def _commands() -> dict:

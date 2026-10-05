@@ -88,5 +88,6 @@ def state(client, uid: int) -> dict:
         "crossword": _crossword(uid, date),
         "climb": _score_card("climb", uid, date),
         "spitfire": _score_card("spitfire", uid, date),
+        "paperboy": _score_card("paperboy", uid, date),
         "casino": _casino(uid),
     }

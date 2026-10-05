@@ -30,12 +30,13 @@ from dataclasses import dataclass, field
 
 import config
 from database import DatabaseManager
-from lib.activities import score_limits
+from lib.activities import paperboy_sim, score_limits
 
 log = logging.getLogger(__name__)
 
 START_GAP = 1.0              # seconds between one player's runs
 GRACE = 2.0                  # seconds on top of the bot's clock, for the hop to and from the bot
+REPLAY_MAX = 15 * 60         # the longest run a replay plays out, seconds
 RUN_MAX_AGE = 30 * 60        # a finish that arrives later than this after its start doesn't count
 SITTING = 30 * 60            # beat your best again within this long and the same post is updated
 BOARD = 100                  # rows on each leaderboard tab (the page scrolls them)
@@ -77,6 +78,7 @@ class ScoreGame:
     emoji: str
     nobody: str = "A sailor"
     limit: object = None     # (seed, seconds) -> the most anyone could score in that long
+    replay: object = None    # (seed, inputs, steps) -> {"score", "steps", "throws", ...}: the rules' own score
     _runs: dict = field(default_factory=dict)        # uid -> the run in progress (pages from before receipts)
     _last_start: dict = field(default_factory=dict)
     _posts: dict = field(default_factory=dict)
@@ -249,7 +251,19 @@ class ScoreGame:
                 allowed = min(allowed, self.limit(run["seed"], min(elapsed + GRACE, said_time + 5)))
             except Exception:
                 log.error("couldn't work out the %s limit; going by the clock alone", self.key, exc_info=True)
-        score = min(reported, allowed)
+        if self.replay is not None:
+            # the rules play the run again from the inputs the page recorded, for no longer than the
+            # bot's clock allows: that score is the one that counts, whatever the page says
+            try:
+                played = self.replay(run["seed"], body.get("inputs"),
+                                     int(min(elapsed + GRACE, said_time + 5, REPLAY_MAX) * 120))
+                allowed, count = played["score"], played["throws"]
+            except Exception:
+                log.error("couldn't replay a %s run for %s", self.key, uid, exc_info=True)
+                allowed = 0
+            score = allowed
+        else:
+            score = min(reported, allowed)
         trimmed = score < reported
         if trimmed:
             log.warning("%s score trimmed for %s: reported %s in %.1fs (game said %.1fs), allowed %s",
@@ -341,4 +355,9 @@ SPITFIRE = ScoreGame(
     post="flew the **Spitfire** past **{score} balloons**", emoji="✈️", nobody="A pilot",
     limit=score_limits.spitfire_max)
 
-GAMES = {g.key: g for g in (CLIMB, SPITFIRE)}
+PAPERBOY = ScoreGame(
+    key="paperboy", label="Paperboy", prefix="PAPERBOY", days="paperboy_days", runs="paperboy_runs",
+    score_col="score", count_col="throws", rate=2, cap=150, max_rate=10.0, max_score=5000, slack=10,
+    post="delivered **{score} points** of papers", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay)
+
+GAMES = {g.key: g for g in (CLIMB, SPITFIRE, PAPERBOY)}

@@ -482,6 +482,11 @@ SPITFIRE_RATE = 3
 SPITFIRE_CAP = 150
 SPITFIRE_MAX_SPEED = 1.5
 SPITFIRE_MAX_HEIGHT = 1_000
+# Paperboy (lib/activities/daily_score.py): the score is the bot's own, from replaying the run's
+# swipes and throws through the game's rules (lib/activities/paperboy_sim.py), so there's no speed cap.
+PAPERBOY_ENABLED = True
+PAPERBOY_RATE = 2
+PAPERBOY_CAP = 150
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a
 # Cloudflare Tunnel at ukplace.ogme.dev, and only starts once ACTIVITIES_CLIENT_ID,
@@ -503,6 +508,7 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     "games": ("home", "Open HMS Games: the daily puzzles and the casino"),
     "climb": ("climb", "Climb HMS Victory - bounce up the rigging for UKPence"),
     "spitfire": ("spitfire", "Fly the Spitfire - weave through the barrage balloons for UKPence"),
+    "paperboy": ("paperboy", "Do the paper round - deliver to the lit doorsteps for UKPence"),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
