@@ -47,29 +47,112 @@ def _load_context(member_id):
 
 
 # --- gather the member's recent messages with context -------------------------
-async def gather_user_messages(client, guild, user, channel_ids, target=1000, min_target=150,
-                               density_floor=0.08, read_budget=18000, per_channel=40000,
-                               days=14, concurrency=4, progress=None):
-    """Scan only `channel_ids` (the main chats) in parallel for the member's recent messages.
+def fetch_archived_user_messages(user_id: int, guild, days: int = 30, limit: int = 1000,
+                                 channel_ids=None) -> list[dict]:
+    """Fetch user messages directly from the 30-day message_archive table in database.db.
 
-    Discord has no per-user message API, so we read history and filter. Each channel scan
-    stops once its messages cross `days` old, and overall stops at `target` (or returns
-    however many it finds within the window).
+    Indexed on (user_id, ts), returns in ~1ms across all 350+ server channels.
+    """
+    import time
+    from database import DatabaseManager
+
+    cutoff = int(time.time()) - days * 86400
+    if channel_ids:
+        ph = ",".join("?" * len(channel_ids))
+        query = (
+            f"SELECT message_id, channel_id, content, attachments, ts "
+            f"FROM message_archive "
+            f"WHERE user_id = ? AND ts >= ? AND channel_id IN ({ph}) "
+            f"ORDER BY ts DESC LIMIT ?"
+        )
+        params = (str(user_id), cutoff, *[str(c) for c in channel_ids], limit)
+    else:
+        query = (
+            "SELECT message_id, channel_id, content, attachments, ts "
+            "FROM message_archive "
+            "WHERE user_id = ? AND ts >= ? "
+            "ORDER BY ts DESC LIMIT ?"
+        )
+        params = (str(user_id), cutoff, limit)
+
+    try:
+        rows = DatabaseManager.fetch_all(query, params)
+    except Exception:
+        log.warning("[analyse] query to message_archive failed", exc_info=True)
+        return []
+
+    if not rows:
+        return []
+
+    rows = list(rows)
+    rows.reverse()  # oldest first for the model
+    collected = []
+    for mid, cid_str, content, attachments, ts in rows:
+        try:
+            cid = int(cid_str)
+        except (ValueError, TypeError):
+            continue
+        ch = guild.get_channel_or_thread(cid) if guild else None
+        if ch is not None and hasattr(ch, "permissions_for") and guild and getattr(guild, "me", None):
+            if not ch.permissions_for(guild.me).read_messages:
+                continue
+        ch_name = ch.name if ch else f"channel-{cid}"
+        content_str = (content or "").replace("\n", " ")[:300]
+        if attachments:
+            content_str += " [attachment]"
+        entry = {
+            "mid": mid,
+            "ts": int(ts),
+            "channel": ch_name,
+            "content": content_str,
+            "jump": f"https://discord.com/channels/{guild.id}/{cid}/{mid}" if guild else "",
+            "reactions": 0,
+            "reply_to": None,
+            "before": None,
+            "after": None,
+            "got_reply": False,
+        }
+        collected.append(entry)
+    return collected
+
+
+async def gather_user_messages(client, guild, user, channel_ids=None, target=1000, min_target=150,
+                               density_floor=0.08, read_budget=18000, per_channel=40000,
+                               days=30, concurrency=4, progress=None):
+    """Gather the member's recent messages across the server.
+
+    Pulls directly from the 30-day message_archive database table across all channels
+    in milliseconds. Falls back to scanning Discord channel history if the archive has
+    no records (e.g. empty test database or fresh bot install).
     """
     import asyncio
     import time
     from datetime import timedelta
 
-    me = guild.me
-    cutoff = discord.utils.utcnow() - timedelta(days=days)
     joined = getattr(user, "joined_at", None)
+    eff_days = days
+    if joined is not None:
+        days_since_join = max(1, int((discord.utils.utcnow() - joined).total_seconds() / 86400) + 1)
+        eff_days = min(days, days_since_join)
+
+    # 1. Fast path: 30-day message_archive in database.db
+    archived = fetch_archived_user_messages(user.id, guild, days=eff_days, limit=target, channel_ids=channel_ids)
+    if archived:
+        log.info("[analyse] fetched %d msgs from 30d message_archive for member %s (across %d channels)",
+                 len(archived), user.id, len(set(m["channel"] for m in archived)))
+        return archived
+
+    # 2. Fallback: Scan channel history over Discord API
+    scan_channel_ids = channel_ids or getattr(config, "USER_ANALYSIS_CHANNELS", [])
+    me = guild.me if guild else None
+    cutoff = discord.utils.utcnow() - timedelta(days=eff_days)
     if joined is not None and joined > cutoff:
         cutoff = joined  # nothing exists before they joined the server
-    chans = [guild.get_channel_or_thread(cid) for cid in channel_ids]  # threads too (forum posts etc.)
-    chans = [c for c in chans if c is not None and c.permissions_for(me).read_message_history]
+    chans = [guild.get_channel_or_thread(cid) for cid in scan_channel_ids] if guild else []
+    chans = [c for c in chans if c is not None and (me is None or c.permissions_for(me).read_message_history)]
     t_start = time.monotonic()
-    log.info("[analyse] scanning %d channels for member %s (target=%d, days=%d): %s",
-             len(chans), user.id, target, days, [c.name for c in chans])
+    log.info("[analyse] fallback scanning %d channels for member %s (target=%d, days=%d): %s",
+             len(chans), user.id, target, eff_days, [c.name for c in chans])
 
     collected = []
     state = {"scanned": 0, "last_edit": 0.0}
@@ -78,8 +161,6 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
     reply_targets = set()  # ids of messages someone replied to (so we can tell if THEIRS got replies)
 
     def _enough(found_n, read_n):
-        # Dynamic: heavy chatters (high density of their msgs) keep going to the hard cap; once
-        # we have a decent sample AND they're clearly not a heavy chatter, stop early.
         if found_n >= target:
             return True
         if found_n >= min_target and read_n >= 1500 and (found_n / read_n) < density_floor:
@@ -110,7 +191,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
                     if stop.is_set():
                         why = "target reached"; break
                     if msg.created_at < cutoff:
-                        why = "reached cutoff (2 weeks / join date)"; break
+                        why = "reached cutoff"; break
                     if seen[0] >= per_channel:
                         why = "hit per-channel cap"; break
                     async with lock:
@@ -172,7 +253,7 @@ async def gather_user_messages(client, guild, user, channel_ids, target=1000, mi
     collected.sort(key=lambda e: e["ts"])  # chronological for the model
     replied = sum(1 for e in collected if e["got_reply"])
     reacted = sum(1 for e in collected if e["reactions"] > 0)
-    log.info("[analyse] scan complete for %s: %d msgs from %d read in %.1fs (%d got replies, %d got reactions)",
+    log.info("[analyse] fallback scan complete for %s: %d msgs from %d read in %.1fs (%d got replies, %d got reactions)",
              user.id, len(collected), state["scanned"], time.monotonic() - t_start, replied, reacted)
     return collected
 
@@ -350,12 +431,15 @@ def _build_prompt(member, msgs, rules):
         f"SERVER RULES:\n{rules}\n\n"
         f"MEMBER: {member.display_name} (id {member.id}); {_member_tenure(member)}. "
         "Weigh this tenure when applying the new-account vs established-member bar above.\n"
-        f"{len(msgs)} recent messages, oldest first. "
-        "Context in {curly braces}: 'prev msg' = message before theirs, 'next msg' = the message that "
-        "followed (THEM = themselves), reactions, and 'formal reply' = someone used the reply button.\n"
-        f"ENGAGEMENT (lower bound; most responses are organic): {replied} of {len(msgs)} got a formal "
-        f"reply, {reacted} got a reaction - infer the rest from the 'next msg' context.\n\n"
-        f"{body}\n\n"
+        f"{len(msgs)} recent messages, oldest first.\n"
+        + (
+            "Context in {curly braces}: 'prev msg' = message before theirs, 'next msg' = the message that "
+            "followed (THEM = themselves), reactions, and 'formal reply' = someone used the reply button.\n"
+            f"ENGAGEMENT (lower bound; most responses are organic): {replied} of {len(msgs)} got a formal "
+            f"reply, {reacted} got a reaction - infer the rest from the 'next msg' context.\n\n"
+            if (replied > 0 or reacted > 0 or any(m.get("before") or m.get("after") for m in msgs)) else "\n"
+        )
+        + f"{body}\n\n"
         "Respond with ONLY a JSON object (no markdown fences) with these keys:\n"
         '  "summary": 2-4 sentences on overall tone and behaviour.\n'
         '  "tone": a short phrase (e.g. "friendly banter", "argumentative", "edgy humour").\n'
@@ -459,11 +543,11 @@ class FollowupModal(discord.ui.Modal, title="Ask about this member"):
             log.info("[analyse] follow-up cache miss for %s, re-scraping", self.user_id)
             msgs = await gather_user_messages(
                 interaction.client, interaction.guild, member,
-                getattr(config, "USER_ANALYSIS_CHANNELS", []),
+                channel_ids=None,
                 target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
                 min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 150),
                 read_budget=getattr(config, "USER_ANALYSIS_READ_BUDGET", 18000),
-                days=getattr(config, "USER_ANALYSIS_DAYS", 14))
+                days=getattr(config, "USER_ANALYSIS_DAYS", 30))
             _save_context(self.user_id, msgs)
         if not msgs:
             await interaction.followup.send("No recent messages to answer from.", ephemeral=True)
@@ -720,30 +804,23 @@ async def handle_analyse_user(interaction, member):
         await _status(f"\U0001f50d Scanning **#{ch_name}** ... {scanned:,} messages read, "
                       f"**{found}** from {member.display_name} so far.")
 
-    await _status(f"\U0001f50d Gathering {member.display_name}'s recent messages ...")
-    channel_ids = list(getattr(config, "USER_ANALYSIS_CHANNELS", []))
-    # Also scan the channel the command was invoked in: mods usually run this where
-    # the trouble is, which isn't always one of the configured main chats. Skip
-    # channels the member can't see (e.g. staff rooms) — nothing of theirs there,
-    # and scanning one would just burn the shared read budget.
-    invoked = interaction.channel
-    if (invoked is not None and invoked.id not in channel_ids
-            and hasattr(invoked, "permissions_for")
-            and invoked.permissions_for(member).read_messages):
-        channel_ids.append(invoked.id)
+    await _status(f"\U0001f50d Gathering {member.display_name}'s recent messages across channels ...")
+    days = getattr(config, "USER_ANALYSIS_DAYS", 30)
+    limit = getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000)
     msgs = await gather_user_messages(
         interaction.client, interaction.guild, member,
-        channel_ids,
-        target=getattr(config, "USER_ANALYSIS_MSG_LIMIT", 1000),
+        channel_ids=None,
+        target=limit,
         min_target=getattr(config, "USER_ANALYSIS_MIN_MSGS", 150),
         read_budget=getattr(config, "USER_ANALYSIS_READ_BUDGET", 18000),
-        days=getattr(config, "USER_ANALYSIS_DAYS", 14), progress=progress)
+        days=days, progress=progress)
     if not msgs:
-        await _status(f"Couldn't find recent messages from {member.mention} in channels I can read.")
+        await _status(f"Couldn't find recent messages from {member.mention} in the last {days} days.")
         return
     _save_context(member.id, msgs)  # cache for fast follow-ups (no re-scrape)
 
-    await _status(f"\U0001f4dd Gathered **{len(msgs)}** messages. Asking Gemini to review ...")
+    ch_count = len(set(m["channel"] for m in msgs))
+    await _status(f"\U0001f4dd Gathered **{len(msgs)}** messages across **{ch_count}** channel{'s' if ch_count != 1 else ''}. Asking Gemini to review ...")
     rules = await _load_rules(interaction.client)
     text, err = await _call_gemini(_build_prompt(member, msgs, rules))
     if err:
