@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 _UK = pytz.timezone("Europe/London")
 _EPOCH = datetime.date(2024, 1, 1)
-UKP_ART = Path(__file__).resolve().parents[2] / "data" / "ukpence.png"
+UKP_ART = Path(__file__).resolve().parents[2] / "data" / "ukpence.svg"
 _SQUARES = {"correct": "\U0001f7e9", "present": "\U0001f7e8", "absent": "⬛"}
 
 # --- word lists (loaded once) --------------------------------------------------

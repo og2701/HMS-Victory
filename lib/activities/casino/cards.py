@@ -28,7 +28,7 @@ FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 SERIF = ROOT / "data" / "fonts" / "DMSerifDisplay.ttf"     # card faces, as in the activity
 ART = ROOT / "data" / "activity_casino"
 EMOJI = ROOT / "data" / "emoji"
-UKP_ART = ROOT / "data" / "ukpence.png"     # the UKPence coin, Plinko's ball
+UKP_ART = ROOT / "data" / "ukpence-small.svg"     # the UKPence coin, plain for small sizes: Plinko's ball
 TILE_VERSION = 2
 
 INK, PANEL, MUTED, TEXT, SOFT = "#111214", "#1E1F22", "#949BA4", "#F2F3F5", "#B5BAC1"

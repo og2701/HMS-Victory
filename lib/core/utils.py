@@ -143,7 +143,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             "progress": tier["progress"],
             "ukpence": int(get_bb(member.id) or 0),
             "shutcoins": shutcoins,
-            "ukpence_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "ukpence.png")),
+            "ukpence_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "ukpence-small.svg")),
             "shutcoin_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "shutcoin.png")),
             "avatar_url": member.display_avatar.with_size(256).with_static_format("png").url,
             "background": encode_image_to_data_uri(background_path),

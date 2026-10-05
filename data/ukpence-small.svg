@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+<defs>
+  <linearGradient id="g-rim" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+    <stop offset="0" stop-color="#FFF0A6"/><stop offset=".38" stop-color="#F0C04A"/><stop offset=".72" stop-color="#C98E1E"/><stop offset="1" stop-color="#8E5B0E"/></linearGradient>
+  <linearGradient id="g-bevel" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+    <stop offset="0" stop-color="#9A650F"/><stop offset="1" stop-color="#FFE899"/></linearGradient>
+  <radialGradient id="g-field" cx=".38" cy=".32" r=".75">
+    <stop offset="0" stop-color="#FCE184"/><stop offset=".5" stop-color="#EBB63E"/><stop offset="1" stop-color="#C68A1C"/></radialGradient>
+  <linearGradient id="g-relief" gradientUnits="userSpaceOnUse" x1="55" y1="45" x2="145" y2="165">
+    <stop offset="0" stop-color="#FFEFA8"/><stop offset=".55" stop-color="#F3C64E"/><stop offset="1" stop-color="#D49A26"/></linearGradient>
+  <radialGradient id="g-bead" cx=".35" cy=".3" r=".8">
+    <stop offset="0" stop-color="#FFF6D2"/><stop offset=".5" stop-color="#F0C04A"/><stop offset="1" stop-color="#9A650F"/></radialGradient>
+  <linearGradient id="g-sheen" x1="0" y1="0" x2="1" y2="1">
+    <stop offset=".25" stop-color="#FFFFFF" stop-opacity="0"/><stop offset=".42" stop-color="#FFFFFF" stop-opacity=".28"/><stop offset=".52" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+  <clipPath id="g-face"><circle cx="100" cy="100" r="86"/></clipPath>
+</defs>
+<circle cx="100" cy="100" r="98.6" fill="#5E3B05"/>
+<circle cx="100" cy="100" r="97" fill="url(#g-rim)"/>
+<circle cx="100" cy="100" r="87.5" fill="url(#g-bevel)"/>
+<circle cx="100" cy="100" r="86" fill="url(#g-field)"/>
+<g transform="translate(100 104) scale(1.12) translate(-100 -104)">
+<g transform="translate(1.4 1.8)" opacity="0.55"><g fill="none" stroke="#FFF0B0" stroke-linecap="round" stroke-linejoin="round"><circle cx="100" cy="57" r="7.2" stroke-width="8.35"/><path d="M100 64.5V150" stroke-width="11.05"/><path d="M78.5 77H121.5" stroke-width="9.70"/><path d="M65.5 119C67.5 139 83.5 151 100 152C116.5 151 132.5 139 134.5 119" stroke-width="9.70"/></g><g fill="#FFF0B0" stroke="#FFF0B0" stroke-width="1.60" stroke-linejoin="round"><circle cx="78.5" cy="77" r="4.6"/><circle cx="121.5" cy="77" r="4.6"/><path d="M63.5 101.5L75 122Q66.5 117.5 55 123.5Z"/><path d="M136.5 101.5L125 122Q133.5 117.5 145 123.5Z"/><path d="M92.5 148L100 160L107.5 148Z"/></g></g><g opacity="1"><g fill="none" stroke="#6B4306" stroke-linecap="round" stroke-linejoin="round"><circle cx="100" cy="57" r="7.2" stroke-width="8.55"/><path d="M100 64.5V150" stroke-width="11.25"/><path d="M78.5 77H121.5" stroke-width="9.90"/><path d="M65.5 119C67.5 139 83.5 151 100 152C116.5 151 132.5 139 134.5 119" stroke-width="9.90"/></g><g fill="#6B4306" stroke="#6B4306" stroke-width="1.80" stroke-linejoin="round"><circle cx="78.5" cy="77" r="4.6"/><circle cx="121.5" cy="77" r="4.6"/><path d="M63.5 101.5L75 122Q66.5 117.5 55 123.5Z"/><path d="M136.5 101.5L125 122Q133.5 117.5 145 123.5Z"/><path d="M92.5 148L100 160L107.5 148Z"/></g></g><g opacity="1"><g fill="none" stroke="#8A560B" stroke-linecap="round" stroke-linejoin="round"><circle cx="100" cy="57" r="7.2" stroke-width="6.75"/><path d="M100 64.5V150" stroke-width="9.45"/><path d="M78.5 77H121.5" stroke-width="8.10"/><path d="M65.5 119C67.5 139 83.5 151 100 152C116.5 151 132.5 139 134.5 119" stroke-width="8.10"/></g><g fill="#8A560B" stroke="#8A560B" stroke-width="0.00" stroke-linejoin="round"><circle cx="78.5" cy="77" r="4.6"/><circle cx="121.5" cy="77" r="4.6"/><path d="M63.5 101.5L75 122Q66.5 117.5 55 123.5Z"/><path d="M136.5 101.5L125 122Q133.5 117.5 145 123.5Z"/><path d="M92.5 148L100 160L107.5 148Z"/></g></g><g transform="translate(-0.7 -0.9)" opacity="0.55"><g fill="none" stroke="#C98E1E" stroke-linecap="round" stroke-linejoin="round"><circle cx="100" cy="57" r="7.2" stroke-width="1.89"/><path d="M100 64.5V150" stroke-width="2.65"/><path d="M78.5 77H121.5" stroke-width="2.27"/><path d="M65.5 119C67.5 139 83.5 151 100 152C116.5 151 132.5 139 134.5 119" stroke-width="2.27"/></g></g>
+</g>
+<rect x="0" y="0" width="200" height="200" fill="url(#g-sheen)" clip-path="url(#g-face)"/>
+</svg>

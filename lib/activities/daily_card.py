@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 COMIC_FONT = ROOT / "data" / "fonts" / "Bangers.woff2"
 PLANE_ART = ROOT / "data" / "games" / "spitfire-plane.webp"
-UKP_ART = ROOT / "data" / "ukpence.png"
+UKP_ART = ROOT / "data" / "ukpence.svg"
 W = 800
 
 COIN = f'<img class="coin" src="file://{UKP_ART}">'

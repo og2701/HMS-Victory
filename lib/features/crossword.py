@@ -493,7 +493,7 @@ li b{{color:#fff}} li i{{color:rgba(255,255,255,.4);font-style:normal}}
 # variable file, weight picked per use); Liberation/DejaVu/Arial are only fallbacks so the
 # board still draws somewhere without it.
 _ARCHIVO = os.path.join("data", "fonts", "Archivo.ttf")
-_UKP_ART = os.path.join("data", "ukpence.png")
+_UKP_ART = os.path.join("data", "ukpence.png")     # data/ukpence.svg, drawn out at 128px for PIL
 _FALLBACK_FONTS = {
     "bold": (
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
