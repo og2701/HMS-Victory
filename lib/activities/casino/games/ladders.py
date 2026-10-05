@@ -468,6 +468,7 @@ class Penalty(Adapter):
             "now": round(game.multiplier(), 4), "value": game.current_payout(),
             "nextValue": game.payout_for(game.goals + 1) if game.goals < PE.MAX_GOALS else None,
             "lastKick": game.last_kick, "lastDove": game.last_dove, "lastResult": game.last_result,
+            "kicks": getattr(game, "kicks", []),
             "over": over, "outcome": game.outcome,
             "payout": game.payout if game.outcome == "win" else 0,
             "net": (game.payout - game.bet if game.outcome == "win" else -game.bet) if over else 0,

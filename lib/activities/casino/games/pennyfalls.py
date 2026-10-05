@@ -372,7 +372,7 @@ class PennyFalls(Adapter):
     def view(self, cup):
         return {
             "id": cup.id, "cup": cup.coins, "bought": cup.bought, "staked": cup.staked,
-            "dropped": cup.dropped, "won": cup.won, "value": value(), "release": cup.release,
+            "dropped": cup.dropped, "won": cup.won, "goldsWon": cup.golds_won, "value": value(), "release": cup.release,
             "board": self._board(cup.uid), "over": cup.over, "payout": cup.payout,
             "watched": _is_watched(cup.uid),
             "net": cup.payout - cup.staked if cup.over else 0, "note": cup.note,

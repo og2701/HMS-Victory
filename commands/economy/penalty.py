@@ -126,7 +126,7 @@ def _render(game) -> io.BytesIO:
 class PenaltyGame:
     def __init__(self, game_id, player_id, player_name, channel_id, bet,
                  *, goals=0, state="aiming", outcome=None, payout=0, message_id=None,
-                 last_kick=None, last_dove=None, last_result=None):
+                 last_kick=None, last_dove=None, last_result=None, kicks=None):
         self.game_id = game_id
         self.player_id = int(player_id)
         self.player_name = player_name
@@ -140,6 +140,7 @@ class PenaltyGame:
         self.last_kick = last_kick             # spot you aimed at last shot
         self.last_dove = last_dove             # spot the keeper dived to last shot
         self.last_result = last_result         # "goal" | "save"
+        self.kicks = [list(k) for k in kicks or []]   # every kick this shootout: [spot, "goal" | "save"]
         self.busy = False                      # drops double-clicks mid-render
         self.replayed = False
 
@@ -176,6 +177,7 @@ class PenaltyGame:
         self.last_kick = spot
         if random.random() < self._score_prob():
             self.last_result = "goal"
+            self.kicks.append([spot, "goal"])
             self.last_dove = random.choice([s for s in SPOTS if s != spot])
             self.goals += 1
             if self.goals >= MAX_GOALS:
@@ -184,6 +186,7 @@ class PenaltyGame:
             return "goal"
         # keeper guessed the corner
         self.last_result = "save"
+        self.kicks.append([spot, "save"])
         self.last_dove = spot
         self.state = "over"
         self.outcome = "lose"
@@ -203,7 +206,7 @@ class PenaltyGame:
             "message_id": self.message_id, "bet": self.bet, "goals": self.goals,
             "state": self.state, "outcome": self.outcome, "payout": self.payout,
             "last_kick": self.last_kick, "last_dove": self.last_dove,
-            "last_result": self.last_result,
+            "last_result": self.last_result, "kicks": self.kicks,
         }
 
     @classmethod
@@ -214,7 +217,7 @@ class PenaltyGame:
             bet=d["bet"], goals=d.get("goals", 0), state=d.get("state", "aiming"),
             outcome=d.get("outcome"), payout=d.get("payout", 0), message_id=d.get("message_id"),
             last_kick=d.get("last_kick"), last_dove=d.get("last_dove"),
-            last_result=d.get("last_result"),
+            last_result=d.get("last_result"), kicks=d.get("kicks"),
         )
 
 

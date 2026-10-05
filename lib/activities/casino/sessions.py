@@ -166,9 +166,14 @@ def big_win_view(uid: int, key: str, label: str, rnd, image: str | None = None) 
     return view
 
 
-def _entry(rnd, big: bool) -> dict:
-    return {"net": rnd.net, "staked": rnd.staked, "payout": rnd.payout,
-            "multiple": rnd.multiple, "outcome": rnd.outcome, "big": big}
+def _entry(rnd, big: bool, d: dict | None = None) -> dict:
+    """One round for the pictures. ``d`` is the game's own digest of it (summaries.digest), what
+    its summary card draws: the barrel a Plinko ball fell in, the panes a crossing stood on..."""
+    out = {"net": rnd.net, "staked": rnd.staked, "payout": rnd.payout,
+           "multiple": rnd.multiple, "outcome": rnd.outcome, "big": big}
+    if d is not None:
+        out["d"] = d
+    return out
 
 
 def is_big(rnd, key: str | None = None) -> bool:
@@ -256,7 +261,8 @@ def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = N
     if rnd.net > 0 and (s.best_net is None or rnd.net > s.best_net):
         s.best_net, s.best_text = rnd.net, rnd.outcome
     big = is_big(rnd, key)
-    s.history.append(_entry(rnd, big))
+    from lib.activities.casino import summaries
+    s.history.append(_entry(rnd, big, summaries.digest(key, view)))
     s.last_view = view
     _schedule(s)
     if big:

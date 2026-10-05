@@ -674,8 +674,9 @@ async def final_png(key: str, label: str, unit: str, history: list[dict], view: 
     if len(history) == 1:
         page = result_html(key, label, f"1 {one} · left the table", history[0], view)
     else:
+        from lib.activities.casino import summaries
         minutes = max(1, round((ended - started) / 60)) if ended > started else 0
-        page = summary_html(key, label, unit, history, minutes)
+        page = summaries.summary_html(key, unit, history, minutes) or summary_html(key, label, unit, history, minutes)
     return await _shoot(page)
 
 
