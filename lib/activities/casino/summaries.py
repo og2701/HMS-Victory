@@ -312,13 +312,16 @@ def _plinko_board(rounds: list[dict], table: list[float], best_slot: int) -> str
     top_mult = max(table)
     for i, m in enumerate(table):
         o.append(_barrel(slot_x(i), SLOT_Y, DX, m, top_mult))
-    # a coin on each barrel per ball that landed in it, the count when it's a pile
+    # a coin on each barrel per ball that landed in it, and the count on a dark tag when it's a
+    # pile, so it reads over the pegs and trails
     counts = Counter(h["d"]["slot"] for h in rounds)
     for s, n in counts.items():
         for k in range(min(n, 5)):
             o.append(f'<image href="{_f(COIN)}" x="{slot_x(s) - 7:.1f}" y="{SLOT_Y - 18 - k * 4:.1f}" width="14" height="14"/>')
         if n > 1:
-            o.append(f'<text x="{slot_x(s):.1f}" y="{SLOT_Y - 24 - min(n, 5) * 4:.1f}" text-anchor="middle" font-family="DM Serif Display" font-size="11" fill="#FFF1C9">{n}</text>')
+            tw, ty = 9 + 5.6 * len(str(n)), SLOT_Y - 33 - min(n, 5) * 4
+            o.append(f'<rect x="{slot_x(s) - tw / 2:.1f}" y="{ty:.1f}" width="{tw:.1f}" height="12" rx="6" fill="#170A03" stroke="#E8C374" stroke-width=".9"/>'
+                     f'<text x="{slot_x(s):.1f}" y="{ty + 9.2:.1f}" text-anchor="middle" font-family="Archivo" font-weight="900" font-size="9.5" fill="#FFE6A0">{n}</text>')
     o.append("</svg>")
     return "".join(o)
 
