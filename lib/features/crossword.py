@@ -493,6 +493,7 @@ li b{{color:#fff}} li i{{color:rgba(255,255,255,.4);font-style:normal}}
 # variable file, weight picked per use); Liberation/DejaVu/Arial are only fallbacks so the
 # board still draws somewhere without it.
 _ARCHIVO = os.path.join("data", "fonts", "Archivo.ttf")
+_UKP_ART = os.path.join("data", "ukpence.png")
 _FALLBACK_FONTS = {
     "bold": (
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -657,8 +658,11 @@ def draw_board(uid, date):
     coin_w = 10 + 38 + 10 + int(max(dr.textlength(big, font=f_big), dr.textlength(small, font=f_small))) + 20
     cx0 = W - PAD - coin_w
     dr.rounded_rectangle((cx0, 36, W - PAD, 100), 32, fill=SLOT)
-    dr.ellipse((cx0 + 10, 49, cx0 + 48, 87), fill=GOLD_EDGE)
-    dr.ellipse((cx0 + 10, 45, cx0 + 48, 83), fill=GOLD)
+    try:
+        coin = Image.open(_UKP_ART).convert("RGBA").resize((38, 38), Image.LANCZOS)
+        img.paste(coin, (cx0 + 10, 49), coin)
+    except OSError:
+        dr.ellipse((cx0 + 10, 49, cx0 + 48, 87), fill=GOLD)
     dr.text((cx0 + 58, 44), big, font=f_big, fill=IVORY)
     dr.text((cx0 + 58, 74), small, font=f_small, fill=MUTED)
 

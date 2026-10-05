@@ -21,11 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 COMIC_FONT = ROOT / "data" / "fonts" / "Bangers.woff2"
 PLANE_ART = ROOT / "data" / "games" / "spitfire-plane.webp"
+UKP_ART = ROOT / "data" / "ukpence.png"
 W = 800
 
-COIN = ('<svg class="coin" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12" fill="#E2B33C" stroke="#111" stroke-width="2"/>'
-        '<circle cx="13" cy="13" r="7.5" fill="none" stroke="#A9801F" stroke-width="2.2"/>'
-        '<path d="M8 8.5A7 7 0 0 1 13 6" stroke="#F7DE8A" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>')
+COIN = f'<img class="coin" src="file://{UKP_ART}">'
 TROPHY = ('<svg class="trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" '
           'stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4'
           'M12 13v4M8 20h8M10 17h4"/></svg>')

@@ -28,7 +28,8 @@ FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 SERIF = ROOT / "data" / "fonts" / "DMSerifDisplay.ttf"     # card faces, as in the activity
 ART = ROOT / "data" / "activity_casino"
 EMOJI = ROOT / "data" / "emoji"
-TILE_VERSION = 1
+UKP_ART = ROOT / "data" / "ukpence.png"     # the UKPence coin, Plinko's ball
+TILE_VERSION = 2
 
 INK, PANEL, MUTED, TEXT, SOFT = "#111214", "#1E1F22", "#949BA4", "#F2F3F5", "#B5BAC1"
 GREEN, RED, GOLD, EVEN = "#23A55A", "#F23F43", "#E9C46A", "#4E5058"
@@ -127,7 +128,8 @@ def plinko_board(v: dict | None, width: int = 600) -> str:
                    f'font-weight="900" font-size="{dx * (0.34 if len(f"{m:g}") < 3 else 0.28):.1f}" fill="#1a1206">{m:g}×</text>')
     if path and slot is not None:
         bx = mid + (slot - rows / 2) * dx
-        out.append(f'<circle cx="{bx:.1f}" cy="{sy - dx * 0.2:.1f}" r="{dx * 0.24:.1f}" fill="#ff5fa8" stroke="#fff" stroke-width="3"/>')
+        r = dx * 0.3
+        out.append(f'<image href="file://{UKP_ART}" x="{bx - r:.1f}" y="{sy - dx * 0.2 - r:.1f}" width="{2 * r:.1f}" height="{2 * r:.1f}"/>')
     out.append("</svg>")
     return "".join(out)
 
@@ -136,7 +138,7 @@ PLINKO_ICON = ('<svg viewBox="0 0 40 40"><g fill="#e9eef7"><circle cx="20" cy="9
                '<circle cx="26" cy="16" r="2"/><circle cx="8" cy="23" r="2"/><circle cx="20" cy="23" r="2"/>'
                '<circle cx="32" cy="23" r="2"/></g><rect x="3" y="30" width="9" height="6" rx="2" fill="#e8433a"/>'
                '<rect x="15.5" y="30" width="9" height="6" rx="2" fill="#f5c542"/><rect x="28" y="30" width="9" height="6" rx="2" fill="#e8433a"/>'
-               '<circle cx="23" cy="12" r="3.2" fill="#ff5fa8" stroke="#fff" stroke-width="1.2"/></svg>')
+               f'<image href="file://{UKP_ART}" x="22.1" y="4.1" width="8.8" height="8.8"/></svg>')
 CHERRIES = ('<svg viewBox="0 0 26 26"><path d="M9 17 C10 10 14 6 19 4 M17 17 C17 11 18 7 19 4" stroke="#5fbf4a" '
             'stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M19 4 C21 3 23 4 24 6 C22 6 20 5.5 19 4 Z" '
             'fill="#5fbf4a"/><circle cx="8" cy="19" r="5" fill="#e02a44"/><circle cx="18" cy="19" r="5" fill="#b5172c"/>'

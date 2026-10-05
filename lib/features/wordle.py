@@ -13,6 +13,7 @@ import datetime
 import logging
 import random as _random
 import time
+from pathlib import Path
 
 import discord
 import pytz
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 
 _UK = pytz.timezone("Europe/London")
 _EPOCH = datetime.date(2024, 1, 1)
+UKP_ART = Path(__file__).resolve().parents[2] / "data" / "ukpence.png"
 _SQUARES = {"correct": "\U0001f7e9", "present": "\U0001f7e8", "absent": "⬛"}
 
 # --- word lists (loaded once) --------------------------------------------------
@@ -280,7 +282,7 @@ def _board_html(uid, date):
 .sub{{font-size:19px;font-weight:600;color:#9DAAC4;margin-top:8px}}
 .coin{{display:flex;align-items:center;gap:10px;padding:10px 20px 10px 10px;border-radius:40px;background:#1A2948}}
 .coin.plain{{padding-left:20px}}
-.coin i{{width:38px;height:38px;border-radius:50%;background:#E2B33C;box-shadow:inset 0 -4px 0 #A9801F;display:block}}
+.coin i{{width:38px;height:38px;background:url('file://{UKP_ART}') center/contain no-repeat;display:block}}
 .coin b{{font-size:26px;font-weight:900;display:block}} .coin span{{font-size:16px;color:#9DAAC4;font-weight:600;display:block}}
 .panel{{background:#0A1426;border-radius:16px;padding:22px;box-shadow:inset 0 3px 0 rgba(0,0,0,.35)}}
 .board{{display:flex;flex-direction:column;gap:12px;align-items:center}}
