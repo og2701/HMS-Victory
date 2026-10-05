@@ -248,7 +248,7 @@ def test_the_post_lines_and_buttons(em):
     assert P.headline(s) == f"<@{B}>, <@{A}> challenges you to **Broadside** for **100 UKP**"
     ids = [b.custom_id for row in P.view(s, None).children if hasattr(row, "children") for b in row.children
            if getattr(b, "custom_id", None)]
-    assert f"ukplace:duel:{c['id']}" in ids and "ukplace:play:duel" in ids
+    assert ids == [f"ukplace:duel:{c['id']}"]          # just Accept while it's open
     mid = D.accept(B, c["id"])["id"]
     D.forfeit(A, mid)
     m = D._matches[mid]

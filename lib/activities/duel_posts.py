@@ -142,9 +142,8 @@ def view(s: dict, image: str | None) -> discord.ui.LayoutView:
         box.add_item(discord.ui.TextDisplay(line))
         v.add_item(box)
     row = discord.ui.ActionRow()
-    if s["event"] == "challenge":
+    if s["event"] == "challenge":       # just the one button: two side by side read as two ways to accept
         row.add_item(discord.ui.Button(label="Accept", style=discord.ButtonStyle.success, custom_id=f"ukplace:duel:{s['id']}"))
-        row.add_item(discord.ui.Button(label="Play Broadside", style=discord.ButtonStyle.secondary, custom_id="ukplace:play:duel"))
     else:
         row.add_item(discord.ui.Button(label="Play Broadside",
                                        style=discord.ButtonStyle.success if s["event"] in ENDED else discord.ButtonStyle.secondary,

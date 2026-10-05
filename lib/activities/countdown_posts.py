@@ -128,12 +128,13 @@ def view(room: dict, event: str, image: str | None) -> discord.ui.LayoutView:
         v.add_item(box)
     row = discord.ui.ActionRow()
     open_seats = event in ("open", "seats") and len(room["players"]) < countdown.SEATS
-    if open_seats:
+    if open_seats:                      # just the one button: two side by side read as two ways to join
         row.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.success,
                                        custom_id=f"ukplace:countdown:{room['id']}"))
-    row.add_item(discord.ui.Button(label="Play Countdown",
-                                   style=discord.ButtonStyle.success if event in ENDED else discord.ButtonStyle.secondary,
-                                   custom_id="ukplace:play:countdown"))
+    else:
+        row.add_item(discord.ui.Button(label="Play Countdown",
+                                       style=discord.ButtonStyle.success if event in ENDED else discord.ButtonStyle.secondary,
+                                       custom_id="ukplace:play:countdown"))
     v.add_item(row)
     return v
 
