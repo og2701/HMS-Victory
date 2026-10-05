@@ -293,7 +293,7 @@ def test_penny_falls_counts_in_the_banks_figures(em, pf):
     play("pennyfalls", "cashout", {"dropped": 5, "won": 4})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["pennyfalls_in"], ledger["pennyfalls_out"], ledger["pennyfalls_net"]) == (200, 190, 10)
-    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-1] == 100
+    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-2] == 100
 
 
 def test_the_bank_backfills_penny_falls_from_the_ledger_once(em):
@@ -409,6 +409,64 @@ def test_penny_falls_caps_a_cup_and_a_day(em, pf, monkeypatch):
     play("pennyfalls", "deal", {"bet": 100})
     out = play("pennyfalls", "cashout", {"won": 40})
     assert out["round"]["payout"] == 100 + 200 and "daily limit" in out["round"]["outcome"]
+
+
+# --- Plinko ---------------------------------------------------------------------------------
+def test_plinko_pays_the_slot_the_ball_lands_in(em, monkeypatch):
+    from lib.activities.casino.games import plinko as P
+    path = iter([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1])                 # eleven rights: the slot next to the edge
+    monkeypatch.setattr(P._rng, "randint", lambda a, b: next(path))
+    out = play("plinko", "deal", {"bet": 100, "risk": "high"})
+    t = out["table"]
+    assert (t["slot"], t["mult"], t["payout"], t["net"]) == (11, 22.0, 2200, 2100)
+    assert len(t["path"]) == P.ROWS and out["round"]["payout"] == 2200 and not out["inPlay"]
+    assert em.get_bb(UID) == 10_000 - 100 + 2200
+    assert rows() == [("plinko", 100, 2200, "22x high")]
+    assert reasons()[-2:] == ["Plinko bet", "Plinko win"]
+
+
+def test_plinko_rounds_down_and_pays_a_fifth_in_the_middle(em, monkeypatch):
+    from lib.activities.casino.games import plinko as P
+    path = iter([1, 0] * 6)                                            # six and six: the middle slot
+    monkeypatch.setattr(P._rng, "randint", lambda a, b: next(path))
+    out = play("plinko", "deal", {"bet": 37, "risk": "high"})
+    assert (out["table"]["slot"], out["table"]["payout"]) == (6, 7)   # 0.2x of 37 is 7.4: rounded down
+    assert rows() == [("plinko", 37, 7, "0.2x high")]
+
+
+def test_plinko_refuses_a_made_up_risk(em):
+    with pytest.raises(casino.Refuse, match="low, medium or high"):
+        play("plinko", "deal", {"bet": 100, "risk": "extreme"})
+    assert em.get_bb(UID) == 10_000 and rows() == []
+
+
+def test_plinko_keeps_a_small_edge_at_every_risk():
+    from lib.activities.casino.games import plinko as P
+    for risk in P.RISKS:
+        table = P.TENTHS[risk]
+        assert len(table) == P.ROWS + 1 and table == table[::-1], risk          # 13 slots, the same both sides
+        assert 0.96 <= P.returns(risk) <= 0.98, risk
+    assert P.Plinko.max_multiplier == 150
+
+
+def test_plinko_counts_in_the_banks_figures(em, monkeypatch):
+    from lib.activities.casino.games import plinko as P
+    from lib.economy.bank_manager import BankManager
+    path = iter([0] * 12)                                              # all lefts: the far corner
+    monkeypatch.setattr(P._rng, "randint", lambda a, b: next(path))
+    play("plinko", "deal", {"bet": 10, "risk": "low"})
+    ledger = BankManager.get_ledger_stats()
+    assert (ledger["plinko_in"], ledger["plinko_out"], ledger["plinko_net"]) == (10, 80, -70)
+    assert BankManager._game_amounts(100, "Plinko bet")[-1] == 100
+    assert sum(BankManager._game_amounts(100, "Plinko win")) == 100
+
+
+def test_plinko_only_posts_the_far_edges_as_big_wins():
+    from lib.activities.casino.base import Round
+    assert not sessions.is_big(Round(100, 800, "8x"), "plinko")          # 8x would be big anywhere else
+    assert sessions.is_big(Round(100, 800, "8x"), "slots")
+    assert sessions.is_big(Round(100, 2200, "22x"), "plinko")
+    assert sessions.is_big(Round(1000, 8000, "8x"), "plinko")            # but a big enough sum still is
 
 
 def test_every_game_has_rules_and_a_label(em):

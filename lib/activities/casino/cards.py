@@ -45,10 +45,11 @@ SCENE = {
     "darts": "radial-gradient(ellipse 100% 80% at 50% 50%, #4a1b1b 0%, #2a0f0f 60%, #150707 100%)",
     "penalty": "linear-gradient(180deg, #0a1f12 0%, #123a21 40%, #1b5a2e 70%, #164d27 100%)",
     "pennyfalls": "radial-gradient(ellipse 100% 80% at 60% 20%, #4a1650 0%, #24103a 55%, #120a26 100%)",
+    "plinko": "radial-gradient(ellipse 110% 80% at 50% 25%, #16406e 0%, #0c2340 55%, #071526 100%)",
 }
 # A flat colour per game, for when a tile can't be rendered.
 SOLID = {"mines": "#102650", "slots": "#1a3580", "chest": "#2b1a0b", "glass": "#0b0b0e", "blockade": "#0e2747",
-         "darts": "#2a0f0f", "penalty": "#123a21", "pennyfalls": "#24103a"}
+         "darts": "#2a0f0f", "penalty": "#123a21", "pennyfalls": "#24103a", "plinko": "#0c2340"}
 
 SUIT = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 ANCHOR = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
@@ -79,6 +80,63 @@ PENNY = ('<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#c8784a"
          'transform="translate(11.5 10.5) scale(.72)"><circle cx="12" cy="4.6" r="2.1"/><path d="M12 6.7V21"/>'
          '<path d="M8.6 9.6h6.8"/><path d="M4.6 13.6c.6 4.6 3.6 7.2 7.4 7.4c3.8-.2 6.8-2.8 7.4-7.4"/></g>'
          '<path d="M9 13A12.5 12.5 0 0 1 17 7" fill="none" stroke="#f0b27e" stroke-width="1.6" stroke-linecap="round"/></svg>')
+def _slot_colour(mult: float, top: float) -> str:
+    """Plinko's slots run gold in the middle to red at the edges, by how much they pay."""
+    import math
+    t = 0.0 if mult <= 1 else min(1.0, math.log(mult) / math.log(max(top, 2)))
+    a, b = (0xF5, 0xC5, 0x42), (0xE8, 0x43, 0x3A)
+    return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
+
+
+def plinko_board(v: dict | None, width: int = 600) -> str:
+    """The Plinko board as an SVG: the pegs, the ball's path down them, and the slots with the
+    one it landed in lit. With no ball (v None) it's just the pegs and the medium slots."""
+    from lib.activities.casino.games import plinko as P
+    rows = P.ROWS
+    risk = (v or {}).get("risk", "medium")
+    table = [t / 10 for t in P.TENTHS.get(risk, P.TENTHS["medium"])]
+    dx = width / (rows + 2)
+    dy = dx * 0.86
+    top, mid = dx * 0.7, width / 2
+    height = top + rows * dy + dx * 1.05
+    out = [f'<svg class="plinko" viewBox="0 0 {width} {height:.0f}" xmlns="http://www.w3.org/2000/svg">']
+    for r in range(rows):
+        for j in range(r + 3):
+            x = mid + (j - (r + 2) / 2) * dx
+            out.append(f'<circle cx="{x:.1f}" cy="{top + r * dy:.1f}" r="{dx * 0.11:.1f}" fill="#e9eef7"/>')
+    path = (v or {}).get("path") or []
+    slot = (v or {}).get("slot")
+    if path:
+        x, pts = mid, [(mid, top - dy * 0.8)]
+        for r, step in enumerate(path):
+            pts.append((x, top + r * dy - dx * 0.24))
+            x += dx / 2 if step else -dx / 2
+        pts.append((x, top + rows * dy + dx * 0.15))
+        line = " ".join(f"{a:.1f},{b:.1f}" for a, b in pts)
+        out.append(f'<polyline points="{line}" fill="none" stroke="#ff5fa8" stroke-width="{dx * 0.12:.1f}" '
+                   'stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>')
+    sy = top + rows * dy + dx * 0.25
+    for i, m in enumerate(table):
+        x = mid + (i - rows / 2) * dx
+        hit = i == slot
+        w, h = dx * (0.98 if hit else 0.86), dx * (0.72 if hit else 0.62)
+        edge = ' stroke="#fff" stroke-width="4"' if hit else ""
+        out.append(f'<rect x="{x - w / 2:.1f}" y="{sy:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{dx * 0.14:.1f}" '
+                   f'fill="{_slot_colour(m, max(table))}"{edge}/>')
+        out.append(f'<text x="{x:.1f}" y="{sy + h * 0.66:.1f}" text-anchor="middle" font-family="ArchivoV" '
+                   f'font-weight="900" font-size="{dx * (0.34 if len(f"{m:g}") < 3 else 0.28):.1f}" fill="#1a1206">{m:g}×</text>')
+    if path and slot is not None:
+        bx = mid + (slot - rows / 2) * dx
+        out.append(f'<circle cx="{bx:.1f}" cy="{sy - dx * 0.2:.1f}" r="{dx * 0.24:.1f}" fill="#ff5fa8" stroke="#fff" stroke-width="3"/>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+PLINKO_ICON = ('<svg viewBox="0 0 40 40"><g fill="#e9eef7"><circle cx="20" cy="9" r="2"/><circle cx="14" cy="16" r="2"/>'
+               '<circle cx="26" cy="16" r="2"/><circle cx="8" cy="23" r="2"/><circle cx="20" cy="23" r="2"/>'
+               '<circle cx="32" cy="23" r="2"/></g><rect x="3" y="30" width="9" height="6" rx="2" fill="#e8433a"/>'
+               '<rect x="15.5" y="30" width="9" height="6" rx="2" fill="#f5c542"/><rect x="28" y="30" width="9" height="6" rx="2" fill="#e8433a"/>'
+               '<circle cx="23" cy="12" r="3.2" fill="#ff5fa8" stroke="#fff" stroke-width="1.2"/></svg>')
 CHERRIES = ('<svg viewBox="0 0 26 26"><path d="M9 17 C10 10 14 6 19 4 M17 17 C17 11 18 7 19 4" stroke="#5fbf4a" '
             'stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M19 4 C21 3 23 4 24 6 C22 6 20 5.5 19 4 Z" '
             'fill="#5fbf4a"/><circle cx="8" cy="19" r="5" fill="#e02a44"/><circle cx="18" cy="19" r="5" fill="#b5172c"/>'
@@ -151,6 +209,8 @@ def art(key: str) -> str:
         return _img("ball.webp", "pic ball")
     if key == "pennyfalls":
         return f'<div class="pennies"><i>{PENNY}</i><i>{PENNY}</i><i>{PENNY}</i></div>'
+    if key == "plinko":
+        return f'<div class="icon">{PLINKO_ICON}</div>'
     return ""
 
 
@@ -281,6 +341,9 @@ def board_html(key: str, v: dict) -> str:
         pile = "".join(f"<i>{PENNY}</i>" for _ in range(min(12, max(3, won // 4))))
         return (f'<div class="stack"><div class="pile">{pile}</div>'
                 f'<div class="caption">{won:,} coin{"s" if won != 1 else ""} back from {dropped:,}</div></div>')
+    if key == "plinko":
+        return (f'<div class="stack">{plinko_board(v)}'
+                f'<div class="caption">{v.get("mult", 0):g}× on {esc(str(v.get("risk", "")))} risk</div></div>')
     if key == "penalty":
         goals, shots = int(v.get("goals", 0)), int(v.get("shots", 5))
         dots = "".join(f'<i class="{"on" if k < goals else ""}"></i>' for k in range(shots))
@@ -338,6 +401,7 @@ CARD_CSS = f"""
 .ladder .step.on {{ background: {GOLD}; color: #1a1205; }}
 .glass {{ width: 100%; display: flex; justify-content: center; }}
 .glass svg {{ width: 100%; max-height: 560px; height: auto; }}
+.plinko {{ display: block; width: 600px; height: auto; }}
 .pile {{ display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 560px; }}
 .pile i {{ width: 82px; height: 82px; filter: drop-shadow(0 8px 10px rgba(0,0,0,.4)); }}
 .pile i svg {{ display: block; width: 100%; height: 100%; }}

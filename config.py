@@ -188,6 +188,13 @@ PENNYFALLS_GOLD_EVERY = 150          # ...and drops in after this many coins. To
 PENNYFALLS_CUP_MAX_NET = 1_000       # the most one cup can win
 PENNYFALLS_DAY_MAX_NET = 5_000       # the most a player can win in a day
 
+# Plinko, only in the activity (lib/activities/casino/games/plinko.py): a ball drops through 12
+# rows of pegs into a slot paying a multiple of the bet, at low, medium or high risk. The tables
+# there keep about 3% for the house; high risk pays up to 150x, so the max bet scales to reserves.
+PLINKO_ENABLED = True
+PLINKO_MIN_BET = 10
+PLINKO_MAX_BET = 10_000
+
 # --- Skyrim (standalone persistent RPG - NOT a casino game, no UKPence anywhere) ---
 # Every member gets a persistent Dovahkiin: skills that level by use, gear tiers, dragon
 # souls and shout words. /skyrim opens an ephemeral hub; delves (dungeon runs) post as

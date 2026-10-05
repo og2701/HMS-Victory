@@ -171,10 +171,17 @@ def _entry(rnd, big: bool) -> dict:
             "multiple": rnd.multiple, "outcome": rnd.outcome, "big": big}
 
 
-def is_big(rnd) -> bool:
+def is_big(rnd, key: str | None = None) -> bool:
+    """Does this round get its own #casino post? A game whose rounds come thick and fast (a
+    Plinko ball every second) can ask for a bigger multiple first, so it doesn't flood the channel."""
     if rnd.net <= 0:
         return False
-    return (rnd.multiple >= _cfg("ACTIVITIES_CASINO_BIG_WIN_MULTIPLE", 5.0)
+    multiple = _cfg("ACTIVITIES_CASINO_BIG_WIN_MULTIPLE", 5.0)
+    if key:
+        from lib.activities.casino import adapter
+        a = adapter(key)
+        multiple = max(multiple, getattr(a, "big_multiple", 0) or 0) if a else multiple
+    return (rnd.multiple >= multiple
             and rnd.net >= _cfg("ACTIVITIES_CASINO_BIG_WIN_MIN", 250)) \
         or rnd.net >= _cfg("ACTIVITIES_CASINO_BIG_WIN_NET", 5_000)
 
@@ -248,7 +255,7 @@ def record(uid: int, key: str, label: str, unit: str, rnd, view: dict | None = N
     s.last = s.seen = now
     if rnd.net > 0 and (s.best_net is None or rnd.net > s.best_net):
         s.best_net, s.best_text = rnd.net, rnd.outcome
-    big = is_big(rnd)
+    big = is_big(rnd, key)
     s.history.append(_entry(rnd, big))
     s.last_view = view
     _schedule(s)

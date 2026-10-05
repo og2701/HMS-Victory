@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 # Home lists games in this order until a player has history to sort by.
 ORDER = ("blackjack", "slots", "mines", "roulette", "higherlower", "videopoker", "reddog",
-         "tcp", "chest", "glass", "blockade", "darts", "penalty", "pennyfalls")
+         "tcp", "chest", "glass", "blockade", "darts", "penalty", "pennyfalls", "plinko")
 
 _registry: dict | None = None
 
