@@ -7,6 +7,7 @@ countdown_posts), with names already looked up.
 
 from __future__ import annotations
 
+import base64
 import html
 import logging
 import math
@@ -35,6 +36,8 @@ _CSS = """*{margin:0;box-sizing:border-box} html,body{background:transparent} bo
 .tape{display:inline-block;background:#fff;color:#111;font-weight:900;white-space:nowrap;box-shadow:4px 4px 0 #111}
 .av{width:64px;height:64px;flex:none;border-radius:50%;box-shadow:0 0 0 4px rgba(255,255,255,.5);display:flex;align-items:center;
  justify-content:center;font-weight:900;font-size:29px;color:#fff}
+.av{position:relative;overflow:hidden}
+.av .pic{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
 .av.q{background:none;box-shadow:inset 0 0 0 3px rgba(255,255,255,.25);color:rgba(255,255,255,.35)}
 .seats{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:44px 0 34px}
 .seat{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
@@ -113,10 +116,16 @@ def clock_svg(elapsed: float = 19) -> str:
             f'<circle cx="100" cy="100" r="9" fill="#111"/></svg>')
 
 
-def _av(room: dict, uid, names: dict, cls: str = "") -> str:
+def _pic(faces: dict | None, uid) -> str:
+    """Someone's profile picture over their initial, if we have it."""
+    data = (faces or {}).get(uid)
+    return f'<img class="pic" src="data:image/webp;base64,{base64.b64encode(data).decode()}">' if data else ""
+
+
+def _av(room: dict, uid, names: dict, faces: dict | None = None, cls: str = "") -> str:
     i = room["players"].index(uid) if uid in room["players"] else 0
     return (f'<span class="av {cls}" style="background:linear-gradient(135deg,{COLOURS[i % len(COLOURS)]})">'
-            f'{_initial(names.get(uid, "Someone"))}</span>')
+            f'{_initial(names.get(uid, "Someone"))}{_pic(faces, uid)}</span>')
 
 
 def _money(room: dict) -> str:
@@ -135,7 +144,7 @@ def _prize(pot: int) -> int:
         return pot
 
 
-def room_page(room: dict, names: dict, event: str) -> str:
+def room_page(room: dict, names: dict, event: str, faces: dict | None = None) -> str:
     """The room filling up, or one that never started (closed by its host, or lapsed)."""
     gone = {"closed": "CLOSED", "lapsed": "LAPSED"}.get(event)
     seats = []
@@ -143,7 +152,7 @@ def room_page(room: dict, names: dict, event: str) -> str:
         if i < len(room["players"]):
             uid = room["players"][i]
             host = '<i class="host">HOST</i>' if uid == room["host"] else ""
-            seats.append(f'<div class="seat">{_av(room, uid, names)}<span class="tape">{_e(names.get(uid, "Someone").upper())}</span>{host}</div>')
+            seats.append(f'<div class="seat">{_av(room, uid, names, faces)}<span class="tape">{_e(names.get(uid, "Someone").upper())}</span>{host}</div>')
         else:
             seats.append('<div class="seat"><span class="av q">?</span></div>')
     return _page(f"""<div class="card lb{' dim' if gone else ''}">{clock_svg()}
@@ -153,11 +162,11 @@ def room_page(room: dict, names: dict, event: str) -> str:
       {f'<div class="stamp">{gone}</div>' if gone else ''}</div>""")
 
 
-def _table(room: dict, names: dict, top: set) -> str:
+def _table(room: dict, names: dict, top: set, faces: dict | None = None) -> str:
     scores = room.get("scores", {})
     ranked = sorted(room["players"], key=lambda u: (-scores.get(str(u), 0), room["players"].index(u)))
     rows = "".join(
-        f'<div class="row{" top" if u in top else ""}{" gone" if u in room.get("left", []) else ""}">{_av(room, u, names)}'
+        f'<div class="row{" top" if u in top else ""}{" gone" if u in room.get("left", []) else ""}">{_av(room, u, names, faces)}'
         f'<span>{_e(names.get(u, "Someone"))}</span><b>{scores.get(str(u), 0)}</b></div>' for u in ranked)
     return f'<div class="table{" two" if len(ranked) > 3 else ""}">{rows}</div>'
 
@@ -181,7 +190,7 @@ def _last_round(room: dict, names: dict) -> str:
     return f'<div class="board">{tiles}</div><div class="best">{head}{f"<div class=ws>{ws}</div>" if ws else ""}{dc}</div>'
 
 
-def game_page(room: dict, names: dict) -> str:
+def game_page(room: dict, names: dict, faces: dict | None = None) -> str:
     """The game as it stands after each round, and at the end who won and what they took."""
     scores = room.get("scores", {})
     present = [u for u in room["players"] if u not in room.get("left", [])]
@@ -214,18 +223,19 @@ def game_page(room: dict, names: dict) -> str:
     return _page(f"""<div class="card lv">{clock_svg(30 if room.get("over") else 19)}
       <div class="lab"><i>{_e(tag)}</i>{title}</div>
       {_last_round(room, names)}
-      {_table(room, names, top)}
+      {_table(room, names, top, faces)}
       <div class="chips">{money}</div></div>""")
 
 
-def page(room: dict, names: dict, event: str) -> str:
-    return room_page(room, names, event) if event in ("open", "seats", "closed", "lapsed") else game_page(room, names)
+def page(room: dict, names: dict, event: str, faces: dict | None = None) -> str:
+    return (room_page(room, names, event, faces) if event in ("open", "seats", "closed", "lapsed")
+            else game_page(room, names, faces))
 
 
-async def png(room: dict, names: dict, event: str) -> bytes | None:
+async def png(room: dict, names: dict, event: str, faces: dict | None = None) -> bytes | None:
     try:
         from lib.core.image_processing import screenshot_html
-        buf = await screenshot_html(page(room, names, event), size=(900, 1500), apply_trim=False, element_selector=".card",
+        buf = await screenshot_html(page(room, names, event, faces), size=(900, 1500), apply_trim=False, element_selector=".card",
                                     transparent=True)
         return buf.getvalue()
     except Exception:

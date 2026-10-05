@@ -7,6 +7,7 @@ match (see duel_posts), with names already looked up.
 
 from __future__ import annotations
 
+import base64
 import html
 import logging
 import math
@@ -41,6 +42,8 @@ _CSS = """*{margin:0;box-sizing:border-box} html,body{background:transparent} bo
 .cap{display:flex;align-items:center;gap:14px;min-width:0}
 .av{width:74px;height:74px;flex:none;border-radius:50%;background:linear-gradient(135deg,#2A4FB0,#16265C);box-shadow:0 0 0 4px #fff;
  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:34px}
+.av{position:relative;overflow:hidden}
+.av .pic{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
 .av.q{background:#22304F;color:#FFC93C}
 .name{padding:3px 12px 0;font-size:27px;line-height:36px;transform:rotate(-1.5deg);max-width:270px;overflow:hidden;text-overflow:ellipsis}
 .ch .face{max-width:640px;gap:16px}
@@ -118,11 +121,17 @@ def _coin() -> str:
     return f'<img src="{_f(COIN)}">'
 
 
+def _pic(faces: dict | None, uid) -> str:
+    """Someone's profile picture over their initial, if we have it."""
+    data = (faces or {}).get(uid)
+    return f'<img class="pic" src="data:image/webp;base64,{base64.b64encode(data).decode()}">' if data else ""
+
+
 def _initial(name: str) -> str:
     return _e((name.strip()[:1] or "?").upper())
 
 
-def challenge_page(s: dict, names: dict) -> str:
+def challenge_page(s: dict, names: dict, faces: dict | None = None) -> str:
     """A challenge going up, or one that came to nothing (lapsed, withdrawn, turned down)."""
     who, to = names.get(s["from"], "Someone"), (names.get(s["to"], "Someone") if s.get("to") else None)
     stake = int(s.get("stake") or 0)
@@ -135,11 +144,11 @@ def challenge_page(s: dict, names: dict) -> str:
     chips += ['<span class="chip">FIRST TO 3</span>']
     if not gone:
         chips.append(f'<span class="chip">{left} MIN TO ACCEPT</span>' if left else '<span class="chip">ABOUT TO LAPSE</span>')
-    them = (f'<div class="cap"><span class="av">{_initial(to)}</span><span class="tape name">{_e(to.upper())}</span></div>' if to
+    them = (f'<div class="cap"><span class="av">{_initial(to)}{_pic(faces, s.get("to"))}</span><span class="tape name">{_e(to.upper())}</span></div>' if to
             else '<div class="cap"><span class="av q">?</span><span class="tape name">ANYONE</span></div>')
     return _page(f"""<div class="card ch{' dim' if gone else ''}">{wheel_svg()}
       <div class="lab"><i>1V1 DUEL · {tag}</i><b>BROADSIDE</b></div>
-      <div class="face"><div class="cap"><span class="av">{_initial(who)}</span><span class="tape name">{_e(who.upper())}</span></div>
+      <div class="face"><div class="cap"><span class="av">{_initial(who)}{_pic(faces, s["from"])}</span><span class="tape name">{_e(who.upper())}</span></div>
         <em class="v">v</em>{them}</div>
       <div class="chips">{''.join(chips)}</div>
       {f'<div class="stamp">{gone}</div>' if gone else ''}</div>""")
@@ -221,14 +230,15 @@ def match_page(s: dict, names: dict) -> str:
       {grid}{why}<div class="chips foot">{money}</div></div>""")
 
 
-def page(s: dict, names: dict) -> str:
-    return challenge_page(s, names) if s["event"] in ("challenge", "lapsed", "withdrawn", "declined") else match_page(s, names)
+def page(s: dict, names: dict, faces: dict | None = None) -> str:
+    return (challenge_page(s, names, faces) if s["event"] in ("challenge", "lapsed", "withdrawn", "declined")
+            else match_page(s, names))
 
 
-async def png(s: dict, names: dict) -> bytes | None:
+async def png(s: dict, names: dict, faces: dict | None = None) -> bytes | None:
     try:
         from lib.core.image_processing import screenshot_html
-        buf = await screenshot_html(page(s, names), size=(900, 1300), apply_trim=False, element_selector=".card",
+        buf = await screenshot_html(page(s, names, faces), size=(900, 1300), apply_trim=False, element_selector=".card",
                                     transparent=True)
         return buf.getvalue()
     except Exception:

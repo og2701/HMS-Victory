@@ -84,6 +84,15 @@ def _name(uid) -> str:
     return getattr(member, "display_name", None) or "Someone"
 
 
+async def _faces(uids) -> dict:
+    """Everyone's profile picture, for the post's picture (missing ones are left out)."""
+    from lib.activities import avatars
+    from lib.activities.casino import base
+    uids = [u for u in dict.fromkeys(uids) if u is not None]
+    got = await asyncio.gather(*(avatars.get(base.CLIENT, u) for u in uids))
+    return {u: data for u, data in zip(uids, got) if data}
+
+
 def headline(s: dict) -> str:
     """The line above the picture."""
     e = s["event"]
@@ -186,7 +195,7 @@ async def _flush(post: Post) -> None:
             return
         png = None
         if any(time.time() >= _no_files_until.get(c, 0) for c in places):
-            png = await duel_card.png(s, {u: _name(u) for u in _people(s)})
+            png = await duel_card.png(s, {u: _name(u) for u in _people(s)}, await _faces(u for u in _people(s) if u != duel.BOT))
         for i, ch in enumerate(places):
             try:
                 await _send(post, ch, s, png)

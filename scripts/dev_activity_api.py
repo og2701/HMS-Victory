@@ -94,8 +94,23 @@ def main(port: int) -> None:
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
-    members = {PLAYER: SimpleNamespace(id=PLAYER, display_name="Tester", bot=False),
-               RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False),
+    class Picture:
+        """A stand-in profile picture (Broadside's move art); Pooja has none, to show the initial."""
+        def __init__(self, path):
+            self.path = path
+
+        def replace(self, **kwargs):
+            return self
+
+        async def read(self):
+            with open(self.path, "rb") as f:
+                return f.read()
+
+    art = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "broadside")
+    members = {PLAYER: SimpleNamespace(id=PLAYER, display_name="Tester", bot=False,
+                                       display_avatar=Picture(os.path.join(art, "ram.webp"))),
+               RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False,
+                                      display_avatar=Picture(os.path.join(art, "fireship.webp"))),
                THIRD: SimpleNamespace(id=THIRD, display_name="Pooja", bot=False)}
     guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)

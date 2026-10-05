@@ -22,6 +22,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /duel/challenge {stake, to?}, /duel/accept|cancel {id}, /duel/bot (practice against HMS Victory)
     GET  /duel/people?q=      members to challenge
     GET  /duel/match/<id>, POST /duel/match/<id>/pick {move}, /duel/match/<id>/forfeit
+    GET  /avatar/<uid>        a member's profile picture (no session: it stands in for Discord's CDN)
     GET  /countdown           Countdown: your room and the rooms you could join
     POST /countdown/open {stake}, /countdown/join|leave|start {id}
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
@@ -669,6 +670,19 @@ async def health(_request):
     return _json({"ok": True})
 
 
+async def avatar(request):
+    """A server member's profile picture, for the page's player tokens. Open like the picture on
+    Discord's CDN it stands in for (an <img> can't send the session), and only for members."""
+    from lib.activities import avatars
+    uid = request.match_info["uid"]
+    if not uid.isdigit() or len(uid) > 20:
+        return web.Response(status=404)
+    data = await avatars.get(request.app[CLIENT], int(uid))
+    if not data:
+        return web.Response(status=404, headers={"Cache-Control": "public, max-age=600"})
+    return web.Response(body=data, content_type="image/webp", headers={"Cache-Control": "public, max-age=3600"})
+
+
 def build_app(client) -> web.Application:
     app = web.Application(client_max_size=16 * 1024)
     app[CLIENT] = client
@@ -695,6 +709,7 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/duel/match/{{id}}", duel_match)
         app.router.add_post(f"{prefix}/duel/match/{{id}}/{{action}}", duel_match)
         app.router.add_post(f"{prefix}/duel/{{action}}", duel_action)
+        app.router.add_get(f"{prefix}/avatar/{{uid}}", avatar)
         app.router.add_get(f"{prefix}/countdown", countdown_lobby)
         app.router.add_get(f"{prefix}/countdown/room/{{id}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)

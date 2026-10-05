@@ -1,12 +1,13 @@
 The Countdown word list (countdown.txt) is drawn from SCOWL (http://wordlist.aspell.net),
-British spellings with -ise and -ize, size 70, lowercase a-z words of 2 to 9 letters.
+British spellings with -ise and -ize, size 70, variants up to "acceptable" (so alternative
+forms like speeded and abided count), lowercase a-z words of 2 to 9 letters.
 Its notice follows.
 
 Custom wordlist generated from https://app.aspell.net/create using
 the English Speller Database (ESDB) with parameters:
   Size: 70 (large)
-  Spelling: GB(-ise)
-  Variant Level: 4 *common*
+  Spelling: GB
+  Variant Level: 6 *acceptable*
   Special: hacker
   Diacritics: strip
 
