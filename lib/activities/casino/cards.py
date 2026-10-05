@@ -640,11 +640,17 @@ def draw_live(key: str, label: str, unit: str, history: list[dict], tile: bytes 
     # net so far
     net = sum(int(h["net"]) for h in history) + int(open_net)
     d.text((x, 410), "Net so far", font=_font(44, 600), fill=_hex(MUTED))
-    d.text((x - 4, 462), signed(net), font=_font(128, 900), fill=_hex(_colour(net)))
-    # a chip per round, newest on the right
-    chips = history[-8:]
-    cw, ch_, gap = 56, 92, 14
+    big = _font(128, 900)
+    d.text((x - 4, 462), signed(net), font=big, fill=_hex(_colour(net)))
+    # a chip per round, newest on the right, in the room the net leaves: as many as fit, smaller
+    # chips before fewer of them
     right, bottom = W - 60, 620
+    room = right - (x - 4 + d.textlength(signed(net), font=big) + 44)
+    for cw, ch_, gap in ((56, 92, 14), (40, 74, 10)):
+        fit = max(0, int((room + gap) // (cw + gap)))
+        if fit >= min(len(history), 8):
+            break
+    chips = history[-min(fit, 8):] if fit else []
     for i, h in enumerate(reversed(chips)):
         nh = int(h["net"])
         colour = GOLD if h.get("big") else GREEN if nh > 0 else RED if nh < 0 else EVEN
