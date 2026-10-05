@@ -159,6 +159,44 @@ class DuelPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:pla
         await _launch(interaction, "duel")
 
 
+class CountdownJoin(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:countdown:(?P<rid>[0-9a-f]+)"):
+    """Join on a Countdown room in #casino: opens the activity on Countdown with that room picked
+    out. Taking a seat (and the stake) happens in there."""
+
+    def __init__(self, rid: str):
+        super().__init__(discord.ui.Button(label="Join", style=discord.ButtonStyle.success,
+                                           custom_id=f"ukplace:countdown:{rid}"))
+        self.rid = rid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["rid"])
+
+    async def callback(self, interaction: discord.Interaction):
+        from lib.activities import countdown
+        r = countdown.room_info(self.rid)
+        if r is None or r.get("over") or r.get("state") != "lobby":
+            await interaction.response.send_message(
+                "That room has already started or closed. Open Countdown to start your own.", ephemeral=True)
+        else:
+            await _launch(interaction, f"countdown:{self.rid}")
+
+
+class CountdownPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:play:countdown"):
+    """Play Countdown: opens the activity on Countdown's rooms."""
+
+    def __init__(self):
+        super().__init__(discord.ui.Button(label="Play Countdown", style=discord.ButtonStyle.secondary,
+                                           custom_id="ukplace:play:countdown"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction):
+        await _launch(interaction, "countdown")
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
@@ -175,7 +213,7 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
-        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay)
+        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay)
 
 
 async def _register(session) -> None:

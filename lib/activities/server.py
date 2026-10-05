@@ -22,6 +22,9 @@ mapping's prefix isn't worth betting the launch on:
     POST /duel/challenge {stake, to?}, /duel/accept|cancel {id}, /duel/bot (practice against HMS Victory)
     GET  /duel/people?q=      members to challenge
     GET  /duel/match/<id>, POST /duel/match/<id>/pick {move}, /duel/match/<id>/forfeit
+    GET  /countdown           Countdown: your room and the rooms you could join
+    POST /countdown/open {stake}, /countdown/join|leave|start {id}
+    GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
     GET  /health
 """
 
@@ -32,7 +35,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, crossword_api, duel, wordle_api
+from lib.activities import auth, casino, countdown, crossword_api, duel, wordle_api
 from lib.activities.daily_score import GAMES as SCORE_GAMES
 from lib.activities.daily_score import Refuse as ScoreRefuse
 
@@ -41,6 +44,7 @@ log = logging.getLogger(__name__)
 _runner: web.AppRunner | None = None
 _sweeper: asyncio.Task | None = None
 _duel_sweeper: asyncio.Task | None = None
+_countdown_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -140,7 +144,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked in ("home", "duel") or asked.startswith("duel:"):
+    if asked in _STATE or asked in ("home", "duel", "countdown") or asked.startswith(("duel:", "countdown:")):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
@@ -177,6 +181,8 @@ def _gate_name(game: str) -> str:
         return "home"       # watching isn't playing
     if game == "duel" or game.startswith("duel:"):
         return duel.GAME
+    if game == "countdown" or game.startswith("countdown:"):
+        return countdown.GAME
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
         return a.command if a else "casino"
@@ -201,6 +207,11 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
             return {"game": "home", "home": _home(client, uid, channel)}
         # opened from a challenge's Accept in #casino: pick that challenge out
         return {"game": "duel", "duel": {**_duel_lobby(client, uid), "focus": game[5:] or None}}
+    if game == "countdown" or game.startswith("countdown:"):
+        if not _casino_open(channel):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        # opened from a room's Join in #casino: pick that room out
+        return {"game": "countdown", "countdown": {**_countdown_lobby(client, uid), "focus": game[10:] or None}}
     if game.startswith("watch:"):
         player, key = _watched(game)
         if not _casino_open(channel):
@@ -506,14 +517,14 @@ def _duel_lobby(client, uid: int) -> dict:
     return duel.lobby(uid, lambda u: _name(client, u), get_bb(uid))
 
 
-def _duel_request(request):
-    """(who, error response) for a duel route."""
+def _duel_request(request, game: str = duel.GAME):
+    """(who, error response) for a Broadside or Countdown route."""
     who = _player(request)
     if who is None:
         return None, _error("Sign in again.", 401)
     if not _casino_open(who["ch"]):
-        return who, _error("Duels only open in #bot-workshop while they're being tested.", 403)
-    return who, _gate(request.app[CLIENT], who["uid"], duel.GAME)
+        return who, _error("This only opens in #bot-workshop while it's being tested.", 403)
+    return who, _gate(request.app[CLIENT], who["uid"], game)
 
 
 async def _duel_body(request) -> dict:
@@ -591,6 +602,69 @@ async def duel_match(request):
         return _error("Something went wrong. Your stake is safe; try again.", 500)
 
 
+# ---- Countdown -------------------------------------------------------------------------------
+
+def _countdown_lobby(client, uid: int) -> dict:
+    from lib.economy.economy_manager import get_bb
+    return countdown.lobby(uid, lambda u: _name(client, u), get_bb(uid))
+
+
+async def countdown_lobby(request):
+    who, err = _duel_request(request, countdown.GAME)
+    if err is not None:
+        return err
+    return _json(_countdown_lobby(request.app[CLIENT], who["uid"]))
+
+
+async def countdown_action(request):
+    """open / join / leave / start; answers with the lobby as it now stands."""
+    who, err = _duel_request(request, countdown.GAME)
+    if err is not None:
+        return err
+    body, action = await _duel_body(request), request.match_info["action"]
+    uid, rid = who["uid"], str(body.get("id") or "")
+    try:
+        if action == "open":
+            countdown.open_room(uid, body.get("stake"))
+        elif action == "join":
+            countdown.join(uid, rid)
+        elif action == "leave":
+            countdown.leave(uid, rid)
+        elif action == "start":
+            countdown.start(uid, rid)
+        else:
+            return _error("That isn't a Countdown action.", 404)
+    except countdown.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("countdown %s failed", action, exc_info=True)
+        return _error("Something went wrong. Your stake is safe; try again.", 500)
+    return _json(_countdown_lobby(request.app[CLIENT], uid))
+
+
+async def countdown_room(request):
+    who, err = _duel_request(request, countdown.GAME)
+    if err is not None:
+        return err
+    client = request.app[CLIENT]
+    rid, action = request.match_info["id"], request.match_info.get("action")
+    try:
+        if action == "call":
+            countdown.call(who["uid"], rid, str((await _duel_body(request)).get("kind") or ""))
+        elif action == "declare":
+            countdown.declare(who["uid"], rid, str((await _duel_body(request)).get("word") or ""))
+        elif action == "leave":
+            countdown.leave(who["uid"], rid)
+        elif action is not None:
+            return _error("That isn't a Countdown action.", 404)
+        return _json(countdown.room(who["uid"], rid, lambda u: _name(client, u)))
+    except countdown.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("countdown room %s %s failed", rid, action, exc_info=True)
+        return _error("Something went wrong. Your stake is safe; try again.", 500)
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -621,6 +695,10 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/duel/match/{{id}}", duel_match)
         app.router.add_post(f"{prefix}/duel/match/{{id}}/{{action}}", duel_match)
         app.router.add_post(f"{prefix}/duel/{{action}}", duel_action)
+        app.router.add_get(f"{prefix}/countdown", countdown_lobby)
+        app.router.add_get(f"{prefix}/countdown/room/{{id}}", countdown_room)
+        app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)
+        app.router.add_post(f"{prefix}/countdown/{{action}}", countdown_action)
     return app
 
 
@@ -658,9 +736,12 @@ async def start(client) -> bool:
         return False
     casino.base.CLIENT = client          # badge awards need the bot's client
     duel.CLIENT = client
-    from lib.activities import duel_posts
+    from lib.activities import countdown_posts, duel_posts
     if duel_posts.on_event not in duel.listeners:
         duel.listeners.append(duel_posts.on_event)
+    countdown.CLIENT = client
+    if countdown_posts.on_event not in countdown.listeners:
+        countdown.listeners.append(countdown_posts.on_event)
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))
@@ -671,8 +752,9 @@ async def start(client) -> bool:
     await launcher.start(client.session)
     global _sweeper
     _sweeper = asyncio.create_task(casino.sessions.run_sweeper())
-    global _duel_sweeper
+    global _duel_sweeper, _countdown_sweeper
     _duel_sweeper = asyncio.create_task(duel.run_sweeper())
+    _countdown_sweeper = asyncio.create_task(countdown.run_sweeper())
     return True
 
 
@@ -682,10 +764,11 @@ async def stop() -> None:
     if _sweeper is not None:
         _sweeper.cancel()
         _sweeper = None
-    global _duel_sweeper
-    if _duel_sweeper is not None:
-        _duel_sweeper.cancel()
-        _duel_sweeper = None
+    global _duel_sweeper, _countdown_sweeper
+    for task in (_duel_sweeper, _countdown_sweeper):
+        if task is not None:
+            task.cancel()
+    _duel_sweeper = _countdown_sweeper = None
     try:
         await casino.sessions.close_all()
     except Exception:

@@ -24,6 +24,7 @@ os.environ["ACTIVITIES_SESSION_SECRET"] = "dev-activity-secret"
 
 PLAYER = 4242
 RIVAL = 4343
+THIRD = 4444
 WORKSHOP = 1141037835445616640
 
 
@@ -79,19 +80,23 @@ def main(port: int) -> None:
     from lib.economy import economy_manager as em
     em.add_bb(PLAYER, 50_000, reason="dev seed", taxable=False)
     em.add_bb(RIVAL, 50_000, reason="dev seed", taxable=False)
+    em.add_bb(THIRD, 50_000, reason="dev seed", taxable=False)
 
     from lib.activities import auth, server
     from lib.activities.casino import base
     base._FILE = os.path.join(tmp, "activity_casino.json")
-    from lib.activities import duel, duel_posts, launcher
+    from lib.activities import countdown, countdown_posts, duel, duel_posts, launcher
     duel._FILE = os.path.join(tmp, "activity_duels.json")
+    countdown._FILE = os.path.join(tmp, "activity_countdown.json")
     _post_to_folder(launcher, os.path.join(tmp, "posts"))
     duel.listeners.append(duel_posts.on_event)
+    countdown.listeners.append(countdown_posts.on_event)
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
     members = {PLAYER: SimpleNamespace(id=PLAYER, display_name="Tester", bot=False),
-               RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False)}
+               RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False),
+               THIRD: SimpleNamespace(id=THIRD, display_name="Pooja", bot=False)}
     guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)
     base.CLIENT = client
@@ -105,7 +110,12 @@ def main(port: int) -> None:
         print(f"open: http://localhost:5174/?local={auth.make_session(PLAYER, WORKSHOP)}")
         print(f"rival (a second tab, for duels): http://localhost:5174/?local={auth.make_session(RIVAL, WORKSHOP)}&game=duel",
               flush=True)
+        print(f"rival on Countdown: http://localhost:5174/?local={auth.make_session(RIVAL, WORKSHOP)}&game=countdown",
+              flush=True)
+        print(f"third player (Countdown): http://localhost:5174/?local={auth.make_session(THIRD, WORKSHOP)}&game=countdown",
+              flush=True)
         asyncio.get_running_loop().create_task(duel.run_sweeper())
+        asyncio.get_running_loop().create_task(countdown.run_sweeper())
         await asyncio.Event().wait()
 
     asyncio.run(run())

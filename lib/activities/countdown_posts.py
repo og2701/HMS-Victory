@@ -1,0 +1,167 @@
+"""Countdown on #casino: one message per room, posted when it opens and edited as people sit
+down, after every round, and with the result (or as it closes or lapses unstarted).
+
+The picture says it all (countdown_card); the line above it says who, with mentions that ping
+nobody. Each message has its own queue so edits land in order and no closer together than
+EDIT_GAP, and a burst of steps collapses into the latest state.
+"""
+
+import asyncio
+import io
+import logging
+import time
+from dataclasses import dataclass
+
+import discord
+
+from lib.activities import countdown, countdown_card
+
+log = logging.getLogger(__name__)
+
+EDIT_GAP = 2.5
+IMAGE = "countdown.png"
+NO_FILES_RETRY = 600
+GOLD, WIN, GREY = 0xFFC93C, 0x23A55A, 0x6B7280
+ENDED = ("over", "closed", "lapsed")
+
+
+@dataclass
+class Post:
+    rid: str
+    message_id: int | None
+    state: dict | None = None
+    event: str = ""
+    dirty: bool = False
+    task: asyncio.Task | None = None
+    edited: float = 0.0
+
+
+_posts: dict[str, Post] = {}
+_no_files_until = 0.0
+
+
+def on_event(event: str, room: dict) -> None:
+    """A step in a room (countdown.listeners)."""
+    rid = room.get("id")
+    if not rid:
+        return
+    post = _posts.get(rid)
+    if post is None:
+        post = _posts[rid] = Post(rid, countdown.post_for(rid))
+    post.state, post.event = room, event
+    post.dirty = True
+    if post.task is None or post.task.done():
+        try:
+            post.task = asyncio.get_running_loop().create_task(_flush(post))
+        except RuntimeError:            # no loop (tests, scripts): nowhere to post
+            pass
+
+
+def _channel() -> int | None:
+    from lib.activities.casino import sessions
+    return sessions._channel()
+
+
+def _name(uid) -> str:
+    from lib.activities.casino import base
+    import config
+    guild = base.CLIENT.get_guild(config.GUILD_ID) if base.CLIENT is not None else None
+    member = guild.get_member(int(uid)) if guild else None
+    return getattr(member, "display_name", None) or "Someone"
+
+
+def _and(uids) -> str:
+    who = [f"<@{u}>" for u in uids]
+    return who[0] if len(who) == 1 else ", ".join(who[:-1]) + f" and {who[-1]}"
+
+
+def headline(room: dict, event: str) -> str:
+    """The line above the picture."""
+    stake = int(room.get("stake") or 0)
+    for_what = f" · **{stake:,} UKP** each" if stake else " · a friendly"
+    host = room["host"]
+    if event in ("open", "seats"):
+        seated = len(room["players"])
+        return f"<@{host}> opened a **Countdown** room{for_what} · {seated} of {countdown.SEATS} seated"
+    if event == "closed":
+        return f"<@{host}> closed their **Countdown** room"
+    if event == "lapsed":
+        return f"<@{host}>'s **Countdown** room closed · it never started"
+    if event != "over":
+        return f"{_and(room['players'])} · **Countdown** · round {len(room['rounds'])} of {countdown.ROUNDS}"
+    winners = room.get("winners") or []
+    scores = room.get("scores", {})
+    if room.get("how") == "refund" or not winners:
+        return f"{_and(room['players'])} finished **Countdown** all square" + (" · stakes returned" if stake else "")
+    top = scores.get(str(winners[0]), 0)
+    if len(winners) > 1:
+        line = f"{_and(winners)} tied at the top of **Countdown** with {top}"
+        return line + (f" and took **{int(room.get('share', 0)):,} UKP** each" if stake else "")
+    line = f"<@{winners[0]}> won **Countdown** with {top}"
+    return line + (f" and took **{int(room.get('share', 0)):,} UKP**" if stake else "")
+
+
+def view(room: dict, event: str, image: str | None) -> discord.ui.LayoutView:
+    v = discord.ui.LayoutView(timeout=None)
+    line = headline(room, event)
+    if image:
+        v.add_item(discord.ui.TextDisplay(line))
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=f"attachment://{image}")
+        v.add_item(gallery)
+    else:
+        colour = WIN if event == "over" else GREY if event in ENDED else GOLD
+        box = discord.ui.Container(accent_colour=discord.Colour(colour))
+        box.add_item(discord.ui.TextDisplay(line))
+        v.add_item(box)
+    row = discord.ui.ActionRow()
+    open_seats = event in ("open", "seats") and len(room["players"]) < countdown.SEATS
+    if open_seats:
+        row.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.success,
+                                       custom_id=f"ukplace:countdown:{room['id']}"))
+    row.add_item(discord.ui.Button(label="Play Countdown",
+                                   style=discord.ButtonStyle.success if event in ENDED else discord.ButtonStyle.secondary,
+                                   custom_id="ukplace:play:countdown"))
+    v.add_item(row)
+    return v
+
+
+async def _flush(post: Post) -> None:
+    global _no_files_until
+    from lib.activities import launcher
+    ch = _channel()
+    if not ch:
+        return
+    while post.dirty:
+        wait = post.edited + EDIT_GAP - time.time()
+        if wait > 0 and post.message_id is not None:
+            await asyncio.sleep(wait)
+        post.dirty = False
+        post.edited = time.time()
+        room, event = post.state, post.event
+        png = None
+        if time.time() >= _no_files_until:
+            png = await countdown_card.png(room, {u: _name(u) for u in room["players"]}, event)
+
+        async def go(with_picture: bool):
+            v = view(room, event, IMAGE if with_picture else None)
+            files = [discord.File(io.BytesIO(png), filename=IMAGE)] if with_picture else None
+            if post.message_id is None:
+                post.message_id = await launcher.post_view(ch, v, files=files)
+                countdown.remember_post(post.rid, post.message_id)
+            else:
+                await launcher.edit_view(ch, post.message_id, v, files=files)
+
+        try:
+            try:
+                await go(png is not None)
+            except discord.Forbidden:
+                if png is None:
+                    raise
+                _no_files_until = time.time() + NO_FILES_RETRY
+                log.warning("the activities app can't attach files in #casino; posting Countdown as text")
+                await go(False)
+        except Exception:
+            log.warning("couldn't post Countdown %s to #casino", post.rid, exc_info=True)
+    if post.event in ENDED and not post.dirty:
+        _posts.pop(post.rid, None)
