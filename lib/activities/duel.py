@@ -16,7 +16,9 @@ a staked match.
 """
 
 import asyncio
+import copy
 import logging
+import math
 import os
 import random
 import secrets
@@ -64,12 +66,44 @@ MISSES_TO_LEAVE = 2         # missed clocks in a row that count as leaving the m
 REGULATION = 5              # rounds before sudden death
 STAKES = [0, 50, 100, 250, 500, 1000]
 GAME = "broadside"
+# HMS Victory's seat in a practice match: free, never posted, never counted. No member has id 1.
+BOT, BOT_NAME = 1, "HMS Victory"
 
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_duels.json")
 _challenges: dict[str, dict] = {}
 _matches: dict[str, dict] = {}
+_posts: dict[str, int] = {}     # challenge id -> its #casino message, which follows it into the match
 _loaded = False
 CLIENT = None               # the bot's client, for its id in the daily-allowance check
+# Told about each step (challenge, withdrawn, declined, lapsed, start, round, over) with a copy
+# of the challenge or match: how the #casino post keeps up (duel_posts).
+listeners: list = []
+
+
+def _emit(event: str, obj: dict) -> None:
+    for fn in listeners:
+        try:
+            fn(event, copy.deepcopy(obj))
+        except Exception:
+            log.warning("a broadside listener failed on %s", event, exc_info=True)
+
+
+def post_for(cid: str) -> int | None:
+    _load()
+    return _posts.get(cid)
+
+
+def remember_post(cid: str, message_id: int | None) -> None:
+    if message_id is None:
+        return
+    _posts[cid] = int(message_id)
+    _save()
+
+
+def challenge_info(cid: str) -> dict | None:
+    _load()
+    c = _challenges.get(cid)
+    return dict(c) if c else None
 
 
 class Refuse(Exception):
@@ -97,6 +131,7 @@ def _load() -> None:
             raw = json.load(f)
         _challenges.update(raw.get("challenges", {}))
         _matches.update(raw.get("matches", {}))
+        _posts.update(raw.get("posts", {}))
     except FileNotFoundError:
         pass
     except Exception:
@@ -105,7 +140,7 @@ def _load() -> None:
 
 def _save() -> None:
     try:
-        atomic_write_json(_FILE, {"challenges": _challenges, "matches": _matches})
+        atomic_write_json(_FILE, {"challenges": _challenges, "matches": _matches, "posts": _posts})
     except Exception:
         log.error("couldn't save the duels to %s", _FILE, exc_info=True)
 
@@ -157,6 +192,20 @@ def _start_round(m: dict, now: float) -> None:
             m["picks"][side] = hand[0]
     if all(m["picks"].values()):
         m["deadline"] = m["next_at"]
+    if m.get("bot"):
+        forced = m["picks"]["b"] is not None
+        if not forced:
+            m["picks"]["b"] = _bot_pick(m)
+        m["bot_at"] = m["next_at"] + (0 if forced else random.uniform(1.5, 4.5))
+
+
+def _bot_pick(m: dict) -> str:
+    """HMS Victory's order: it counts your cards like anyone would, favouring the ones that beat
+    more of what you've got left, but it still rolls the dice so it can't be read."""
+    mine, theirs = _hand(m, "b"), _hand(m, "a")
+    def edge(x: str) -> float:
+        return sum(1 if beats(x, y) else -1 if beats(y, x) else 0 for y in theirs) / max(1, len(theirs))
+    return random.choices(mine, [math.exp(2.5 * edge(x)) for x in mine])[0]
 
 
 def _resolve(m: dict, now: float) -> None:
@@ -175,6 +224,7 @@ def _resolve(m: dict, now: float) -> None:
         _finish(m, None if result == "draw" else result, "score" if result != "draw" else "draw", now)
     else:
         _start_round(m, now)
+        _emit("round", m)
 
 
 def _advance(m: dict, now: float) -> bool:
@@ -182,7 +232,7 @@ def _advance(m: dict, now: float) -> bool:
     resolve the round once both cards are down. True if anything changed."""
     changed = False
     while not m["over"]:
-        if all(m["picks"].values()) and now >= m["next_at"]:
+        if all(m["picks"].values()) and now >= m["next_at"] and now >= m.get("bot_at", 0):
             # resolved the moment the second card went down, or when the clock ran out
             _resolve(m, min(now, m["deadline"]))
             changed = True
@@ -203,6 +253,9 @@ def _finish(m: dict, winner: str | None, how: str, now: float) -> None:
     a crash between the two can't pay out twice."""
     m.update(over=True, winner=winner, how=how, ended=now)
     stake, a, b = m["stake"], m["a"], m["b"]
+    if m.get("bot"):                # practice: nothing to pay, nothing to count
+        _emit("over", m)
+        return
     if m.get("paid"):
         return
     m["paid"] = True
@@ -229,6 +282,7 @@ def _finish(m: dict, winner: str | None, how: str, now: float) -> None:
             pvp_stats.record_result(GAME, a if winner == "a" else b, b if winner == "a" else a, stake, outcome)
     except Exception:
         log.warning("couldn't log broadside match %s", m["id"], exc_info=True)
+    _emit("over", m)
 
 
 def _tidy(now: float) -> bool:
@@ -236,9 +290,10 @@ def _tidy(now: float) -> bool:
     gone = [cid for cid, c in _challenges.items() if c["expires"] <= now]
     old = [mid for mid, m in _matches.items() if m["over"] and now - m.get("ended", now) > KEEP_FINISHED]
     for cid in gone:
-        del _challenges[cid]
+        _emit("lapsed", _challenges.pop(cid))
+        _posts.pop(cid, None)
     for mid in old:
-        del _matches[mid]
+        _posts.pop(_matches.pop(mid).get("cid"), None)
     return bool(gone or old)
 
 
@@ -267,6 +322,8 @@ async def run_sweeper(every: float = 2.0) -> None:
 def _person(uid: int | None, name_of) -> dict | None:
     if uid is None:
         return None
+    if uid == BOT:
+        return {"uid": str(uid), "name": BOT_NAME, "bot": True}
     return {"uid": str(uid), "name": name_of(uid) or "Someone"}
 
 
@@ -303,7 +360,7 @@ def view(m: dict, uid: int, name_of, now: float | None = None) -> dict:
         "revealIn": round(max(0.0, m["next_at"] - now), 2),
         "hand": _hand(m, me), "theirHand": _hand(m, them),
         "picked": m["picks"][me] if not m["over"] else None,
-        "theyPicked": m["picks"][them] is not None and not m["over"],
+        "theyPicked": m["picks"][them] is not None and not m["over"] and (m[them] != BOT or now >= m.get("bot_at", 0)),
         "rounds": rounds,
     }
     if m["over"]:
@@ -370,12 +427,14 @@ def challenge(uid: int, stake, to: int | None = None) -> dict:
         raise Refuse("Finish your duel first.")
     _check_stake(uid, stake)
     now = time.time()
-    for cid in [cid for cid, c in _challenges.items() if c["from"] == uid]:
-        del _challenges[cid]
+    for old in [old for old, c in _challenges.items() if c["from"] == uid]:
+        _emit("withdrawn", _challenges.pop(old))
+        _posts.pop(old, None)
     c = {"id": secrets.token_hex(4), "from": uid, "to": int(to) if to is not None else None,
          "stake": stake, "created": now, "expires": now + CHALLENGE_SECONDS}
     _challenges[c["id"]] = c
     _save()
+    _emit("challenge", c)
     return c
 
 
@@ -386,6 +445,8 @@ def cancel(uid: int, cid: str) -> None:
         raise Refuse("That challenge has gone.")
     del _challenges[cid]
     _save()
+    _emit("withdrawn" if uid == c["from"] else "declined", c)
+    _posts.pop(cid, None)
 
 
 def accept(uid: int, cid: str) -> dict:
@@ -415,9 +476,26 @@ def accept(uid: int, cid: str) -> dict:
         if not remove_bb(uid, stake, reason="Broadside stake"):
             credit_from_bank(c["from"], stake, "Broadside stake refund")
             raise Refuse("You can't cover the stake.")
+    del _challenges[c["id"]]
     for other in [k for k, v in _challenges.items() if v["from"] in (uid, c["from"])]:
-        del _challenges[other]
-    m = {"id": secrets.token_hex(4), "a": c["from"], "b": uid, "stake": stake, "started": now,
+        _emit("withdrawn", _challenges.pop(other))
+        _posts.pop(other, None)
+    m = {"id": secrets.token_hex(4), "cid": c["id"], "a": c["from"], "b": uid, "stake": stake, "started": now,
+         "rounds": [], "misses": {"a": 0, "b": 0}, "next_at": now, "over": False, "winner": None}
+    _start_round(m, now)
+    _matches[m["id"]] = m
+    _save()
+    _emit("start", m)
+    return m
+
+
+def vs_bot(uid: int) -> dict:
+    """A practice match against HMS Victory: free, and it starts at once."""
+    _load()
+    if _active(uid) is not None:
+        raise Refuse("Finish your duel first.")
+    now = time.time()
+    m = {"id": secrets.token_hex(4), "a": uid, "b": BOT, "bot": True, "stake": 0, "started": now,
          "rounds": [], "misses": {"a": 0, "b": 0}, "next_at": now, "over": False, "winner": None}
     _start_round(m, now)
     _matches[m["id"]] = m

@@ -19,7 +19,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /casino/<game>/here|leave the open table checking in, or closing (for #casino)
     GET  /casino/watch/<uid>/<game>   someone else's table, for a spectator
     GET  /duel                Broadside: your duel, your challenge, and the ones you could take
-    POST /duel/challenge {stake, to?}, /duel/accept|cancel {id}
+    POST /duel/challenge {stake, to?}, /duel/accept|cancel {id}, /duel/bot (practice against HMS Victory)
     GET  /duel/people?q=      members to challenge
     GET  /duel/match/<id>, POST /duel/match/<id>/pick {move}, /duel/match/<id>/forfeit
     GET  /health
@@ -140,7 +140,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked in ("home", "duel"):
+    if asked in _STATE or asked in ("home", "duel") or asked.startswith("duel:"):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
@@ -175,7 +175,7 @@ def _gate_name(game: str) -> str:
     """The name lib.core.restrictions knows a screen by."""
     if game.startswith("watch:"):
         return "home"       # watching isn't playing
-    if game == "duel":
+    if game == "duel" or game.startswith("duel:"):
         return duel.GAME
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
@@ -196,10 +196,11 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
         return {"game": game, "casino": _named(client, uid, casino.table(uid, game[7:]))}
-    if game == "duel":
+    if game == "duel" or game.startswith("duel:"):
         if not _casino_open(channel):
             return {"game": "home", "home": _home(client, uid, channel)}
-        return {"game": game, "duel": _duel_lobby(client, uid)}
+        # opened from a challenge's Accept in #casino: pick that challenge out
+        return {"game": "duel", "duel": {**_duel_lobby(client, uid), "focus": game[5:] or None}}
     if game.startswith("watch:"):
         player, key = _watched(game)
         if not _casino_open(channel):
@@ -557,6 +558,8 @@ async def duel_action(request):
             duel.accept(who["uid"], str(body.get("id") or ""))
         elif action == "cancel":
             duel.cancel(who["uid"], str(body.get("id") or ""))
+        elif action == "bot":
+            duel.vs_bot(who["uid"])
         else:
             return _error("That isn't a duel action.", 404)
     except (duel.Refuse, ValueError) as e:
@@ -655,6 +658,9 @@ async def start(client) -> bool:
         return False
     casino.base.CLIENT = client          # badge awards need the bot's client
     duel.CLIENT = client
+    from lib.activities import duel_posts
+    if duel_posts.on_event not in duel.listeners:
+        duel.listeners.append(duel_posts.on_event)
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))

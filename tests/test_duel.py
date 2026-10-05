@@ -213,3 +213,110 @@ def test_a_match_survives_a_restart(em, monkeypatch):
     D._load()
     D.pick(B, mid, "board")
     assert D.match(A, mid, name_of)["rounds"][0]["result"] == "win"
+
+
+# ---- the #casino post --------------------------------------------------------------------
+
+def test_every_step_is_told_to_the_post(em):
+    seen = []
+    D.listeners.append(lambda event, obj: seen.append((event, obj.get("cid") or obj.get("id"))))
+    try:
+        c = D.challenge(A, 100)
+        mid = D.accept(B, c["id"])["id"]
+        play_round(em, mid, "broadside", "board")
+        play_round(em, mid, "fireship", "grapeshot")
+        D.pick(A, mid, "ram")
+        D.pick(B, mid, "chainshot")
+        c2 = D.challenge(C, 0, to=A)
+        D.cancel(A, c2["id"])
+        c3 = D.challenge(C, 0)
+        tick(em, D.CHALLENGE_SECONDS + 1)
+        D.sweep()
+    finally:
+        D.listeners.clear()
+    events = [e for e, _ in seen]
+    assert events == ["challenge", "start", "round", "round", "over", "challenge", "declined", "challenge", "lapsed"]
+    # the match keeps its challenge's id, so it edits the same message
+    assert {cid for e, cid in seen[:5]} == {c["id"]}
+    assert seen[-1][1] == c3["id"]
+
+
+def test_the_post_lines_and_buttons(em):
+    from lib.activities import duel_posts as P
+    c = D.challenge(A, 100, to=B)
+    s = {"event": "challenge", **c}
+    assert P.headline(s) == f"<@{B}>, <@{A}> challenges you to **Broadside** for **100 UKP**"
+    ids = [b.custom_id for row in P.view(s, None).children if hasattr(row, "children") for b in row.children
+           if getattr(b, "custom_id", None)]
+    assert f"ukplace:duel:{c['id']}" in ids and "ukplace:play:duel" in ids
+    mid = D.accept(B, c["id"])["id"]
+    D.forfeit(A, mid)
+    m = D._matches[mid]
+    line = P.headline({"event": "over", **m})
+    assert line.startswith(f"<@{B}> beat <@{A}> at **Broadside**") and "struck their colours" in line and "took **190 UKP**" in line
+    open_c = D.challenge(C, 0)
+    assert "anyone" in P.headline({"event": "challenge", **open_c}) and "a friendly" in P.headline({"event": "challenge", **open_c})
+    assert "withdrew" in P.headline({"event": "withdrawn", **open_c})
+
+
+def test_the_post_pictures_draw_every_state(em):
+    from lib.activities import duel_card as DC
+    names = {A: "Anne", B: "Ben"}
+    c = D.challenge(A, 250)
+    assert "OPEN CHALLENGE" in DC.page({"event": "challenge", **c}, names)
+    assert "LAPSED" in DC.page({"event": "lapsed", **c}, names)
+    mid = D.accept(B, c["id"])["id"]
+    play_round(em, mid, "broadside", "board")
+    live = DC.page({"event": "round", **D._matches[mid]}, names)
+    assert "LIVE · ROUND 2 OF 5" in live and "cuts down the boarders" in live
+    D.forfeit(B, mid)
+    done = DC.page({"event": "over", **D._matches[mid]}, names)
+    assert "ANNE WINS" in done and "BEN STRUCK THEIR COLOURS" in done
+
+
+# ---- practice against HMS Victory ----------------------------------------------------------
+
+def test_practice_against_hms_victory_is_free_and_never_posted(em, monkeypatch):
+    from lib.activities import duel_posts as P
+    seen = []
+    monkeypatch.setattr(P, "_flush", lambda post: seen.append(post))
+    D.listeners.append(P.on_event)
+    try:
+        mid = D.vs_bot(A)["id"]
+        v = D.match(A, mid, name_of)
+        assert v["them"] == {"uid": "1", "name": "HMS Victory", "bot": True} and v["stake"] == 0
+        assert v["theyPicked"] is False                  # it takes a moment to think
+        tick(em, 5)
+        assert D.match(A, mid, name_of)["theyPicked"] is True
+        D.pick(A, mid, "broadside")
+        v = D.match(A, mid, name_of)
+        assert v["phase"] == "reveal" and v["rounds"][0]["them"] in D.MOVES
+        D.forfeit(A, mid)
+    finally:
+        D.listeners.clear()
+    assert P._posts == {} and seen == []
+    assert em.get_bb(A) == 10_000
+    with pytest.raises(D.Refuse, match="Finish"):
+        mid2 = D.vs_bot(B)["id"]
+        D.vs_bot(B)
+
+
+def test_hms_victory_waits_for_its_moment_and_never_misses(em, monkeypatch):
+    mid = D.vs_bot(A)["id"]
+    D.pick(A, mid, "evade")
+    assert D.match(A, mid, name_of)["phase"] == "pick"   # your card's down, its isn't yet
+    tick(em, 5)
+    assert D.match(A, mid, name_of)["phase"] == "reveal"
+    # you miss two clocks and leave; it never does
+    tick(em, D.REVEAL_SECONDS + D.PICK_SECONDS + 1)
+    tick(em, D.REVEAL_SECONDS + D.PICK_SECONDS + 1)
+    v = D.match(A, mid, name_of)
+    assert v["over"]["how"] == "left" and v["over"]["result"] == "loss"
+    assert all(not r["auto"]["them"] for r in v["rounds"])
+
+
+def test_hms_victory_plays_to_what_you_have_left(em, monkeypatch):
+    m = {"a": A, "b": D.BOT, "rounds": [{"a": mv, "b": mv, "w": None, "auto": []} for mv in ["evade", "broadside", "fireship", "ram", "board"]]}
+    # you hold grapeshot and chainshot; it holds the same. Grapeshot beats chainshot, chainshot doesn't beat grapeshot
+    picks = [D._bot_pick(m) for _ in range(300)]
+    assert set(picks) <= {"grapeshot", "chainshot"} and picks.count("grapeshot") > 200

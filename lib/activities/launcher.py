@@ -117,6 +117,48 @@ class CasinoWatch(discord.ui.DynamicItem[discord.ui.Button],
         await _launch(interaction, f"casino:{self.key}" if mine else f"watch:{self.uid}:{self.key}")
 
 
+class DuelAccept(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:duel:(?P<cid>[0-9a-f]+)"):
+    """Accept on a Broadside challenge in #casino: opens the activity on the duels, with that
+    challenge picked out. The stakes are only taken once they accept in there."""
+
+    def __init__(self, cid: str):
+        super().__init__(discord.ui.Button(label="Accept", style=discord.ButtonStyle.success,
+                                           custom_id=f"ukplace:duel:{cid}"))
+        self.cid = cid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["cid"])
+
+    async def callback(self, interaction: discord.Interaction):
+        from lib.activities import duel
+        c = duel.challenge_info(self.cid)
+        uid = interaction.user.id
+        if c is None:
+            await interaction.response.send_message(
+                "That challenge has gone. Open Broadside to post your own.", ephemeral=True)
+        elif c.get("to") and uid not in (c["to"], c["from"]):
+            await interaction.response.send_message(f"That challenge is for <@{c['to']}>.", ephemeral=True,
+                                                    allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await _launch(interaction, f"duel:{self.cid}")
+
+
+class DuelPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:play:duel"):
+    """Play Broadside: opens the activity on the duels."""
+
+    def __init__(self):
+        super().__init__(discord.ui.Button(label="Play Broadside", style=discord.ButtonStyle.secondary,
+                                           custom_id="ukplace:play:duel"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction):
+        await _launch(interaction, "duel")
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
@@ -133,7 +175,7 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
-        self.add_dynamic_items(CasinoPlay, CasinoWatch)
+        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay)
 
 
 async def _register(session) -> None:
@@ -194,12 +236,15 @@ async def announce_or_edit(channel_id: int, text: str, game: str, message_id: in
         return None
 
 
-async def post_view(channel_id: int, view: discord.ui.LayoutView, files=None) -> int | None:
-    """Post a Components V2 message as the activities bot; returns its id."""
+async def post_view(channel_id: int, view: discord.ui.LayoutView, files=None, ping: int | None = None) -> int | None:
+    """Post a Components V2 message as the activities bot; returns its id. Mentions in it ping
+    nobody, except ``ping`` (someone it's addressed to, like a challenged player)."""
     if _client is None or not _client.is_ready():
         return None
+    mentions = (discord.AllowedMentions(users=[discord.Object(int(ping))], everyone=False, roles=False)
+                if ping else discord.AllowedMentions.none())
     msg = await _client.get_partial_messageable(int(channel_id)).send(
-        view=view, files=files or [], allowed_mentions=discord.AllowedMentions.none())
+        view=view, files=files or [], allowed_mentions=mentions)
     return msg.id
 
 

@@ -9,7 +9,8 @@ http://localhost:5174/?local=<token> (the Vite dev server proxies /api here). No
 can touch the live bot's data, and #casino posts go nowhere (no Discord connection).
 
 There are two funded players, Tester and Rival, so a Broadside duel can be played from two tabs:
-open each printed link in its own tab, with &game=duel to go straight to the duels."""
+open each printed link in its own tab, with &game=duel to go straight to the duels. The #casino
+posts a duel makes are saved as pictures (and their text printed) in the data folder's posts/."""
 
 import asyncio
 import os
@@ -24,6 +25,41 @@ os.environ["ACTIVITIES_SESSION_SECRET"] = "dev-activity-secret"
 PLAYER = 4242
 RIVAL = 4343
 WORKSHOP = 1141037835445616640
+
+
+def _post_to_folder(launcher, folder: str) -> None:
+    """Instead of #casino: each post and edit saved as a picture, with its text printed."""
+    os.makedirs(folder, exist_ok=True)
+    count = {"posts": 0, "saves": 0}
+
+    def text_of(view) -> str:
+        out, todo = [], list(view.children)
+        while todo:
+            item = todo.pop(0)
+            if getattr(item, "content", None):
+                out.append(item.content)
+            todo[:0] = list(getattr(item, "children", []) or [])
+        return " / ".join(out)
+
+    def save(mid: int, view, files) -> None:
+        count["saves"] += 1
+        path = None
+        for f in files or []:
+            path = os.path.join(folder, f"post{mid}-{count['saves']:03d}.png")
+            f.fp.seek(0)
+            with open(path, "wb") as out:
+                out.write(f.fp.read())
+        print(f"#casino post {mid}: {text_of(view)}" + (f"\n  picture: {path}" if path else ""), flush=True)
+
+    async def post_view(channel_id, view, files=None, ping=None):
+        count["posts"] += 1
+        save(count["posts"], view, files)
+        return count["posts"]
+
+    async def edit_view(channel_id, message_id, view, files=None):
+        save(message_id, view, files)
+
+    launcher.post_view, launcher.edit_view = post_view, edit_view
 
 
 def main(port: int) -> None:
@@ -47,8 +83,10 @@ def main(port: int) -> None:
     from lib.activities import auth, server
     from lib.activities.casino import base
     base._FILE = os.path.join(tmp, "activity_casino.json")
-    from lib.activities import duel
+    from lib.activities import duel, duel_posts, launcher
     duel._FILE = os.path.join(tmp, "activity_duels.json")
+    _post_to_folder(launcher, os.path.join(tmp, "posts"))
+    duel.listeners.append(duel_posts.on_event)
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
@@ -56,6 +94,7 @@ def main(port: int) -> None:
                RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False)}
     guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)
+    base.CLIENT = client
 
     async def run():
         from aiohttp import web
