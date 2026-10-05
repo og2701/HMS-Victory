@@ -29,7 +29,7 @@ WORKSHOP = 1141037835445616640
 
 
 def _post_to_folder(launcher, folder: str) -> None:
-    """Instead of #casino: each post and edit saved as a picture, with its text printed."""
+    """Instead of Discord: each post and edit saved as a picture, with its text and channel printed."""
     os.makedirs(folder, exist_ok=True)
     count = {"posts": 0, "saves": 0}
 
@@ -42,7 +42,7 @@ def _post_to_folder(launcher, folder: str) -> None:
             todo[:0] = list(getattr(item, "children", []) or [])
         return " / ".join(out)
 
-    def save(mid: int, view, files) -> None:
+    def save(mid: int, view, files, channel_id=None) -> None:
         count["saves"] += 1
         path = None
         for f in files or []:
@@ -50,15 +50,15 @@ def _post_to_folder(launcher, folder: str) -> None:
             f.fp.seek(0)
             with open(path, "wb") as out:
                 out.write(f.fp.read())
-        print(f"#casino post {mid}: {text_of(view)}" + (f"\n  picture: {path}" if path else ""), flush=True)
+        print(f"post {mid} in channel {channel_id}: {text_of(view)}" + (f"\n  picture: {path}" if path else ""), flush=True)
 
     async def post_view(channel_id, view, files=None, ping=None):
         count["posts"] += 1
-        save(count["posts"], view, files)
+        save(count["posts"], view, files, channel_id)
         return count["posts"]
 
     async def edit_view(channel_id, message_id, view, files=None):
-        save(message_id, view, files)
+        save(message_id, view, files, channel_id)
 
     launcher.post_view, launcher.edit_view = post_view, edit_view
 

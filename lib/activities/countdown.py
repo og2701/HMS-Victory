@@ -47,7 +47,7 @@ COMMON_FILE = WORDS_FILE.with_name("countdown-common.txt")     # everyday words,
 
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_countdown.json")
 _rooms: dict[str, dict] = {}
-_posts: dict[str, int] = {}
+_posts: dict[str, list] = {}    # room id -> [channel, message] of its post
 _loaded = False
 _words: set[str] | None = None
 _by_length: dict[int, list[str]] = {}
@@ -142,15 +142,21 @@ def _emit(event: str, room: dict) -> None:
             log.warning("a countdown listener failed on %s", event, exc_info=True)
 
 
-def post_for(rid: str) -> int | None:
+def post_for(rid: str) -> tuple[int | None, int] | None:
+    """The room's post as (channel, message); a channel of None is #casino (posts saved before
+    they followed the channel the game was opened in)."""
     _load()
-    return _posts.get(rid)
+    p = _posts.get(rid)
+    if p is None:
+        return None
+    return (None, int(p)) if isinstance(p, int) else (p[0], int(p[1]))
 
 
-def remember_post(rid: str, message_id: int | None) -> None:
-    if message_id is not None:
-        _posts[rid] = int(message_id)
-        _save()
+def remember_post(rid: str, message_id: int | None, channel: int | None = None) -> None:
+    if message_id is None:
+        return
+    _posts[rid] = [int(channel) if channel else None, int(message_id)]
+    _save()
 
 
 def room_info(rid: str) -> dict | None:
@@ -432,7 +438,8 @@ def _busy(uid: int) -> None:
         raise Refuse("You're already in a Countdown room.")
 
 
-def open_room(uid: int, stake) -> dict:
+def open_room(uid: int, stake, channel: int | None = None) -> dict:
+    """Open a room; ``channel`` is where the game was opened, where its post goes."""
     _load()
     try:
         stake = int(stake)
@@ -444,7 +451,8 @@ def open_room(uid: int, stake) -> dict:
     _check_stake(uid, stake)
     now = time.time()
     r = {"id": secrets.token_hex(4), "host": uid, "players": [uid], "left": [], "stake": stake, "state": "lobby",
-         "created": now, "expires": now + LOBBY_SECONDS, "rounds": [], "scores": {}, "over": False}
+         "created": now, "expires": now + LOBBY_SECONDS, "rounds": [], "scores": {}, "over": False,
+         "ch": int(channel) if channel else None}
     _rooms[r["id"]] = r
     _save()
     _emit("open", r)

@@ -564,7 +564,7 @@ async def duel_action(request):
                 guild = request.app[CLIENT].get_guild(config.GUILD_ID)
                 if guild is None or guild.get_member(to) is None:
                     return _error("They aren't in the server.", 404)
-            duel.challenge(who["uid"], body.get("stake"), to)
+            duel.challenge(who["uid"], body.get("stake"), to, channel=who["ch"])
         elif action == "accept":
             duel.accept(who["uid"], str(body.get("id") or ""))
         elif action == "cancel":
@@ -625,7 +625,7 @@ async def countdown_action(request):
     uid, rid = who["uid"], str(body.get("id") or "")
     try:
         if action == "open":
-            countdown.open_room(uid, body.get("stake"))
+            countdown.open_room(uid, body.get("stake"), channel=who["ch"])
         elif action == "join":
             countdown.join(uid, rid)
         elif action == "leave":

@@ -1,5 +1,6 @@
-"""Countdown on #casino: one message per room, posted when it opens and edited as people sit
-down, after every round, and with the result (or as it closes or lapses unstarted).
+"""Countdown's posts: one message per room, in the channel the host opened the game in (#casino
+if the bot can't post there), posted when it opens and edited as people sit down, after every
+round, and with the result (or as it closes or lapses unstarted).
 
 The picture says it all (countdown_card); the line above it says who, with mentions that ping
 nobody. Each message has its own queue so edits land in order and no closer together than
@@ -34,10 +35,11 @@ class Post:
     dirty: bool = False
     task: asyncio.Task | None = None
     edited: float = 0.0
+    channel: int | None = None          # where it was posted
 
 
 _posts: dict[str, Post] = {}
-_no_files_until = 0.0
+_no_files_until: dict[int, float] = {}     # channel -> when to try pictures there again
 
 
 def on_event(event: str, room: dict) -> None:
@@ -47,7 +49,8 @@ def on_event(event: str, room: dict) -> None:
         return
     post = _posts.get(rid)
     if post is None:
-        post = _posts[rid] = Post(rid, countdown.post_for(rid))
+        found = countdown.post_for(rid)
+        post = _posts[rid] = Post(rid, found[1] if found else None, channel=found[0] if found else None)
     post.state, post.event = room, event
     post.dirty = True
     if post.task is None or post.task.done():
@@ -57,7 +60,7 @@ def on_event(event: str, room: dict) -> None:
             pass
 
 
-def _channel() -> int | None:
+def _casino() -> int | None:
     from lib.activities.casino import sessions
     return sessions._channel()
 
@@ -126,12 +129,33 @@ def view(room: dict, event: str, image: str | None) -> discord.ui.LayoutView:
     return v
 
 
-async def _flush(post: Post) -> None:
-    global _no_files_until
+async def _send(post: Post, ch: int, room: dict, event: str, png: bytes | None) -> None:
+    """Post or edit in ``ch``: with the picture if the app can attach files there, else as text."""
     from lib.activities import launcher
-    ch = _channel()
-    if not ch:
-        return
+
+    async def go(with_picture: bool):
+        v = view(room, event, IMAGE if with_picture else None)
+        files = [discord.File(io.BytesIO(png), filename=IMAGE)] if with_picture else None
+        if post.message_id is None:
+            mid = await launcher.post_view(ch, v, files=files)
+            if mid is not None:
+                post.message_id, post.channel = mid, ch
+                countdown.remember_post(post.rid, mid, ch)
+        else:
+            await launcher.edit_view(ch, post.message_id, v, files=files)
+
+    picture = png is not None and time.time() >= _no_files_until.get(ch, 0)
+    try:
+        await go(picture)
+    except discord.Forbidden:
+        if not picture:
+            raise
+        _no_files_until[ch] = time.time() + NO_FILES_RETRY
+        log.warning("the activities app can't attach files in %s; posting Countdown as text", ch)
+        await go(False)
+
+
+async def _flush(post: Post) -> None:
     while post.dirty:
         wait = post.edited + EDIT_GAP - time.time()
         if wait > 0 and post.message_id is not None:
@@ -139,29 +163,26 @@ async def _flush(post: Post) -> None:
         post.dirty = False
         post.edited = time.time()
         room, event = post.state, post.event
+        # a post is edited where it is; a new one goes in the channel the game was opened in,
+        # or #casino if the bot can't post there
+        places = [post.channel or _casino()] if post.message_id is not None else [room.get("ch"), _casino()]
+        places = [c for c in dict.fromkeys(places) if c]
+        if not places:
+            return
         png = None
-        if time.time() >= _no_files_until:
+        if any(time.time() >= _no_files_until.get(c, 0) for c in places):
             png = await countdown_card.png(room, {u: _name(u) for u in room["players"]}, event)
-
-        async def go(with_picture: bool):
-            v = view(room, event, IMAGE if with_picture else None)
-            files = [discord.File(io.BytesIO(png), filename=IMAGE)] if with_picture else None
-            if post.message_id is None:
-                post.message_id = await launcher.post_view(ch, v, files=files)
-                countdown.remember_post(post.rid, post.message_id)
-            else:
-                await launcher.edit_view(ch, post.message_id, v, files=files)
-
-        try:
+        for i, ch in enumerate(places):
             try:
-                await go(png is not None)
-            except discord.Forbidden:
-                if png is None:
-                    raise
-                _no_files_until = time.time() + NO_FILES_RETRY
-                log.warning("the activities app can't attach files in #casino; posting Countdown as text")
-                await go(False)
-        except Exception:
-            log.warning("couldn't post Countdown %s to #casino", post.rid, exc_info=True)
+                await _send(post, ch, room, event, png)
+                break
+            except (discord.Forbidden, discord.NotFound):
+                if i + 1 < len(places):
+                    log.info("can't post Countdown %s in %s; posting it in #casino instead", post.rid, ch)
+                    continue
+                log.warning("couldn't post Countdown %s in %s", post.rid, ch, exc_info=True)
+            except Exception:
+                log.warning("couldn't post Countdown %s in %s", post.rid, ch, exc_info=True)
+                break
     if post.event in ENDED and not post.dirty:
         _posts.pop(post.rid, None)

@@ -192,3 +192,55 @@ def test_every_step_is_told_to_the_post(em):
     finally:
         C.listeners.clear()
     assert seen == ["open", "seats", "start", "round", "over"]
+
+
+def test_the_post_goes_where_the_game_was_opened_or_casino_if_it_cant(em, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    import discord
+
+    from lib.activities import countdown_card, countdown_posts as P, launcher
+    sent = []
+
+    async def post_view(ch, view, files=None, ping=None):
+        if ch == 555:
+            raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "Missing Access")
+        sent.append(("post", ch))
+        return 77
+
+    async def edit_view(ch, mid, view, files=None):
+        sent.append(("edit", ch))
+
+    async def no_picture(*a):
+        return None
+
+    monkeypatch.setattr(launcher, "post_view", post_view)
+    monkeypatch.setattr(launcher, "edit_view", edit_view)
+    monkeypatch.setattr(countdown_card, "png", no_picture)
+    monkeypatch.setattr(P, "_casino", lambda: 999)
+    monkeypatch.setattr(P, "_name", lambda uid: NAMES.get(uid, "Someone"))
+    monkeypatch.setattr(P, "EDIT_GAP", 0)
+    P._posts.clear()
+
+    async def run():
+        C.listeners.append(P.on_event)
+        try:
+            here = C.open_room(A, 0, channel=444)["id"]
+            await asyncio.sleep(0.01)
+            C.join(B, here)
+            await asyncio.sleep(0.01)
+            blocked = C.open_room(D, 0, channel=555)["id"]
+            await asyncio.sleep(0.01)
+        finally:
+            C.listeners.clear()
+        return here, blocked
+
+    here, blocked = asyncio.run(run())
+    assert sent == [("post", 444), ("edit", 444), ("post", 999)]
+    assert C.post_for(here) == (444, 77) and C.post_for(blocked) == (999, 77)
+
+
+def test_posts_saved_before_channels_are_read_as_casino(em):
+    C._posts["old"] = 123
+    assert C.post_for("old") == (None, 123)

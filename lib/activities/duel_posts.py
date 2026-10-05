@@ -1,5 +1,6 @@
-"""Broadside on #casino: one message per challenge, posted when it goes up and edited as it's
-taken, played round by round and won (or as it lapses, is withdrawn or is turned down).
+"""Broadside's posts: one message per challenge, in the channel the challenger opened the game
+in (#casino if the bot can't post there), posted when it goes up and edited as it's taken,
+played round by round and won (or as it lapses, is withdrawn or is turned down).
 
 The picture says it all (duel_card); the line above it says who, with mentions that only ping
 the person a challenge is addressed to. Each message has its own queue so edits land in order
@@ -34,11 +35,12 @@ class Post:
     dirty: bool = False
     task: asyncio.Task | None = None
     edited: float = 0.0
+    channel: int | None = None          # where it was posted
     ping: int | None = None
 
 
 _posts: dict[str, Post] = {}
-_no_files_until = 0.0
+_no_files_until: dict[int, float] = {}     # channel -> when to try pictures there again
 
 
 def _people(s: dict) -> list:
@@ -54,7 +56,8 @@ def on_event(event: str, obj: dict) -> None:
         return
     post = _posts.get(cid)
     if post is None:
-        post = _posts[cid] = Post(cid, duel.post_for(cid))
+        found = duel.post_for(cid)
+        post = _posts[cid] = Post(cid, found[1] if found else None, channel=found[0] if found else None)
     post.state = {"event": event, **obj}
     if event == "challenge" and obj.get("to"):
         post.ping = int(obj["to"])
@@ -66,7 +69,7 @@ def on_event(event: str, obj: dict) -> None:
             pass
 
 
-def _channel() -> int | None:
+def _casino() -> int | None:
     from lib.activities.casino import sessions
     return sessions._channel()
 
@@ -141,12 +144,33 @@ def view(s: dict, image: str | None) -> discord.ui.LayoutView:
     return v
 
 
-async def _flush(post: Post) -> None:
-    global _no_files_until
+async def _send(post: Post, ch: int, s: dict, png: bytes | None) -> None:
+    """Post or edit in ``ch``: with the picture if the app can attach files there, else as text."""
     from lib.activities import launcher
-    ch = _channel()
-    if not ch:
-        return
+
+    async def go(with_picture: bool):
+        v = view(s, IMAGE if with_picture else None)
+        files = [discord.File(io.BytesIO(png), filename=IMAGE)] if with_picture else None
+        if post.message_id is None:
+            mid = await launcher.post_view(ch, v, files=files, ping=post.ping)
+            if mid is not None:
+                post.message_id, post.channel = mid, ch
+                duel.remember_post(post.cid, mid, ch)
+        else:
+            await launcher.edit_view(ch, post.message_id, v, files=files)
+
+    picture = png is not None and time.time() >= _no_files_until.get(ch, 0)
+    try:
+        await go(picture)
+    except discord.Forbidden:
+        if not picture:
+            raise
+        _no_files_until[ch] = time.time() + NO_FILES_RETRY
+        log.warning("the activities app can't attach files in %s; posting Broadside as text", ch)
+        await go(False)
+
+
+async def _flush(post: Post) -> None:
     while post.dirty:
         wait = post.edited + EDIT_GAP - time.time()
         if wait > 0 and post.message_id is not None:
@@ -154,29 +178,26 @@ async def _flush(post: Post) -> None:
         post.dirty = False
         post.edited = time.time()
         s = post.state
+        # a post is edited where it is; a new one goes in the channel the game was opened in,
+        # or #casino if the bot can't post there
+        places = [post.channel or _casino()] if post.message_id is not None else [s.get("ch"), _casino()]
+        places = [c for c in dict.fromkeys(places) if c]
+        if not places:
+            return
         png = None
-        if time.time() >= _no_files_until:
+        if any(time.time() >= _no_files_until.get(c, 0) for c in places):
             png = await duel_card.png(s, {u: _name(u) for u in _people(s)})
-
-        async def go(with_picture: bool):
-            v = view(s, IMAGE if with_picture else None)
-            files = [discord.File(io.BytesIO(png), filename=IMAGE)] if with_picture else None
-            if post.message_id is None:
-                post.message_id = await launcher.post_view(ch, v, files=files, ping=post.ping)
-                duel.remember_post(post.cid, post.message_id)
-            else:
-                await launcher.edit_view(ch, post.message_id, v, files=files)
-
-        try:
+        for i, ch in enumerate(places):
             try:
-                await go(png is not None)
-            except discord.Forbidden:
-                if png is None:
-                    raise
-                _no_files_until = time.time() + NO_FILES_RETRY
-                log.warning("the activities app can't attach files in #casino; posting Broadside as text")
-                await go(False)
-        except Exception:
-            log.warning("couldn't post Broadside %s to #casino", post.cid, exc_info=True)
+                await _send(post, ch, s, png)
+                break
+            except (discord.Forbidden, discord.NotFound):
+                if i + 1 < len(places):
+                    log.info("can't post Broadside %s in %s; posting it in #casino instead", post.cid, ch)
+                    continue
+                log.warning("couldn't post Broadside %s in %s", post.cid, ch, exc_info=True)
+            except Exception:
+                log.warning("couldn't post Broadside %s in %s", post.cid, ch, exc_info=True)
+                break
     if post.state and post.state["event"] in ENDED and not post.dirty:
         _posts.pop(post.cid, None)

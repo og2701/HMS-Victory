@@ -72,7 +72,7 @@ BOT, BOT_NAME = 1, "HMS Victory"
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_duels.json")
 _challenges: dict[str, dict] = {}
 _matches: dict[str, dict] = {}
-_posts: dict[str, int] = {}     # challenge id -> its #casino message, which follows it into the match
+_posts: dict[str, list] = {}    # challenge id -> [channel, message] of its post, which follows it into the match
 _loaded = False
 CLIENT = None               # the bot's client, for its id in the daily-allowance check
 # Told about each step (challenge, withdrawn, declined, lapsed, start, round, over) with a copy
@@ -88,15 +88,20 @@ def _emit(event: str, obj: dict) -> None:
             log.warning("a broadside listener failed on %s", event, exc_info=True)
 
 
-def post_for(cid: str) -> int | None:
+def post_for(cid: str) -> tuple[int | None, int] | None:
+    """The challenge's post as (channel, message); a channel of None is #casino (posts saved before
+    they followed the channel the game was opened in)."""
     _load()
-    return _posts.get(cid)
+    p = _posts.get(cid)
+    if p is None:
+        return None
+    return (None, int(p)) if isinstance(p, int) else (p[0], int(p[1]))
 
 
-def remember_post(cid: str, message_id: int | None) -> None:
+def remember_post(cid: str, message_id: int | None, channel: int | None = None) -> None:
     if message_id is None:
         return
-    _posts[cid] = int(message_id)
+    _posts[cid] = [int(channel) if channel else None, int(message_id)]
     _save()
 
 
@@ -412,8 +417,9 @@ def _check_stake(uid: int, stake: int, name: str = "You") -> None:
         raise Refuse(why.replace("**", ""))
 
 
-def challenge(uid: int, stake, to: int | None = None) -> dict:
-    """Post a challenge, to one person or to anyone. A new one replaces your old one."""
+def challenge(uid: int, stake, to: int | None = None, channel: int | None = None) -> dict:
+    """Post a challenge, to one person or to anyone. A new one replaces your old one. ``channel``
+    is where the game was opened, where its post goes."""
     _load()
     try:
         stake = int(stake)
@@ -431,7 +437,7 @@ def challenge(uid: int, stake, to: int | None = None) -> dict:
         _emit("withdrawn", _challenges.pop(old))
         _posts.pop(old, None)
     c = {"id": secrets.token_hex(4), "from": uid, "to": int(to) if to is not None else None,
-         "stake": stake, "created": now, "expires": now + CHALLENGE_SECONDS}
+         "stake": stake, "created": now, "expires": now + CHALLENGE_SECONDS, "ch": int(channel) if channel else None}
     _challenges[c["id"]] = c
     _save()
     _emit("challenge", c)
@@ -480,7 +486,7 @@ def accept(uid: int, cid: str) -> dict:
     for other in [k for k, v in _challenges.items() if v["from"] in (uid, c["from"])]:
         _emit("withdrawn", _challenges.pop(other))
         _posts.pop(other, None)
-    m = {"id": secrets.token_hex(4), "cid": c["id"], "a": c["from"], "b": uid, "stake": stake, "started": now,
+    m = {"id": secrets.token_hex(4), "cid": c["id"], "ch": c.get("ch"), "a": c["from"], "b": uid, "stake": stake, "started": now,
          "rounds": [], "misses": {"a": 0, "b": 0}, "next_at": now, "over": False, "winner": None}
     _start_round(m, now)
     _matches[m["id"]] = m
