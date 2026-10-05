@@ -23,6 +23,8 @@ import config
 logger = logging.getLogger(__name__)
 
 JEV_MODEL = "jev-latest"
+# Bumped whenever the questions change, so the shadow log can be split by wording.
+QUESTIONS_VERSION = 2
 REQUEST_TIMEOUT_SECONDS = 8.0
 FLOOD_CHANNELS = 3  # the same text in this many channels...
 FLOOD_WINDOW_SECONDS = 120  # ...inside this long is a flood
@@ -37,6 +39,9 @@ def _noul(question: str, yes: str, no: str) -> dict[str, Any]:
 
 # Mirrors PERMANENT_FLOOR in join_watch.py, one question per line. Threats and celebrating a
 # tragedy are separate because one combined question put "you're dead tomorrow" at 0.77.
+# Version 2 came from the first three days of shadow scans (285 scans, 2-5 Oct 2026): Jev
+# missed "giving away my PS5, just DM me" (scam 0.80) and a paid bank referral link
+# (recruiting 0.59), and put a member begging for GoFundMe help at spam 0.74.
 FLOOR_QUESTIONS = {
     "slur": _noul(
         "Does any message in `messages` use a slur (racial, ethnic, national, homophobic or sexual) "
@@ -61,25 +66,32 @@ FLOOR_QUESTIONS = {
         "number or real name, to expose them?",
         "Personal information about someone is posted.",
         "No personal information is posted."),
+    # Copypasta only. Asking about advertising as well put a member sharing their own pub game
+    # at 0.90 and Kindle chat at 0.5 in the replay; scams and paid pitches are asked below.
     "spam": _noul(
-        "Does the member post copypasta walls or repeated advertising in `messages`?",
-        "Copypasta walls or repeated advertising.",
-        "Ordinary messages; saying hello in a few places is not spam."),
+        "Does the member post copypasta walls in `messages`: long blocks of pasted text that have "
+        "nothing to do with the conversation?",
+        "Copypasta walls.",
+        "Ordinary messages. Mentioning or linking a product, shop, game or their own project is not "
+        "spam, and nor is asking for help or donations for themselves."),
     "raid": _noul(
         "Does any message in `messages` recruit or coordinate a raid on this server, such as calling "
         "people in to spam it?",
         "Recruiting or coordinating a raid.",
         "No raid recruiting or coordination."),
     "recruiting": _noul(
-        "Is the member recruiting strangers into off-platform work in `messages`: unsolicited offers of "
-        "tasks, jobs, easy money, giveaways, crypto or investments, or screening the room for who will "
-        "take instructions in private?",
-        "They are soliciting strangers into off-site work, money or tasks.",
+        "Is the member recruiting strangers in `messages` for something that pays or profits them: "
+        "unsolicited offers of tasks, jobs or roles such as a 'representative' or 'agent', easy money, "
+        "crypto or investments; referral or sign-up links that earn them a bonus; or screening the room "
+        "for who will take instructions in private?",
+        "They are soliciting strangers into work, money, referrals or tasks.",
         "No such offer; a plain 'dm me' between people already chatting does not count."),
     "scam": _noul(
-        "Does any message in `messages` post scam bait: free Nitro, giveaway, gift card or login links, "
-        "'I got hacked, click this', or selling accounts, boosts or codes?",
-        "Scam bait is posted.",
+        "Does any message in `messages` post scam bait? That includes free Nitro, giveaway, gift card or "
+        "login links; 'I got hacked, click this'; selling accounts, boosts or codes; and offering to give "
+        "away an expensive item, such as a console, camera, phone or laptop, to whoever DMs them.",
+        "Scam bait is posted, including an unprompted offer of a free expensive item to whoever "
+        "messages them.",
         "No scam bait; links to ordinary sites, shops, news or clips do not count."),
     "impersonation": _noul(
         "Does the member claim in `messages` to be staff, a moderator, an admin, Discord itself or "
@@ -194,7 +206,10 @@ def record(member: Any, messages: list[dict[str, Any]], openai_call: str, openai
         return
     row = {
         "ts": int(time.time()), "member_id": getattr(member, "id", None),
-        "scan": len(messages), "messages": [m.get("content", "") for m in messages],
+        "display_name": str(getattr(member, "display_name", "") or ""),
+        "scan": len(messages), "questions_version": QUESTIONS_VERSION,
+        "messages": [{"channel": m.get("channel", ""), "text": m.get("content", ""), "ts": m.get("ts")}
+                     for m in messages],
         "openai": {"call": openai_call, "confidence": round(openai_conf, 3),
                    "reason": openai_reason, "acted": openai_acted},
         "jev": {"call": jev["call"], "rule": jev["rule"], "p": round(jev["p"], 3),
