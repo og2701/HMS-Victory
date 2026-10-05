@@ -1927,10 +1927,11 @@ def track_party_animal(user_id: int):
     return len(data[uid])
 async def handle_shut_reaction(reaction, user):
     client = reaction.message._state._get_client()
-    has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+    has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO] for role in user.roles)
+    is_senior_staff = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
     message_author = reaction.message.author
     # Members and PCSOs cannot shut staff (Border Force or higher)
-    if not has_role:
+    if not is_senior_staff:
         is_target_staff = hasattr(message_author, "roles") and any(
             role.id in [ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.DEPUTY_MINISTER_OF_COMMUNITY]
             for role in message_author.roles
@@ -2280,7 +2281,7 @@ async def on_reaction_remove(reaction, user):
     #     return
 
     if ":Shut:" in emoji_str:
-        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
+        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO] for role in user.roles)
         if has_role:
             message_author = reaction.message.author
             try:
