@@ -358,15 +358,16 @@ def _plinko(st: _Sitting) -> tuple[str, str]:
 .plate i{width:7px;height:7px;border-radius:50%;background:#5E3B05} .who{color:#8C9CC4}
 .net b{font:400 92px/88px 'DM Serif Display',SerifLocal,serif;text-shadow:0 4px 14px rgba(0,0,0,.45)} .net span{color:#8C9CC4}
 .board{border-radius:20px;overflow:hidden;filter:drop-shadow(0 14px 22px rgba(0,0,0,.5))}
+.riskcap{font-weight:800;font-size:14px;letter-spacing:.18em;color:#8C9CC4;margin:-6px 4px 12px;text-align:right}
 .s{background:linear-gradient(180deg,#1F3366,#0F1C3D);box-shadow:inset 0 0 0 2px #C9963F} .s span,.s small{color:#8C9CC4} .s b{font-family:'DM Serif Display',SerifLocal,serif;font-weight:400;color:#F3D58A}
 .s.red{background:radial-gradient(120% 140% at 50% 0%,#B72A33 0%,#7A121B 100%);box-shadow:inset 0 0 0 2px #E8C374} .s.red span,.s.red small{color:#F2C6B0} .s.red b{color:#FFF1C9}
 """
-    risk_note = f"on {risk}" + (f" ({other} on other risks)" if other else "")
+    risk_note = f"{risk.upper()} RISK" + (f" · {_plural(other, 'BALL').upper()} ON {'/'.join(r.upper() for r in risks if r != risk)}" if other else "")
     body = (f'<div class="card"><div class="head"><div class="plate"><i></i>PLINKO<i></i></div><div class="who">{st.who}</div></div>'
-            f'{_net(st.net, "#7CE0A0", "#F28B82")}<div class="board">{_plinko_board(st.rounds, table, best["d"]["slot"])}</div>'
+            f'{_net(st.net, "#7CE0A0", "#F28B82")}<div class="riskcap">{risk_note}</div><div class="board">{_plinko_board(st.rounds, table, best["d"]["slot"])}</div>'
             f'<div class="stats"><div class="s red"><span>BEST BALL</span><b>{best["d"]["mult"]:g}×</b><small>{sgn(int(best["net"]))} on {esc(best["d"]["risk"])}</small></div>'
             + _stat("WORST", f'{worst["d"]["mult"]:g}×', f'{sgn(int(worst["net"]))} on {worst["d"]["risk"]}')
-            + _stat("WAGERED", f"{st.wagered:,}", f"{st.won} won · {st.lost} lost · {risk_note}")
+            + _stat("WAGERED", f"{st.wagered:,}", f"{st.won} won · {st.lost} lost")
             + "</div></div>")
     return css, body
 

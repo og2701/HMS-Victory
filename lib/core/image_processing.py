@@ -292,9 +292,12 @@ def _screenshot_html_sync(
     html_str: str,
     size: Tuple[int, int] = (1600, 1000),
     apply_trim: bool = True,
-    element_selector: str = None
+    element_selector: str = None,
+    transparent: bool = False,
 ) -> io.BytesIO:
-    """Synchronous implementation of screenshot_html."""
+    """Synchronous implementation of screenshot_html. ``transparent`` captures the element
+    over a see-through page (for a card with rounded corners); the page itself must leave its
+    html and body background transparent."""
     global _browser, _render_count
 
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
@@ -331,20 +334,28 @@ def _screenshot_html_sync(
                 )
                 # CDP capture with captureBeyondViewport handles elements taller
                 # than the viewport without clipping.
-                cdp_result = browser.execute_cdp_cmd(
-                    "Page.captureScreenshot",
-                    {
-                        "format": "png",
-                        "clip": {
-                            "x": rect["x"],
-                            "y": rect["y"],
-                            "width": rect["w"],
-                            "height": rect["h"],
-                            "scale": 1,
+                if transparent:
+                    browser.execute_cdp_cmd("Emulation.setDefaultBackgroundColorOverride",
+                                            {"color": {"r": 0, "g": 0, "b": 0, "a": 0}})
+                try:
+                    cdp_result = browser.execute_cdp_cmd(
+                        "Page.captureScreenshot",
+                        {
+                            "format": "png",
+                            "clip": {
+                                "x": rect["x"],
+                                "y": rect["y"],
+                                "width": rect["w"],
+                                "height": rect["h"],
+                                "scale": 1,
+                            },
+                            "captureBeyondViewport": True,
                         },
-                        "captureBeyondViewport": True,
-                    },
-                )
+                    )
+                finally:
+                    if transparent:
+                        # the browser is shared: put the white page back for everything else
+                        browser.execute_cdp_cmd("Emulation.setDefaultBackgroundColorOverride", {})
                 png_bytes = _b64.b64decode(cdp_result["data"])
             else:
                 png_bytes = browser.get_screenshot_as_png()
@@ -384,13 +395,14 @@ async def screenshot_html(
     size: Tuple[int, int] = (1600, 1000),
     *,
     apply_trim: bool = True,
-    element_selector: str = None
+    element_selector: str = None,
+    transparent: bool = False,
 ) -> io.BytesIO:
     """Render HTML into a trimmed PNG (non-blocking, queued)."""
     async with rendering_lock:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, _screenshot_html_sync, html_str, size, apply_trim, element_selector
+            None, _screenshot_html_sync, html_str, size, apply_trim, element_selector, transparent
         )
 
 

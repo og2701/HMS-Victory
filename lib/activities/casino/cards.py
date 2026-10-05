@@ -522,10 +522,11 @@ def summary_html(key: str, label: str, unit: str, history: list[dict], minutes: 
 
 # ---- rendering -----------------------------------------------------------------------------
 
-async def _shoot(page: str, size=(900, 1600)) -> bytes | None:
+async def _shoot(page: str, size=(900, 1600), transparent: bool = False) -> bytes | None:
     try:
         from lib.core.image_processing import screenshot_html
-        buf = await screenshot_html(page, size=size, apply_trim=False, element_selector=".card, .tile")
+        buf = await screenshot_html(page, size=size, apply_trim=False, element_selector=".card, .tile",
+                                    transparent=transparent)
         return buf.getvalue()
     except Exception:
         log.warning("couldn't render a casino card", exc_info=True)
@@ -676,7 +677,10 @@ async def final_png(key: str, label: str, unit: str, history: list[dict], view: 
     else:
         from lib.activities.casino import summaries
         minutes = max(1, round((ended - started) / 60)) if ended > started else 0
-        page = summaries.summary_html(key, unit, history, minutes) or summary_html(key, label, unit, history, minutes)
+        own = summaries.summary_html(key, unit, history, minutes)
+        if own:
+            return await _shoot(own, transparent=True)       # its rounded corners show Discord through
+        page = summary_html(key, label, unit, history, minutes)
     return await _shoot(page)
 
 
