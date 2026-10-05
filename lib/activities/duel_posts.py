@@ -1,6 +1,8 @@
 """Broadside's posts: one message per challenge, in the channel the challenger opened the game
-in (#casino if the bot can't post there), posted when it goes up and edited as it's taken,
-played round by round and won (or as it lapses, is withdrawn or is turned down).
+in (#casino if the bot can't post there), posted when it goes up and edited as it's taken and
+played round by round. The result is posted afresh at the bottom of the channel and the first
+message shrinks to a line pointing to it; a challenge that lapses, is withdrawn or is turned
+down is just edited.
 
 The picture says it all (duel_card); the line above it says who, with mentions that only ping
 the person a challenge is addressed to. Each message has its own queue so edits land in order
@@ -128,6 +130,13 @@ def headline(s: dict) -> str:
     return f"<@{a}> and <@{b}> drew at **Broadside**" + (" · stakes returned" if stake else "")
 
 
+def finished_view(s: dict) -> discord.ui.LayoutView:
+    """The first post once the match is over: one line, the result having gone below it."""
+    v = discord.ui.LayoutView(timeout=None)
+    v.add_item(discord.ui.TextDisplay(f"<@{s['a']}> v <@{s['b']}> · **Broadside** · the result's below"))
+    return v
+
+
 def view(s: dict, image: str | None) -> discord.ui.LayoutView:
     v = discord.ui.LayoutView(timeout=None)
     line = headline(s)
@@ -192,6 +201,16 @@ async def _flush(post: Post) -> None:
         places = [c for c in dict.fromkeys(places) if c]
         if not places:
             return
+        if s["event"] == "over" and post.message_id is not None:
+            # the result goes at the bottom of the channel, where people will see it; the first
+            # post, likely far up by now, becomes a line pointing down to it
+            from lib.activities import launcher
+            try:
+                await launcher.edit_view(places[0], post.message_id, finished_view(s), files=None)
+            except Exception:
+                log.warning("couldn't shorten the Broadside post %s", post.cid, exc_info=True)
+            post.message_id, post.ping = None, None          # (the challenge was the ping)
+            places = [c for c in dict.fromkeys([places[0], _casino()]) if c]
         png = None
         if any(time.time() >= _no_files_until.get(c, 0) for c in places):
             png = await duel_card.png(s, {u: _name(u) for u in _people(s)}, await _faces(u for u in _people(s) if u != duel.BOT))

@@ -244,3 +244,61 @@ def test_the_post_goes_where_the_game_was_opened_or_casino_if_it_cant(em, monkey
 def test_posts_saved_before_channels_are_read_as_casino(em):
     C._posts["old"] = 123
     assert C.post_for("old") == (None, 123)
+
+
+def test_the_result_is_posted_afresh_and_the_first_post_points_to_it(em, monkeypatch):
+    import asyncio
+
+    from lib.activities import countdown_card, countdown_posts as P, launcher
+    sent = []
+
+    def text(view):
+        out, todo = [], list(view.children)
+        while todo:
+            item = todo.pop(0)
+            if getattr(item, "content", None):
+                out.append(item.content)
+            todo[:0] = list(getattr(item, "children", []) or [])
+        return " ".join(out)
+
+    async def post_view(ch, view, files=None, ping=None):
+        sent.append(("post", text(view)))
+        return 100 + len(sent)
+
+    async def edit_view(ch, mid, view, files=None):
+        sent.append(("edit", mid, text(view)))
+
+    async def no_picture(*a):
+        return None
+
+    monkeypatch.setattr(launcher, "post_view", post_view)
+    monkeypatch.setattr(launcher, "edit_view", edit_view)
+    monkeypatch.setattr(countdown_card, "png", no_picture)
+    monkeypatch.setattr(P, "_casino", lambda: 999)
+    monkeypatch.setattr(P, "_name", lambda uid: NAMES.get(uid, "Someone"))
+    monkeypatch.setattr(P, "EDIT_GAP", 0)
+    P._posts.clear()
+
+    async def run():
+        C.listeners.append(P.on_event)
+        try:
+            rid = C.open_room(A, 0, channel=444)["id"]
+            await asyncio.sleep(0.01)
+            C.join(B, rid)
+            C.start(A, rid)
+            await asyncio.sleep(0.01)
+            rigged(rid, "satirendl")
+            C.declare(A, rid, "island")
+            C.declare(B, rid, "sand")
+            await asyncio.sleep(0.01)
+            C.leave(B, rid)                              # Anne wins
+            await asyncio.sleep(0.01)
+        finally:
+            C.listeners.clear()
+
+    asyncio.run(run())
+    first = sent[0]
+    assert first[0] == "post" and "opened a **Countdown** room" in first[1]
+    shrunk = [s for s in sent if s[0] == "edit" and "the result's below" in s[2]]
+    assert shrunk and shrunk[0][1] == 101                # the first message became the pointer
+    assert sent[-1][0] == "post" and f"<@{A}> won **Countdown**" in sent[-1][1]   # and the result is new

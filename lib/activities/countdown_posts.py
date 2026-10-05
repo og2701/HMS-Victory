@@ -1,6 +1,7 @@
 """Countdown's posts: one message per room, in the channel the host opened the game in (#casino
-if the bot can't post there), posted when it opens and edited as people sit down, after every
-round, and with the result (or as it closes or lapses unstarted).
+if the bot can't post there), posted when it opens and edited as people sit down and after every
+round. The result is posted afresh at the bottom of the channel and the first message shrinks to
+a line pointing to it; a room that closes or lapses unstarted is just edited.
 
 The picture says it all (countdown_card); the line above it says who, with mentions that ping
 nobody. Each message has its own queue so edits land in order and no closer together than
@@ -113,6 +114,13 @@ def headline(room: dict, event: str) -> str:
     return line + (f" and took **{int(room.get('share', 0)):,} UKP**" if stake else "")
 
 
+def finished_view(room: dict) -> discord.ui.LayoutView:
+    """The first post once the game's over: one line, the result having gone below it."""
+    v = discord.ui.LayoutView(timeout=None)
+    v.add_item(discord.ui.TextDisplay(f"{_and(room['players'])} played **Countdown** · the result's below"))
+    return v
+
+
 def view(room: dict, event: str, image: str | None) -> discord.ui.LayoutView:
     v = discord.ui.LayoutView(timeout=None)
     line = headline(room, event)
@@ -179,6 +187,16 @@ async def _flush(post: Post) -> None:
         places = [c for c in dict.fromkeys(places) if c]
         if not places:
             return
+        if event == "over" and post.message_id is not None:
+            # the result goes at the bottom of the channel, where people will see it; the first
+            # post, likely far up by now, becomes a line pointing down to it
+            from lib.activities import launcher
+            try:
+                await launcher.edit_view(places[0], post.message_id, finished_view(room), files=None)
+            except Exception:
+                log.warning("couldn't shorten the Countdown post %s", post.rid, exc_info=True)
+            post.message_id = None
+            places = [c for c in dict.fromkeys([places[0], _casino()]) if c]
         png = None
         if any(time.time() >= _no_files_until.get(c, 0) for c in places):
             png = await countdown_card.png(room, {u: _name(u) for u in room["players"]}, event, await _faces(room["players"]))
