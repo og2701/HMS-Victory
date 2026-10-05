@@ -345,7 +345,22 @@ def test_penny_falls_trims_what_cant_have_happened(em, pf):
     out = play("pennyfalls", "sync", {"dropped": 50})                   # 10 in the cup, 1s to drop them
     assert out["table"]["dropped"] == 10 and out["table"]["cup"] == 0
     out = play("pennyfalls", "sync", {"won": 500, "wonGold": 3})         # more than the machine holds
-    assert out["table"]["won"] == 120 and pf.machine(UID)["coins"] == 0 and pf.machine(UID)["golds"] == 0
+    floor = pf.floor()
+    assert out["table"]["won"] == 120 - floor and pf.machine(UID)["coins"] == floor and pf.machine(UID)["golds"] == 0
+
+
+def test_penny_falls_books_the_side_gaps_share(em, pf):
+    play("pennyfalls", "deal", {"bet": 1_000})                           # 100 coins
+    for _ in range(10):                                                   # 300 off, none down the sides
+        pf.clock[0] += 60
+        play("pennyfalls", "sync", {"dropped": 30, "won": 30})
+    out = play("pennyfalls", "cashout")
+    least = int(0.08 * 300 - 3 * (300 * 0.08 * 0.92) ** 0.5)              # 9: well under the ~30 they take
+    assert out["table"]["payout"] == (100 - least) * 10 and pf.machine(UID)["day_lost"] == least
+    play("pennyfalls", "deal", {"bet": 100})                              # honest luck isn't touched
+    pf.clock[0] += 60
+    play("pennyfalls", "sync", {"dropped": 10, "won": 8, "lost": 2})
+    assert play("pennyfalls", "cashout")["table"]["payout"] == 80
 
 
 def _layout(coins, golds):
@@ -403,6 +418,7 @@ def test_penny_falls_can_be_spectated_from_replayed_batches(em, pf):
 def test_penny_falls_caps_a_cup_and_a_day(em, pf, monkeypatch):
     monkeypatch.setattr(config, "PENNYFALLS_CUP_MAX_NET", 300)
     monkeypatch.setattr(config, "PENNYFALLS_DAY_MAX_NET", 500)
+    monkeypatch.setattr(config, "PENNYFALLS_FLOOR", 0)             # wins this size need the whole shelf
     play("pennyfalls", "deal", {"bet": 100})
     out = play("pennyfalls", "cashout", {"won": 60})
     assert out["round"]["payout"] == 100 + 300 and "cup limit" in out["round"]["outcome"]

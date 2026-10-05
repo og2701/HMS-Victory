@@ -4,8 +4,10 @@ paying for the player's best score of the day.
 The game runs on the player's screen; the bot keeps the money honest. Every run starts with
 /<game>/start, which hands back a signed receipt of when it began, and ends with /<game>/finish
 carrying that receipt and the score. A score is only believed up to what's possible in the time
-the bot saw pass (the game's max_rate a second, plus a little slack), so a faked score can't
-outrun the clock, and a run sent twice counts once. The receipt means a run survives the bot
+the bot saw pass: the most anyone could score in that long on the day's level, playing perfectly
+(score_limits works it out from the seed), so a faked score can't outrun the clock, and a run
+sent twice counts once. The page asks for the receipt before the run begins (while the title or
+the last result is up), so a slow connection doesn't make an honest run look too quick. The receipt means a run survives the bot
 restarting, and a finish that had to wait for a phone's connection still counts (for 30 minutes).
 
 Only each player's best of the day pays, at <PREFIX>_RATE UKP a point up to <PREFIX>_CAP: beat
@@ -28,10 +30,12 @@ from dataclasses import dataclass, field
 
 import config
 from database import DatabaseManager
+from lib.activities import score_limits
 
 log = logging.getLogger(__name__)
 
 START_GAP = 1.0              # seconds between one player's runs
+GRACE = 2.0                  # seconds on top of the bot's clock, for the hop to and from the bot
 RUN_MAX_AGE = 30 * 60        # a finish that arrives later than this after its start doesn't count
 SITTING = 30 * 60            # beat your best again within this long and the same post is updated
 BOARD = 100                  # rows on each leaderboard tab (the page scrolls them)
@@ -72,6 +76,7 @@ class ScoreGame:
     post: str                # "climbed **HMS Victory** to **{score} m**"
     emoji: str
     nobody: str = "A sailor"
+    limit: object = None     # (seed, seconds) -> the most anyone could score in that long
     _runs: dict = field(default_factory=dict)        # uid -> the run in progress (pages from before receipts)
     _last_start: dict = field(default_factory=dict)
     _posts: dict = field(default_factory=dict)
@@ -204,9 +209,6 @@ class ScoreGame:
         self._last_start[uid] = now
         iso = date.isoformat()
         self._runs[uid] = {"started": now, "date": iso, "seed": self.seed_for(iso)}
-        d = self.day(uid, iso)
-        d["runs"] += 1
-        self._save_day(uid, iso, d)
         return {**self.state(uid, date), "run": self._receipt(uid, now, iso)}
 
     def finish(self, uid: int, date, body: dict) -> tuple[dict, dict]:
@@ -241,6 +243,12 @@ class ScoreGame:
         elapsed = now - run["started"]
         # what the clock allows: the bot's own time, and never more than the game says it took
         allowed = min(int(min(elapsed, said_time + 5) * self.speed() + self.slack), self.ceiling())
+        if self.limit is not None:
+            # and the most anyone could score in that long on today's level, playing perfectly
+            try:
+                allowed = min(allowed, self.limit(run["seed"], min(elapsed + GRACE, said_time + 5)))
+            except Exception:
+                log.error("couldn't work out the %s limit; going by the clock alone", self.key, exc_info=True)
         score = min(reported, allowed)
         trimmed = score < reported
         if trimmed:
@@ -248,6 +256,7 @@ class ScoreGame:
                         self.key, uid, reported, elapsed, said_time, allowed)
         iso = run["date"]
         d = self.day(uid, iso)
+        d["runs"] += 1
         new_best = score > d["best"]
         earned = 0
         if new_best:
@@ -324,11 +333,12 @@ class ScoreGame:
 CLIMB = ScoreGame(
     key="climb", label="Climb HMS Victory", prefix="CLIMB", days="climb_days", runs="climb_runs",
     score_col="height", count_col="bounces", rate=0.5, cap=150, max_rate=9.0, max_score=2000, slack=40,
-    post="climbed **HMS Victory** to **{score} m**", emoji="⚓")
+    post="climbed **HMS Victory** to **{score} m**", emoji="⚓", limit=score_limits.climb_max)
 
 SPITFIRE = ScoreGame(
     key="spitfire", label="Spitfire", prefix="SPITFIRE", days="spitfire_days", runs="spitfire_runs",
     score_col="score", count_col="flaps", rate=3, cap=150, max_rate=1.5, max_score=1000, slack=3,
-    post="flew the **Spitfire** past **{score} balloons**", emoji="✈️", nobody="A pilot")
+    post="flew the **Spitfire** past **{score} balloons**", emoji="✈️", nobody="A pilot",
+    limit=score_limits.spitfire_max)
 
 GAMES = {g.key: g for g in (CLIMB, SPITFIRE)}

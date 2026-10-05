@@ -63,9 +63,12 @@ def _run(g, score, seconds, uid=UID, day=DAY):
                                "run": st["run"]})
 
 
-def _fair(g, score):
-    """Seconds a real run to this score would take."""
-    return score / g.speed() + 5
+def _fair(g, score, day=DAY):
+    """Seconds a real run to this score would take: a little longer than a perfect one."""
+    seed, t = g.seed_for(day.isoformat()), 0
+    while g.limit(seed, t) < score:
+        t += 1
+    return t + 5
 
 
 def test_the_state_carries_the_days_seed(game):
@@ -88,8 +91,12 @@ def test_only_improvements_pay_up_to_the_cap(game):
 
 
 def test_a_score_faster_than_the_clock_is_cut_down(game):
+    from lib.activities.daily_score import GRACE
     s, r = _run(game, 900, 20)
-    assert r["trimmed"] and r["height"] == int(20 * game.speed() + game.slack)
+    best_possible = game.limit(game.seed_for(DAY.isoformat()), 20 + GRACE)
+    assert r["trimmed"] and r["height"] == best_possible < int(20 * game.speed() + game.slack)
+    s, r = _run(game, best_possible, 20)
+    assert not r["trimmed"]
 
 
 def test_runs_need_a_genuine_receipt(game):
@@ -144,7 +151,7 @@ def test_the_leaderboard(game):
         ("1", 40, 1), ("2", 25, 2), ("3", 25, 2), (str(UID), 12, 4)]
     assert b["you"]["today"] == {"height": 12, "rank": 4} and b["players"]["today"] == 4
     yesterday = DAY - datetime.timedelta(days=1)
-    _run(game, 60, _fair(game, 60), uid=5, day=yesterday)
+    _run(game, 60, _fair(game, 60, yesterday), uid=5, day=yesterday)
     b = game.board(UID, DAY)
     assert b["allTime"][0]["uid"] == "5" and b["you"]["allTime"]["rank"] == 5
     assert game.state(UID, DAY)["rank"] == 4

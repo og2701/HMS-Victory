@@ -180,6 +180,7 @@ PENNYFALLS_COIN = 10                 # UKPence a coin
 PENNYFALLS_MIN_BET = 100             # a cup: 10 to 100 coins
 PENNYFALLS_MAX_BET = 1_000
 PENNYFALLS_SEED_COINS = 130          # on a new player's machine
+PENNYFALLS_FLOOR = 45                # coins that always stay on the shelves (machines settle at 60-70)
 PENNYFALLS_GOLD_COINS = 20           # a gold coin pays this many coins (200 UKP) when pushed off...
 PENNYFALLS_GOLD_EVERY = 150          # ...and drops in after this many coins. Together they hand back
                                      # COINS / EVERY of what goes in (~13% here) against ~10% lost at

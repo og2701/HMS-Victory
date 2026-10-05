@@ -6,7 +6,12 @@ seconds the page reports what went in and what came off. The bot can't see the p
 it keeps the books and won't accept what can't be true:
 
 - Each player has their own machine and the bot counts the coins on it. Nobody can take
-  more off the shelves than are on them, plus what they've dropped since.
+  more off the shelves than are on them, plus what they've dropped since, and the pile never
+  thins out past PENNYFALLS_FLOOR: a pusher can't shove off coins nothing is pushing (real
+  machines settle at 60 to 70 coins).
+- The side gaps take their share. Over a day they can't have taken far fewer coins than they
+  do (SIDE_SHARE of what comes off, less three standard deviations for luck); at cash-out any
+  shortfall is booked as lost.
 - Coins go in no faster than a hand can feed the slot, and only from the cup.
 - Gold coins are the bot's to give: one drops in after every PENNYFALLS_GOLD_EVERY coins a
   player feeds their machine. The bot counts the coins, so it alone says when one is due.
@@ -18,9 +23,9 @@ it keeps the books and won't accept what can't be true:
   start and every drop) for the spectator's screen to replay. That's for watching only: it
   isn't checked against the books and never touches the money.
 
-So a doctored page can at worst empty its own machine, inside the caps, and honest play
-keeps the house edge the machine's side gaps give it. Anything that doesn't add up is
-trimmed to what could have happened, and logged.
+So a doctored page can't empty its machine or wave away the side gaps; what it can still do
+(claim coins came back that really fell) is bounded by the floor, the side gaps' share and the
+caps. Anything that doesn't add up is trimmed to what could have happened, and logged.
 """
 
 from __future__ import annotations
@@ -67,6 +72,12 @@ def gold_value() -> int:
     return max(1, int(_cfg("GOLD_COINS", 20)))
 
 
+def floor() -> int:
+    """Coins that always stay on the shelves."""
+    return max(0, int(_cfg("FLOOR", 45)))
+
+
+SIDE_SHARE = 0.08                   # of coins coming off, the least the side gaps take (they take ~10%)
 LAYOUT_MAX = 12_000                 # characters: about 550 coins, well past a full machine
 DROPS_PER_SECOND = 6                # the page allows one every 200ms; a little slack on top
 TOP_UP_MAX = 100
@@ -103,6 +114,9 @@ def machine(uid: int) -> dict:
     m.setdefault("fed", 0)
     if m.get("day") != _today():
         m["day"], m["day_net"] = _today(), 0
+        m["day_off"] = m["day_lost"] = 0
+    m.setdefault("day_off", 0)
+    m.setdefault("day_lost", 0)
     return m
 
 
@@ -285,9 +299,10 @@ class PennyFalls(Adapter):
         if gold_off > m["golds"]:
             won_gold = max(0, won_gold - (gold_off - m["golds"]))
             lost_gold = min(lost_gold, m["golds"] - won_gold)
-        # coins can't go in unless they're in the cup, counting what came back this batch
+        # coins can't go in unless they're in the cup, counting what came back this batch; and
+        # off the shelves no more than leaves the pile at its floor
         for _ in range(2):
-            off_cap = m["coins"] + dropped
+            off_cap = max(0, m["coins"] - floor()) + dropped
             if won + lost > off_cap:
                 won = max(0, won - (won + lost - off_cap))
                 lost = min(lost, off_cap - won)
@@ -314,6 +329,8 @@ class PennyFalls(Adapter):
         cup.golds_won += won_gold
         cup.coins_lost += lost
         cup.golds_lost += lost_gold
+        m["day_off"] += won + lost
+        m["day_lost"] += lost
         cup.synced = now
         # a gold coin for every GOLD_EVERY that go in, counted across cups
         every = gold_every()
@@ -344,8 +361,26 @@ class PennyFalls(Adapter):
         except Exception:
             log.error("couldn't keep %s's penny falls board", uid, exc_info=True)
 
+    @staticmethod
+    def _side_gaps(cup: Cup, m: dict) -> None:
+        """If the side gaps have taken implausibly few of today's coins, book the shortfall as
+        lost: the coins came off, so they went one way or the other."""
+        off, p = m["day_off"], SIDE_SHARE
+        least = int(p * off - 3 * (off * p * (1 - p)) ** 0.5)
+        short = min(least - m["day_lost"], cup.coins)
+        if short > 0:
+            cup.coins -= short
+            cup.won -= short
+            cup.coins_won -= short
+            cup.coins_lost += short
+            m["day_lost"] += short
+            cup.trimmed += 1
+            log.warning("penny falls: %s's side gaps took %s of %s coins today; %s more booked as lost",
+                        cup.uid, m["day_lost"] - short, off, short)
+
     def _cash_out(self, cup: Cup) -> None:
         m = machine(cup.uid)
+        self._side_gaps(cup, m)
         payout = cup.coins * value()
         cup_cap = int(_cfg("CUP_MAX_NET", 1_000))
         day_left = max(0, int(_cfg("DAY_MAX_NET", 5_000)) - m["day_net"])
