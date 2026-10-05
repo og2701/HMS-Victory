@@ -18,7 +18,8 @@ ROUNDS = {
     "plinko": ({"bet": 100, "risk": "medium"}, []),
     "slots": ({"bet": 10}, []),
     "roulette": ({"bet": 30, "bets": {"straight:17": 10, "red": 10, "dozen2": 10}}, []),
-    "higherlower": ({"bet": 100}, [("higher", {}), ("cashout", {})]),
+    # a tie isn't a win and cashing out needs one, so guess until something's decided
+    "higherlower": ({"bet": 100}, [("guess", {})] * 6 + [("cashout", {})]),
     "videopoker": ({"bet": 100}, [("draw", {"held": []})]),
     "reddog": ({"bet": 100}, [("call", {})]),
     "tcp": ({"bet": 100}, [("play", {})]),
@@ -38,6 +39,8 @@ def _one_round(key):
     for action, body in moves:
         if out["table"]["over"]:
             break
+        if action == "guess":                     # whichever of higher and lower this card offers
+            action = "higher" if out["table"].get("higher") else "lower"
         out = play(key, action, body)
     assert out["table"]["over"], f"{key} round didn't finish"
 
@@ -69,8 +72,9 @@ def test_a_broken_digest_is_dropped_not_raised():
     assert summaries.digest("plinko", None) is None
 
 
-def test_penalties_remember_every_kick_across_a_save():
+def test_penalties_remember_every_kick_across_a_save(monkeypatch):
     from commands.economy import penalty as PE
+    monkeypatch.setattr(PE.random, "random", lambda: 0.0)   # both go in, so the second kick is taken
     g = PE.PenaltyGame.new(1, "A", None, 100)
     g.kick("tl")
     g.kick("br")
