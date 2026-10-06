@@ -180,7 +180,7 @@ WARDROBE = {
     "top-lilac": ("top", "Lilac", 500, "#A98CF0"),
     "top-hivis": ("top", "Hi-Vis", 800, "#C8F020"),
     "top-red": ("top", "Christmas Jumper", 1200, "#C8202A"),
-    "cap-red": ("cap", "Red Helmet", 0, ""),
+    "cap-red": ("cap", "Red Cap", 0, ""),
     "cap-sky": ("cap", "Sky Blue", 200, "#5AB4FF"),
     "cap-lime": ("cap", "Lime", 200, "#8CE04A"),
     "cap-black": ("cap", "Black", 400, "#22222A"),
