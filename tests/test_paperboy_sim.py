@@ -109,15 +109,16 @@ def test_a_cab_never_backs_out_in_front_of_a_ramp():
 
 def test_a_milk_float_never_drives_into_the_only_way_through():
     # vans and buses across two lanes leave one way through, never the lane a float's coming down (unless
-    # it's a wall of three that couldn't park on the float, when the ramp over it isn't in the float's lane);
+    # it's a wall of three that couldn't park on the float, when the ramp over it isn't in the float's lane),
+    # nor one setting off just short of them, which at full speed meets you a few metres before them;
     # and there's only one float up the street at a time, or two could shut two lanes
-    for theme, i, street in _streets("floats"):
+    for theme, i, street in _streets("floats", metres=4500):
         floats = sorted((o for o in street.obs if o["kind"] == "float"), key=lambda o: o["d"])
-        assert all(b["d"] - a["d"] >= 30000 for a, b in zip(floats, floats[1:])), (theme, i)
+        assert all(b["d"] - a["d"] >= 50000 for a, b in zip(floats, floats[1:])), (theme, i)
         big = [o for o in street.obs if o["kind"] in ("van", "bus")]
         for f in floats:
             for a in big:
-                if not f["d"] - 30000 < a["d"] < f["d"]:
+                if not f["d"] - 30000 < a["d"] < f["d"] + 20000:
                     continue
                 lanes = {b["x"] for b in big if abs(b["d"] - a["d"]) <= 1500}
                 if len(lanes) < 2 or f["x"] in lanes:

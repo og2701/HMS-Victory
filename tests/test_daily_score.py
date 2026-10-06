@@ -204,12 +204,16 @@ def test_the_post_pictures_draw():
 
 def _deliveries(seed: str, secs: float) -> list[list[int]]:
     """Moves that get round the first few things in the road, from the bot's own copy: change lane
-    away from anything in the way, a little before it."""
+    away from anything in the way, a little before it, and hop anything low that's still in the way."""
     from lib.activities import paperboy_sim as S
     run, inputs = S.Run(seed, S.theme_of(DAY.isoformat())), []
     while not run.over and run.step < secs * 120:
         v = S.speed_at(run.step)
         ahead = [o for o in run.street.obs if 0 < run.ob_d(o) - o["hl"] - run.dist < 900 + v * 30]
+        close = [o for o in ahead if run.ob_d(o) - o["hl"] - run.dist < 900 + v * 8 and abs(run.x - run.ob_x(o)) < 45 + o["hw"]]
+        if close and all(o.get("height") == "low" for o in close) and run.height() == 0:
+            run.input(S.UP)
+            inputs.append([run.step, S.UP])
         if ahead and abs(run.x - S.LANES[run.lane]) < 4:
             for lane in (run.lane - 1, run.lane + 1, run.lane - 2, run.lane + 2):
                 if 0 <= lane <= 2 and not any(abs(S.LANES[lane] - run.ob_x(o)) < 45 + o["hw"] for o in ahead):

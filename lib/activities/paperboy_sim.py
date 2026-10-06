@@ -61,7 +61,7 @@ OB = {
 
 
 def speed_at(step: int) -> int:
-    return min(150, 80 + step // 240)
+    return min(250, 80 + step * 17 // 2160)
 
 
 def hop_height(k: int) -> int:
@@ -163,8 +163,9 @@ class Street:
         gap = self._gap_near(d, d + 16000)
         extra = 0
         clear_to = 0
-        # the lane a milk float up the street is coming down (there's only ever one at a time)
-        coming = [o["x"] for o in self.obs if o["kind"] == "float" and o["d"] > d]
+        # the lane a milk float up the street is coming down (there's only ever one at a time); one setting off
+        # a little short of here counts too, as at full speed it meets you only a few metres short of it
+        coming = [o["x"] for o in self.obs if o["kind"] == "float" and o["d"] > d - 20000]
         if gap is not None and pick < 0.4:
             # a cab can be well up the street: the next beat starts 20 m past it, or it could back out
             # in front of the only way through
