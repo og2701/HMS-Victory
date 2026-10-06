@@ -57,13 +57,14 @@ async function openPage() {
     B.Music.start = B.Music.pause = B.Music.level = () => {};
     B.P.playing = false;
     document.getElementById("stage").classList.remove("paused");
-    window.__frame = vt => {
+    window.__frame = (vt, timingOnly) => {
       window.__vt = vt;
       const P = B.P;
       let i = P.starts.findIndex((s, k) => vt >= s && vt < s + P.plans[k].dur);
       if (i < 0) i = P.list.length - 1;
       if (i !== window.__cur) { window.__cur = i; B.go(i); }
       B.advance(Math.min(vt - P.starts[i], P.plans[i].dur));
+      if (timingOnly) return;
       // Every animation runs on the replay's clock, not the wall clock.
       for (const a of document.getAnimations()) {
         if (!window.__seen.has(a)) window.__seen.set(a, vt);
@@ -107,14 +108,25 @@ async function renderSegment(n, f0, f1) {
   return { file, log: await page.evaluate(() => window.__log) };
 }
 
-const segments = await Promise.all(cuts.slice(0, -1).map((f0, n) => renderSegment(n, f0, cuts[n + 1])));
-const log = segments.flatMap(s => s.log).sort((a, b) => a.vt - b.vt);
-
-// ---- video: join the segments
-const list = path.join(work, "segments.txt");
-fs.writeFileSync(list, segments.map(s => `file '${s.file}'`).join("\n"));
-const video = path.join(work, "video.mp4");
-await run("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", video]);
+let log, video;
+if (process.env.REUSE_VIDEO) {
+  // The frames are already rendered; step the clock again without screenshots just to time the sound.
+  video = process.env.REUSE_VIDEO;
+  for (let f = 0; f < frames; f += 200) {
+    await probe.evaluate(([a, b, step]) => { for (let k = a; k < b; k++) window.__frame(k * step, true); }, [f, Math.min(f + 200, frames), STEP]);
+  }
+  log = await probe.evaluate(() => window.__log);
+} else {
+  const segments = await Promise.all(cuts.slice(0, -1).map((f0, n) => renderSegment(n, f0, cuts[n + 1])));
+  log = segments.flatMap(s => s.log);
+  // ---- video: join the segments
+  const list = path.join(work, "segments.txt");
+  fs.writeFileSync(list, segments.map(s => `file '${s.file}'`).join("\n"));
+  video = path.join(work, "video.mp4");
+  await run("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", video]);
+}
+log.sort((a, b) => a.vt - b.vt);
+console.log(`timeline logged: ${log.filter(e => e.voice).length} voice cues, ${log.filter(e => e.cut).length} punchline cuts`);
 
 // ---- music: rendered offline in the page, ducked under the voice and cut for punchlines
 const manifest = JSON.parse(fs.readFileSync(path.join(voiceDir, "voice.json"), "utf8"));
@@ -136,8 +148,11 @@ const samples = await probe.evaluate(async ({ total, voices, cuts, SR, PACE }) =
   for (let i = 0; i < td.length; i++) td[i] = (Math.random() * 2 - 1) * (1 - i / td.length);
   const moodAt = t => { const ms = t * 1000; let i = P.starts.findIndex((s, k) => ms >= s && ms < s + P.plans[k].dur); if (i < 0) i = P.list.length - 1; return moodFor(P.list[i]); };
   const eighth = 60 / 100 / 2;
-  let mood = "house";
-  for (let st = 0, t = .1; t < secs - 1; st++, t += eighth) {
+  let mood = "house", st = 0, t = .1;
+  // Notes are scheduled two seconds at a time from suspend points. Scheduling the whole twenty minutes
+  // up front leaves thousands of not-yet-started nodes in the graph, and Chrome walks every one of them
+  // on every 128-sample block, which turns a seconds-long render into a very long one.
+  const schedule = until => { for (; t < until && t < secs - 1; st++, t += eighth) {
     if (st % 8 === 0) mood = moodAt(t);
     const m = MOODS[mood], chord = CH[m.prog[Math.floor(st / 8) % 4]];
     if (st % 8 === 0) chord.forEach(f => [-7, 7].forEach(d => note(f, t, eighth * 8.5, "sawtooth", .035, lp, .6, d)));
@@ -146,6 +161,12 @@ const samples = await probe.evaluate(async ({ total, voices, cuts, SR, PACE }) =
     if (m.tick) { const n = c.createBufferSource(), hp = c.createBiquadFilter(), g = c.createGain();
       n.buffer = tick; hp.type = "highpass"; hp.frequency.value = 7000; g.gain.value = st % 2 ? .05 : .12;
       n.connect(hp); hp.connect(g); g.connect(out); n.start(t); }
+  } };
+  schedule(2.5);
+  const q = 128 / SR;
+  for (let k = 2; k < secs - 1; k += 2) {
+    const at = Math.round((k - .5) / q) * q;
+    c.suspend(at).then(() => { schedule(k + 2.5); c.resume(); });
   }
   // The same levels the live player uses: .075 normally, .03 under the narrator, silence for a punchline.
   const ducks = voices.map(v => [v.vt / 1000, v.vt / 1000 + v.seconds / PACE]);
