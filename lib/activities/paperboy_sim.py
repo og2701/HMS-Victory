@@ -1,7 +1,8 @@
 """Paperboy's rules, the bot's copy: the day's street and a run replayed from the moves the page
 recorded, so the score paid is the one the rules give, not one the page claims. It plays like
 Subway Surfers: three lanes, hop the low things, duck the high ones, go round the big ones (or take
-the ramp over them), ride through the papers, and pick up the odd power-up on the way.
+the ramp over them), ride through the papers, and pick up the odd power-up on the way. Each day of
+the week has its theme, which changes what turns up (bin day, roadworks, the Sunday papers...).
 
 This mirrors src/paperboy/sim.ts in ukplace-activities line for line, drawing the same random
 numbers in the same order. Everything is whole numbers (millimetres up the street, centimetres
@@ -11,6 +12,8 @@ in tests/data/paperboy_vectors.json (ukplace-activities scripts/paperboy-vectors
 """
 
 from __future__ import annotations
+
+from datetime import date as _date
 
 from lib.activities.score_limits import rng
 
@@ -30,6 +33,25 @@ DOUBLE = 1800
 SAFE = 90
 LEFT, RIGHT, UP, DOWN = 1, 2, 3, 4
 MAX_INPUTS = 20_000
+
+# the day's theme, by the day of the week (Monday first, as Python counts)
+WEEK = ("drizzle", "bins", "works", "walkies", "payday", "stunts", "sunday")
+PLAIN = {"cuts": (0.3, 0.55, 0.68, 0.78, 0.88), "low_cut": 0.35, "bin_share": 0.5, "high_cut": 0.6, "scaffold_share": 0.5,
+         "barrier_cut": 0.8, "ramp": 0.4, "wall": 0.3, "golden": 0.08, "paper": 1}
+RULES = {
+    "drizzle": PLAIN,
+    "bins": {**PLAIN, "low_cut": 0.62, "bin_share": 0.85, "high_cut": 0.75, "barrier_cut": 0.88},
+    "works": {**PLAIN, "bin_share": 0.2, "high_cut": 0.66, "scaffold_share": 0.8, "barrier_cut": 0.92, "cuts": (0.36, 0.55, 0.74, 0.8, 0.88)},
+    "walkies": {**PLAIN, "cuts": (0.24, 0.44, 0.54, 0.6, 0.9)},
+    "payday": {**PLAIN, "golden": 0.24},
+    "stunts": {**PLAIN, "cuts": (0.24, 0.62, 0.72, 0.8, 0.9), "ramp": 0.75, "wall": 0.45},
+    "sunday": {**PLAIN, "paper": 2},
+}
+STATS = ("got", "golden", "doubled", "ramps", "hops", "bins", "dogs", "ducks", "saves", "magnets", "doubles", "helmets")
+
+
+def theme_of(day: str) -> str:
+    return WEEK[_date.fromisoformat(day).weekday()]
 
 OB = {
     "bin": (34, 380, "low"), "barrier": (72, 300, "low"), "cones": (60, 380, "low"), "dog": (22, 380, "low"),
@@ -51,7 +73,9 @@ def jump_height(s: int) -> int:
 
 
 class Street:
-    def __init__(self, seed: str):
+    def __init__(self, seed: str, theme: str = "drizzle"):
+        self.theme = theme
+        self.rules = RULES[theme]
         self.houses: list[dict] = []
         self.obs: list[dict] = []
         self.papers: list[dict] = []
@@ -112,7 +136,7 @@ class Street:
         if any(f["kind"] == "float" and abs(f["x"] - x) < f["hw"] + hw and abs(f["d"] - d) < f["hl"] + hl + 1200 for f in self.obs):
             return
         self.obs.append({"id": self.next_id, "kind": kind, "d": d, "x": x, "hw": hw, "hl": hl, "height": height,
-                         "trig": -1, "from_": from_, "dir": direction, "hit": False, "stop": 0})
+                         "trig": -1, "from_": from_, "dir": direction, "hit": False, "stop": 0, "cleared": False})
         self.next_id += 1
 
     def _ramp(self, d: int, x: int, golden: bool) -> None:
@@ -131,7 +155,7 @@ class Street:
             self.next_id += 1
 
     def _beat(self) -> None:
-        r, d = self.ro, self.ob_to
+        r, d, t = self.ro, self.ob_to, self.rules
         self._houses_to(d + 40000)
         hard = min(1000, d // 800)
         pick = r()
@@ -142,13 +166,13 @@ class Street:
             side = gap["side"]
             self._add("cab", gap["d"] + HOUSE, side * 400, side * 400, -side)
             self._line(d + 6000, LANES[1], 6, False)
-        elif pick < 0.3 or hard < 120:
+        elif pick < t["cuts"][0] or hard < 120:
             which = r()
-            if which < 0.35:
-                kind = "bin" if r() < 0.5 else "cones"
-            elif which < 0.6:
-                kind = "scaffold" if r() < 0.5 else "washing"
-            elif which < 0.8:
+            if which < t["low_cut"]:
+                kind = "bin" if r() < t["bin_share"] else "cones"
+            elif which < t["high_cut"]:
+                kind = "scaffold" if r() < t["scaffold_share"] else "washing"
+            elif which < t["barrier_cut"]:
                 kind = "barrier"
             else:
                 kind = "van"
@@ -158,29 +182,29 @@ class Street:
             else:
                 to = LANES[(lane + 1 + int(r() * 2)) % 3]
                 self._line(d + 8000, to, 5 + int(r() * 4), False)
-        elif pick < 0.55:
-            wall = hard >= 250 and r() < 0.3
+        elif pick < t["cuts"][1]:
+            wall = hard >= 250 and r() < t["wall"]
             open_ = -1 if wall else int(r() * 3)
             for k in range(3):
                 if k != open_:
                     self._add("van" if r() < 0.5 else "bus", d + (1500 if k == 2 else 0), LANES[k])
             if not wall:
                 self._line(d - 3000, LANES[open_], 7, False)
-            if wall or r() < 0.4:
+            if wall or r() < t["ramp"]:
                 rl = lane if wall else (open_ + 1 + int(r() * 2)) % 3
                 self._ramp(d + (1500 if rl == 2 else 0) - 11000, LANES[rl], wall)
                 extra = 12000
-        elif pick < 0.68:
+        elif pick < t["cuts"][2]:
             low = r() < 0.5
             for k in range(3):
                 self._add(("barrier" if k == 1 else "bin") if low else ("ladder" if k == 1 else "scaffold"), d, LANES[k])
             if low:
                 self._line(d, LANES[lane], 5, True)
-        elif pick < 0.78:
+        elif pick < t["cuts"][3]:
             kinds = ("bin", "washing", "van")
             for k in range(3):
                 self._add(kinds[(k + lane) % 3], d, LANES[k])
-        elif pick < 0.88:
+        elif pick < t["cuts"][4]:
             direction = 1 if r() < 0.5 else -1
             self._add("dog", d, -direction * 330, -direction * 330, direction)
             self._line(d + 5000, LANES[lane], 6, False)
@@ -190,7 +214,7 @@ class Street:
         else:
             self._add("bin", d, LANES[lane])
             self._line(d + 6000, LANES[(lane + 2) % 3], 6, False)
-        if r() < 0.08:
+        if r() < t["golden"]:
             x = LANES[int(r() * 3)]
             self.papers.append({"id": self.next_id, "d": d + 12000, "x": x, "h": 0, "golden": True, "taken": False})
             self.next_id += 1
@@ -204,8 +228,9 @@ class Street:
 
 
 class Run:
-    def __init__(self, seed: str):
-        self.street = Street(seed)
+    def __init__(self, seed: str, theme: str = "drizzle"):
+        self.street = Street(seed, theme)
+        self.stats = {k: 0 for k in STATS}
         self.street.ensure(200000)
         self.step = 0
         self.dist = 0
@@ -304,6 +329,7 @@ class Run:
             self.jump_from = rp["d"]
             self.hop_at = -1000
             self.duck_at = -1000
+            self.stats["ramps"] += 1
         h = self.height()
         for pw in self._near_powers:
             if pw["taken"] or abs(self.dist - pw["d"]) >= 700 or abs(self.x - pw["x"]) >= 70 or h >= 120:
@@ -311,17 +337,23 @@ class Run:
             pw["taken"] = True
             if pw["kind"] == "magnet":
                 self.magnet_to = self.step + MAGNET
+                self.stats["magnets"] += 1
             elif pw["kind"] == "double":
                 self.double_to = self.step + DOUBLE
+                self.stats["doubles"] += 1
             else:
                 self.helmet = True
+                self.stats["helmets"] += 1
         pull, times = self.step <= self.magnet_to, 2 if self.step <= self.double_to else 1
         for p in self._near_papers:
             if p["taken"] or p["d"] < self.dist - 1000 or p["d"] > self.dist + 1000:
                 continue
             if abs(self.dist - p["d"]) < 700 and (pull or (abs(self.x - p["x"]) < 60 and abs(h - p["h"]) < 60)):
                 p["taken"] = True
-                self.papers += (GOLDEN if p["golden"] else PAPER) * times
+                self.papers += (GOLDEN if p["golden"] else PAPER) * self.street.rules["paper"] * times
+                self.stats["golden" if p["golden"] else "got"] += 1
+                if times > 1:
+                    self.stats["doubled"] += 1
         if self.step <= self.safe_to or h >= 200:
             return
         for o in self._near:
@@ -333,13 +365,22 @@ class Run:
             if abs(self.x - self.ob_x(o)) >= 45 + o["hw"] or abs(self.dist - od) >= 900 + o["hl"]:
                 continue
             if o["height"] == "low" and self.airborne():
+                if not o["cleared"]:
+                    o["cleared"] = True
+                    self.stats["hops"] += 1
+                    if o["kind"] in ("bin", "dog"):
+                        self.stats[o["kind"] + "s"] += 1
                 continue
             if o["height"] == "high" and self.ducking():
+                if not o["cleared"]:
+                    o["cleared"] = True
+                    self.stats["ducks"] += 1
                 continue
             if self.helmet:
                 self.helmet = False
                 o["hit"] = True
                 self.safe_to = self.step + SAFE
+                self.stats["saves"] += 1
                 return
             self.over = True
             return
@@ -373,9 +414,10 @@ def clean_inputs(raw) -> list[list[int]]:
     return out
 
 
-def replay(seed: str, inputs: list, max_steps: int) -> dict:
-    """Play a recorded run up to a crash or `max_steps`: its score, how long it lasted, its papers."""
-    run = Run(seed)
+def replay(seed: str, inputs: list, max_steps: int, day: str | None = None, theme: str | None = None) -> dict:
+    """Play a recorded run up to a crash or `max_steps`, on the day's theme: its score, how long it
+    lasted, its papers, and what it did (for the day's jobs)."""
+    run = Run(seed, theme or (theme_of(day) if day else "drizzle"))
     todo = sorted(clean_inputs(inputs), key=lambda p: p[0])
     i = 0
     while not run.over and run.step < max_steps:
@@ -383,4 +425,4 @@ def replay(seed: str, inputs: list, max_steps: int) -> dict:
             run.input(todo[i][1])
             i += 1
         run.tick()
-    return {"score": run.score, "steps": run.step, "papers": run.papers, "crashed": run.over}
+    return {"score": run.score, "steps": run.step, "papers": run.papers, "crashed": run.over, "stats": dict(run.stats)}

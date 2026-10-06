@@ -17,7 +17,7 @@ def test_the_bot_replays_runs_exactly_as_the_page_played_them():
         runs = json.load(f)
     assert len(runs) >= 9
     for v in runs:
-        assert S.replay(v["seed"], v["inputs"], v["maxSteps"]) == v["result"], v["seed"]
+        assert S.replay(v["seed"], v["inputs"], v["maxSteps"], theme=v["theme"]) == v["result"], (v["seed"], v["theme"])
 
 
 def test_inputs_that_arent_inputs_are_ignored():

@@ -627,6 +627,27 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_paperboy_runs_user ON paperboy_runs(user_id, date)")
+        # Paperboy's daily jobs (lib/activities/paperboy.py): each player's progress on the day's
+        # three, as JSON {job: value}, and how many are done
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS paperboy_jobs (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                progress TEXT NOT NULL,
+                done INTEGER NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+        # and their wardrobe: what they own and wear (JSON), papers spent, and papers won from jobs
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS paperboy_kit (
+                user_id TEXT PRIMARY KEY,
+                owned TEXT NOT NULL,
+                wearing TEXT NOT NULL,
+                spent INTEGER NOT NULL,
+                bonus INTEGER NOT NULL
+            )
+        ''')
         c.execute('''
             CREATE TABLE IF NOT EXISTS pennyfalls_boards (
                 user_id TEXT PRIMARY KEY,

@@ -78,7 +78,8 @@ class ScoreGame:
     emoji: str
     nobody: str = "A sailor"
     limit: object = None     # (seed, seconds) -> the most anyone could score in that long
-    replay: object = None    # (seed, inputs, steps) -> {"score", "steps", "papers", ...}: the rules' own score
+    replay: object = None    # (seed, inputs, steps, day) -> {"score", "steps", "papers", ...}: the rules' own score
+    acts: tuple = ()         # the game's own actions beyond start and finish (see act)
     _runs: dict = field(default_factory=dict)        # uid -> the run in progress (pages from before receipts)
     _last_start: dict = field(default_factory=dict)
     _posts: dict = field(default_factory=dict)
@@ -138,7 +139,26 @@ class ScoreGame:
         d = self.day(uid, iso)
         return {"game": self.key, "date": iso, "dateLabel": f"{date:%A %-d %B}", "seed": self.seed_for(iso),
                 "rate": self.pay_rate(), "cap": self.pay_cap(), "today": d, "best": self.ever(uid),
-                "rank": self.rank(iso, d["best"]) if d["best"] else None, "players": self.players(iso)}
+                "rank": self.rank(iso, d["best"]) if d["best"] else None, "players": self.players(iso),
+                **self.extras(uid, iso)}
+
+    # ---- what a game adds of its own (Paperboy's jobs and wardrobe) ----------------------------
+
+    def extras(self, uid: int, iso: str) -> dict:
+        """More for the page's state."""
+        return {}
+
+    def counted(self, uid: int, iso: str, played: dict) -> int:
+        """The score a replayed run counts for."""
+        return played["score"]
+
+    def after_run(self, uid: int, iso: str, played: dict) -> dict:
+        """Anything a counted run does beyond the score, and what to tell the page about it."""
+        return {}
+
+    def act(self, uid: int, date, action: str, body: dict) -> dict:
+        """One of the game's own actions (those in acts): the new state."""
+        raise Refuse("That's not something this game does.")
 
     def home_card(self, uid: int, date) -> dict | None:
         if not self.enabled():
@@ -251,14 +271,16 @@ class ScoreGame:
                 allowed = min(allowed, self.limit(run["seed"], min(elapsed + GRACE, said_time + 5)))
             except Exception:
                 log.error("couldn't work out the %s limit; going by the clock alone", self.key, exc_info=True)
+        played = None
         if self.replay is not None:
             # the rules play the run again from the inputs the page recorded, for no longer than the
             # bot's clock allows: that score is the one that counts, whatever the page says
             try:
                 played = self.replay(run["seed"], body.get("inputs"),
-                                     int(min(elapsed + GRACE, said_time + 5, REPLAY_MAX) * 120))
-                allowed, count = played["score"], played["papers"]
+                                     int(min(elapsed + GRACE, said_time + 5, REPLAY_MAX) * 120), run["date"])
+                allowed, count = self.counted(uid, run["date"], played), played["papers"]
             except Exception:
+                played = None
                 log.error("couldn't replay a %s run for %s", self.key, uid, exc_info=True)
                 allowed = 0
             score = allowed
@@ -289,7 +311,13 @@ class ScoreGame:
             f"INSERT INTO {self.runs} (user_id, date, started, ended, {self.score_col}, reported, game_time, "
             f"{self.count_col}, earned, trimmed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (str(uid), iso, int(run["started"]), int(now), score, reported, round(said_time, 1), count, earned, int(trimmed)))
-        return self.state(uid, date), {"height": score, "earned": earned, "newBest": new_best, "trimmed": trimmed}
+        extra = {}
+        if played is not None:
+            try:
+                extra = self.after_run(uid, iso, played)
+            except Exception:
+                log.error("couldn't count a %s run's extras for %s", self.key, uid, exc_info=True)
+        return self.state(uid, date), {"height": score, "earned": earned, "newBest": new_best, "trimmed": trimmed, **extra}
 
     # ---- telling the channel -------------------------------------------------------------------
 
@@ -355,9 +383,36 @@ SPITFIRE = ScoreGame(
     post="flew the **Spitfire** past **{score} balloons**", emoji="✈️", nobody="A pilot",
     limit=score_limits.spitfire_max)
 
-PAPERBOY = ScoreGame(
+class PaperboyGame(ScoreGame):
+    """Paperboy, with its day's theme, jobs and multiplier, and its wardrobe (lib/activities/paperboy.py)."""
+
+    def extras(self, uid: int, iso: str) -> dict:
+        from lib.activities import paperboy
+        return paperboy.day(uid, iso)
+
+    def counted(self, uid: int, iso: str, played: dict) -> int:
+        # the jobs done before this run multiply it
+        from lib.activities import paperboy
+        return played["score"] * paperboy.mult(uid, iso)
+
+    def after_run(self, uid: int, iso: str, played: dict) -> dict:
+        from lib.activities import paperboy
+        return paperboy.record(uid, iso, played)
+
+    def act(self, uid: int, date, action: str, body: dict) -> dict:
+        from lib.activities import paperboy
+        item = str(body.get("item") or "")
+        try:
+            paperboy.buy(uid, item) if action == "buy" else paperboy.wear(uid, item)
+        except paperboy.WardrobeRefuse as e:
+            raise Refuse(str(e))
+        return self.state(uid, date)
+
+
+PAPERBOY = PaperboyGame(
     key="paperboy", label="Paperboy", prefix="PAPERBOY", days="paperboy_days", runs="paperboy_runs",
     score_col="score", count_col="papers", rate=1, cap=150, max_rate=10.0, max_score=5000, slack=10,
-    post="did the paper round for **{score} points**", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay)
+    post="did the paper round for **{score} points**", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay,
+    acts=("buy", "wear"))
 
 GAMES = {g.key: g for g in (CLIMB, SPITFIRE, PAPERBOY)}

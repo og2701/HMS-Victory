@@ -12,6 +12,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /crossword, POST /crossword/answer, POST /crossword/hint
     GET  /climb, /spitfire   a daily score game: today's seed and the player's best and pay so far
     POST /<game>/start, POST /<game>/finish {score, time, count, seed, run}
+    POST /paperboy/buy {item}, POST /paperboy/wear {item}: the wardrobe
     GET  /<game>/board   today's top scores and the best ever, with names
     GET  /home           balance, today's puzzles, the casino in last-played order
     GET  /casino/<game>  a casino table (the hand in play, or the last one)
@@ -422,6 +423,8 @@ async def score_run(request):
                 else:
                     log.info("%s best for %s not posted: the session has no channel", game.key, who["uid"])
             return _json({**board, "result": result})
+        if action in game.acts:
+            return _json(game.act(who["uid"], _today(), action, body if isinstance(body, dict) else {}))
     except ScoreRefuse as e:
         return _error(str(e), 422)
     except Exception:

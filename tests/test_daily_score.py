@@ -206,7 +206,7 @@ def _deliveries(seed: str, secs: float) -> list[list[int]]:
     """Moves that get round the first few things in the road, from the bot's own copy: change lane
     away from anything in the way, a little before it."""
     from lib.activities import paperboy_sim as S
-    run, inputs = S.Run(seed), []
+    run, inputs = S.Run(seed, S.theme_of(DAY.isoformat())), []
     while not run.over and run.step < secs * 120:
         v = S.speed_at(run.step)
         ahead = [o for o in run.street.obs if 0 < run.ob_d(o) - o["hl"] - run.dist < 900 + v * 30]
@@ -227,27 +227,31 @@ def test_paperboy_scores_what_the_rules_give_for_the_runs_inputs(clock):
     g = daily_score.PAPERBOY
     g.clock = clock
     seed = g.seed_for(DAY.isoformat())
+    from lib.activities import paperboy
+    iso = DAY.isoformat()
     inputs = _deliveries(seed, 60)
-    played = paperboy_sim.replay(seed, inputs, 120 * 60)
+    played = paperboy_sim.replay(seed, inputs, 120 * 60, iso)
     assert played["score"] > 0
     st = g.start(UID, DAY)
     clock["t"] += played["steps"] / 120 + 1
     s, r = g.finish(UID, DAY, {"score": played["score"], "time": played["steps"] / 120, "count": played["papers"],
                                "seed": seed, "run": st["run"], "inputs": inputs})
-    assert r["height"] == played["score"] and not r["trimmed"]
-    # a page that claims more than its inputs earn gets what they earn
+    assert r["height"] == played["score"] and not r["trimmed"]          # no jobs done yet: x1
+    # a page that claims more than its inputs earn gets what they earn (times the jobs done so far)
     clock["t"] += 5
+    times = paperboy.mult(UID, iso)
     st = g.start(UID, DAY)
     clock["t"] += played["steps"] / 120 + 1
-    s, r = g.finish(UID, DAY, {"score": 999, "time": played["steps"] / 120, "count": 1, "seed": seed, "run": st["run"],
+    s, r = g.finish(UID, DAY, {"score": 9999, "time": played["steps"] / 120, "count": 1, "seed": seed, "run": st["run"],
                                "inputs": inputs})
-    assert r["height"] == played["score"] and r["trimmed"]
+    assert r["height"] == played["score"] * times and r["trimmed"]
     # and with no moves at all, only what riding straight on earns
     clock["t"] += 5
+    times = paperboy.mult(UID, iso)
     st = g.start(UID, DAY)
     clock["t"] += 30
-    s, r = g.finish(UID, DAY, {"score": 500, "time": 30, "count": 9, "seed": seed, "run": st["run"]})
-    assert r["height"] == paperboy_sim.replay(seed, [], 120 * 30)["score"] < 500 and r["trimmed"]
+    s, r = g.finish(UID, DAY, {"score": 5000, "time": 30, "count": 9, "seed": seed, "run": st["run"]})
+    assert r["height"] == paperboy_sim.replay(seed, [], 120 * 30, iso)["score"] * times < 5000 and r["trimmed"]
 
 
 def test_a_paperboy_replay_is_cut_off_at_the_bots_clock(clock):
@@ -256,9 +260,9 @@ def test_a_paperboy_replay_is_cut_off_at_the_bots_clock(clock):
     g.clock = clock
     seed = g.seed_for(DAY.isoformat())
     inputs = _deliveries(seed, 60)
-    full = paperboy_sim.replay(seed, inputs, 120 * 60)
+    full = paperboy_sim.replay(seed, inputs, 120 * 60, DAY.isoformat())
     st = g.start(UID, DAY)
     clock["t"] += 10                      # the page says the run took far longer than the bot saw
     s, r = g.finish(UID, DAY, {"score": full["score"], "time": full["steps"] / 120, "count": full["papers"],
                                "seed": seed, "run": st["run"], "inputs": inputs})
-    assert r["height"] == paperboy_sim.replay(seed, inputs, int((10 + daily_score.GRACE) * 120))["score"] < full["score"]
+    assert r["height"] == paperboy_sim.replay(seed, inputs, int((10 + daily_score.GRACE) * 120), DAY.isoformat())["score"] < full["score"]
