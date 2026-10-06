@@ -621,7 +621,7 @@ def init_db():
                 score INTEGER NOT NULL,
                 reported INTEGER NOT NULL,
                 game_time REAL NOT NULL,
-                throws INTEGER NOT NULL,
+                papers INTEGER NOT NULL,
                 earned INTEGER NOT NULL,
                 trimmed INTEGER NOT NULL
             )

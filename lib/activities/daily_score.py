@@ -78,7 +78,7 @@ class ScoreGame:
     emoji: str
     nobody: str = "A sailor"
     limit: object = None     # (seed, seconds) -> the most anyone could score in that long
-    replay: object = None    # (seed, inputs, steps) -> {"score", "steps", "throws", ...}: the rules' own score
+    replay: object = None    # (seed, inputs, steps) -> {"score", "steps", "papers", ...}: the rules' own score
     _runs: dict = field(default_factory=dict)        # uid -> the run in progress (pages from before receipts)
     _last_start: dict = field(default_factory=dict)
     _posts: dict = field(default_factory=dict)
@@ -257,7 +257,7 @@ class ScoreGame:
             try:
                 played = self.replay(run["seed"], body.get("inputs"),
                                      int(min(elapsed + GRACE, said_time + 5, REPLAY_MAX) * 120))
-                allowed, count = played["score"], played["throws"]
+                allowed, count = played["score"], played["papers"]
             except Exception:
                 log.error("couldn't replay a %s run for %s", self.key, uid, exc_info=True)
                 allowed = 0
@@ -357,7 +357,7 @@ SPITFIRE = ScoreGame(
 
 PAPERBOY = ScoreGame(
     key="paperboy", label="Paperboy", prefix="PAPERBOY", days="paperboy_days", runs="paperboy_runs",
-    score_col="score", count_col="throws", rate=2, cap=150, max_rate=10.0, max_score=5000, slack=10,
-    post="delivered **{score} points** of papers", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay)
+    score_col="score", count_col="papers", rate=1, cap=150, max_rate=10.0, max_score=5000, slack=10,
+    post="did the paper round for **{score} points**", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay)
 
 GAMES = {g.key: g for g in (CLIMB, SPITFIRE, PAPERBOY)}

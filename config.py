@@ -483,9 +483,10 @@ SPITFIRE_CAP = 150
 SPITFIRE_MAX_SPEED = 1.5
 SPITFIRE_MAX_HEIGHT = 1_000
 # Paperboy (lib/activities/daily_score.py): the score is the bot's own, from replaying the run's
-# swipes and throws through the game's rules (lib/activities/paperboy_sim.py), so there's no speed cap.
+# swipes through the game's rules (lib/activities/paperboy_sim.py): a point every 10 m and a point
+# a paper (10 for a golden one).
 PAPERBOY_ENABLED = True
-PAPERBOY_RATE = 2
+PAPERBOY_RATE = 1
 PAPERBOY_CAP = 150
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a

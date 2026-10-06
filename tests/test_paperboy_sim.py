@@ -21,12 +21,15 @@ def test_the_bot_replays_runs_exactly_as_the_page_played_them():
 
 
 def test_inputs_that_arent_inputs_are_ignored():
-    assert S.clean_inputs([[5, 1], [3, 9], ["x", 1], [-1, 2], [7, True], "nope", [8, 4]]) == [[5, 1], [8, 4]]
+    assert S.clean_inputs([[5, 1], [3, 9], ["x", 1], [-1, 2], [7, True], "nope", [8, 4], [9, 5]]) == [[5, 1], [8, 4]]
     assert S.clean_inputs("nope") == []
 
 
-def test_a_faked_score_counts_for_nothing():
-    # no inputs at all: no throws, so no score, however long it went on
-    assert S.replay("f00d", [], 120 * 30)["score"] == 0
-    # throwing papers at nothing scores nothing either
-    assert S.replay("f00d", [[k * 10, 4] for k in range(10)], 120 * 5)["score"] == 0
+def test_riding_scores_a_point_every_ten_metres_and_a_point_a_paper():
+    run = S.Run("f00d")
+    while run.step < 120 * 3:                       # the first 36 m are clear
+        run.tick()
+    assert not run.over and run.score == run.dist // 10000 + run.papers
+    # with no moves at all you ride straight into the first thing in the middle lane
+    played = S.replay("f00d", [], 120 * 60)
+    assert played["crashed"] and played["steps"] < 120 * 60
