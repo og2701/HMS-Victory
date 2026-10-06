@@ -226,6 +226,12 @@ def balance(uid: int) -> int:
     return int(row[0] if row else 0) + bonus - spent
 
 
+def looks(uid: int) -> dict[str, str]:
+    """What the player has on in each slot, as the game draws it: a colour, a trail, a bell ("" for how it came)."""
+    _, wearing, _, _ = _kit_row(uid)
+    return {s: WARDROBE[k][3] for s, k in {**WEARING, **{s: k for s, k in wearing.items() if k in WARDROBE}}.items()}
+
+
 def kit(uid: int) -> dict:
     owned, wearing, _, _ = _kit_row(uid)
     return {"balance": balance(uid), "owned": sorted(set(FREE) | set(owned)),

@@ -96,6 +96,19 @@ def test_the_wardrobe_spends_papers_and_puts_things_on(clock):
         paperboy.wear(UID, "bike-gold")
     with pytest.raises(paperboy.WardrobeRefuse):
         paperboy.buy(UID, "nonsense")
+    # and the post's picture is drawn in what they've got on
+    looks = paperboy.looks(UID)
+    assert looks["bike"] == "#1F8A50" and looks["hair"] == "" and looks["trail"] == "none"
+
+
+def test_the_post_picture_dresses_the_rider_in_their_wardrobe():
+    from lib.activities import daily_card
+    plain = daily_card.card_html("paperboy", name="Pooja", avatar=None, score=12480, rank=1, players=4, paid=43,
+                                 top=[("Pooja", 12480, True)], day={"theme": "Bin Day", "mult": 3, "looks": {"hair": "", "top": ""}})
+    assert f"file://{daily_card.RIDER_ART}" in plain and "BIN DAY" in plain and ">×3<" in plain
+    dressed = daily_card.card_html("paperboy", name="Pooja", avatar=None, score=12480, rank=1, players=4, paid=43,
+                                   top=[("Pooja", 12480, True)], day={"theme": "Bin Day", "mult": 1, "looks": {"hair": "#FF6FB5"}})
+    assert "data:image/webp;base64," in dressed and "×1" not in dressed
 
 
 def test_a_finished_run_is_multiplied_by_the_jobs_done_before_it(clock):

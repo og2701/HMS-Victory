@@ -405,9 +405,9 @@ class PaperboyGame(ScoreGame):
         return paperboy.record(uid, iso, played)
 
     def card_day(self, uid: int, iso: str) -> dict | None:
-        # the day's theme, and what their jobs have built their multiplier up to
+        # the day's theme, what their jobs have built their multiplier up to, and what they're wearing
         from lib.activities import paperboy
-        return {"theme": paperboy.theme(iso)["name"], "mult": paperboy.mult(uid, iso)}
+        return {"theme": paperboy.theme(iso)["name"], "mult": paperboy.mult(uid, iso), "looks": paperboy.looks(uid)}
 
     def act(self, uid: int, date, action: str, body: dict) -> dict:
         from lib.activities import paperboy

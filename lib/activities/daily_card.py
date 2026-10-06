@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import html
+import io
 import logging
 import math
 from pathlib import Path
@@ -22,6 +23,10 @@ FONT = ROOT / "data" / "fonts" / "Archivo.ttf"
 COMIC_FONT = ROOT / "data" / "fonts" / "Bangers.woff2"
 PLANE_ART = ROOT / "data" / "games" / "spitfire-plane.webp"
 RIDER_ART = ROOT / "data" / "games" / "paperboy-rider.webp"
+# where on RIDER_ART each part the wardrobe paints is (bike frame, coat, hair, bag in red, green, blue, alpha),
+# rendered from the game with it
+RIDER_MASKS = ROOT / "data" / "games" / "paperboy-rider-masks.png"
+RIDER_PARTS = ("bike", "top", "hair", "bag")
 UKP_ART = ROOT / "data" / "ukpence.svg"
 W = 800
 
@@ -91,7 +96,7 @@ def _comic_word() -> str:
             'stroke-linejoin="round" paint-order="stroke">SPITFIRE!</text></g></svg>')
 
 
-def _comic_art() -> str:
+def _comic_art(day: dict | None = None) -> str:
     bubble = ('<svg class="bubble" viewBox="0 0 170 92"><path d="M3 3 H151 Q167 3 167 19 V47 Q167 63 151 63 H72 L42 89 L50 63 H19 '
               'Q3 63 3 47 V19 Q3 3 19 3 Z" fill="#fff" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>'
               '<text x="85" y="45" text-anchor="middle" fill="#111" font-size="26">FOR UKPENCE!</text></svg>')
@@ -126,13 +131,37 @@ SPITFIRE_CSS = f"""
 """
 
 
-def _round_art() -> str:
-    """Paperboy: the cavalier on his bike (a render from the game), the sun coming up behind a row of terraced roofs."""
+def _dressed(looks: dict[str, str]) -> str:
+    """The rider art in a player's wardrobe colours, as an image URL: each part recoloured (as the game paints
+    it) so its average shade comes out the colour, darker and lighter round that as the light falls on it."""
+    if not any(looks.get(p, "").startswith("#") for p in RIDER_PARTS):
+        return f"file://{RIDER_ART}"
+    from PIL import Image, ImageOps, ImageStat
+    art = Image.open(RIDER_ART).convert("RGBA")
+    alpha = art.getchannel("A")
+    for part, mask in zip(RIDER_PARTS, Image.open(RIDER_MASKS).convert("RGBA").split()):
+        look = looks.get(part, "")
+        if not look.startswith("#"):
+            continue
+        grey = art.convert("L")
+        mean = ImageStat.Stat(grey, mask).mean[0] or 128
+        paint = ImageOps.colorize(grey.point(lambda v: min(255, round(v * 128 / mean))), black="#000000", white="#ffffff", mid=look)
+        paint = paint.convert("RGBA")
+        paint.putalpha(alpha)
+        art = Image.composite(paint, art, mask)
+    buf = io.BytesIO()
+    art.save(buf, "WEBP", quality=90)
+    return f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode()}"
+
+
+def _round_art(day: dict | None = None) -> str:
+    """Paperboy: the cavalier on his bike (a render from the game) in the player's wardrobe colours, the sun
+    coming up behind a row of terraced roofs."""
     roofs = "".join(f'<rect x="{x}" y="{y}" width="14" height="22" fill="#2a2240"/><rect x="{x + 18}" y="{y + 4}" width="10" height="18" fill="#2a2240"/>'
                     for x, y in ((40, 26), (190, 30), (340, 24), (490, 28), (640, 26)))
     skyline = (f'<svg class="roofs" viewBox="0 0 800 120" preserveAspectRatio="none">{roofs}'
                '<path d="M0 60 L75 34 L150 60 L225 34 L300 60 L375 34 L450 60 L525 34 L600 60 L675 34 L750 60 L800 44 V120 H0Z" fill="#2a2240"/></svg>')
-    return f'<div class="sun"></div>{skyline}<img class="rider" src="file://{RIDER_ART}">'
+    return f'<div class="sun"></div>{skyline}<img class="rider" src="{_dressed((day or {}).get("looks") or {})}">'
 
 
 def _round_head() -> str:
@@ -155,7 +184,7 @@ STYLES = {
     "climb": {
         "sky": "linear-gradient(180deg, #b85a78 0%, #e9805e 48%, #ffcf96 100%)",
         "small": "CLIMB", "big": "HMS VICTORY", "unit": "M", "unit_row": "m",
-        "art": lambda: f'<div class="mast"></div>{SAILOR}', "top": "TODAY'S TOP CLIMBERS",
+        "art": lambda day=None: f'<div class="mast"></div>{SAILOR}', "top": "TODAY'S TOP CLIMBERS",
         "head": _bunting, "css": "",
     },
     "spitfire": {
@@ -237,7 +266,7 @@ html, body {{ background: #111; font-family: 'ArchivoV', system-ui, sans-serif; 
 .row.me span {{ text-decoration: underline; text-decoration-thickness: 4px; text-decoration-color: #FFC93C; }}
 {st["css"]}
 </style></head><body>
-<div class="card">{st["art"]()}
+<div class="card">{st["art"](day)}
 {st["head"]()}
 {st["word"]() if "word" in st else f'<div class="word"><i>{esc(day["theme"].upper()) if day else st["small"]}</i><b>{st["big"]}</b></div>'}
 <div class="who">{face}<div class="name">{esc(name)}</div></div>
