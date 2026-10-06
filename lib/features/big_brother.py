@@ -1037,6 +1037,11 @@ async def evict(client: discord.Client, user_id: int, *, announce: bool = True) 
     await _sync_role(guild, user_id, False)
     await _grant_spectator_access(client, user_id)
     await drop_from_threads(client, user_id)
+    try:
+        from lib.features import big_brother_teams as _teams
+        await _teams.remove_from_team_rooms(client, user_id)
+    except Exception as e:
+        log.warning("Big Brother: could not remove %s from team rooms on eviction: %s", user_id, e)
     if announce:
         ch = await house_channel(client)
         if ch:

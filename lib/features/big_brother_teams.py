@@ -155,6 +155,35 @@ async def close_rooms(client: discord.Client) -> int:
     return removed
 
 
+async def remove_from_team_rooms(client: discord.Client, user_id: int) -> None:
+    """Remove an evicted housemate from team assignments and any open team room channels."""
+    set_team(user_id, None)
+    rooms = room_ids()
+    if not rooms:
+        return
+    guild = bb._guild(client)
+    if not guild:
+        return
+    member = guild.get_member(user_id)
+    if not member:
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.HTTPException:
+            member = None
+    if not member:
+        return
+    for t, cid in rooms.items():
+        ch = await bb._channel(client, cid)
+        if isinstance(ch, discord.TextChannel):
+            try:
+                if member in ch.overwrites:
+                    await ch.set_permissions(member, overwrite=None, reason="Big Brother: evicted from house")
+                    log.info("Big Brother: removed evicted user %s from team room %s", user_id, t)
+            except discord.HTTPException as e:
+                log.warning("Big Brother: could not remove %s from team room %s: %s", user_id, cid, e)
+
+
+
 # ---------------------------------------------------------------------------
 # Control panel screen
 # ---------------------------------------------------------------------------
