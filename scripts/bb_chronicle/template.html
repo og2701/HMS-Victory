@@ -709,7 +709,7 @@ const typer = (el, text, t0, cps = 38) => t => {
 };
 
 R.open = s => ({
-  dur: 9500, beats: [[200, () => Snd.sting()]],
+  dur: 6500, beats: [[200, () => Snd.sting()]],
   setup(el) {
     el.classList.add("open");
     app(el, 
@@ -721,7 +721,7 @@ R.open = s => ({
 });
 
 R.chapter = s => ({
-  dur: 4800, beats: [[100, () => Snd.sting()]],
+  dur: 3200, beats: [[100, () => Snd.sting()]],
   setup(el) {
     el.classList.add("chapter");
     app(el, 
@@ -736,7 +736,7 @@ const HOUSE_SVG = `<svg viewBox="0 0 760 300" fill="none"><path d="M40 300V150L2
 R.narrator = s => {
   const text = s.narration || s.text || "";
   return {
-    dur: 1800 + text.length * 52 + (s.who?.length ? 600 : 0),
+    dur: 1400 + text.length * 38 + (s.who?.length ? 400 : 0),
     noCaptionShift: true,
     setup(el) {
       app(el, h("div", {class: "est"},
@@ -750,15 +750,15 @@ R.narrator = s => {
 
 function chatPlan(s) {
   const msgs = s.messages || [];
-  const beats = []; let t = 400;
+  const beats = []; let t = 200;
   const times = [];
   msgs.forEach((m, i) => {
     const len = (m.text || "").length;
-    const typing = i === 0 ? 300 : 450;
+    const typing = i === 0 ? 150 : 220;
     times.push([t, t + typing]);
-    t += typing + clamp(500 + len * 30, 900, 4200);
+    t += typing + clamp(300 + len * 18, 650, 2500);
   });
-  const dur = t + 2200;
+  const dur = t + 900;
   let log, typingEl, lastAuthor = null, lastAt = 0;
   const add = (m, instant) => {
     const cont = m.user_id === lastAuthor && m.at - lastAt < 420;
@@ -818,7 +818,7 @@ const CHAIR_SVG = `<svg class="chair" viewBox="0 0 300 360"><defs><radialGradien
 R.diary = s => {
   const entries = s.entries || [];
   const slots = []; let t = 300;
-  entries.forEach(e => { const d = clamp(1300 + e.text.length * 30, 2800, 7500); slots.push([t, d]); t += d; });
+  entries.forEach(e => { const d = clamp(900 + e.text.length * 20, 2200, 4600); slots.push([t, d]); t += d; });
   let whoEl, txtEl, countEl, cur = -1;
   return {
     dur: t + 800,
@@ -836,19 +836,19 @@ R.diary = s => {
     update(el, t) {
       if (cur < 0) return;
       const e = entries[cur], [t0] = slots[cur];
-      typer(txtEl, e.text, t0 + 250, 48)(t);
+      typer(txtEl, e.text, t0 + 200, 58)(t);
     },
   };
 };
 
 R.announce = s => {
   const lines = (s.text || "").split("\n");
-  const per = clamp(Math.round(9000 / Math.max(lines.length, 1)), 260, 1300);
-  const dur = 1400 + lines.length * per + (s.text || "").length * 16;
+  const per = clamp(Math.round(5000 / Math.max(lines.length, 1)), 150, 700);
+  const dur = 1000 + lines.length * per + (s.text || "").length * 9;
   let box;
   return {
     dur,
-    beats: lines.map((l, i) => [600 + i * per, () => box?.children[i]?.classList.add("on")]),
+    beats: lines.map((l, i) => [400 + i * per, () => box?.children[i]?.classList.add("on")]),
     setup(el) {
       el.classList.add("announce");
       box = h("div", {class: "txt"}, lines.map(l => h("div", {class: "ln", html: fmtMessage(l) || "&nbsp;"})));
@@ -875,13 +875,13 @@ R.noms = s => {
   const maxCols = s.cols || (innerWidth < 760 ? 4 : 6);
   const shown = order.slice(0, maxCols), rest = order.slice(maxCols);
   const flow = items.filter(x => shown.includes(x.to)).sort((a, b) => a.at - b.at);
-  const step = clamp(Math.round(14000 / Math.max(flow.length, 1)), 300, 900);
+  const step = clamp(Math.round(7000 / Math.max(flow.length, 1)), 150, 500);
   const cols = {}, ns = {}, live = {};
   const topN = s.top ?? (r.kind === "nominations" ? 4 : 1);
   return {
-    dur: 1600 + flow.length * step + 3200,
+    dur: 1000 + flow.length * step + 2200,
     beats: [
-      ...flow.map((x, i) => [900 + i * step, (el, instant) => {
+      ...flow.map((x, i) => [600 + i * step, (el, instant) => {
         live[x.to] = (live[x.to] || 0) + 1; ns[x.to].textContent = live[x.to];
         const slip = h("div", {class: "slip"}, h("i", {}, pname(x.by)), x.reason || "no reason given");
         if (instant) slip.style.animation = "none";
@@ -889,7 +889,7 @@ R.noms = s => {
         while (cols[x.to].querySelectorAll(".slip").length > 7) cols[x.to].querySelector(".slip").remove();
         if (!instant) Snd.tone(660 + (live[x.to] * 40), .05, "triangle", .03);
       }]),
-      [1000 + flow.length * step, () => shown.slice(0, topN).forEach(id => cols[id].classList.add("top"))],
+      [700 + flow.length * step, () => shown.slice(0, topN).forEach(id => cols[id].classList.add("top"))],
     ],
     setup(el) {
       el.classList.add("wall");
@@ -913,20 +913,20 @@ R.evict = s => {
   const out = s.evicted || r?.evicted || [];
   const safe = s.safe || [];
   const hasBars = tally.length > 0;
-  const barT = hasBars ? 4800 : 0;
-  const doorT = barT + 800;
+  const barT = hasBars ? 3200 : 0;
+  const doorT = barT + 500;
   // nodoor: a results board only, for votes nobody left the house on (the final's win vote)
-  const dur = s.nodoor ? barT + 2600 : doorT + 6400 + (out.length > 2 ? 1500 : 0);
+  const dur = s.nodoor ? barT + 1800 : doorT + 3800 + (out.length > 2 ? 800 : 0);
   let bars = [], door, say, way;
   return {
     dur,
     beats: [
-      ...(hasBars ? [[200, () => Snd.heart()], [1600, () => Snd.heart()], [3000, () => Snd.heart()]] : []),
+      ...(hasBars ? [[200, () => Snd.heart()], [1300, () => Snd.heart()], [2400, () => Snd.heart()]] : []),
       [hasBars ? barT - 400 : 0, () => bars.forEach(b => { if (out.includes(b.id)) b.el.classList.add("out"); if (safe.includes(b.id)) b.el.classList.add("safe"); })],
       ...(s.nodoor ? [] : [
         [doorT, (el, instant) => { way.classList.add("on"); if (!instant) Snd.door(); }],
-        [doorT + 900, () => door.classList.add("open")],
-        [doorT + 2600, (el, instant) => { say.classList.add("on"); if (!instant) Snd.crowd(); }]]),
+        [doorT + 700, () => door.classList.add("open")],
+        [doorT + 1900, (el, instant) => { say.classList.add("on"); if (!instant) Snd.crowd(); }]]),
     ],
     setup(el) {
       el.classList.add("board");
@@ -950,7 +950,7 @@ R.evict = s => {
     update(el, t) {
       if (!hasBars) return;
       const max = Math.max(...bars.map(b => b.n), 1);
-      const k = ease(clamp((t - 400) / 3600, 0, 1));
+      const k = ease(clamp((t - 300) / 2400, 0, 1));
       for (const b of bars) {
         b.i.style.width = (b.n / max * 100 * k) + "%";
         const n = Math.round(b.n * k);
@@ -965,7 +965,7 @@ R.tokens = s => {
   const moves = s.moves || r?.token_moves || [];
   const startBlock = () => [...(s.block || (r?.nominees_at_open?.length ? r.nominees_at_open : r?.nominees) || [])];
   let block = startBlock();
-  const step = clamp(Math.round(26000 / Math.max(moves.length, 1)), 1300, 2600);
+  const step = clamp(Math.round(13000 / Math.max(moves.length, 1)), 800, 1500);
   let bench, logEl, seats = {}, shields = new Set();
   const seatFor = id => { const sx = h("div", {class: "seat"}, h("div", {class: "ring"}, img(id)), h("span", {class: "nm"}, pname(id))); seats[id] = sx; return sx; };
   const fly = (fromId, toId, root) => {
@@ -980,8 +980,8 @@ R.tokens = s => {
     : m.mode === "gift" ? [`${pname(m.actor)} hands `, h("b", {}, pname(m.target)), " a token"]
     : [h("b", {}, pname(m.actor)), " uses a token on themself"];
   return {
-    dur: 1800 + moves.length * step + 3000,
-    beats: moves.map((m, i) => [1200 + i * step, (el, instant) => {
+    dur: 1000 + moves.length * step + 1800,
+    beats: moves.map((m, i) => [800 + i * step, (el, instant) => {
       const root = el.querySelector(".tokens") || el;
       if (m.mode === "swap") {
         const k = block.indexOf(m.actor);
@@ -1017,8 +1017,8 @@ R.tokens = s => {
 R.challenge = s => {
   const pic = s.image && D.images[s.image];
   let res, stamp, im;
-  const dur = 3500 + (s.rules || "").length * 30 + (s.result || "").length * 40 + (pic ? 3000 : 0);
-  const resultAt = dur - 1800 - (s.result || "").length * 30;
+  const dur = 2000 + (s.rules || "").length * 13 + (s.result || "").length * 22 + (pic ? 1500 : 0);
+  const resultAt = Math.max(1200, dur - 1500 - (s.result || "").length * 18);
   return {
     dur,
     beats: [[resultAt, (el, instant) => { res.classList.add("on"); if (stamp) { stamp.classList.add("on"); if (!instant) Snd.stamp(); } }]],
@@ -1045,23 +1045,23 @@ R.stat = s => {
   const rows = s.rows || [];
   let v, rowEls = [];
   return {
-    dur: 3800 + rows.length * 900,
-    beats: [[200, () => Snd.tone(330, .6, "sawtooth", .03)], ...rows.map((r, i) => [2400 + i * 800, (el, instant) => { rowEls[i].classList.add("on"); if (!instant) Snd.tone(880, .05); }])],
+    dur: 2800 + rows.length * 500,
+    beats: [[200, () => Snd.tone(330, .6, "sawtooth", .03)], ...rows.map((r, i) => [1600 + i * 450, (el, instant) => { rowEls[i].classList.add("on"); if (!instant) Snd.tone(880, .05); }])],
     setup(el) {
       el.classList.add("stat");
       v = h("div", {class: "v"}, "0");
       app(el, v, h("div", {class: "l"}, s.label || ""), rows.length ? h("div", {class: "rows"}, rowEls = rows.map(r => h("div", {}, h("span", {}, r[0]), h("b", {}, r[1])))) : null);
     },
-    update(el, t) { const k = ease(clamp(t / 1900, 0, 1)); v.textContent = Math.round(s.value * k).toLocaleString("en-GB") + (s.suffix || ""); },
+    update(el, t) { const k = ease(clamp(t / 1300, 0, 1)); v.textContent = Math.round(s.value * k).toLocaleString("en-GB") + (s.suffix || ""); },
   };
 };
 
 R.cast = s => {
   const ids = s.ids || D.housemates.slice().sort((a, b) => (a.moved_in_at || 0) - (b.moved_in_at || 0)).map(x => x.id);
-  const step = 260; let cells = [];
+  const step = 110; let cells = [];
   return {
-    dur: 1500 + ids.length * step + 3000,
-    beats: ids.map((id, i) => [800 + i * step, (el, instant) => { cells[i].classList.add("on"); if (!instant) Snd.tone(440 + i * 18, .05, "triangle", .03); const at = HM[id]?.moved_in_at; if (at) P.setClock(at, 0); }]),
+    dur: 900 + ids.length * step + 1600,
+    beats: ids.map((id, i) => [500 + i * step, (el, instant) => { cells[i].classList.add("on"); if (!instant) Snd.tone(440 + i * 18, .05, "triangle", .03); const at = HM[id]?.moved_in_at; if (at) P.setClock(at, 0); }]),
     setup(el) {
       el.classList.add("cast");
       cells = ids.map(id => h("div", {class: "m"}, img(id), h("span", {}, pname(id)), h("small", {}, HM[id]?.moved_in_at ? fmtTime(HM[id].moved_in_at) : "")));
@@ -1082,15 +1082,15 @@ R.alliances = s => {
       return {id, x: cx + Math.cos(a) * Math.min(rad * .62, col * .34), y: 44 + Math.sin(a) * rad * 1.15, g: gi};
     });
   });
-  let t = 900; const beats = [];
+  let t = 500; const beats = [];
   layout.forEach((g, gi) => {
-    g.forEach((p, i) => beats.push([t + i * 180, () => pins[gi][i].classList.add("on")]));
-    t += g.length * 180 + 300;
+    g.forEach((p, i) => beats.push([t + i * 90, () => pins[gi][i].classList.add("on")]));
+    t += g.length * 90 + 150;
     beats.push([t, (el, instant) => { lines[gi].forEach(l => l.classList.add("on")); tags[gi].classList.add("on"); if (!instant) Snd.tone(196, .3, "sawtooth", .03); }]);
-    t += 1500 + (groups[gi].note || "").length * 22;
+    t += 900 + (groups[gi].note || "").length * 12;
   });
   return {
-    dur: t + 2500, beats,
+    dur: t + 1500, beats,
     setup(el) {
       const web = h("div", {class: "web"});
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "strings"); svg.setAttribute("viewBox", "0 0 100 100"); svg.setAttribute("preserveAspectRatio", "none");
@@ -1105,25 +1105,25 @@ R.alliances = s => {
 
 R.scoreboard = s => {
   const fin = s.finalists; const rounds = s.rounds;
-  const per = 6200; let cols = {}, tots = {}, chips = {}, rd, tie;
+  const per = 3600; let cols = {}, tots = {}, chips = {}, rd, tie;
   const totals = {}; fin.forEach(id => totals[id] = 0);
   const snaps = rounds.map(r => { fin.forEach(id => totals[id] += r.points[id] || 0); return {...totals}; });
   return {
-    dur: 1500 + rounds.length * per + (s.tie ? 4500 : 2000),
+    dur: 1000 + rounds.length * per + (s.tie ? 3000 : 1500),
     beats: [
       ...rounds.flatMap((r, ri) => [
-        [800 + ri * per, () => { rd.textContent = r.label; }],
-        ...fin.map((id, k) => [1800 + ri * per + k * 500, (el, instant) => {
+        [500 + ri * per, () => { rd.textContent = r.label; }],
+        ...fin.map((id, k) => [1000 + ri * per + k * 250, (el, instant) => {
           const c = h("div", {class: "chip", html: `${esc(r.detail?.[id] || "")} <b>+${r.points[id] || 0}</b>`}); if (instant) c.style.animation = "none";
           chips[id].append(c); if (!instant) Snd.tone(523 + (r.points[id] || 0) * 60, .08, "triangle", .05);
         }]),
-        [1800 + ri * per + fin.length * 500 + 600, () => {
+        [1000 + ri * per + fin.length * 250 + 300, () => {
           fin.forEach(id => tots[id].textContent = snaps[ri][id]);
           const top = Math.max(...fin.map(id => snaps[ri][id]));
           fin.forEach(id => cols[id].classList.toggle("lead", snaps[ri][id] === top));
         }],
       ]),
-      ...(s.tie ? [[1500 + rounds.length * per + 600, (el, instant) => { tie.classList.add("on"); if (!instant) Snd.fanfare(); }]] : []),
+      ...(s.tie ? [[1000 + rounds.length * per + 300, (el, instant) => { tie.classList.add("on"); if (!instant) Snd.fanfare(); }]] : []),
     ],
     setup(el) {
       el.classList.add("score");
@@ -1139,8 +1139,8 @@ R.scoreboard = s => {
 R.crown = s => {
   let cr, h2, p, cv, parts = [];
   return {
-    dur: 12000,
-    beats: [[800, (el, instant) => { cr.classList.add("on"); if (!instant) Snd.fanfare(); }], [2200, () => { h2.classList.add("on"); for (let i = 0; i < 160; i++) parts.push({x: Math.random(), y: -Math.random() * .5, vx: (Math.random() - .5) * .002, vy: .002 + Math.random() * .004, r: Math.random() * 6.28, c: ["#ffd400", "#ff5fa8", "#3d8bff", "#5ff0b0", "#fff"][i % 5]}); }], [3600, () => p.classList.add("on")]],
+    dur: 8000,
+    beats: [[600, (el, instant) => { cr.classList.add("on"); if (!instant) Snd.fanfare(); }], [1600, () => { h2.classList.add("on"); for (let i = 0; i < 160; i++) parts.push({x: Math.random(), y: -Math.random() * .5, vx: (Math.random() - .5) * .002, vy: .002 + Math.random() * .004, r: Math.random() * 6.28, c: ["#ffd400", "#ff5fa8", "#3d8bff", "#5ff0b0", "#fff"][i % 5]}); }], [2600, () => p.classList.add("on")]],
     setup(el) {
       el.classList.add("crown");
       cr = h("svg", {class: "cr", viewBox: "0 0 100 64", html: '<path d="M6 60 L2 14 L28 34 L50 4 L72 34 L98 14 L94 60 Z" fill="#f5c542" stroke="#7a5506" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="40" r="7" fill="#d6247a"/><circle cx="24" cy="46" r="5" fill="#3d8bff"/><circle cx="76" cy="46" r="5" fill="#3d8bff"/>'});
@@ -1153,7 +1153,7 @@ R.crown = s => {
     update(el, t) {
       if (!cv) return; const w = cv.width = cv.clientWidth, hh = cv.height = cv.clientHeight; const c = cv.getContext("2d");
       c.clearRect(0, 0, w, hh);
-      const k = Math.max(0, t - 2200) / 16;
+      const k = Math.max(0, t - 1600) / 16;
       for (const q of parts) { const y = q.y + q.vy * k, x = q.x + q.vx * k + Math.sin(k / 20 + q.r) * .01; if (y > 1.1) continue; c.save(); c.translate(x * w, y * hh); c.rotate(q.r + k / 15); c.fillStyle = q.c; c.fillRect(-4, -2, 8, 4); c.restore(); }
     },
   };
@@ -1162,15 +1162,15 @@ R.crown = s => {
 R.quote = s => {
   let q;
   return {
-    dur: 2600 + s.text.length * 48,
+    dur: 1800 + s.text.length * 30,
     setup(el) { el.classList.add("quote"); q = h("blockquote"); app(el, s.who ? img(s.who) : null, q, h("cite", {}, s.cite || (s.who ? pname(s.who) : ""))); },
-    update(el, t) { typer(q, s.text, 500, 30)(t); },
+    update(el, t) { typer(q, s.text, 400, 44)(t); },
   };
 };
 
 R.credits = s => {
   const hs = D.housemates.slice().sort(byPlacing);
-  const dur = 26000; let roll;
+  const dur = 12000; let roll;
   return {
     dur,
     setup(el) {
@@ -1210,8 +1210,8 @@ function flatten() {
   P.plans = P.list.map(s => {
     const base = (R[s.type] || R.narrator)(s);
     const narr = s.type !== "narrator" ? s.narration : null;
-    const capDur = narr ? clamp(600 + narr.length * 30, 1500, 5200) : 0;
-    const shift = narr ? capDur : 0;
+    const capDur = narr ? clamp(500 + narr.length * 24, 1400, 4200) : 0;
+    const shift = narr ? Math.min(capDur, 2200) : 0;
     const plan = {
       dur: base.dur + shift,
       setup: base.setup,
