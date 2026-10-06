@@ -1,7 +1,7 @@
 """Paperboy's rules, the bot's copy: the day's street and a run replayed from the moves the page
 recorded, so the score paid is the one the rules give, not one the page claims. It plays like
-Subway Surfers: three lanes, hop the low things, duck the high ones, go round the big ones, and
-ride through the papers.
+Subway Surfers: three lanes, hop the low things, duck the high ones, go round the big ones (or take
+the ramp over them), ride through the papers, and pick up the odd power-up on the way.
 
 This mirrors src/paperboy/sim.ts in ukplace-activities line for line, drawing the same random
 numbers in the same order. Everything is whole numbers (millimetres up the street, centimetres
@@ -23,6 +23,11 @@ HOP_TOP = 150
 STEER = 12
 PAPER, GOLDEN = 1, 10
 PER_POINT = 10000
+JUMP = 22000
+JUMP_TOP = 420
+MAGNET = 1200
+DOUBLE = 1800
+SAFE = 90
 LEFT, RIGHT, UP, DOWN = 1, 2, 3, 4
 MAX_INPUTS = 20_000
 
@@ -41,11 +46,17 @@ def hop_height(k: int) -> int:
     return 0 if k < 0 or k > HOP else (4 * HOP_TOP * k * (HOP - k)) // (HOP * HOP)
 
 
+def jump_height(s: int) -> int:
+    return 0 if s < 0 or s > JUMP else (4 * JUMP_TOP * s * (JUMP - s)) // (JUMP * JUMP)
+
+
 class Street:
     def __init__(self, seed: str):
         self.houses: list[dict] = []
         self.obs: list[dict] = []
         self.papers: list[dict] = []
+        self.powers: list[dict] = []
+        self.ramps: list[dict] = []
         self.rh = rng(f"paperboy:houses:{seed}")
         self.ro = rng(f"paperboy:road:{seed}")
         self.built_to = [0, 0]
@@ -99,8 +110,16 @@ class Street:
     def _add(self, kind: str, d: int, x: int, from_: int = 0, direction: int = 0) -> None:
         hw, hl, height = OB[kind]
         self.obs.append({"id": self.next_id, "kind": kind, "d": d, "x": x, "hw": hw, "hl": hl, "height": height,
-                         "trig": -1, "from_": from_, "dir": direction})
+                         "trig": -1, "from_": from_, "dir": direction, "hit": False})
         self.next_id += 1
+
+    def _ramp(self, d: int, x: int, golden: bool) -> None:
+        self.ramps.append({"id": self.next_id, "d": d, "x": x})
+        self.next_id += 1
+        for k in range(9):
+            s = 2000 + k * 2250
+            self.papers.append({"id": self.next_id, "d": d + s, "x": x, "h": jump_height(s), "golden": golden and k == 4, "taken": False})
+            self.next_id += 1
 
     def _line(self, d: int, x: int, n: int, arc: bool) -> None:
         for k in range(n):
@@ -116,6 +135,7 @@ class Street:
         pick = r()
         lane = int(r() * 3)
         gap = self._gap_near(d, d + 16000)
+        extra = 0
         if gap is not None and pick < 0.4:
             side = gap["side"]
             self._add("cab", gap["d"] + HOUSE, side * 400, side * 400, -side)
@@ -137,11 +157,17 @@ class Street:
                 to = LANES[(lane + 1 + int(r() * 2)) % 3]
                 self._line(d + 8000, to, 5 + int(r() * 4), False)
         elif pick < 0.55:
-            open_ = int(r() * 3)
+            wall = hard >= 250 and r() < 0.3
+            open_ = -1 if wall else int(r() * 3)
             for k in range(3):
                 if k != open_:
                     self._add("van" if r() < 0.5 else "bus", d + (1500 if k == 2 else 0), LANES[k])
-            self._line(d - 3000, LANES[open_], 7, False)
+            if not wall:
+                self._line(d - 3000, LANES[open_], 7, False)
+            if wall or r() < 0.4:
+                rl = lane if wall else (open_ + 1 + int(r() * 2)) % 3
+                self._ramp(d + (1500 if rl == 2 else 0) - 11000, LANES[rl], wall)
+                extra = 12000
         elif pick < 0.68:
             low = r() < 0.5
             for k in range(3):
@@ -166,7 +192,13 @@ class Street:
             x = LANES[int(r() * 3)]
             self.papers.append({"id": self.next_id, "d": d + 12000, "x": x, "h": 0, "golden": True, "taken": False})
             self.next_id += 1
-        self.ob_to = d + 14000 + int(r() * 8000) + min(14000, d // 40) - hard * 5
+        if extra == 0 and d > 120000 and r() < 0.16:
+            roll, x, pd = r(), LANES[int(r() * 3)], d + 9500
+            kind = "magnet" if roll < 0.4 else "double" if roll < 0.7 else "helmet"
+            if not any(o["from_"] == 0 and o["x"] == x and abs(o["d"] - pd) < o["hl"] + 1500 for o in self.obs):
+                self.powers.append({"id": self.next_id, "d": pd, "x": x, "kind": kind, "taken": False})
+                self.next_id += 1
+        self.ob_to = d + 14000 + int(r() * 8000) + min(14000, d // 40) - hard * 5 + extra
 
 
 class Run:
@@ -179,13 +211,20 @@ class Run:
         self.lane = 1
         self.hop_at = -1000
         self.duck_at = -1000
+        self.jump_from = -1
         self.papers = 0
+        self.helmet = False
+        self.magnet_to = -1
+        self.double_to = -1
+        self.safe_to = -1
         self.over = False
         self.pending: list[int] = []
         # (not in the page's copy, and no change to the result: only what's within reach is looked at,
         # refreshed every second, so a long run doesn't slow down as the road behind it piles up)
         self._near: list[dict] = []
         self._near_papers: list[dict] = []
+        self._near_ramps: list[dict] = []
+        self._near_powers: list[dict] = []
         self._near_at = -HZ
 
     @property
@@ -197,7 +236,10 @@ class Run:
             self.pending.append(code)
 
     def height(self) -> int:
-        return hop_height(self.step - self.hop_at)
+        return jump_height(self.dist - self.jump_from) if self.jumping() else hop_height(self.step - self.hop_at)
+
+    def jumping(self) -> bool:
+        return self.jump_from >= 0 and self.dist - self.jump_from <= JUMP
 
     def airborne(self) -> bool:
         return self.height() >= 40
@@ -226,12 +268,15 @@ class Run:
             self._apply(code)
         self.pending = []
         self.step += 1
+        was = self.dist
         self.dist += speed_at(self.step)
         self.street.ensure(self.dist + 200000)
         self.x += max(-STEER, min(STEER, LANES[self.lane] - self.x))
         if self.step - self._near_at >= HZ:
             self._near = [o for o in self.street.obs if o["d"] >= self.dist - 40000]
             self._near_papers = [p for p in self.street.papers if p["d"] >= self.dist - 40000 and not p["taken"]]
+            self._near_ramps = [rp for rp in self.street.ramps if rp["d"] >= self.dist - 40000]
+            self._near_powers = [pw for pw in self.street.powers if pw["d"] >= self.dist - 40000 and not pw["taken"]]
             self._near_at = self.step
         for o in self._near:
             if o["trig"] >= 0:
@@ -239,14 +284,35 @@ class Run:
             reach = {"dog": 16000, "cab": 24000, "float": 48000}.get(o["kind"], -1)
             if reach > 0 and self.dist >= o["d"] - reach:
                 o["trig"] = self.step
+        for rp in self._near_ramps:
+            if self.jumping() or rp["d"] <= was or rp["d"] > self.dist or abs(self.x - rp["x"]) >= 60:
+                continue
+            self.jump_from = rp["d"]
+            self.hop_at = -1000
+            self.duck_at = -1000
         h = self.height()
+        for pw in self._near_powers:
+            if pw["taken"] or abs(self.dist - pw["d"]) >= 700 or abs(self.x - pw["x"]) >= 70 or h >= 120:
+                continue
+            pw["taken"] = True
+            if pw["kind"] == "magnet":
+                self.magnet_to = self.step + MAGNET
+            elif pw["kind"] == "double":
+                self.double_to = self.step + DOUBLE
+            else:
+                self.helmet = True
+        pull, times = self.step <= self.magnet_to, 2 if self.step <= self.double_to else 1
         for p in self._near_papers:
             if p["taken"] or p["d"] < self.dist - 1000 or p["d"] > self.dist + 1000:
                 continue
-            if abs(self.x - p["x"]) < 60 and abs(self.dist - p["d"]) < 700 and abs(h - p["h"]) < 60:
+            if abs(self.dist - p["d"]) < 700 and (pull or (abs(self.x - p["x"]) < 60 and abs(h - p["h"]) < 60)):
                 p["taken"] = True
-                self.papers += GOLDEN if p["golden"] else PAPER
+                self.papers += (GOLDEN if p["golden"] else PAPER) * times
+        if self.step <= self.safe_to or h >= 200:
+            return
         for o in self._near:
+            if o["hit"]:
+                continue
             od = self.ob_d(o)
             if od < self.dist - 30000 or od > self.dist + 30000:
                 continue
@@ -256,6 +322,11 @@ class Run:
                 continue
             if o["height"] == "high" and self.ducking():
                 continue
+            if self.helmet:
+                self.helmet = False
+                o["hit"] = True
+                self.safe_to = self.step + SAFE
+                return
             self.over = True
             return
 
@@ -269,6 +340,8 @@ class Run:
                 self.hop_at = self.step
                 self.duck_at = -1000
         elif code == DOWN:
+            if self.jumping():
+                return
             self.hop_at = -1000
             self.duck_at = self.step
 
