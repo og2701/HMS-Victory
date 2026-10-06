@@ -4570,8 +4570,8 @@ async def _act_token(interaction: discord.Interaction):
 
 async def _act_snug(interaction: discord.Interaction):
     ins = housemates()
-    if len(ins) < 2:
-        await _reply(interaction, "Need at least two housemates.", refresh=False)
+    if not ins:
+        await _reply(interaction, "No housemates in the house.", refresh=False)
         return
 
     async def picked(inter: discord.Interaction, ids: list[int]):
@@ -4582,8 +4582,8 @@ async def _act_snug(interaction: discord.Interaction):
         await inter.response.send_modal(_TextModal("Open a snug", [
             ("reason", "What's it for? (optional, shown in the thread)", False, 500, True)], submitted))
 
-    await _send_multi(interaction, "Press the housemates going into the snug, then Done.",
-                      interaction.guild, ins, picked, min_values=2, done_label="Open snug")
+    await _send_multi(interaction, "Press the housemate(s) going into the snug, then Done.",
+                      interaction.guild, ins, picked, min_values=1, done_label="Open snug")
 
 
 def _token_blurb(total: int) -> str:
