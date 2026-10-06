@@ -160,6 +160,10 @@ class ScoreGame:
         """One of the game's own actions (those in acts): the new state."""
         raise Refuse("That's not something this game does.")
 
+    def card_day(self, uid: int, iso: str) -> dict | None:
+        """What the post's picture says about the day beyond the score (see daily_card.card_html)."""
+        return None
+
     def home_card(self, uid: int, date) -> dict | None:
         if not self.enabled():
             return None
@@ -341,7 +345,8 @@ class ScoreGame:
                 names.append((getattr(m, "display_name", None) or self.nobody, int(h), str(u) == str(uid)))
             return await daily_card.card_png(self.key, name=getattr(member, "display_name", None) or self.nobody,
                                              avatar=avatar, score=d["best"], rank=self.rank(iso, d["best"]),
-                                             players=self.players(iso), paid=d["paid"], top=names)
+                                             players=self.players(iso), paid=d["paid"], top=names,
+                                             day=self.card_day(uid, iso))
         except Exception:
             log.warning("couldn't make the %s picture", self.key, exc_info=True)
             return None
@@ -398,6 +403,11 @@ class PaperboyGame(ScoreGame):
     def after_run(self, uid: int, iso: str, played: dict) -> dict:
         from lib.activities import paperboy
         return paperboy.record(uid, iso, played)
+
+    def card_day(self, uid: int, iso: str) -> dict | None:
+        # the day's theme, and what their jobs have built their multiplier up to
+        from lib.activities import paperboy
+        return {"theme": paperboy.theme(iso)["name"], "mult": paperboy.mult(uid, iso)}
 
     def act(self, uid: int, date, action: str, body: dict) -> dict:
         from lib.activities import paperboy

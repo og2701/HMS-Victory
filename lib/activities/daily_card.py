@@ -127,7 +127,7 @@ SPITFIRE_CSS = f"""
 
 
 def _round_art() -> str:
-    """Paperboy: the rider mid-throw, the sun coming up behind a row of terraced roofs."""
+    """Paperboy: the cavalier on his bike (a render from the game), the sun coming up behind a row of terraced roofs."""
     roofs = "".join(f'<rect x="{x}" y="{y}" width="14" height="22" fill="#2a2240"/><rect x="{x + 18}" y="{y + 4}" width="10" height="18" fill="#2a2240"/>'
                     for x, y in ((40, 26), (190, 30), (340, 24), (490, 28), (640, 26)))
     skyline = (f'<svg class="roofs" viewBox="0 0 800 120" preserveAspectRatio="none">{roofs}'
@@ -144,7 +144,7 @@ ROUND_CSS = """
 .sun { position: absolute; right: 120px; top: 120px; width: 240px; height: 240px; border-radius: 50%;
        background: radial-gradient(circle, #FFE9B0 0%, #FFC27A 55%, rgba(255,194,122,0) 72%); }
 .roofs { position: absolute; left: 0; right: 0; top: 300px; width: 100%; height: 120px; }
-.rider { position: absolute; right: 18px; top: 96px; width: 230px; }
+.rider { position: absolute; right: 16px; top: 22px; width: 228px; }
 .word i { background: #2a2240; color: #FFC94A; }
 .badge.pay { background: #FFC94A; }
 .top h4 { color: #B8462E; }
@@ -171,10 +171,19 @@ STYLES = {
 }
 
 
+def _score_px(text: str, unit: str) -> int:
+    """How big the score can be and still fit its box with its unit beside it: the box has 700px inside, and
+    in Archivo at full weight a digit is about 0.6 of the type size across, a comma a quarter, and a letter of
+    the unit about 0.68 of its own size."""
+    unit_px = (64 if len(unit) < 3 else 40) * 0.68 * len(unit)
+    return int(min(210, (700 - unit_px - 12 - 36) / (0.6 * sum(c.isdigit() for c in text) + 0.25 * text.count(","))))
+
+
 def card_html(game: str, name: str, avatar: bytes | None, score: int, rank: int, players: int, paid: int,
-              top: list[tuple[str, int, bool]]) -> str:
-    """top: today's leaders as (name, score, is_this_player)."""
+              top: list[tuple[str, int, bool]], day: dict | None = None) -> str:
+    """top: today's leaders as (name, score, is_this_player); day: Paperboy's theme and multiplier."""
     st = STYLES[game]
+    shown = f"{score:,}"
     esc = html.escape
     face = (f'<img class="avatar" src="data:image/png;base64,{base64.b64encode(avatar).decode()}">' if avatar
             else f'<div class="avatar blank">{esc((name or "?")[:1].upper())}</div>')
@@ -205,7 +214,9 @@ html, body {{ background: #111; font-family: 'ArchivoV', system-ui, sans-serif; 
          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transform: rotate(-1.5deg); }}
 .height {{ position: relative; display: flex; align-items: baseline; justify-content: center; gap: 12px; margin-top: 30px; padding: 6px 0 0;
            background: #fff; border: 6px solid #111; box-shadow: 11px 11px 0 #111; transform: rotate(1.2deg); }}
-.height b {{ font-size: 210px; line-height: 220px; font-weight: 900; letter-spacing: -.05em; }}
+.height b {{ font-size: {_score_px(shown, st["unit"])}px; line-height: 220px; font-weight: 900; letter-spacing: -.05em; white-space: nowrap; }}
+.stamp {{ position: absolute; right: -18px; top: -34px; padding: 4px 16px 0; border: 5px solid #C8202A; color: #C8202A; background: #fff;
+          font-size: 54px; line-height: 64px; font-weight: 900; transform: rotate(8deg); box-shadow: 5px 5px 0 #111; }}
 .height span {{ font-size: {"64px" if len(st["unit"]) < 3 else "40px"}; font-weight: 900; }}
 .badges {{ position: relative; display: flex; gap: 22px; margin-top: 30px; }}
 .badge {{ display: flex; align-items: center; gap: 14px; padding: 12px 22px 10px; border: 5px solid #111; box-shadow: 7px 7px 0 #111; font-weight: 900; }}
@@ -228,9 +239,9 @@ html, body {{ background: #111; font-family: 'ArchivoV', system-ui, sans-serif; 
 </style></head><body>
 <div class="card">{st["art"]()}
 {st["head"]()}
-{st["word"]() if "word" in st else f'<div class="word"><i>{st["small"]}</i><b>{st["big"]}</b></div>'}
+{st["word"]() if "word" in st else f'<div class="word"><i>{esc(day["theme"].upper()) if day else st["small"]}</i><b>{st["big"]}</b></div>'}
 <div class="who">{face}<div class="name">{esc(name)}</div></div>
-<div class="height"><b>{score:,}</b><span>{st["unit"]}</span></div>
+<div class="height"><b>{shown}</b><span>{st["unit"]}</span>{f'<div class="stamp">×{day["mult"]}</div>' if day and day["mult"] > 1 else ''}</div>
 <div class="badges">
   <div class="badge rank">{TROPHY}<b>{_ordinal(rank)}</b><small>of {players}</small></div>
   {f'<div class="badge pay">{COIN}<b>+{paid:,}</b><small>UKP today</small></div>' if paid else ''}
