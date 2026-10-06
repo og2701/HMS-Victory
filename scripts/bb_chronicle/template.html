@@ -194,7 +194,9 @@ a{color:#8fb4ff}
 /* ---------- the cold open teaser ---------- */
 .teaser{flex-direction:column;gap:16px;text-align:center;background:radial-gradient(700px 400px at 50% 45%,#3d8bff22,transparent 70%)}
 .teaser .tag{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(14px,1.8vw,20px);color:var(--subtitle);letter-spacing:.02em}
-.teaser .line{display:flex;align-items:center;gap:clamp(12px,2.4vw,28px);max-width:90%;animation:tease .4s cubic-bezier(.2,1.4,.4,1) both}
+.teaser > div:last-child{width:100%;display:flex;justify-content:center}
+.teaser .line{display:flex;align-items:center;gap:clamp(12px,2.4vw,28px);width:min(1000px,90%);animation:tease .4s cubic-bezier(.2,1.4,.4,1) both}
+.teaser .line blockquote{flex:1 1 auto;min-width:0}
 .teaser .line img{width:clamp(70px,11vw,130px);height:clamp(70px,11vw,130px);border-radius:50%;box-shadow:0 0 0 4px #fff,0 20px 50px #000;flex:none}
 .teaser .line blockquote{margin:0;text-align:left;font-family:var(--display);font-weight:900;font-stretch:110%;font-size:clamp(20px,3.6vw,46px);line-height:1;letter-spacing:-.02em}
 .teaser .line cite{display:block;font-family:var(--caption);font-style:normal;font-weight:700;font-size:clamp(13px,1.5vw,17px);color:var(--ink-2);margin-top:8px;letter-spacing:0}
@@ -1382,8 +1384,9 @@ const stage = $("#stage"), content = $("#content"), caption = $("#caption");
 
 function flatten() {
   D.story.chapters.forEach((c, ci) => {
+    if (ci === 0 && c.scenes[0]?.type === "open") P.list.push({...c.scenes[0], chapter: 0});
     P.list.push({type: "chapter", num: ci + 1, title: c.title, subtitle: c.subtitle, days: c.days, day: c.scenes[0]?.day, at: c.scenes[0]?.at, chapter: ci, voice: c.voice});
-    c.scenes.forEach(s => P.list.push({...s, chapter: ci}));
+    c.scenes.forEach((s, k) => { if (!(ci === 0 && k === 0 && s.type === "open")) P.list.push({...s, chapter: ci}); });
   });
   let acc = 0;
   P.plans = P.list.map(s => {
@@ -1744,7 +1747,8 @@ bindControls();
 buildExplorer();
 go(0);
 requestAnimationFrame(tick);
-window.BBPlayer = {P, go, seekTo, setPlaying, Voice};
+// Exposed for debugging and for render_mp4.mjs, which drives the clock frame by frame.
+window.BBPlayer = {P, go, seekTo, setPlaying, advance, Voice, Music, MOODS, CH, ARP, moodFor};
 })();
 </script>
 </body>
