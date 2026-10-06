@@ -1,81 +1,98 @@
-"""Generate HMS Crossword puzzles: backtracking fill for 5x5 minis, constrained to the
-clued word bank in crossword_bank.py.
+"""Generate HMS Crossword puzzles and add them to the puzzle file as a new date-gated set.
 
-    python3 scripts/generate_crosswords.py data/words/crosswords.json
+    python3 scripts/generate_crosswords.py data/words/crosswords.json --from 2027-04-08 --hard
 
-Every entry is guaranteed to have a clue because the fill can only use words the bank
-already clues. Re-running appends nothing - it rewrites the file, so keep the old one if
-you want to extend rather than replace.
+Fills every layout it may use, in parallel, from the clued word bank in crossword_bank.py,
+then picks the hardest grids that stay fresh (few answers shared with each other or with the
+set before, no word worn out) and orders them so the layout changes every day. Rewards and
+rules carry over from the last set. Nothing already in the file is touched.
 
-Indexed by (length, position, letter) so candidate lookup is a set intersection rather
+Every entry is guaranteed a clue because the fill can only use words the bank already clues.
+It's indexed by (length, position, letter) so candidate lookup is a set intersection rather
 than a scan, and entries are chosen most-constrained-first, which is what makes the
-interlocking 5x5 tractable at all.
+interlocking grid tractable at all.
 """
 import random, sys, json, time
-from collections import defaultdict
+from collections import Counter, defaultdict
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from crossword_bank import BANK, HARD, VOCAB
 
 import itertools
 
-def _valid_layouts(n, max_len, want=200):
-    """180-degree symmetric black-square layouts where every entry is 3..max_len long and
-    every white cell is crossed by BOTH an across and a down entry. A cell reachable from
-    only one direction is unfair - there's no second way to get at it."""
-    cells = [(r, c) for r in range(n) for c in range(n)]
-    mirror = lambda p: (n - 1 - p[0], n - 1 - p[1])
 
-    def ents(black):
-        out = []
-        for r in range(n):
-            c = 0
-            while c < n:
-                if (r, c) in black: c += 1; continue
-                s0 = c
-                while c < n and (r, c) not in black: c += 1
-                if c - s0 >= 2: out.append(("across", [(r, x) for x in range(s0, c)]))
-        for c in range(n):
-            r = 0
-            while r < n:
-                if (r, c) in black: r += 1; continue
-                s0 = r
-                while r < n and (r, c) not in black: r += 1
-                if r - s0 >= 2: out.append(("down", [(x, c) for x in range(s0, r)]))
-        return out
+def _all_layouts(n, max_len):
+    """Every n x n layout where each white run, across and down, is 3..max_len long - so every
+    white cell is crossed by BOTH an across and a down entry (a cell reachable from only one
+    direction is unfair: there's no second way to get at it) - and the white cells all connect.
 
-    def ok(black):
-        es = ents(black)
-        if any(not (3 <= len(cs) <= max_len) for _k, cs in es):
-            return False
-        white = {p for p in cells if p not in black}
-        if {c for k, cs in es if k == "across" for c in cs} != white: return False
-        if {c for k, cs in es if k == "down" for c in cs} != white: return False
-        start = next(iter(white)); seen = {start}; stack = [start]
-        while stack:
-            r, c = stack.pop()
-            for d in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                q = (r + d[0], c + d[1])
-                if q in white and q not in seen:
-                    seen.add(q); stack.append(q)
-        return seen == white
+    Built a row at a time from the row patterns whose own runs are legal, the columns checked as
+    they grow. This used to allow only layouts that look the same upside down: 41 of them at 6x6,
+    of which the bank fills six, and one of those so much more easily than the rest that it ran 25
+    days in 30. Without the symmetry there are 4,069, and hundreds fill."""
+    def runs_ok(bits):
+        run = 0
+        for b in list(bits) + [1]:
+            if b:
+                if 0 < run < 3:
+                    return False
+                run = 0
+            else:
+                run += 1
+                if run > max_len:
+                    return False
+        return True
 
+    rows = [r for r in itertools.product((0, 1), repeat=n) if runs_ok(r)]
     out = []
-    half = [p for p in cells if p < mirror(p)]
-    # Most black squares first. Fewer blacks means longer entries, which sounds harder but
-    # actually shrinks the candidate pool to the handful of long words that interlock -
-    # and in --hard mode the indirect clue bank is deepest at 3 and 4 letters anyway. The
-    # difficulty is meant to live in the clue, not in how obscure the fill has to get.
-    for k in (12, 10, 8, 6, 4):
-        for combo in itertools.combinations(half, k // 2):
-            b = frozenset(combo) | frozenset(mirror(p) for p in combo)
-            if len(b) == k and ok(b):
-                out.append(b)
-                if len(out) >= want:
-                    return out
+
+    def dfs(done, col):
+        if len(done) == n:
+            if any(0 < x < 3 for x in col):
+                return
+            black = frozenset((r, c) for r in range(n) for c in range(n) if done[r][c])
+            white = {(r, c) for r in range(n) for c in range(n)} - black
+            if not white:
+                return
+            start = next(iter(white)); seen = {start}; stack = [start]
+            while stack:
+                r, c = stack.pop()
+                for q in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+                    if q in white and q not in seen:
+                        seen.add(q); stack.append(q)
+            if seen == white:
+                out.append(black)
+            return
+        for row in rows:
+            nxt = []
+            for c in range(n):
+                if row[c]:
+                    if 0 < col[c] < 3:
+                        break
+                    nxt.append(0)
+                else:
+                    if col[c] + 1 > max_len:
+                        break
+                    nxt.append(col[c] + 1)
+            else:
+                dfs(done + [row], nxt)
+
+    dfs([], [0] * n)
     return out
 
+
+def _tidy(black, n):
+    """Black squares that shape the grid rather than spoil it. Blocks of black at the edges are
+    fine - they give the grid its outline - but not a 2x2 in the middle, a 3x3 lump anywhere, or
+    a whole black row or column, which is just a smaller grid."""
+    sq = lambda r, c, k: {(r + i, c + j) for i in range(k) for j in range(k)} <= black
+    inner = any(sq(r, c, 2) for r in range(1, n - 2) for c in range(1, n - 2))
+    lump = any(sq(r, c, 3) for r in range(n - 2) for c in range(n - 2))
+    line = (any(all((r, c) in black for c in range(n)) for r in range(n))
+            or any(all((r, c) in black for r in range(n)) for c in range(n)))
+    return not (inner or lump or line)
+
+
 N = 5
-PATTERNS = []
 # Harder-tier words to plant, by length (see fill). Empty means plant nothing.
 PLANT = {}
 
@@ -212,72 +229,153 @@ def _plant(ents, rng, banned):
     pool = [w for w in PLANT[len(e0[2])] if w not in banned]
     return (e0, rng.choice(pool)) if pool else None
 
-def build(seed, budget=2.0, banned=frozenset()):
-    rng = random.Random(seed)
-    pats = list(PATTERNS); rng.shuffle(pats)
-    for pat in pats:
-        ents = entries(pat, globals()['N'])
-        if not all(len(c) >= 3 for _k, _n, c in ents):
-            continue
-        g = fill(ents, rng, time.time() + budget, banned, _plant(ents, rng, banned))
-        if g:
-            words = [{"num": num, "dir": kind, "answer": (a := "".join(g[c] for c in cells)),
-                      "clue": BANK[a], "cells": [list(c) for c in cells]}
-                     for kind, num, cells in ents]
-            return {"black": sorted([list(b) for b in pat]), "entries": words}
-    return None
+def _setup(hard, n):
+    """The grid size and, in hard mode, the word bank, set in each worker (they start fresh).
 
-if __name__ == "__main__":
-    import argparse
-    ap = argparse.ArgumentParser(description="Generate HMS Crossword puzzles.")
-    ap.add_argument("out")
-    ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
-    ap.add_argument("--count", type=int, default=25)
-    ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
-    ap.add_argument("--overlap", type=int, default=3,
-                    help="most words two puzzles may share (raise it if the search dries up)")
-    ap.add_argument("--budget", type=int, default=420,
-                    help="seconds to spend searching (hard mode needs far longer)")
-    ap.add_argument("--hard", action="store_true",
-                    help="fill only from words with an indirect (cryptic-lite) clue")
-    a = ap.parse_args()
-
-    if a.hard:
-        # Restricting the FILL - not just the clue lookup - is what guarantees every
-        # entry in the puzzle gets an indirect clue. Swapping clues in afterwards would
-        # leave any word without one still showing its dictionary definition.
+    Restricting the FILL to the indirect-clue bank - not just the clue lookup - is what guarantees
+    every entry in the puzzle gets an indirect clue. Swapping clues in afterwards would leave any
+    word without one still showing its dictionary definition."""
+    globals()["N"] = n
+    if hard:
         BANK.clear()
         BANK.update(HARD)
         _reindex()
+        PLANT.clear()
         for w in sorted(VOCAB):
             if w in BANK:
                 PLANT.setdefault(len(w), []).append(w)
-        print(f"planting one of {sum(len(v) for v in PLANT.values())} harder words per grid")
-        print(f"hard mode: {len(BANK)} words with indirect clues")
-    globals()["N"] = a.size
-    PATTERNS[:] = _valid_layouts(a.size, a.max_len)
-    print(f"{len(PATTERNS)} valid {a.size}x{a.size} layouts")
-    if not PATTERNS:
-        raise SystemExit("no layouts satisfy those constraints")
 
-    made, sigs, seed = [], [], 0
-    t0 = time.time()
-    while len(made) < a.count and seed < 40000 and time.time() - t0 < a.budget:
-        hot = set()
-        for sg in sigs[-6:]:
-            hot |= sg
-        p = build(seed, banned=frozenset(hot)) or build(seed, banned=frozenset())
+
+def _fill_layout(job):
+    """Every distinct grid one layout fills in `secs` seconds."""
+    li, black, secs = job
+    ents = entries(black, N)
+    t0, seed, seen, out = time.time(), 0, set(), []
+    while time.time() - t0 < secs:
+        rng = random.Random(li * 7919 + seed)
         seed += 1
-        if not p:
+        g = fill(ents, rng, min(time.time() + 1.5, t0 + secs), frozenset(), _plant(ents, rng, frozenset()))
+        if not g:
             continue
-        sig = set(e["answer"] for e in p["entries"])
-        if any(len(sig & prev) > a.overlap for prev in sigs):
-            continue
-        sigs.append(sig)
-        p["id"] = len(made) + 1
-        p["size"] = a.size
-        made.append(p)
-        print(f"  {len(made):>2}/{a.count}  seed {seed-1:<5} {len(p['entries'])} clues  "
-              f"{'/'.join(e['answer'] for e in p['entries'][:4])}...", flush=True)
-    print(f"built {len(made)} in {time.time()-t0:.0f}s")
-    json.dump(made, open(a.out, "w"), indent=1)
+        words = [{"num": num, "dir": kind, "answer": (a := "".join(g[c] for c in cells)),
+                  "clue": BANK[a], "cells": [list(c) for c in cells]}
+                 for kind, num, cells in ents]
+        sig = frozenset(w["answer"] for w in words)
+        if sig not in seen:
+            seen.add(sig)
+            out.append({"black": sorted([list(b) for b in black]), "entries": words})
+    return out
+
+
+def _sig(p):
+    return frozenset(e["answer"] for e in p["entries"])
+
+
+def _layout(p):
+    return json.dumps(sorted(p["black"]))
+
+
+def _pick(pool, before, count, overlap, word_cap, layout_uses):
+    """The hardest grids (most harder-tier answers) that share no more than `overlap` answers with
+    any other picked or with `before`, wear no word out past `word_cap` uses, and use each layout
+    once before any is used twice (up to `layout_uses`). A mirror image of a grid has the same
+    words, so it never gets in as a second puzzle."""
+    rng = random.Random(11)
+    hardness = lambda p: sum(e["answer"] in VOCAB for e in p["entries"])
+    cands = sorted(pool, key=lambda p: (-hardness(p), rng.random()))
+    picked, sigs, used, words = [], [_sig(p) for p in before], Counter(), Counter()
+    for rnd in range(1, layout_uses + 1):
+        for p in cands:
+            if len(picked) >= count:
+                return picked
+            sig, k = _sig(p), _layout(p)
+            if used[k] >= rnd or any(words[w] >= word_cap for w in sig):
+                continue
+            if all(len(sig & q) <= overlap for q in sigs):
+                picked.append(p); sigs.append(sig); used[k] += 1; words.update(sig)
+    return picked
+
+
+def _arrange(picked, before, gap=6, layout_gap=30, tries=300):
+    """An order where no word comes back within `gap` days, no layout within `layout_gap`, and the
+    number of black squares changes day to day where it can - carrying on from the end of the set
+    before. Many shuffles are tried; the one that breaks those rules least wins."""
+    def attempt(seed):
+        rng = random.Random(seed)
+        days, left, bad = list(before[-layout_gap:]), picked[:], 0
+        rng.shuffle(left)
+        while left:
+            recent = set().union(*[_sig(p) for p in days[-gap:]]) if days else set()
+            near = {_layout(p) for p in days[-layout_gap:]}
+            nb = len(days[-1]["black"]) if days else -1
+            good = [i for i, p in enumerate(left) if not (_sig(p) & recent) and _layout(p) not in near]
+            i = next((i for i in good if len(left[i]["black"]) != nb), good[0] if good else 0)
+            bad += not good
+            days.append(left.pop(i))
+        return bad, days[len(before[-layout_gap:]):]
+    return min((attempt(s) for s in range(tries)), key=lambda t: t[0])
+
+
+if __name__ == "__main__":
+    import argparse, datetime, os
+    from multiprocessing import Pool
+    ap = argparse.ArgumentParser(description="Add a set of HMS Crossword puzzles to the puzzle file.")
+    ap.add_argument("file", help="the puzzle file (data/words/crosswords.json); the new set goes on the end")
+    ap.add_argument("--from", dest="start", required=True, help="the day the new set starts, YYYY-MM-DD")
+    ap.add_argument("--count", type=int, default=183, help="puzzles, one a day (default 183: six months)")
+    ap.add_argument("--size", type=int, default=6, help="grid size (default 6)")
+    ap.add_argument("--max-len", type=int, default=6, help="longest entry the bank can fill")
+    ap.add_argument("--blacks", default="10-14", help="black squares a layout may have (default 10-14)")
+    ap.add_argument("--min-clues", type=int, default=10, help="fewest clues a grid may have")
+    ap.add_argument("--symmetric", action="store_true", help="only layouts that look the same upside down")
+    ap.add_argument("--seconds", type=float, default=6, help="seconds spent filling each layout")
+    ap.add_argument("--overlap", type=int, default=5, help="most answers two puzzles may share")
+    ap.add_argument("--word-cap", type=int, help="most times one word may appear (default: once per 18 days)")
+    ap.add_argument("--layout-uses", type=int, default=2, help="most times one layout may appear in the set")
+    ap.add_argument("--hard", action="store_true",
+                    help="fill only from words with an indirect (cryptic-lite) clue")
+    ap.add_argument("--dry-run", action="store_true", help="report what it would add, write nothing")
+    a = ap.parse_args()
+
+    doc = json.load(open(a.file, encoding="utf-8"))
+    last = doc["sets"][-1]
+    start = datetime.date.fromisoformat(a.start)
+    if start <= datetime.date.fromisoformat(last["from"]):
+        raise SystemExit(f"--from must be after the last set's start, {last['from']}")
+    lo, hi = (int(x) for x in a.blacks.split("-"))
+    n = a.size
+    layouts = [b for b in _all_layouts(n, a.max_len) if lo <= len(b) <= hi and _tidy(b, n)
+               and len(entries(b, n)) >= a.min_clues
+               and (not a.symmetric or b == {(n - 1 - r, n - 1 - c) for r, c in b})]
+    print(f"{len(layouts)} layouts to fill, {a.seconds:g}s each, on {os.cpu_count()} cores")
+    t0 = time.time()
+    with Pool(os.cpu_count(), initializer=_setup, initargs=(a.hard, n)) as workers:
+        grids = [g for out in workers.imap_unordered(_fill_layout, [(i, b, a.seconds) for i, b in enumerate(layouts)])
+                 for g in out]
+    pool = list({_sig(g): g for g in grids}.values())
+    filled = len({_layout(g) for g in pool})
+    print(f"{len(pool)} distinct grids from {filled} layouts in {time.time() - t0:.0f}s")
+
+    before = last["puzzles"] if int(last.get("size", 5)) == n else []
+    picked = _pick(pool, before, a.count, a.overlap, a.word_cap or max(2, a.count // 18), a.layout_uses)
+    if len(picked) < a.count:
+        raise SystemExit(f"only {len(picked)} fresh grids: give each layout longer (--seconds), "
+                         f"or loosen --overlap / --word-cap / --layout-uses")
+    bad, days = _arrange(picked, before)
+    puzzles = [{"black": p["black"], "entries": p["entries"], "id": i + 1, "size": n} for i, p in enumerate(days)]
+
+    hs = [sum(e["answer"] in VOCAB for e in p["entries"]) for p in puzzles]
+    words = Counter(w for p in puzzles for w in _sig(p))
+    end = start + datetime.timedelta(days=len(puzzles) - 1)
+    print(f"{len(puzzles)} puzzles, {a.start} to {end}, in {len({_layout(p) for p in puzzles})} layouts")
+    print(f"harder-tier answers per grid: mean {sum(hs) / len(hs):.2f}, fewest {min(hs)}")
+    print(f"most-used words: {', '.join(f'{w} x{k}' for w, k in words.most_common(5))}")
+    print(f"days that had to bend the spacing rules: {bad}")
+    if a.dry_run:
+        raise SystemExit(0)
+    doc["sets"].append({"from": a.start, "size": n, "rewards": last.get("rewards"),
+                        "wrong_per_tier": last.get("wrong_per_tier", 0), "max_hints": last.get("max_hints", 0),
+                        "puzzles": puzzles})
+    with open(a.file, "w", encoding="utf-8") as f:
+        f.write(json.dumps(doc, indent=1))
+    print(f"added to {a.file}")
