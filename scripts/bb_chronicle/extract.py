@@ -81,8 +81,13 @@ def persona(uid):
     return PERSONAS.get(uid, (None,))[0]
 
 
+ROLES = {"1550132346295029892": "Housemates"}  # the role Big Brother pinged to reach everyone in the house
+
+
 def name_ids(text):
-    """Swap <@id> mentions and bare ids for persona names."""
+    """Swap <@id> mentions and bare ids for persona names, and role pings and channel links for their names."""
+    text = re.sub(r"<@&(\d+)>", lambda m: "@" + ROLES.get(m.group(1), "role"), text or "")
+    text = re.sub(r"<#\d+>", "#channel", text)
     def rep(m):
         uid = m.group(1) or m.group(2)
         p = persona(uid)

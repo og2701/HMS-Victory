@@ -682,7 +682,7 @@ const money = p => "£" + (p / 100).toFixed(2).replace(/\.00$/, "");
 
 // ---------------------------------------------------------------- message formatting
 const personaNames = Object.values(HM).map(x => x.persona).sort((a, b) => b.length - a.length);
-const mentionRe = new RegExp("@(" + personaNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + "|Big Brother|someone)", "g");
+const mentionRe = new RegExp("@(" + personaNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + "|Big Brother|Housemates|someone)", "g");
 function fmtMessage(text) {
   let s = esc(text);
   s = s.replace(/&lt;(a?):(\w+):(\d+)&gt;/g, (m, a, n, id) => D.emoji[id] ? `<img class="em" src="${D.emoji[id]}" alt=":${n}:">` : `<span class="emt">:${n}:</span>`);
