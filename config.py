@@ -486,7 +486,7 @@ SPITFIRE_MAX_HEIGHT = 1_000
 # swipes through the game's rules (lib/activities/paperboy_sim.py): a point every 10 m and a point
 # a paper (10 for a golden one).
 PAPERBOY_ENABLED = True
-PAPERBOY_RATE = 1
+PAPERBOY_RATE = 0.03                # UKP a point: the day's 150 at 5,000 points
 PAPERBOY_CAP = 150
 # ukplace activities: the games that run as Discord Activities, under the separate
 # "ukplace activities" app. Its API runs inside this bot (lib/activities), reached through a

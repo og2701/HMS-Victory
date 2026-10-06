@@ -421,7 +421,7 @@ class PaperboyGame(ScoreGame):
 
 PAPERBOY = PaperboyGame(
     key="paperboy", label="Paperboy", prefix="PAPERBOY", days="paperboy_days", runs="paperboy_runs",
-    score_col="score", count_col="papers", rate=1, cap=150, max_rate=10.0, max_score=5000, slack=10,
+    score_col="score", count_col="papers", rate=0.03, cap=150, max_rate=10.0, max_score=5000, slack=10,
     post="did the paper round for **{score} points**", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay,
     acts=("buy", "wear"))
 
