@@ -2144,11 +2144,12 @@ async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> 
     return True
 
 
-async def perform_final_house_silence(client: discord.Client) -> bool:
+async def perform_final_house_silence(client: discord.Client, delay_message_seconds: float = 30.0) -> bool:
     """Permanently silence the house for the end of the season.
     - Sets house_closed_permanently and house_silent
     - Revokes Housemate role sending and thread permissions in #the-house
     - Closes and locks all open snug threads
+    - Waits delay_message_seconds (e.g. 30s past midnight)
     - Posts the official final closure announcement in #the-house
     - Updates control and house panels
     """
@@ -2181,6 +2182,10 @@ async def perform_final_house_silence(client: discord.Client) -> bool:
             closed_snugs += 1
     except Exception as e:
         log.exception("Big Brother: error closing snugs during final silence: %s", e)
+
+    # Delay message if requested (30s past midnight)
+    if delay_message_seconds > 0:
+        await asyncio.sleep(delay_message_seconds)
 
     # Post final closure announcement in house channel
     if ch:
@@ -4516,7 +4521,7 @@ async def _act_silence(interaction: discord.Interaction):
     async def _final(inter: discord.Interaction):
         async def yes(inter2: discord.Interaction):
             await inter2.response.defer()
-            await perform_final_house_silence(inter2.client)
+            await perform_final_house_silence(inter2.client, delay_message_seconds=0.0)
             await _reply(inter2, "The Big Brother house has been permanently silenced and closed.", refresh=True)
         await inter.response.send_message(
             f"{EYE} **Permanently close the Big Brother house?**\n"

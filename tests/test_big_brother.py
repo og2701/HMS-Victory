@@ -2158,7 +2158,7 @@ async def test_final_house_silence_and_permanent_closure(bb, monkeypatch):
     snug_id = bb.add_snug(987654, 111, [111, 222])
 
     # Perform final silence
-    ok = await bb.perform_final_house_silence(mock_client)
+    ok = await bb.perform_final_house_silence(mock_client, delay_message_seconds=0.0)
     assert ok is True
     assert bb.house_permanently_closed() is True
     assert bb.house_silent() is True
