@@ -148,6 +148,9 @@ a{color:#8fb4ff}
 .dc-msg .body .lnk{color:#00a8fc}
 .dc-msg .body blockquote{margin:2px 0;padding-left:10px;border-left:4px solid #4e5058}
 .dc-msg .body code{background:#2b2d31;border-radius:4px;padding:0 3px;font-size:.9em}
+.dc-msg.instant, .dc-msg.instant *{animation:none!important}
+.dc-msg .shot{display:block;max-width:min(420px,92%);max-height:min(20vw,240px);border-radius:8px;margin-top:6px;object-fit:contain;background:#0003;animation:shotIn .5s cubic-bezier(.2,1.3,.4,1) both;box-shadow:0 8px 24px #0006}
+@keyframes shotIn{from{opacity:0;transform:scale(.85) rotate(-1.5deg)}to{opacity:1;transform:none}}
 .dc-msg .att{display:inline-grid;place-items:center;width:200px;height:90px;border-radius:8px;background:#2b2d31;border:1px solid #1e1f22;color:var(--dc-muted);font-size:13px;margin-top:4px}
 .dc-msg .reply{grid-column:2;font-size:13px;color:var(--dc-muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dc-typing{flex:none;height:22px;padding:0 16px 6px;font-size:13px;color:var(--dc-muted);font-family:var(--chat)}
@@ -903,7 +906,7 @@ function chatPlan(s) {
     const len = (m.text || "").length;
     const typing = i === 0 ? 150 : (m.punch ? 520 : 220);
     times.push([t, t + typing]);
-    t += typing + clamp(300 + len * 17, 620, 2400) + (m.punch ? 1100 : 0);
+    t += typing + clamp(260 + len * 15, 560, 2200) + (m.punch ? 900 : 0) + Math.min((m.images || []).length, 2) * 1200;
   });
   const dur = t + 900;
   let log, typingEl, lastAuthor = null, lastAt = 0;
@@ -917,13 +920,15 @@ function chatPlan(s) {
       if (tag) tags[m.at] = tag;
       body.prepend(h("div", {class: "dtag"}, tag || (m.label ? `Entry from ${m.label}` : "Anonymous entry")));
     }
-    if (!m.text && m.attachments) body.append(h("div", {class: "att"}, "image not archived"));
+    const shots = (m.images || []).filter(k => D.attachments?.[k]);
+    if (shots.length) shots.forEach(k => body.append(h("img", {class: "shot", src: D.attachments[k], alt: ""})));
+    else if (!m.text && m.attachments) body.append(h("div", {class: "att"}, "image not archived"));
     else if (m.attachments) body.append(h("div"), h("div", {class: "att"}, "image not archived"));
     const row = h("div", {class: "dc-msg" + (cont && !m.punch ? " cont" : "") + (m.hl ? " hl" : "") + (m.punch ? " punch" : "")},
       img(m.user_id, "av"),
       h("div", {class: "meta"}, h("span", {class: "nm", style: `color:${pcolor(m.user_id)}`}, pname(m.user_id)), h("time", {}, fmtDc(m.at))),
       body);
-    if (instant) row.style.animation = "none";
+    if (instant) row.classList.add("instant");
     log.append(row);
     while (log.children.length > 40) log.firstChild.remove();
     if (!instant) { Snd.msg(); if (m.punch) { Music.cut(1500); P.punchT = P.t; } }
@@ -1182,10 +1187,10 @@ R.tokens = s => {
 R.challenge = s => {
   const pic = s.image && D.images[s.image];
   const rules = s.rules || "", moments = s.moments || [], result = s.result || "";
-  let t = 900 + rules.length * 11; const mAt = [];
+  let t = 800 + rules.length * 8; const mAt = [];
   moments.forEach(m => { mAt.push(t); t += clamp(600 + m.length * 20, 1400, 2800); });
   const resultAt = t;
-  const dur = resultAt + clamp(900 + result.length * 20, 1600, 4000) + (pic ? 600 : 0);
+  const dur = resultAt + clamp(700 + result.length * 16, 1400, 3200) + (pic ? 600 : 0);
   let res, stamp, im, items = [];
   return {
     dur,

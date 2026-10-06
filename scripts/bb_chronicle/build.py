@@ -74,6 +74,13 @@ def voice_uris(story, voice_dir):
     return out
 
 
+def attachment_uris(story, folder):
+    """Only the images a scene actually shows; there are hundreds more in the folder."""
+    scenes = [s for c in story.get("chapters", []) for s in c.get("scenes", [])] + story.get("scenes", [])
+    wanted = {f for s in scenes for m in s.get("messages", []) for f in m.get("images", [])}
+    return {f: data_uri(os.path.join(folder, f)) for f in sorted(wanted) if os.path.exists(os.path.join(folder, f))}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True)
@@ -81,6 +88,7 @@ def main():
     ap.add_argument("--image", action="append", default=[], help="name=path, a photo the scenes refer to by name")
     ap.add_argument("--portraits", help="folder of <user_id>.webp celebrity pictures and their credits.json")
     ap.add_argument("--voice", help="voiceover.py's output folder")
+    ap.add_argument("--attachments", help="folder of images posted in the chat; scene messages name the files they show")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -105,6 +113,7 @@ def main():
         "images": {k: data_uri(v) for k, v in (i.split("=", 1) for i in a.image)},
         "image_credits": credits,
         "voice": voice_uris(story, a.voice) if a.voice else {},
+        "attachments": attachment_uris(story, a.attachments) if a.attachments else {},
     }
     payload = json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     with open(os.path.join(HERE, "template.html")) as f:
@@ -116,7 +125,7 @@ def main():
         f.write(html.replace(marker, payload, 1))
     print(f"wrote {a.out} ({os.path.getsize(a.out) / 1e6:.1f} MB, {len(story.get('chapters', []))} chapters, "
           f"{sum(len(c['scenes']) for c in story.get('chapters', []))} scenes, {len(bundle['emoji'])} emoji, "
-          f"{len(bundle['voice'])} voice clips)")
+          f"{len(bundle['voice'])} voice clips, {len(bundle['attachments'])} chat images)")
 
 
 if __name__ == "__main__":
