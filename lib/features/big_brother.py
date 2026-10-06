@@ -2671,11 +2671,10 @@ def _public_vote_embed(nominee_ids: list[int], guild: Optional[discord.Guild], r
         if is_win:
             desc_closed = (
                 "Voting has officially **CLOSED**.\n\n"
-                "The results have been verified by Big Brother.\n"
-                "The winner of Big Brother will be crowned shortly!\n\n"
-                "Stay tuned to find out who wins."
+                "The results have been verified by Big Brother.\n\n"
+                "Stay tuned!"
             )
-            title_closed = f"{EYE} BIG BROTHER: FINAL VOTE CLOSED"
+            title_closed = f"{EYE} BIG BROTHER: PUBLIC VOTE CLOSED"
         else:
             desc_closed = (
                 "Voting has officially **CLOSED**.\n\n"
@@ -2695,15 +2694,14 @@ def _public_vote_embed(nominee_ids: list[int], guild: Optional[discord.Guild], r
     nominee_lines = "\n".join(f"{i+1}. **{_name(guild, n)}**" for i, n in enumerate(nominee_ids))
     if is_win:
         desc = (
-            "## 🗳️ Public Vote to Win\n\n"
+            "## 🗳️ Public Vote\n\n"
             "The public vote is now **OPEN**!\n\n"
             "**Housemate you wanna see WIN big brother?**\n\n"
-            "The housemate with the **most votes to win** will be crowned the winner of Big Brother!\n\n"
-            f"### Finalists:\n{nominee_lines}\n\n"
+            f"### Housemates:\n{nominee_lines}\n\n"
             "👉 **Click a button below to cast your vote.**\n\n"
             "-# 1 vote per person · Active housemates cannot vote · You may change your vote at any time before the vote closes."
         )
-        title = f"{EYE} BIG BROTHER: VOTE TO WIN"
+        title = f"{EYE} BIG BROTHER: PUBLIC VOTE"
     else:
         desc = (
             "## 🗳️ Public Vote to Evict\n\n"
@@ -2849,7 +2847,7 @@ async def close_public_vote(client: discord.Client) -> Optional[dict]:
     standings_text = f"**Total votes cast:** `{total}`\n\n"
     if is_win and winner_id:
         winner_name = _name(guild, winner_id)
-        standings_text += f"🏆 **WINNER:** **{winner_name}** ({tally.get(winner_id, 0)} votes)\n\n"
+        standings_text += f"🏆 **Most Votes:** **{winner_name}** ({tally.get(winner_id, 0)} votes)\n\n"
     standings_text += f"### 📋 Final Standings ({sort_title}):\n" + "\n".join(standings_lines)
 
     if tied:

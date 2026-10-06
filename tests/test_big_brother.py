@@ -1962,14 +1962,13 @@ def test_public_vote_embed_contents(bb):
 
     # Vote to Win (default)
     open_embed = bb._public_vote_embed(nominees, None, rid, closed=False)
-    assert "Public Vote to Win" in open_embed.description
+    assert "Public Vote" in open_embed.description
     assert "Housemate you wanna see WIN big brother?" in open_embed.description
-    assert "most votes to win" in open_embed.description
     assert "Total votes cast: 0" in open_embed.footer.text
 
     closed_embed = bb._public_vote_embed(nominees, None, rid, closed=True)
-    assert "FINAL VOTE CLOSED" in closed_embed.title
-    assert "winner of Big Brother will be crowned" in closed_embed.description
+    assert "PUBLIC VOTE CLOSED" in closed_embed.title
+    assert "Stay tuned!" in closed_embed.description
 
     # Vote to Evict mode
     bb.set_state(bb.STATE_PUBLIC_VOTE_MODE, "evict")
