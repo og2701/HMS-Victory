@@ -158,7 +158,7 @@ def room_page(room: dict, names: dict, event: str, faces: dict | None = None) ->
     return _page(f"""<div class="card lb{' dim' if gone else ''}">{clock_svg()}
       <div class="lab"><i>UP TO {countdown.SEATS} PLAYERS · {'ROOM OPEN' if not gone else 'ROOM'}</i><b>COUNTDOWN</b></div>
       <div class="seats">{''.join(seats)}</div>
-      <div class="chips">{_money(room)}<span class="chip">{countdown.ROUNDS} ROUNDS</span></div>
+      <div class="chips">{_money(room)}<span class="chip">{countdown.rounds_of(room)} ROUNDS</span></div>
       {f'<div class="stamp">{gone}</div>' if gone else ''}</div>""")
 
 
@@ -215,7 +215,7 @@ def game_page(room: dict, names: dict, faces: dict | None = None) -> str:
     else:
         n = len(room["rounds"])
         done = bool(room["rounds"] and room["rounds"][-1].get("results"))
-        tag = f"LIVE · {'AFTER ' if done else ''}ROUND {n} OF {countdown.ROUNDS}"
+        tag = f"LIVE · {'AFTER ' if done else ''}ROUND {n} OF {countdown.rounds_of(room)}"
         title = "<b>COUNTDOWN</b>"
         money = _money(room)
         best = max((scores.get(str(u), 0) for u in present), default=0)

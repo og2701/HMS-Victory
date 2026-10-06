@@ -1,8 +1,8 @@
 """Countdown: the letters game, for up to six players in the activity.
 
 A room is opened by its host, for a stake or free, and anyone can take one of its six seats; the
-host starts it once there are two of them. Each of the three rounds, one player (taking turns)
-calls vowel or consonant nine times, the letters coming off shuffled piles weighted like the
+host starts it once there are two of them. There's a round for every player at the start, and in
+each one a player (taking turns, so everyone gets one) calls vowel or consonant nine times, the letters coming off shuffled piles weighted like the
 show's; then everyone has thirty seconds to make the longest word they can. Only the longest
 valid word scores, its length (a full nine scores eighteen), and anyone who matches it scores
 too. After the clock HMS Victory's Dictionary Corner shows the best that could be made.
@@ -28,7 +28,7 @@ from lib.core.file_operations import atomic_write_json
 log = logging.getLogger(__name__)
 
 GAME = "countdown"
-ROUNDS = 3
+ROUNDS = 3                  # rounds in a game started before it was one per player
 SEATS = 6
 LETTERS = 9
 MIN_VOWELS, MIN_CONSONANTS = 3, 4
@@ -197,6 +197,14 @@ def _allowed(letters: list[str]) -> dict:
             "consonant": left > 0 and (MIN_VOWELS - v) < left and c < LETTERS - MIN_VOWELS}
 
 
+def rounds_of(room: dict) -> int:
+    """A round for every player, so each calls the letters once: as many as are seated (two at
+    least, as it takes two to start), fixed when the game starts."""
+    if "total" in room:
+        return room["total"]
+    return max(2, len(room["players"])) if room["state"] == "lobby" else ROUNDS
+
+
 def _start_round(room: dict, now: float) -> None:
     present = _present(room)
     n = len(room["rounds"])
@@ -263,7 +271,7 @@ def _advance(room: dict, now: float) -> bool:
         else:
             if now < rd["until"]:
                 break
-            if len(room["rounds"]) >= ROUNDS:
+            if len(room["rounds"]) >= rounds_of(room):
                 _finish(room, rd["until"])
             else:
                 _start_round(room, rd["until"])
@@ -368,7 +376,7 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
     pot = room["stake"] * len(room["players"])
     out = {
         "id": room["id"], "host": str(room["host"]), "stake": room["stake"], "pot": pot, "prize": prize(pot),
-        "seats": SEATS, "rounds": ROUNDS, "phase": phase, "round": len(room["rounds"]),
+        "seats": SEATS, "rounds": rounds_of(room), "phase": phase, "round": len(room["rounds"]),
         "how": room.get("how"),
         "players": [{**_person(u, name_of), "score": room["scores"].get(str(u), 0), "left": u in room["left"],
                      "declared": bool(rd and rd["phase"] == "clock" and str(u) in rd["words"])} for u in room["players"]],
@@ -520,7 +528,7 @@ def start(uid: int, rid: str) -> dict:
                 raise Refuse("Someone in the room can't cover the stake any more.")
             taken.append(u)
     now = time.time()
-    r.update(state="playing", started=now)
+    r.update(state="playing", started=now, total=len(r["players"]))
     _start_round(r, now)
     _save()
     _emit("start", r)

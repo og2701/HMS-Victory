@@ -101,7 +101,7 @@ def headline(room: dict, event: str) -> str:
     if event == "lapsed":
         return f"<@{host}>'s **Countdown** room closed · it never started"
     if event != "over":
-        return f"{_and(room['players'])} · **Countdown** · round {len(room['rounds'])} of {countdown.ROUNDS}"
+        return f"{_and(room['players'])} · **Countdown** · round {len(room['rounds'])} of {countdown.rounds_of(room)}"
     winners = room.get("winners") or []
     scores = room.get("scores", {})
     if room.get("how") == "refund" or not winners:

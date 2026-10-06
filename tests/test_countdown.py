@@ -70,6 +70,21 @@ def test_the_dictionary_and_the_board():
     assert C.points("islander") == 8 and C.points("nostalgia") == 18
 
 
+def test_theres_a_round_for_every_player_and_each_calls_once(em):
+    rid = C.open_room(A, 0)["id"]
+    assert C.view(C._rooms[rid], A, name_of)["rounds"] == 2           # two at least: it takes two to start
+    C.join(B, rid)
+    C.join(D, rid)
+    assert C.view(C._rooms[rid], A, name_of)["rounds"] == 3
+    C.start(A, rid)
+    for _ in range(10):
+        tick(em, 120)
+        C.room(A, rid, name_of)
+    r = C._rooms[rid]
+    assert r["over"] and len(r["rounds"]) == 3
+    assert sorted(rd["picker"] for rd in r["rounds"]) == sorted([A, B, D])
+
+
 def test_letter_calls_keep_three_vowels_and_four_consonants(em):
     rid = game(em, stake=0)
     rd = C._rooms[rid]["rounds"][-1]
