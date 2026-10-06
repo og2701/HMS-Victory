@@ -513,7 +513,7 @@ canvas.confetti{position:absolute;inset:0;width:100%;height:100%;z-index:4;point
     <button data-speed="1" aria-pressed="true">1x</button><button data-speed="2" aria-pressed="false">2x</button><button data-speed="5" aria-pressed="false">5x</button>
   </div>
   <button class="cbtn" id="btn-sound" aria-pressed="false" title="Synth sound effects and house hum"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>Sound</button>
-  <button class="cbtn" id="btn-voice" aria-pressed="false" title="Read the narration aloud with your browser's British voice"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>Narrator</button>
+  <button class="cbtn" id="btn-voice" aria-pressed="true" title="The narrator's voiceover"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>Narrator</button>
   <button class="cbtn" id="btn-full" aria-label="Full screen"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
   <div class="timecode" id="timecode">0:00 / 0:00</div>
 </div>
@@ -593,6 +593,8 @@ const img = (id, cls) => h("img", {src: avatar(id), alt: "", class: cls});
 // Node.append() turns null into the text "null", so renderers append through this.
 const app = (el, ...kids) => el.append(...kids.flat().filter(k => k != null && k !== false));
 const mini = id => h("span", {class: "mini"}, img(id), pname(id));
+const creditLine = () => Object.entries(D.image_credits || {}).map(([id, c]) =>
+  `${HM[id]?.persona || c.page}: ${c.artist ? c.artist + ", " : ""}${c.license}`).join(". ") + ".";
 const names = ids => ids.map(pname).reduce((a, n, i, arr) => a + (i === 0 ? "" : i === arr.length - 1 ? " and " : ", ") + n, "");
 
 // ---------------------------------------------------------------- time
@@ -680,24 +682,25 @@ const Snd = {
   fanfare() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone(f, .5, "sawtooth", .035, i * .14)); },
 };
 
-// ---------------------------------------------------------------- narrator voice (Web Speech, off by default)
+// ---------------------------------------------------------------- narrator voice (recorded clips, on by default)
+// Each narrated scene carries the key of a pre-recorded clip. Scene lengths already allow for the clip,
+// so the voice never gets cut off; above 2x it's skipped rather than played as a squeak.
 const Voice = {
-  on: false, speaking: false, voice: null,
-  pick() {
-    const vs = (window.speechSynthesis?.getVoices() || []).filter(v => /en[-_]GB/i.test(v.lang));
-    this.voice = vs.find(v => /daniel|arthur|george|male/i.test(v.name)) || vs[0] || null;
+  on: true, cur: null, pace: 1.1,  // a touch quicker than the raw clips, like a presenter reading over footage
+  clip(key) { return key ? D.voice?.[key] : null; },
+  ms(key) { const c = this.clip(key); return c ? c.seconds * 1000 / this.pace : 0; },
+  play(key) {
+    this.stop();
+    const c = this.clip(key);
+    if (!this.on || !c || P.speed > 2) return;
+    const a = new Audio(c.src); a.preservesPitch = true; a.playbackRate = P.speed * this.pace;
+    this.cur = a; a.play().catch(() => {});
   },
-  say(text) {
-    if (!this.on || !window.speechSynthesis) return;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/\.(\d)/g, " $1"));
-    if (this.voice) u.voice = this.voice; u.lang = "en-GB"; u.rate = Math.min(1.7, .92 + (P.speed - 1) * .2); u.pitch = .85;
-    this.speaking = true; u.onend = u.onerror = () => { this.speaking = false; };
-    speechSynthesis.speak(u);
-  },
-  stop() { window.speechSynthesis?.cancel(); this.speaking = false; },
+  rate(r) { if (!this.cur) return; if (r > 2) this.stop(); else this.cur.playbackRate = r * this.pace; },
+  pause() { this.cur?.pause(); },
+  resume() { if (this.cur && !this.cur.ended) this.cur.play().catch(() => {}); },
+  stop() { if (this.cur) { this.cur.pause(); this.cur = null; } },
 };
-if (window.speechSynthesis) { Voice.pick(); speechSynthesis.onvoiceschanged = () => Voice.pick(); }
 
 // ---------------------------------------------------------------- scene renderers
 // Each returns a plan: {dur, setup(el), beats:[[ms, fn(el, instant)]], update(el, t)}.
@@ -916,7 +919,8 @@ R.evict = s => {
   const barT = hasBars ? 3200 : 0;
   const doorT = barT + 500;
   // nodoor: a results board only, for votes nobody left the house on (the final's win vote)
-  const dur = s.nodoor ? barT + 1800 : doorT + 3800 + (out.length > 2 ? 800 : 0);
+  const sayAt = doorT + 1300;
+  const dur = s.nodoor ? barT + 1800 : Math.max(doorT + 3800 + (out.length > 2 ? 800 : 0), sayAt + Voice.ms(s.voice_say) + 400);
   let bars = [], door, say, way;
   return {
     dur,
@@ -926,7 +930,7 @@ R.evict = s => {
       ...(s.nodoor ? [] : [
         [doorT, (el, instant) => { way.classList.add("on"); if (!instant) Snd.door(); }],
         [doorT + 700, () => door.classList.add("open")],
-        [doorT + 1900, (el, instant) => { say.classList.add("on"); if (!instant) Snd.crowd(); }]]),
+        [sayAt, (el, instant) => { say.classList.add("on"); if (!instant) { Snd.crowd(); Voice.play(s.voice_say); } }]]),
     ],
     setup(el) {
       el.classList.add("board");
@@ -1139,8 +1143,8 @@ R.scoreboard = s => {
 R.crown = s => {
   let cr, h2, p, cv, parts = [];
   return {
-    dur: 8000,
-    beats: [[600, (el, instant) => { cr.classList.add("on"); if (!instant) Snd.fanfare(); }], [1600, () => { h2.classList.add("on"); for (let i = 0; i < 160; i++) parts.push({x: Math.random(), y: -Math.random() * .5, vx: (Math.random() - .5) * .002, vy: .002 + Math.random() * .004, r: Math.random() * 6.28, c: ["#ffd400", "#ff5fa8", "#3d8bff", "#5ff0b0", "#fff"][i % 5]}); }], [2600, () => p.classList.add("on")]],
+    dur: Math.max(8000, 1600 + Voice.ms(s.voice_say) + 1500),
+    beats: [[600, (el, instant) => { cr.classList.add("on"); if (!instant) Snd.fanfare(); }], [1600, (el, instant) => { h2.classList.add("on"); if (!instant) Voice.play(s.voice_say); for (let i = 0; i < 160; i++) parts.push({x: Math.random(), y: -Math.random() * .5, vx: (Math.random() - .5) * .002, vy: .002 + Math.random() * .004, r: Math.random() * 6.28, c: ["#ffd400", "#ff5fa8", "#3d8bff", "#5ff0b0", "#fff"][i % 5]}); }], [2600, () => p.classList.add("on")]],
     setup(el) {
       el.classList.add("crown");
       cr = h("svg", {class: "cr", viewBox: "0 0 100 64", html: '<path d="M6 60 L2 14 L28 34 L50 4 L72 34 L98 14 L94 60 Z" fill="#f5c542" stroke="#7a5506" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="40" r="7" fill="#d6247a"/><circle cx="24" cy="46" r="5" fill="#3d8bff"/><circle cx="76" cy="46" r="5" fill="#3d8bff"/>'});
@@ -1183,6 +1187,7 @@ R.credits = s => {
         h("h3", {}, "By the numbers"),
         h("div", {class: "tot"}, ...[["Messages sent", t.messages], ["Snugs opened", t.snugs], ["Diary room entries", t.diary_entries], ["Nominations", t.nominations], ["House and public votes", t.votes], ["Tokens earned on missions", t.tokens_earned], ["Tokens played", t.token_moves], ["Shop purchases", t.shop_purchases]].flatMap(([a, b]) => [h("span", {}, a), h("b", {}, b.toLocaleString("en-GB"))])),
         h("h3", {}, "Big Brother"), h("p", {}, s.host || "Played by the host, with HMS Victory as Little Brother."),
+        Object.keys(D.image_credits || {}).length ? [h("h3", {}, "Pictures"), h("p", {style: "font-size:13px;color:var(--ink-2)"}, creditLine())] : null,
         h("div", {style: "height:60vh"}));
       app(el, roll);
     },
@@ -1203,22 +1208,24 @@ const stage = $("#stage"), content = $("#content"), caption = $("#caption");
 
 function flatten() {
   D.story.chapters.forEach((c, ci) => {
-    P.list.push({type: "chapter", num: ci + 1, title: c.title, subtitle: c.subtitle, days: c.days, day: c.scenes[0]?.day, at: c.scenes[0]?.at, chapter: ci});
+    P.list.push({type: "chapter", num: ci + 1, title: c.title, subtitle: c.subtitle, days: c.days, day: c.scenes[0]?.day, at: c.scenes[0]?.at, chapter: ci, voice: c.voice});
     c.scenes.forEach(s => P.list.push({...s, chapter: ci}));
   });
   let acc = 0;
   P.plans = P.list.map(s => {
     const base = (R[s.type] || R.narrator)(s);
     const narr = s.type !== "narrator" ? s.narration : null;
-    const capDur = narr ? clamp(500 + narr.length * 24, 1400, 4200) : 0;
+    const vms = Voice.ms(s.voice);
+    const capDur = narr ? (vms ? vms * 1.1 : clamp(500 + narr.length * 24, 1400, 4200)) : 0;
     const shift = narr ? Math.min(capDur, 2200) : 0;
+    const voiceBeat = s.voice ? [[150, (el, instant) => { if (!instant) Voice.play(s.voice); }]] : [];
     const plan = {
-      dur: base.dur + shift,
+      dur: Math.max(base.dur + shift, vms ? 150 + vms + 700 : 0),
       setup: base.setup,
       update: base.update ? ((el, t) => base.update(el, t - shift)) : null,
-      beats: (base.beats || []).map(([t, f]) => [t + shift, f]).sort((a, b) => a[0] - b[0]),
+      beats: [...voiceBeat, ...(base.beats || []).map(([t, f]) => [t + shift, f])].sort((a, b) => a[0] - b[0]),
       caption: s.type === "narrator" ? (s.narration || s.text || "") : narr,
-      capDur: s.type === "narrator" ? base.dur : capDur,
+      capDur: s.type === "narrator" ? (vms ? vms * 1.1 : base.dur) : capDur,
     };
     P.starts.push(acc); acc += plan.dur;
     return plan;
@@ -1230,6 +1237,7 @@ function go(i, offset = 0, instant = false) {
   i = clamp(i, 0, P.list.length - 1);
   const s = P.list[i], plan = P.plans[i];
   P.i = i; P.t = 0; P.bp = 0; P.burn = null;
+  Voice.stop();
   const old = P.el;
   const el = h("div", {class: "scene scene-" + s.type});
   // A seek replaces the scene outright; normal playback cross-fades.
@@ -1244,7 +1252,6 @@ function go(i, offset = 0, instant = false) {
   if (s.day == null) $("#clock-day").textContent = "";
   document.querySelectorAll("#chapters button").forEach((b, k) => b.setAttribute("aria-current", k === s.chapter));
   $("#chapter-select").value = s.chapter;
-  if (plan.caption && P.playing && offset < 200) Voice.say(plan.caption);
   if (offset > 0) advance(offset, true);
   else if (plan.update) plan.update(el, 0);
 }
@@ -1267,7 +1274,7 @@ function tick(now) {
     const plan = P.plans[P.i];
     const t = P.t + dt * P.speed;
     advance(Math.min(t, plan.dur));
-    if (t >= plan.dur && !(Voice.on && Voice.speaking)) {
+    if (t >= plan.dur) {
       if (P.i < P.list.length - 1) go(P.i + 1); else setPlaying(false);
     }
   }
@@ -1281,15 +1288,13 @@ function setPlaying(on) {
   $("#bigplay").hidden = on;
   $("#play-path").setAttribute("d", on ? "M6 4h4v16H6zm8 0h4v16h-4z" : "M6 4l15 8-15 8z");
   $("#btn-play").setAttribute("aria-label", on ? "Pause" : "Play");
-  if (window.speechSynthesis) on ? speechSynthesis.resume() : speechSynthesis.pause();
-  if (on && P.t < 200 && P.plans[P.i].caption) Voice.say(P.plans[P.i].caption);
+  on ? Voice.resume() : Voice.pause();
 }
 
 function seekTo(ms) {
   ms = clamp(ms, 0, P.total - 1);
   let i = P.starts.findIndex((s, k) => ms >= s && ms < s + P.plans[k].dur);
   if (i < 0) i = P.list.length - 1;
-  Voice.stop();
   go(i, ms - P.starts[i], true);
 }
 const sceneForDay = d => { const i = P.list.findIndex(s => s.type !== "chapter" && s.day >= d); return i < 0 ? 0 : (P.list[i - 1]?.type === "chapter" && P.list[i - 1].day >= d ? i - 1 : i); };
@@ -1345,16 +1350,16 @@ function drawHead() {
 function bindControls() {
   $("#btn-play").onclick = () => setPlaying(!P.playing);
   $("#bigplay").onclick = () => setPlaying(true);
-  $("#btn-prev").onclick = () => { Voice.stop(); go(P.t > 1500 ? P.i : P.i - 1); };
-  $("#btn-next").onclick = () => { Voice.stop(); go(P.i + 1); };
+  $("#btn-prev").onclick = () => go(P.t > 1500 ? P.i : P.i - 1);
+  $("#btn-next").onclick = () => go(P.i + 1);
   document.querySelectorAll(".speeds button").forEach(b => b.onclick = () => {
-    P.speed = +b.dataset.speed;
+    P.speed = +b.dataset.speed; Voice.rate(P.speed);
     document.querySelectorAll(".speeds button").forEach(x => x.setAttribute("aria-pressed", x === b));
   });
   $("#btn-sound").onclick = e => e.currentTarget.setAttribute("aria-pressed", Snd.toggle());
   $("#btn-voice").onclick = e => {
     Voice.on = !Voice.on; e.currentTarget.setAttribute("aria-pressed", Voice.on);
-    if (!Voice.on) Voice.stop(); else if (P.plans[P.i].caption) Voice.say(P.plans[P.i].caption);
+    if (!Voice.on) Voice.stop();
   };
   $("#btn-full").onclick = () => document.fullscreenElement ? document.exitFullscreen() : stage.requestFullscreen?.();
   document.addEventListener("keydown", e => {
@@ -1364,9 +1369,9 @@ function bindControls() {
   const sel = $("#chapter-select"), nav = $("#chapters");
   D.story.chapters.forEach((c, ci) => {
     sel.append(h("option", {value: ci}, `${ci + 1}. ${c.title}`));
-    nav.append(h("button", {onclick: () => { Voice.stop(); go(P.list.findIndex(s => s.chapter === ci)); }}, `${ci + 1}. ${c.title}`));
+    nav.append(h("button", {onclick: () => go(P.list.findIndex(s => s.chapter === ci))}, `${ci + 1}. ${c.title}`));
   });
-  sel.onchange = () => { Voice.stop(); go(P.list.findIndex(s => s.chapter === +sel.value)); };
+  sel.onchange = () => go(P.list.findIndex(s => s.chapter === +sel.value));
 }
 
 // ---------------------------------------------------------------- explorer
@@ -1487,7 +1492,8 @@ function paneCast(pane) {
   pane.append(h("div", {class: "scroller"}, h("table", {class: "tbl"},
     h("thead", {}, h("tr", {}, h("th", {}, "Housemate"), h("th", {}, "How it ended"), h("th", {class: "n"}, "Messages"), h("th", {class: "n"}, "Snugs opened"), h("th", {class: "n"}, "In snugs"), h("th", {class: "n"}, "Named diary entries"), h("th", {class: "n"}, "Times nominated"), h("th", {class: "n"}, "Tokens from missions"), h("th", {class: "n"}, "Tokens played"))),
     h("tbody", {}, rows.map(x => h("tr", {}, h("td", {}, h("div", {class: "who"}, img(x.id), h("div", {}, h("b", {}, x.persona), h("small", {}, x.handle)))), h("td", {}, place(x)),
-      ...[x.messages, x.snugs_opened, x.snugs_in, x.named_diary_entries, x.nominations_received, x.tokens_earned, x.tokens_used].map(v => h("td", {class: "n"}, v.toLocaleString("en-GB")))))))));
+      ...[x.messages, x.snugs_opened, x.snugs_in, x.named_diary_entries, x.nominations_received, x.tokens_earned, x.tokens_used].map(v => h("td", {class: "n"}, v.toLocaleString("en-GB")))))))),
+    Object.keys(D.image_credits || {}).length ? h("p", {class: "daysum", style: "margin-top:12px;font-size:12.5px"}, "Pictures of the celebrities each housemate played. " + creditLine()) : "");
 }
 
 function paneVotes(pane) {
@@ -1549,7 +1555,7 @@ bindControls();
 buildExplorer();
 go(0);
 requestAnimationFrame(tick);
-window.BBPlayer = {P, go, seekTo, setPlaying};
+window.BBPlayer = {P, go, seekTo, setPlaying, Voice};
 })();
 </script>
 </body>
