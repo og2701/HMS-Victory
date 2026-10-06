@@ -416,7 +416,7 @@ async def score_run(request):
         if action == "start":
             return _json(game.start(who["uid"], _today()))
         if action == "finish":
-            board, result = game.finish(who["uid"], _today(), body if isinstance(body, dict) else {})
+            board, result = await game.finish_async(who["uid"], _today(), body if isinstance(body, dict) else {})
             if result["newBest"]:
                 if who["ch"]:
                     game.post_best(who["uid"], who["ch"], board["date"])

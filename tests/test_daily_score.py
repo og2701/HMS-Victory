@@ -105,14 +105,66 @@ def test_runs_need_a_genuine_receipt(game):
         game.finish(UID, DAY, {"score": 5, "time": 10, "seed": seed})
     st = game.start(UID, DAY)
     game.clock["t"] += 20
-    from lib.activities.daily_score import Refuse
+    from lib.activities.daily_score import RUN_MAX_AGE, Refuse
     with pytest.raises(Refuse):
         game.finish(UID + 1, DAY, {"score": 5, "time": 20, "seed": seed, "run": st["run"]})
     with pytest.raises(Refuse):
         game.finish(UID, DAY, {"score": 5, "time": 20, "seed": "yesterday", "run": st["run"]})
-    game.clock["t"] += 31 * 60
+    game.clock["t"] += RUN_MAX_AGE + 60
     with pytest.raises(Refuse):
         game.finish(UID, DAY, {"score": 5, "time": 20, "seed": seed, "run": st["run"]})
+
+
+@pytest.fixture
+def paperboy(clock):
+    from lib.activities import daily_score
+    g = daily_score.PAPERBOY
+    g.clock = clock
+    g._counting.clear()
+    return g
+
+
+def test_a_long_paperboy_run_is_replayed_in_full(paperboy, monkeypatch):
+    # (a 25-minute run was cut to its first 15 minutes)
+    from lib.activities import daily_score
+    asked = []
+
+    def replay(seed, inputs, steps, day):
+        asked.append(steps)
+        return {"score": 900, "steps": steps, "papers": 50, "stats": {}}
+    monkeypatch.setattr(paperboy, "replay", replay)
+    st = paperboy.start(UID, DAY)
+    paperboy.clock["t"] += 1521
+    _s, r = paperboy.finish(UID, DAY, {"score": 900, "time": 1521, "count": 50, "inputs": [],
+                                       "seed": paperboy.seed_for(DAY.isoformat()), "run": st["run"]})
+    assert asked == [int((1521 + daily_score.GRACE) * 120)]
+    assert r["newBest"] and not r["trimmed"]
+
+
+def test_a_run_sent_again_while_its_still_being_counted_counts_once(paperboy, monkeypatch):
+    # the replay runs off the event loop now, so a copy can arrive before the first is in
+    import threading
+    gate = threading.Event()
+
+    def replay(seed, inputs, steps, day):
+        gate.wait(5)
+        return {"score": 400, "steps": steps, "papers": 10, "stats": {}}
+    monkeypatch.setattr(paperboy, "replay", replay)
+    st = paperboy.start(UID, DAY)
+    paperboy.clock["t"] += 60
+    body = {"score": 400, "time": 60, "count": 10, "inputs": [], "seed": paperboy.seed_for(DAY.isoformat()), "run": st["run"]}
+
+    async def both():
+        first = asyncio.create_task(paperboy.finish_async(UID, DAY, body))
+        await asyncio.sleep(0.05)
+        second = asyncio.create_task(paperboy.finish_async(UID, DAY, body))
+        await asyncio.sleep(0.05)
+        assert not second.done()                        # waiting on the first count
+        gate.set()
+        return await first, await second
+    (_s1, r1), (_s2, r2) = asyncio.run(both())
+    assert r1["newBest"] and not r1.get("again")
+    assert r2.get("again") and r2["earned"] == 0
 
 
 def test_a_receipt_survives_a_restart_and_counts_once(game):

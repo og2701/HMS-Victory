@@ -8,7 +8,8 @@ the bot saw pass: the most anyone could score in that long on the day's level, p
 (score_limits works it out from the seed), so a faked score can't outrun the clock, and a run
 sent twice counts once. The page asks for the receipt before the run begins (while the title or
 the last result is up), so a slow connection doesn't make an honest run look too quick. The receipt means a run survives the bot
-restarting, and a finish that had to wait for a phone's connection still counts (for 30 minutes).
+restarting, and a finish that had to wait for a phone's connection still counts (for 75 minutes
+from the start).
 
 Only each player's best of the day pays, at <PREFIX>_RATE UKP a point up to <PREFIX>_CAP: beat
 your best and you're paid the difference, and runs below it pay nothing. The level comes from the
@@ -36,10 +37,13 @@ log = logging.getLogger(__name__)
 
 START_GAP = 1.0              # seconds between one player's runs
 GRACE = 2.0                  # seconds on top of the bot's clock, for the hop to and from the bot
-REPLAY_MAX = 15 * 60         # the longest run a replay plays out, seconds
-RUN_MAX_AGE = 30 * 60        # a finish that arrives later than this after its start doesn't count
+REPLAY_MAX = 60 * 60         # the longest run a replay plays out, seconds (good players go 25 minutes)
+RUN_MAX_AGE = 75 * 60        # a finish that arrives later than this after its start doesn't count
 SITTING = 30 * 60            # beat your best again within this long and the same post is updated
 BOARD = 100                  # rows on each leaderboard tab (the page scrolls them)
+
+
+AGAIN = {"height": 0, "earned": 0, "newBest": False, "trimmed": False, "again": True}   # a run counted already
 
 
 class Refuse(Exception):
@@ -84,6 +88,7 @@ class ScoreGame:
     _last_start: dict = field(default_factory=dict)
     _posts: dict = field(default_factory=dict)
     _sittings: dict = field(default_factory=dict)
+    _counting: dict = field(default_factory=dict)    # (uid, started) -> done, for a run being counted
 
     # ---- settings ------------------------------------------------------------------------------
 
@@ -240,6 +245,35 @@ class ScoreGame:
     def finish(self, uid: int, date, body: dict) -> tuple[dict, dict]:
         """End the player's run. Returns (the new state, what happened: the score counted, UKP
         earned, whether it was a new best today, whether the score was cut down)."""
+        job = self._open(uid, date, body)
+        if job is None:
+            return self.state(uid, date), dict(AGAIN)
+        return self._close(uid, date, job, self._play(job))
+
+    async def finish_async(self, uid: int, date, body: dict) -> tuple[dict, dict]:
+        """finish, with the replay off the event loop: the rules take seconds to play a long run
+        again, and the bot shouldn't stop for them. A copy of the run sent while it's still being
+        counted waits for that count and is answered as a repeat, so it can't count twice."""
+        job = self._open(uid, date, body)
+        if job is None:
+            return self.state(uid, date), dict(AGAIN)
+        key = (uid, int(job["run"]["started"]))
+        busy = self._counting.get(key)
+        if busy is not None:
+            await busy
+            return self.state(uid, date), dict(AGAIN)
+        done = asyncio.get_running_loop().create_future()
+        self._counting[key] = done
+        try:
+            played = await asyncio.to_thread(self._play, job) if self.replay is not None else None
+            return self._close(uid, date, job, played)
+        finally:
+            self._counting.pop(key, None)
+            done.set_result(None)
+
+    def _open(self, uid: int, date, body: dict) -> dict | None:
+        """The checks before a run counts (its receipt, its age, its level) and what the clock allows
+        it; None if it's counted already."""
         receipt = str(body.get("run") or "")
         if receipt:
             run = self._read_receipt(uid, receipt)
@@ -256,7 +290,7 @@ class ScoreGame:
         if DatabaseManager.fetch_one(f"SELECT 1 FROM {self.runs} WHERE user_id = ? AND started = ?",
                                      (str(uid), int(run["started"]))):
             # already counted: the page sent it again because it never heard back the first time
-            return self.state(uid, date), {"height": 0, "earned": 0, "newBest": False, "trimmed": False, "again": True}
+            return None
         try:
             reported = max(0, int(body.get("score", body.get("height")) or 0))
             said_time = float(body.get("time") or 0)
@@ -275,25 +309,43 @@ class ScoreGame:
                 allowed = min(allowed, self.limit(run["seed"], min(elapsed + GRACE, said_time + 5)))
             except Exception:
                 log.error("couldn't work out the %s limit; going by the clock alone", self.key, exc_info=True)
-        played = None
+        return {"uid": uid, "run": run, "reported": reported, "said_time": said_time, "count": count,
+                "now": now, "elapsed": elapsed, "allowed": allowed, "inputs": body.get("inputs")}
+
+    def _play(self, job: dict) -> dict | None:
+        """The rules play the run again from the inputs the page recorded, for no longer than the
+        bot's clock allows (None if this game isn't replayed, or the replay failed). Touches nothing
+        but the rules, so it can run off the event loop."""
+        if self.replay is None:
+            return None
+        run = job["run"]
+        try:
+            return self.replay(run["seed"], job["inputs"],
+                               int(min(job["elapsed"] + GRACE, job["said_time"] + 5, REPLAY_MAX) * 120), run["date"])
+        except Exception:
+            log.error("couldn't replay a %s run for %s", self.key, job["uid"], exc_info=True)
+            return None
+
+    def _close(self, uid: int, date, job: dict, played: dict | None) -> tuple[dict, dict]:
+        """Count the run: the replay's score if the game is replayed (whatever the page says), else
+        the page's up to what the clock allows; pay any new best, and record it."""
+        run, reported, said_time, count, now = job["run"], job["reported"], job["said_time"], job["count"], job["now"]
+        allowed = job["allowed"]
         if self.replay is not None:
-            # the rules play the run again from the inputs the page recorded, for no longer than the
-            # bot's clock allows: that score is the one that counts, whatever the page says
-            try:
-                played = self.replay(run["seed"], body.get("inputs"),
-                                     int(min(elapsed + GRACE, said_time + 5, REPLAY_MAX) * 120), run["date"])
-                allowed, count = self.counted(uid, run["date"], played), played["papers"]
-            except Exception:
-                played = None
-                log.error("couldn't replay a %s run for %s", self.key, uid, exc_info=True)
-                allowed = 0
+            allowed = 0
+            if played is not None:
+                try:
+                    allowed, count = self.counted(uid, run["date"], played), played["papers"]
+                except Exception:
+                    played = None
+                    log.error("couldn't count a %s run's replay for %s", self.key, uid, exc_info=True)
             score = allowed
         else:
             score = min(reported, allowed)
         trimmed = score < reported
         if trimmed:
             log.warning("%s score trimmed for %s: reported %s in %.1fs (game said %.1fs), allowed %s",
-                        self.key, uid, reported, elapsed, said_time, allowed)
+                        self.key, uid, reported, job["elapsed"], said_time, allowed)
         iso = run["date"]
         d = self.day(uid, iso)
         d["runs"] += 1
