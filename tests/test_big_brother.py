@@ -2141,5 +2141,48 @@ async def test_close_public_vote_ranks_and_sets_pending(bb, monkeypatch):
     assert last["evicted_ids"] == [20]
 
 
+@pytest.mark.asyncio
+async def test_final_house_silence_and_permanent_closure(bb, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_client = MagicMock()
+    mock_channel = MagicMock()
+    monkeypatch.setattr(bb, "house_channel", AsyncMock(return_value=mock_channel))
+    monkeypatch.setattr(bb, "set_house_silence", AsyncMock(return_value=True))
+    monkeypatch.setattr(bb, "refresh_panel", AsyncMock())
+    sent_msgs = []
+    monkeypatch.setattr(bb, "bb_send", AsyncMock(side_effect=lambda ch, text, **kw: sent_msgs.append(text)))
+
+    # Setup snug
+    bb.ensure_tables()
+    snug_id = bb.add_snug(987654, 111, [111, 222])
+
+    # Perform final silence
+    ok = await bb.perform_final_house_silence(mock_client)
+    assert ok is True
+    assert bb.house_permanently_closed() is True
+    assert bb.house_silent() is True
+    assert len(sent_msgs) == 1
+    assert "OFFICIALLY CLOSED" in sent_msgs[0]
+    assert "last and final time" in sent_msgs[0]
+
+    # Verify snug was marked closed in DB
+    snugs = bb.snugs()
+    matching = [s for s in snugs if s["id"] == snug_id]
+    assert len(matching) == 1
+    assert matching[0]["closed_at"] is not None
+
+    # Scheduled unsilence should be a no-op when house is permanently closed
+    bb.set_house_silence.reset_mock()
+    await bb.scheduled_house_unsilence(mock_client)
+    bb.set_house_silence.assert_not_awaited()
+
+    # Scheduled silence should also be a no-op if already permanently closed
+    bb.set_house_silence.reset_mock()
+    await bb.scheduled_house_silence(mock_client)
+    bb.set_house_silence.assert_not_awaited()
+
+
+
 
 

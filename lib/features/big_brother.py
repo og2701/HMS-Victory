@@ -51,6 +51,8 @@ STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
 STATE_HOUSE_SPEAKERS = "house_speakers"  # housemates let talk while the rest of the house is silent
+STATE_FINAL_SILENCE_SCHEDULED = "final_silence_scheduled"
+STATE_HOUSE_CLOSED_PERMANENTLY = "house_closed_permanently"
 STATE_HOUSE_PANEL_SIG = "house_panel_signature"  # what the house panel last showed; a change re-posts it
 STATE_VOTE_REPOST_AT = "house_msgs_at_vote_repost"  # the house counter when the vote last moved down
 STATE_VOTE_BUMPED_AT = "vote_thread_bumped_at"      # when the board was last re-posted inside its thread
@@ -361,6 +363,14 @@ def house_silent() -> bool:
 
 def house_speakers() -> list[int]:
     return [int(u) for u in get_state(STATE_HOUSE_SPEAKERS, []) or []]
+
+
+def final_silence_scheduled() -> bool:
+    return bool(get_state(STATE_FINAL_SILENCE_SCHEDULED, False))
+
+
+def house_permanently_closed() -> bool:
+    return bool(get_state(STATE_HOUSE_CLOSED_PERMANENTLY, False))
 
 
 def house_unlocked() -> bool:
@@ -1093,6 +1103,9 @@ async def set_house_silence(client: discord.Client, silent: bool, speakers: Iter
     channel, but snug threads remain open. Lifted when nominations close. Needs the role configured.
     speakers are let talk through the silence (the host inviting two housemates to chat); every
     call replaces them, and unsilencing clears them."""
+    if not silent and house_permanently_closed():
+        log.warning("Big Brother: house is permanently closed; unsilence rejected.")
+        return False
     rid = housemate_role_id()
     ch = await house_channel(client)
     if not rid or not isinstance(ch, discord.TextChannel):
@@ -1104,10 +1117,15 @@ async def set_house_silence(client: discord.Client, silent: bool, speakers: Iter
     # Explicit allow when not silenced: once the doors open, @everyone is denied sending, so a
     # cleared role override would leave housemates inheriting that deny. Snugs (threads) stay open.
     overwrite.send_messages = not silent
-    overwrite.send_messages_in_threads = True
+    if house_permanently_closed():
+        overwrite.send_messages_in_threads = False
+        overwrite.create_public_threads = False
+        overwrite.create_private_threads = False
+    else:
+        overwrite.send_messages_in_threads = True
     try:
         await ch.set_permissions(role, overwrite=overwrite,
-                                 reason="Big Brother: house " + ("silenced (snugs open)" if silent else "unsilenced"))
+                                 reason="Big Brother: house " + ("permanently closed" if house_permanently_closed() else "silenced (snugs open)" if silent else "unsilenced"))
         set_state(STATE_HOUSE_SILENT, bool(silent))
     except discord.HTTPException as e:
         log.warning("Big Brother: could not %s the house: %s", "silence" if silent else "unsilence", e)
@@ -1691,7 +1709,7 @@ _bumper: Optional[asyncio.Task] = None
 async def bump_house_threads(client: discord.Client) -> bool:
     """Re-post the panel (and with it the vote board) so their threads stay near the top of
     everyone's channel list. Nothing to bump if they aren't in threads."""
-    if not enabled() or not house_unlocked() or not panel_in_thread():
+    if not enabled() or not house_unlocked() or not panel_in_thread() or house_permanently_closed():
         return False
     if not get_state(STATE_HOUSE_PANEL_THREAD):
         return False
@@ -2053,7 +2071,7 @@ async def post_daily_roundup_draft(client: discord.Client) -> tuple[bool, str]:
 
 
 async def trigger_daily_roundup_draft(client: discord.Client) -> None:
-    if not enabled() or not game_started():
+    if not enabled() or not game_started() or house_permanently_closed():
         return
     day = day_number()
     discarded = get_state(STATE_DAILY_ROUNDUP_DISCARDED_DAY)
@@ -2126,9 +2144,85 @@ async def ensure_daily_roundup_posted_before_silence(client: discord.Client) -> 
     return True
 
 
+async def perform_final_house_silence(client: discord.Client) -> bool:
+    """Permanently silence the house for the end of the season.
+    - Sets house_closed_permanently and house_silent
+    - Revokes Housemate role sending and thread permissions in #the-house
+    - Closes and locks all open snug threads
+    - Posts the official final closure announcement in #the-house
+    - Updates control and house panels
+    """
+    set_state(STATE_HOUSE_CLOSED_PERMANENTLY, True)
+    set_state(STATE_FINAL_SILENCE_SCHEDULED, False)
+    set_state(STATE_HOUSE_SILENT, True)
+
+    ch = await house_channel(client)
+    ok = await set_house_silence(client, True)
+    if not ok:
+        log.warning("Big Brother: could not update channel permissions for final house silence.")
+
+    # Close and lock all active snugs
+    closed_snugs = 0
+    try:
+        for sn in snugs():
+            if sn.get("closed_at"):
+                continue
+            sn_id, th_id = sn["id"], sn["thread_id"]
+            try:
+                thread = client.get_channel(int(th_id)) or await client.fetch_channel(int(th_id))
+                if isinstance(thread, discord.Thread) and not thread.locked:
+                    if thread.archived:
+                        await thread.edit(archived=False)
+                    await thread.send(f"{EYE} **This snug is closed.** The Big Brother house has shut its doors for the final time. Everything said here is kept.")
+                    await thread.edit(archived=True, locked=True, reason="Big Brother: house permanently closed")
+            except Exception as e:
+                log.warning("Big Brother: could not close snug %s during final silence: %s", sn_id, e)
+            mark_snug_closed(int(sn_id))
+            closed_snugs += 1
+    except Exception as e:
+        log.exception("Big Brother: error closing snugs during final silence: %s", e)
+
+    # Post final closure announcement in house channel
+    if ch:
+        announcement = (
+            f"{EYE} **THE BIG BROTHER HOUSE IS NOW OFFICIALLY CLOSED.**\n\n"
+            f"It is midnight (00:00).\n\n"
+            f"After two unforgettable weeks, the lights in the Big Brother house have gone out. "
+            f"The competitions are finished, the diary room is locked, and Big Brother has left the building.\n\n"
+            f"The house is now silent for the last and final time.\n\n"
+            f"Thank you to all our housemates for playing, scheming, laughing, and giving us such an incredible season. "
+            f"And thank you to everyone across the server who watched, voted, and cheered along.\n\n"
+            f"Goodnight, housemates. ❤️"
+        )
+        try:
+            await bb_send(ch, announcement)
+        except Exception as e:
+            log.warning("Big Brother: could not send final silence announcement: %s", e)
+
+    log_event("house_closed_permanently", actor=None, reason="scheduled_final_silence", closed_snugs=closed_snugs)
+    log.info("Big Brother: house silenced and closed permanently for the season.")
+
+    try:
+        await refresh_panel(client)
+    except Exception:
+        pass
+
+    return True
+
+
 async def scheduled_house_silence(client: discord.Client) -> None:
     """Scheduled task at 00:00: silence the house for the night if game is in progress."""
     if not enabled() or not game_started():
+        return
+
+    if house_permanently_closed():
+        log.info("Big Brother: house is already permanently closed; scheduled silence is a no-op.")
+        return
+
+    # If final silence is scheduled or a winner has been crowned, perform final closure
+    if final_silence_scheduled() or len(housemates(STATUS_WINNER)) > 0:
+        log.info("Big Brother: executing final house silence at midnight.")
+        await perform_final_house_silence(client)
         return
 
     # If the previous day's roundup hasn't been posted yet, release it right before silencing
@@ -2153,7 +2247,7 @@ async def scheduled_house_silence(client: discord.Client) -> None:
 
 async def scheduled_house_unsilence(client: discord.Client) -> None:
     """Scheduled task at 6:30 AM: unsilence the house for the morning if game is in progress."""
-    if not enabled() or not game_started():
+    if not enabled() or not game_started() or house_permanently_closed():
         return
     if not house_silent():
         log.info("Big Brother: morning unsilence triggered, but house is already unsilenced.")
@@ -3320,8 +3414,12 @@ def _panel_text(guild: Optional[discord.Guild]) -> str:
     else:
         lines.append("**Eviction vote:** ⚪ none running")
     speakers = house_speakers()
-    lines.append("**House chat:** " + ("🟢 open" if not house_silent() else "🔇 housemates silenced"
-                 + (f" · 🎙️ {len(speakers)} allowed to talk" if speakers else "")))
+    if house_permanently_closed():
+        lines.append("**House chat:** 🔒 permanently closed (final silence)")
+    else:
+        sched_note = " (final silence at 00:00)" if (final_silence_scheduled() or len(housemates(STATUS_WINNER)) > 0) else ""
+        lines.append("**House chat:** " + ("🟢 open" if not house_silent() else "🔇 housemates silenced"
+                     + (f" · 🎙️ {len(speakers)} allowed to talk" if speakers else "")) + sched_note)
     from lib.features import big_brother_shop as _shop
     shop_task = _shop.current_task()
     if shop_task:
@@ -4387,11 +4485,14 @@ async def _apply_silence(interaction: discord.Interaction, silent: bool, speaker
 async def _act_silence(interaction: discord.Interaction):
     """Silence everyone, silence all but a chosen few, or lift it."""
     silent, speakers = house_silent(), house_speakers()
+    is_closed = house_permanently_closed()
     view = discord.ui.View(timeout=120)
     everyone = discord.ui.Button(label="Silence everyone", emoji="🔇", style=discord.ButtonStyle.danger,
                                  disabled=silent and not speakers)
     some = discord.ui.Button(label="Only let some talk", emoji="🎙️", style=discord.ButtonStyle.primary)
     lift = discord.ui.Button(label="Unsilence", emoji="🔊", style=discord.ButtonStyle.success, disabled=not silent)
+    final_closure = discord.ui.Button(label="Final closure (Permanent)", emoji="🔒",
+                                      style=discord.ButtonStyle.danger, disabled=is_closed)
 
     async def _everyone(inter: discord.Interaction):
         await _apply_silence(inter, True)
@@ -4408,12 +4509,32 @@ async def _act_silence(interaction: discord.Interaction):
                           inter.guild, ins, picked, defaults=speakers, done_label="Silence the rest", edit=True)
 
     async def _lift(inter: discord.Interaction):
+        if is_closed:
+            set_state(STATE_HOUSE_CLOSED_PERMANENTLY, False)
         await _apply_silence(inter, False)
-    everyone.callback, some.callback, lift.callback = _everyone, _some, _lift
-    for b in (everyone, some, lift):
+
+    async def _final(inter: discord.Interaction):
+        async def yes(inter2: discord.Interaction):
+            await inter2.response.defer()
+            await perform_final_house_silence(inter2.client)
+            await _reply(inter2, "The Big Brother house has been permanently silenced and closed.", refresh=True)
+        await inter.response.send_message(
+            f"{EYE} **Permanently close the Big Brother house?**\n"
+            f"This will silence the house for the final time, lock all threads, close all open snugs, and post the farewell announcement.",
+            view=_Confirm(yes, "Close house permanently"), ephemeral=True)
+
+    everyone.callback, some.callback, lift.callback, final_closure.callback = _everyone, _some, _lift, _final
+    for b in (everyone, some, lift, final_closure):
         view.add_item(b)
-    now = ("🟢 open" if not silent else "🔇 silenced"
-           + (" · 🎙️ " + ", ".join(_name(interaction.guild, u) for u in speakers) + " may talk" if speakers else ""))
+
+    if is_closed:
+        now = "🔒 permanently closed (final silence)"
+    else:
+        now = ("🟢 open" if not silent else "🔇 silenced"
+               + (" · 🎙️ " + ", ".join(_name(interaction.guild, u) for u in speakers) + " may talk" if speakers else ""))
+        if final_silence_scheduled() or len(housemates(STATUS_WINNER)) > 0:
+            now += " · ⏳ final silence scheduled for midnight (00:00)"
+
     await interaction.response.send_message(f"**House chat:** {now}", view=view, ephemeral=True)
 
 
@@ -5256,6 +5377,9 @@ async def handle_use_immunity(interaction: discord.Interaction):
 
 
 async def handle_snug(interaction: discord.Interaction):
+    if house_permanently_closed():
+        await interaction.response.send_message(f"{EYE} The Big Brother house is now officially closed. No more snugs can be opened.", ephemeral=True)
+        return
     me = interaction.user.id
     others = [u for u in housemates() if u != me]
     if not others:
@@ -5299,12 +5423,33 @@ class _HouseButton(_PanelButton):
     def registry(self) -> dict:
         return HOUSE_ACTIONS
 
+    async def callback(self, interaction: discord.Interaction):
+        if house_permanently_closed() and self.action not in HOUSE_PUBLIC_ACTIONS:
+            await interaction.response.send_message(
+                f"{EYE} The Big Brother house is now officially closed for this season. Thank you for playing!",
+                ephemeral=True
+            )
+            return
+        await super().callback(interaction)
+
 
 def _house_panel_text(guild: Optional[discord.Guild]) -> str:
     ins = housemates()
     noms = open_round(KIND_NOMINATIONS)
     vote = open_round(KIND_VOTE)
     n = nominations_each()
+    if house_permanently_closed():
+        lines = [f"## {EYE} The Big Brother House",
+                 "🔒 **The Big Brother house is now officially closed.**",
+                 "",
+                 "The season has concluded. Big Brother has left the building.",
+                 ""]
+        winners = housemates(STATUS_WINNER)
+        if winners:
+            lines.append("👑 **Champion" + ("s" if len(winners) > 1 else "") + ":** " + ", ".join(_name(guild, u) for u in winners))
+            lines.append("")
+        lines.append("-# Thank you to all housemates and spectators for an unforgettable season!")
+        return "\n".join(lines)
     lines = [f"## {EYE} The Big Brother House",
              f"**{len(ins)}** housemates remain · **{len(housemates(STATUS_EVICTED))}** evicted",
              ""]
