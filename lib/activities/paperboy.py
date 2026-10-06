@@ -7,7 +7,7 @@ a day, the same for everyone: each one done raises the player's multiplier for t
 a streak. Progress comes from the bot's own replay of each run, never from the page.
 
 The papers a player collects (every run's, as the bot counted them) are spent in the wardrobe on
-bikes, hoodies, caps, bags, trails and bells, all for show: nothing bought changes a score.
+bikes, hoodies, hair colours, bags, trails and bells, all for show: nothing bought changes a score.
 """
 
 from __future__ import annotations
@@ -180,12 +180,14 @@ WARDROBE = {
     "top-lilac": ("top", "Lilac", 500, "#A98CF0"),
     "top-hivis": ("top", "Hi-Vis", 800, "#C8F020"),
     "top-red": ("top", "Christmas Jumper", 1200, "#C8202A"),
-    "cap-red": ("cap", "Red Cap", 0, ""),
-    "cap-sky": ("cap", "Sky Blue", 200, "#5AB4FF"),
-    "cap-lime": ("cap", "Lime", 200, "#8CE04A"),
-    "cap-black": ("cap", "Black", 400, "#22222A"),
-    "cap-white": ("cap", "White", 400, "#F4F4F0"),
-    "cap-gold": ("cap", "Gold", 2000, "#E8B530"),
+    "hair-chestnut": ("hair", "Chestnut", 0, ""),
+    "hair-blonde": ("hair", "Golden Blonde", 200, "#E3B85A"),
+    "hair-ginger": ("hair", "Ginger", 300, "#C8581E"),
+    "hair-black": ("hair", "Jet Black", 300, "#24201E"),
+    "hair-silver": ("hair", "Distinguished Silver", 500, "#C9CCD2"),
+    "hair-pink": ("hair", "Bubblegum Pink", 800, "#FF6FB5"),
+    "hair-blue": ("hair", "Electric Blue", 800, "#2F7BFF"),
+    "hair-green": ("hair", "Punk Green", 800, "#3FCB4A"),
     "bag-yellow": ("bag", "Paper Bag", 0, ""),
     "bag-brown": ("bag", "Leather Satchel", 300, "#8A5A30"),
     "bag-red": ("bag", "Pillar Box Red", 500, "#D8262E"),
@@ -199,7 +201,7 @@ WARDROBE = {
     "bell-duck": ("bell", "Rubber Duck", 600, "duck"),
     "bell-fanfare": ("bell", "Fanfare", 1000, "fanfare"),
 }
-SLOTS = ("bike", "top", "cap", "bag", "trail", "bell")
+SLOTS = ("bike", "top", "hair", "bag", "trail", "bell")
 FREE = [k for k, v in WARDROBE.items() if v[2] == 0]
 WEARING = {WARDROBE[k][0]: k for k in FREE}
 

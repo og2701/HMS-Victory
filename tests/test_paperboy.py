@@ -118,7 +118,7 @@ def test_a_finished_run_is_multiplied_by_the_jobs_done_before_it(clock):
                                "seed": seed, "run": st["run"], "inputs": inputs})
     assert r["height"] == played["score"] * 3 and not r["trimmed"] and "jobsDone" in r and r["mult"] >= 3
     # and the wardrobe's actions come through the game
-    s = g.act(UID, DAY, "wear", {"item": "cap-red"})
-    assert s["kit"]["wearing"]["cap"] == "cap-red"
+    s = g.act(UID, DAY, "wear", {"item": "hair-chestnut"})
+    assert s["kit"]["wearing"]["hair"] == "hair-chestnut"
     with pytest.raises(daily_score.Refuse):
         g.act(UID, DAY, "buy", {"item": "bike-gold"})
