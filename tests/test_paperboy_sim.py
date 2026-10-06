@@ -89,3 +89,38 @@ def test_the_milk_float_pulls_up_behind_whatever_is_in_its_lane():
                 if q is f or q["kind"] in ("dog", "cab", "float") or abs(q["x"] - f["x"]) >= q["hw"] + f["hw"]:
                     continue
                 assert abs(q["d"] - d) >= q["hl"] + f["hl"], (f["id"], q["kind"], step)
+
+
+def _streets(prefix: str, n: int = 10, metres: int = 2000):
+    for theme in S.RULES:
+        for i in range(n):
+            street = S.Street(f"{prefix}-{i}", theme)
+            street.ensure(metres * 1000)
+            yield theme, i, street
+
+
+def test_a_cab_never_backs_out_in_front_of_a_ramp():
+    # (it used to, where the ramp over a wall of traffic was the only way through)
+    for theme, i, street in _streets("cabs"):
+        for c in (o for o in street.obs if o["kind"] == "cab"):
+            x = S.LANES[2] if c["dir"] < 0 else S.LANES[0]
+            assert not any(rp["x"] == x and c["d"] - 3000 < rp["d"] < c["d"] + 9000 for rp in street.ramps), (theme, i, c["d"])
+
+
+def test_a_milk_float_never_drives_into_the_only_way_through():
+    # vans and buses across two lanes leave one way through, never the lane a float's coming down (unless
+    # it's a wall of three that couldn't park on the float, when the ramp over it isn't in the float's lane);
+    # and there's only one float up the street at a time, or two could shut two lanes
+    for theme, i, street in _streets("floats"):
+        floats = sorted((o for o in street.obs if o["kind"] == "float"), key=lambda o: o["d"])
+        assert all(b["d"] - a["d"] >= 30000 for a, b in zip(floats, floats[1:])), (theme, i)
+        big = [o for o in street.obs if o["kind"] in ("van", "bus")]
+        for f in floats:
+            for a in big:
+                if not f["d"] - 30000 < a["d"] < f["d"]:
+                    continue
+                lanes = {b["x"] for b in big if abs(b["d"] - a["d"]) <= 1500}
+                if len(lanes) < 2 or f["x"] in lanes:
+                    continue
+                ramp = [rp for rp in street.ramps if 0 < a["d"] - rp["d"] < 13000]
+                assert ramp and all(rp["x"] != f["x"] for rp in ramp), (theme, i, f["d"], a["d"])

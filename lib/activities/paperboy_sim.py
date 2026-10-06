@@ -162,10 +162,16 @@ class Street:
         lane = int(r() * 3)
         gap = self._gap_near(d, d + 16000)
         extra = 0
+        clear_to = 0
+        # the lane a milk float up the street is coming down (there's only ever one at a time)
+        coming = [o["x"] for o in self.obs if o["kind"] == "float" and o["d"] > d]
         if gap is not None and pick < 0.4:
+            # a cab can be well up the street: the next beat starts 20 m past it, or it could back out
+            # in front of the only way through
             side = gap["side"]
             self._add("cab", gap["d"] + HOUSE, side * 400, side * 400, -side)
             self._line(d + 6000, LANES[1], 6, False)
+            clear_to = gap["d"] + HOUSE + 20000
         elif pick < t["cuts"][0] or hard < 120:
             which = r()
             if which < t["low_cut"]:
@@ -185,6 +191,12 @@ class Street:
         elif pick < t["cuts"][1]:
             wall = hard >= 250 and r() < t["wall"]
             open_ = -1 if wall else int(r() * 3)
+            # a float would drive straight into the only gap: the gap's in another lane, and the float
+            # pulls up behind the van or bus in its own
+            n = 0
+            while not wall and n < 3 and LANES[open_] in coming:
+                open_ = (open_ + 1) % 3
+                n += 1
             for k in range(3):
                 if k != open_:
                     self._add("van" if r() < 0.5 else "bus", d + (1500 if k == 2 else 0), LANES[k])
@@ -192,6 +204,12 @@ class Street:
                 self._line(d - 3000, LANES[open_], 7, False)
             if wall or r() < t["ramp"]:
                 rl = lane if wall else (open_ + 1 + int(r() * 2)) % 3
+                # nor up a wall's only ramp (a van can't park on top of a waiting float, so its lane's open,
+                # float and all)
+                n = 0
+                while wall and n < 3 and LANES[rl] in coming:
+                    rl = (rl + 1) % 3
+                    n += 1
                 self._ramp(d + (1500 if rl == 2 else 0) - 11000, LANES[rl], wall)
                 extra = 12000
         elif pick < t["cuts"][2]:
@@ -208,7 +226,7 @@ class Street:
             direction = 1 if r() < 0.5 else -1
             self._add("dog", d, -direction * 330, -direction * 330, direction)
             self._line(d + 5000, LANES[lane], 6, False)
-        elif hard > 200:
+        elif hard > 200 and not coming:
             self._add("float", d + 30000, LANES[lane])
             self._line(d, LANES[(lane + 1) % 3], 8, False)
         else:
@@ -224,7 +242,7 @@ class Street:
             if not any(o["from_"] == 0 and o["x"] == x and abs(o["d"] - pd) < o["hl"] + 1500 for o in self.obs):
                 self.powers.append({"id": self.next_id, "d": pd, "x": x, "kind": kind, "taken": False})
                 self.next_id += 1
-        self.ob_to = d + 14000 + int(r() * 8000) + min(14000, d // 40) - hard * 5 + extra
+        self.ob_to = max(clear_to, d + 14000 + int(r() * 8000) + min(14000, d // 40) - hard * 5 + extra)
 
 
 class Run:
