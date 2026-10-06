@@ -109,8 +109,10 @@ class Street:
 
     def _add(self, kind: str, d: int, x: int, from_: int = 0, direction: int = 0) -> None:
         hw, hl, height = OB[kind]
+        if any(f["kind"] == "float" and abs(f["x"] - x) < f["hw"] + hw and abs(f["d"] - d) < f["hl"] + hl + 1200 for f in self.obs):
+            return
         self.obs.append({"id": self.next_id, "kind": kind, "d": d, "x": x, "hw": hw, "hl": hl, "height": height,
-                         "trig": -1, "from_": from_, "dir": direction, "hit": False})
+                         "trig": -1, "from_": from_, "dir": direction, "hit": False, "stop": 0})
         self.next_id += 1
 
     def _ramp(self, d: int, x: int, golden: bool) -> None:
@@ -259,7 +261,17 @@ class Run:
         return o["x"]
 
     def ob_d(self, o: dict) -> int:
-        return o["d"] - 40 * (self.step - o["trig"]) if o["kind"] == "float" and o["trig"] >= 0 else o["d"]
+        return max(o["stop"], o["d"] - 40 * (self.step - o["trig"])) if o["kind"] == "float" and o["trig"] >= 0 else o["d"]
+
+    def _float_stop(self, f: dict) -> int:
+        stop = 0
+        for q in self.street.obs:
+            if q is f or q["kind"] == "dog" or q["d"] >= f["d"]:
+                continue
+            x = (LANES[2] if q["dir"] < 0 else LANES[0]) if q["kind"] == "cab" else q["x"]
+            if abs(x - f["x"]) < q["hw"] + f["hw"]:
+                stop = max(stop, q["d"] + q["hl"] + f["hl"] + 1200)
+        return min(stop, f["d"])
 
     def tick(self) -> None:
         if self.over:
@@ -284,6 +296,8 @@ class Run:
             reach = {"dog": 16000, "cab": 24000, "float": 48000}.get(o["kind"], -1)
             if reach > 0 and self.dist >= o["d"] - reach:
                 o["trig"] = self.step
+                if o["kind"] == "float":
+                    o["stop"] = self._float_stop(o)
         for rp in self._near_ramps:
             if self.jumping() or rp["d"] <= was or rp["d"] > self.dist or abs(self.x - rp["x"]) >= 60:
                 continue

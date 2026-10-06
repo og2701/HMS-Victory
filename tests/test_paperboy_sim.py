@@ -72,3 +72,20 @@ def test_a_ramp_throws_you_over_a_wall_of_traffic():
     assert not run.over and top >= 400
     assert any(abs(o["x"] - ramp["x"]) < 10 for o in run.street.obs)   # there was something there to clear
     assert not run.jumping()
+
+
+def test_the_milk_float_pulls_up_behind_whatever_is_in_its_lane():
+    run = S.Run("0123abcd")
+    run.street.ensure(3_000_000)
+    floats = [o for o in run.street.obs if o["kind"] == "float"]
+    assert floats
+    for f in floats:
+        f["trig"] = 0
+        f["stop"] = run._float_stop(f)
+        for step in range(0, 120 * 60, 6):
+            run.step = step
+            d = run.ob_d(f)
+            for q in run.street.obs:
+                if q is f or q["kind"] in ("dog", "cab", "float") or abs(q["x"] - f["x"]) >= q["hw"] + f["hw"]:
+                    continue
+                assert abs(q["d"] - d) >= q["hl"] + f["hl"], (f["id"], q["kind"], step)
