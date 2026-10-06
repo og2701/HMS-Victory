@@ -17,7 +17,8 @@ INSTRUCTIONS = (
     "Voice: the narrator of a British reality TV show, a British man with a warm, slightly northern English "
     "accent. Tone: dry, deadpan and quietly amused, as if he has seen every row in the house and loves it. "
     "Delivery: brisk and clear, like a TV presenter reading over footage, with a small pause after the day "
-    "and time at the start of a line. Never shout, never sound like an advert."
+    "and time at the start of a line. Comic timing: these lines are jokes, so land the last few words with a "
+    "beat of pause before them and a completely straight face. Never shout, never sound like an advert."
 )
 NAMES = {}
 
@@ -41,9 +42,9 @@ def eviction_line(scene):
         return None
     out = [NAMES.get(i, "") for i in scene["evicted"]]
     who = out[0] if len(out) == 1 else ", ".join(out[:-1]) + " and " + out[-1]
-    say = scene.get("say") or (f"{who}, you have been evicted from the Big Brother house." if len(out) == 1
-                                else f"{who}, you have been evicted.")
-    return say + " " + (scene.get("say_sub") or "Please leave the house.")
+    if scene.get("full_line"):  # the classic line, used once
+        return f"{who}, you have been evicted from the Big Brother house. Please leave the house."
+    return scene.get("say") or f"{who}, you have been evicted."
 
 
 def lines(story):

@@ -13,8 +13,9 @@ Writes five files:
 Take the snapshot on the VM rather than pointing this at the live file, which the bot is writing to:
 copy the bb_* tables into a fresh SQLite file and scp that down.
 
-Anonymous diary entries never carry a name or user id in the output, and named-diary counts only
-count named entries, so a total can't give an anonymous writer away. Public voters in the final
+Anonymous diary entries carry no name or user id in the timeline, and named-diary counts only count
+named entries, so a total can't give an anonymous writer away. The one exception is a diary entry a
+hand-picked scene quotes: it carries "reveal" (the writer), which the replay unmasks on screen. Public voters in the final
 weeks weren't housemates, so only their counts are kept, not who they were.
 """
 import argparse, datetime, json, os, re, sqlite3
@@ -392,6 +393,8 @@ def resolve_scenes(db, scenes_path, ctx):
             if d:
                 e.update({"who": None if d["anonymous"] else d["user_id"], "at": d["created_at"],
                           "text": e.get("text") or name_ids(d["text"])})
+                if d["anonymous"]:
+                    e["reveal"] = d["user_id"]
         for m in s.get("messages", []):
             r = by_id.get(m.get("message_id"))
             if r is None:

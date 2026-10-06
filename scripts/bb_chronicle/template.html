@@ -54,10 +54,23 @@ a{color:#8fb4ff}
 .bug{width:34px;height:34px;opacity:.85}
 .stage-chapter{margin-left:auto;font-family:var(--display);font-stretch:110%;font-weight:700;font-size:14px;color:#ffffffb0;text-align:right}
 .content{position:relative;min-height:0;z-index:2}
-.scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px 18px;animation:sceneIn .45s ease both}
-.scene.out{animation:sceneOut .4s ease both;pointer-events:none}
-@keyframes sceneIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
-@keyframes sceneOut{to{opacity:0}}
+.scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px 18px;will-change:transform}
+.scene.in-zoom{animation:inZoom .55s cubic-bezier(.2,.8,.2,1) both}
+.scene.in-slide-l{animation:inSlideL .45s cubic-bezier(.2,.9,.25,1) both}
+.scene.in-slide-r{animation:inSlideR .45s cubic-bezier(.2,.9,.25,1) both}
+.scene.in-iris{animation:inIris .9s cubic-bezier(.6,0,.2,1) both}
+.scene.in-static{animation:inStatic .5s steps(6) both}
+.scene.out{animation:sceneOut .35s ease both;pointer-events:none}
+@keyframes inZoom{from{opacity:0;transform:scale(1.1);filter:blur(10px)}to{opacity:1;transform:none;filter:none}}
+@keyframes inSlideL{from{opacity:0;transform:translateX(9%) skewX(-4deg);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+@keyframes inSlideR{from{opacity:0;transform:translateX(-9%) skewX(4deg);filter:blur(6px)}to{opacity:1;transform:none;filter:none}}
+@keyframes inIris{from{clip-path:circle(0% at 50% 50%)}to{clip-path:circle(120% at 50% 50%)}}
+@keyframes inStatic{0%{opacity:0;transform:translateX(-4%) skewX(12deg);filter:contrast(4) brightness(1.8)}30%{opacity:1;transform:translateX(3%) skewX(-8deg)}60%{transform:translateX(-1%);filter:contrast(2)}100%{opacity:1;transform:none;filter:none}}
+@keyframes sceneOut{to{opacity:0;transform:scale(.97)}}
+.static{position:absolute;inset:-20%;z-index:15;pointer-events:none;opacity:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");mix-blend-mode:screen}
+.static.on{animation:staticFlash .45s steps(5) both}
+@keyframes staticFlash{0%{opacity:.95;transform:translate(0,0)}40%{opacity:.7;transform:translate(-6%,4%)}100%{opacity:0;transform:translate(4%,-3%)}}
+.stage::after{content:"";position:absolute;inset:0;z-index:8;pointer-events:none;background:repeating-linear-gradient(0deg,#ffffff06 0 1px,transparent 1px 3px)}
 .band{position:relative;z-index:6;display:grid;grid-template-columns:auto 1fr;align-items:end;gap:16px;padding:8px 18px 14px;min-height:84px;
   background:linear-gradient(transparent,#000c 45%)}
 .clock{font-family:var(--display);line-height:.9;padding-right:16px;border-right:2px solid #ffffff30;min-width:92px}
@@ -116,7 +129,12 @@ a{color:#8fb4ff}
 .dc-msg.cont .av,.dc-msg.cont .meta{display:none}
 .dc-msg.cont .body{grid-column:2}
 .dc-msg.hl{background:#f0b23214;box-shadow:inset 2px 0 0 #f0b232}
-@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes msgIn{0%{opacity:0;transform:translateY(16px) scale(.96)}60%{opacity:1;transform:translateY(-3px) scale(1.01)}100%{opacity:1;transform:none}}
+.dc-msg .av{animation:avPop .45s cubic-bezier(.3,1.6,.5,1) both}
+@keyframes avPop{from{transform:scale(.3)}to{transform:none}}
+.dc-msg.punch{background:#ffd40018;box-shadow:inset 3px 0 0 var(--subtitle);animation:punchIn .75s cubic-bezier(.2,1.4,.4,1) both;transform-origin:20% 50%}
+.dc-msg.punch .body{font-size:18px;font-weight:600;color:#fff}
+@keyframes punchIn{0%{opacity:0;transform:scale(.7)}45%{opacity:1;transform:scale(1.07) rotate(-1deg)}60%{transform:translateX(-7px)}72%{transform:translateX(6px)}84%{transform:translateX(-3px)}100%{transform:none}}
 .dc-msg .meta{display:flex;align-items:baseline;gap:8px;line-height:1.3}
 .dc-msg .meta .nm{font-size:15.5px}
 .dc-msg .meta time{font-size:12px;color:var(--dc-muted)}
@@ -164,6 +182,20 @@ a{color:#8fb4ff}
 .est .face span{font-family:var(--display);font-weight:800;font-stretch:110%;font-size:14px;text-shadow:0 2px 6px #000}
 .est .face.gone img{filter:grayscale(1) brightness(.6)}
 @keyframes faceIn{from{opacity:0;transform:translateY(10px) scale(.9)}}
+.est .face img{animation:bob 3.2s ease-in-out infinite}
+.est .face:nth-child(2n) img{animation-delay:-1.4s}
+@keyframes bob{50%{transform:translateY(-6px)}}
+.est .house rect{animation:flicker 5s steps(1) infinite}
+.est .house rect:nth-of-type(2){animation-delay:-2s}.est .house rect:nth-of-type(3){animation-delay:-3.5s}
+@keyframes flicker{0%,100%{opacity:1}47%{opacity:.35}53%{opacity:1}}
+/* ---------- the cold open teaser ---------- */
+.teaser{flex-direction:column;gap:16px;text-align:center;background:radial-gradient(700px 400px at 50% 45%,#3d8bff22,transparent 70%)}
+.teaser .tag{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(14px,1.8vw,20px);color:var(--subtitle);letter-spacing:.02em}
+.teaser .line{display:flex;align-items:center;gap:clamp(12px,2.4vw,28px);max-width:90%;animation:tease .4s cubic-bezier(.2,1.4,.4,1) both}
+.teaser .line img{width:clamp(70px,11vw,130px);height:clamp(70px,11vw,130px);border-radius:50%;box-shadow:0 0 0 4px #fff,0 20px 50px #000;flex:none}
+.teaser .line blockquote{margin:0;text-align:left;font-family:var(--display);font-weight:900;font-stretch:110%;font-size:clamp(20px,3.6vw,46px);line-height:1;letter-spacing:-.02em}
+.teaser .line cite{display:block;font-family:var(--caption);font-style:normal;font-weight:700;font-size:clamp(13px,1.5vw,17px);color:var(--ink-2);margin-top:8px;letter-spacing:0}
+@keyframes tease{from{opacity:0;transform:scale(1.4) rotate(2deg);filter:blur(10px)}to{opacity:1;transform:none;filter:none}}
 .est .big{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(28px,6vw,72px);letter-spacing:-.03em;line-height:.95;padding:0 20px;text-shadow:0 6px 30px #000}
 
 /* ---------- open + chapter cards ---------- */
@@ -183,6 +215,10 @@ a{color:#8fb4ff}
 .chapter{flex-direction:column;align-items:flex-start;justify-content:center;padding:0 7%}
 .chapter .num{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(70px,14vw,180px);line-height:.8;color:transparent;-webkit-text-stroke:2px #ffffff40}
 .chapter h2{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(30px,6vw,80px);letter-spacing:-.035em;line-height:.9;margin:6px 0 10px;max-width:14ch}
+.chapter h2 span{display:inline-block;animation:slam .5s cubic-bezier(.2,1.5,.4,1) both}
+@keyframes slam{from{opacity:0;transform:translateY(-40px) scale(2.2) rotate(-6deg)}to{opacity:1;transform:none}}
+.chapter .num{animation:numIn 1.2s cubic-bezier(.2,.8,.2,1) both}
+@keyframes numIn{from{opacity:0;transform:translateX(-30px)}}
 .chapter p{margin:0;font-size:clamp(14px,1.8vw,20px);color:var(--ink-2);max-width:52ch}
 .chapter .days{margin-top:14px;font-family:var(--display);font-weight:700;font-stretch:100%;color:var(--subtitle)}
 .chapter .wm{position:absolute;right:-8%;top:50%;width:60%;transform:translateY(-50%);opacity:.13}
@@ -253,6 +289,15 @@ a{color:#8fb4ff}
 .doorway .say{position:relative;z-index:2;text-align:center;font-family:var(--display);font-weight:900;font-stretch:120%;font-size:clamp(18px,3vw,36px);letter-spacing:-.02em;padding:0 20px;opacity:0;transition:opacity .6s}
 .doorway .say.on{opacity:1}
 .doorway .say small{display:block;font-family:var(--caption);font-weight:400;font-size:clamp(13px,1.6vw,18px);color:var(--evict-2);letter-spacing:0;margin-top:4px}
+.beam{position:absolute;top:-10%;width:40%;height:130%;background:linear-gradient(90deg,transparent,#b48cff22 40%,#ffffff18 50%,#b48cff22 60%,transparent);filter:blur(6px);pointer-events:none;transform-origin:50% 0}
+.beam.l{left:5%;animation:sweepL 4.5s ease-in-out infinite alternate}.beam.r{right:5%;animation:sweepR 5s ease-in-out infinite alternate}
+@keyframes sweepL{from{transform:rotate(-24deg)}to{transform:rotate(14deg)}}
+@keyframes sweepR{from{transform:rotate(22deg)}to{transform:rotate(-12deg)}}
+.bulb{position:absolute;width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 30px 14px #fff;opacity:0;pointer-events:none}
+.doorway.on .bulb{animation:bulb 2.6s ease-out infinite}
+@keyframes bulb{0%,86%,100%{opacity:0}88%{opacity:1}92%{opacity:.2}}
+.bar.out .tr i{animation:barPulse 1s ease-in-out infinite}
+@keyframes barPulse{50%{filter:brightness(1.5);box-shadow:0 0 16px #ff3a6a}}
 .stairs{position:absolute;left:50%;bottom:0;width:min(520px,70%);transform:translateX(-50%);height:14%;background:repeating-linear-gradient(#ffffff14 0 6px,transparent 6px 18px);clip-path:polygon(22% 0,78% 0,100% 100%,0 100%)}
 
 /* ---------- token war ---------- */
@@ -291,6 +336,25 @@ a{color:#8fb4ff}
 .chal .pic{height:100%;max-height:100%;min-height:0;border-radius:12px;overflow:hidden;position:relative;background:#000}
 .chal .pic img{position:absolute;width:150%;left:0;top:0;transform-origin:0 0;will-change:transform}
 
+
+/* ---------- anonymous diary reveal: the label crackles out, the real name fades in ---------- */
+.fizz{display:inline-grid;align-items:center;position:relative}
+.fizz > span{grid-area:1/1;display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.fizz .fz-b{opacity:0}
+.fizz.go .fz-a{animation:fzOut 1s steps(10) forwards}
+.fizz.go .fz-b{animation:fzIn .7s .85s ease forwards}
+.fizz.go::after{content:"";position:absolute;inset:-6px -10px;border-radius:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='1.2' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='60' filter='url(%23n)'/%3E%3C/svg%3E");mix-blend-mode:screen;opacity:0;animation:fzNoise 1.3s ease;pointer-events:none}
+.fizz.done .fz-a{opacity:0}.fizz.done .fz-b{opacity:1}
+@keyframes fzOut{0%{opacity:1}25%{filter:contrast(3);transform:translateX(2px)}45%{opacity:.8;transform:translateX(-3px) skewX(10deg)}70%{opacity:.4;filter:blur(2px);letter-spacing:.2em}100%{opacity:0;filter:blur(6px);letter-spacing:.5em}}
+@keyframes fzIn{from{opacity:0;filter:blur(8px)}to{opacity:1;filter:none}}
+@keyframes fzNoise{0%,100%{opacity:0}35%{opacity:.9}}
+.dc-msg .dtag{font-size:13px;font-weight:700;color:#ff8cc6;margin-bottom:3px}
+.dc-msg .dtag img{width:18px;height:18px;border-radius:50%}
+.dc-msg .dtag .fizz > span{gap:6px}
+/* ---------- challenge beats ---------- */
+.chal .moments{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:7px}
+.chal .moments li{opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s;border-left:2px solid var(--subtitle);padding-left:10px;font-size:clamp(14px,1.6vw,17px);line-height:1.35;color:#fff}
+.chal .moments li.on{opacity:1;transform:none}
 /* ---------- stats ---------- */
 .stat{flex-direction:column;text-align:center;gap:6px}
 .stat .v{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(60px,13vw,170px);letter-spacing:-.05em;line-height:.85;font-variant-numeric:tabular-nums}
@@ -501,6 +565,7 @@ canvas.confetti{position:absolute;inset:0;width:100%;height:100%;z-index:4;point
       <div class="caption" id="caption" aria-live="polite"></div>
     </div>
     <div class="stage-vignette"></div>
+    <div class="static" id="static"></div>
     <button class="bigplay" id="bigplay" aria-label="Play the series"><span><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4l15 8-15 8z"/></svg></span></button>
   </div>
 </div>
@@ -512,7 +577,8 @@ canvas.confetti{position:absolute;inset:0;width:100%;height:100%;z-index:4;point
   <div class="speeds" role="group" aria-label="Playback speed">
     <button data-speed="1" aria-pressed="true">1x</button><button data-speed="2" aria-pressed="false">2x</button><button data-speed="5" aria-pressed="false">5x</button>
   </div>
-  <button class="cbtn" id="btn-sound" aria-pressed="false" title="Synth sound effects and house hum"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>Sound</button>
+  <button class="cbtn" id="btn-music" aria-pressed="true" title="Faint backing music"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 3v11.6A3.5 3.5 0 1 0 11 18V8h7V3z"/></svg>Music</button>
+  <button class="cbtn" id="btn-sound" aria-pressed="false" title="Sound effects"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>Sound</button>
   <button class="cbtn" id="btn-voice" aria-pressed="true" title="The narrator's voiceover"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>Narrator</button>
   <button class="cbtn" id="btn-full" aria-label="Full screen"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
   <div class="timecode" id="timecode">0:00 / 0:00</div>
@@ -644,18 +710,8 @@ const Snd = {
   toggle() {
     this.init(); if (!this.ctx) return false;
     this.on = !this.on;
-    if (this.on) { this.ctx.resume(); this.hum(true); } else this.hum(false);
+    if (this.on) this.ctx.resume();
     return this.on;
-  },
-  hum(start) {
-    const c = this.ctx;
-    if (!start) { (this.oscs || []).forEach(o => { try { o.stop(); } catch (e) {} }); this.oscs = []; return; }
-    const g = c.createGain(); g.gain.value = 0; g.gain.linearRampToValueAtTime(.05, c.currentTime + 3);
-    const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 260; f.Q.value = 4;
-    this.oscs = [];
-    [55, 82.41, 110, 164.8].forEach((fr, i) => { const o = c.createOscillator(); o.type = i % 2 ? "sawtooth" : "triangle"; o.frequency.value = fr; o.detune.value = (i - 1.5) * 5; o.connect(f); o.start(); this.oscs.push(o); });
-    const l = c.createOscillator(); l.frequency.value = .07; const lg = c.createGain(); lg.gain.value = 120; l.connect(lg); lg.connect(f.frequency); l.start(); this.oscs.push(l);
-    f.connect(g); g.connect(this.master);
   },
   tone(freq, dur = .08, type = "sine", vol = .07, at = 0) {
     if (!this.on) return; const c = this.ctx, t = c.currentTime + at;
@@ -682,11 +738,81 @@ const Snd = {
   fanfare() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone(f, .5, "sawtooth", .035, i * .14)); },
 };
 
+
+// ---------------------------------------------------------------- backing music (generated, faint, on by default)
+// An original loop in A minor at 100bpm: a pad, a bass note on the beat and a ticking arpeggio through a
+// delay. Votes, nominations, token swaps and snugs switch to a tenser progression with a hi-hat tick; the
+// crowning and credits go major. It sits well under the narrator and drops further while he talks.
+const CH = {Am: [110, 130.81, 164.81, 220], F: [87.31, 110, 130.81, 174.61], C: [130.81, 164.81, 196, 261.63],
+            G: [98, 123.47, 146.83, 196], Dm: [73.42, 146.83, 174.61, 220], E: [82.41, 103.83, 123.47, 164.81]};
+const MOODS = {
+  house: {prog: ["Am", "F", "C", "G"], arp: true, tick: false},
+  tense: {prog: ["Am", "F", "Dm", "E"], arp: true, tick: true},
+  bright: {prog: ["C", "G", "Am", "F"], arp: true, tick: false},
+  soft: {prog: ["Am", "F", "C", "G"], arp: false, tick: false},
+};
+const ARP = [0, 2, 1, 3, 2, 1, 3, 2];
+const Music = {
+  on: true, timer: null, step: 0, next: 0, mood: "house", want: "house", duck: false,
+  start() {
+    Snd.init(); const c = Snd.ctx; if (!c) return;
+    c.resume();
+    if (!this.out) {
+      this.out = c.createGain(); this.out.gain.value = 0; this.out.connect(c.destination);
+      this.lp = c.createBiquadFilter(); this.lp.type = "lowpass"; this.lp.frequency.value = 2200; this.lp.connect(this.out);
+      this.dl = c.createDelay(1); this.dl.delayTime.value = .45; this.fb = c.createGain(); this.fb.gain.value = .3;
+      this.dl.connect(this.fb); this.fb.connect(this.dl); this.dl.connect(this.out);
+    }
+    if (!this.timer) { this.next = c.currentTime + .1; this.timer = setInterval(() => this.sched(), 60); }
+    this.level();
+  },
+  pause() { clearInterval(this.timer); this.timer = null; this.level(); },
+  level() {
+    if (!this.out) return;
+    const v = !this.on || !P.playing ? 0 : this.duck ? .03 : .075;
+    this.out.gain.setTargetAtTime(v, Snd.ctx.currentTime, .35);
+  },
+  setDuck(d) { if (this.duck !== d) { this.duck = d; this.level(); } },
+  // the comedy drop: music cuts dead for a punchline, then creeps back
+  cut(ms) {
+    if (!this.out || !this.on || !P.playing) return;
+    const c = Snd.ctx; this.out.gain.cancelScheduledValues(c.currentTime); this.out.gain.setTargetAtTime(0, c.currentTime, .015);
+    clearTimeout(this.cutT); this.cutT = setTimeout(() => this.level(), ms / P.speed);
+  },
+  note(freq, t, dur, type, vol, dests, attack = .01, detune = 0) {
+    const c = Snd.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = freq; o.detune.value = detune;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); [].concat(dests).forEach(d => g.connect(d)); o.start(t); o.stop(t + dur + .05);
+  },
+  sched() {
+    const c = Snd.ctx, eighth = 60 / 100 / 2;
+    while (this.next < c.currentTime + .3) {
+      const t = this.next, st = this.step;
+      if (st % 8 === 0) this.mood = this.want;
+      const m = MOODS[this.mood], chord = CH[m.prog[Math.floor(st / 8) % 4]];
+      if (st % 8 === 0) chord.forEach(f => [-7, 7].forEach(d => this.note(f, t, eighth * 8.5, "sawtooth", .035, this.lp, .6, d)));
+      if (st % 4 === 0) this.note(chord[0] / 2, t, eighth * 3, "sine", .5, this.out);
+      if (m.arp) this.note(chord[ARP[st % 8]] * 2, t, .22, "triangle", .16, [this.lp, this.dl]);
+      if (m.tick) {
+        const b = c.createBuffer(1, c.sampleRate * .03, c.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+        const n = c.createBufferSource(), hp = c.createBiquadFilter(), g = c.createGain();
+        n.buffer = b; hp.type = "highpass"; hp.frequency.value = 7000; g.gain.value = st % 2 ? .05 : .12;
+        n.connect(hp); hp.connect(g); g.connect(this.out); n.start(t);
+      }
+      this.step++; this.next += eighth;
+    }
+  },
+};
+const moodFor = s => ["evict", "noms", "tokens"].includes(s.type) || s.where === "snug" ? "tense"
+  : ["crown", "credits", "open", "scoreboard"].includes(s.type) ? "bright" : s.type === "diary" ? "soft" : "house";
+
 // ---------------------------------------------------------------- narrator voice (recorded clips, on by default)
 // Each narrated scene carries the key of a pre-recorded clip. Scene lengths already allow for the clip,
 // so the voice never gets cut off; above 2x it's skipped rather than played as a squeak.
 const Voice = {
-  on: true, cur: null, pace: 1.1,  // a touch quicker than the raw clips, like a presenter reading over footage
+  on: true, cur: null, pace: 1.15,  // a touch quicker than the raw clips, like a presenter reading over footage
   clip(key) { return key ? D.voice?.[key] : null; },
   ms(key) { const c = this.clip(key); return c ? c.seconds * 1000 / this.pace : 0; },
   play(key) {
@@ -695,11 +821,12 @@ const Voice = {
     if (!this.on || !c || P.speed > 2) return;
     const a = new Audio(c.src); a.preservesPitch = true; a.playbackRate = P.speed * this.pace;
     this.cur = a; a.play().catch(() => {});
+    Music.setDuck(true); a.onended = () => Music.setDuck(false);
   },
   rate(r) { if (!this.cur) return; if (r > 2) this.stop(); else this.cur.playbackRate = r * this.pace; },
   pause() { this.cur?.pause(); },
   resume() { if (this.cur && !this.cur.ended) this.cur.play().catch(() => {}); },
-  stop() { if (this.cur) { this.cur.pause(); this.cur = null; } },
+  stop() { if (this.cur) { this.cur.pause(); this.cur = null; } Music.setDuck(false); },
 };
 
 // ---------------------------------------------------------------- scene renderers
@@ -723,6 +850,22 @@ R.open = s => ({
   },
 });
 
+// "Coming up on Big Brother": six one-liners, smash cuts between them.
+R.teaser = s => {
+  const lines = (s.messages || []).filter(m => m.text);
+  const per = 1900; let box;
+  return {
+    dur: 900 + lines.length * per + 300, noShift: true,
+    beats: lines.map((m, i) => [700 + i * per, (el, instant) => {
+      const text = m.text.length > 90 ? m.text.slice(0, 90) + "…" : m.text;
+      box.replaceChildren(h("div", {class: "line", style: instant ? "animation:none" : ""}, img(m.user_id),
+        h("blockquote", {html: fmtMessage(text)}, h("cite", {}, pname(m.user_id)))));
+      if (!instant) { $("#static").classList.remove("on"); void $("#static").offsetWidth; $("#static").classList.add("on"); Snd.stamp(); }
+    }]),
+    setup(el) { el.classList.add("teaser"); box = h("div"); app(el, h("div", {class: "tag"}, "Coming up on Big Brother"), box); },
+  };
+};
+
 R.chapter = s => ({
   dur: 3200, beats: [[100, () => Snd.sting()]],
   setup(el) {
@@ -730,7 +873,8 @@ R.chapter = s => ({
     app(el, 
       h("svg", {class: "wm", viewBox: "0 0 400 240", html: '<use href="#eye-sym"/>'}),
       h("div", {class: "num"}, String(s.num)),
-      h("h2", {}, s.title), h("p", {}, s.subtitle || ""), h("div", {class: "days"}, s.days || ""),
+      h("h2", {"aria-label": s.title}, [...s.title].map((ch, i) => h("span", {style: `animation-delay:${.25 + i * .035}s`, "aria-hidden": "true"}, ch === " " ? "\u00a0" : ch))),
+      h("p", {}, s.subtitle || ""), h("div", {class: "days"}, s.days || ""),
     );
   },
 });
@@ -757,32 +901,40 @@ function chatPlan(s) {
   const times = [];
   msgs.forEach((m, i) => {
     const len = (m.text || "").length;
-    const typing = i === 0 ? 150 : 220;
+    const typing = i === 0 ? 150 : (m.punch ? 520 : 220);
     times.push([t, t + typing]);
-    t += typing + clamp(300 + len * 18, 650, 2500);
+    t += typing + clamp(300 + len * 17, 620, 2400) + (m.punch ? 1100 : 0);
   });
   const dur = t + 900;
   let log, typingEl, lastAuthor = null, lastAt = 0;
+  const tags = {};
   const add = (m, instant) => {
     const cont = m.user_id === lastAuthor && m.at - lastAt < 420;
     lastAuthor = m.user_id; lastAt = m.at;
     const body = h("div", {class: "body" + (isJumbo(m.text) ? " jumbo" : ""), html: m.text ? fmtMessage(m.text.length > 600 ? m.text.slice(0, 600) + "…" : m.text) : ""});
+    if (m.user_id === "diary") {
+      const tag = m.reveal ? fizzTag(m.reveal, true) : null;
+      if (tag) tags[m.at] = tag;
+      body.prepend(h("div", {class: "dtag"}, tag || (m.label ? `Entry from ${m.label}` : "Anonymous entry")));
+    }
     if (!m.text && m.attachments) body.append(h("div", {class: "att"}, "image not archived"));
     else if (m.attachments) body.append(h("div"), h("div", {class: "att"}, "image not archived"));
-    const row = h("div", {class: "dc-msg" + (cont ? " cont" : "") + (m.hl ? " hl" : "")},
+    const row = h("div", {class: "dc-msg" + (cont && !m.punch ? " cont" : "") + (m.hl ? " hl" : "") + (m.punch ? " punch" : "")},
       img(m.user_id, "av"),
       h("div", {class: "meta"}, h("span", {class: "nm", style: `color:${pcolor(m.user_id)}`}, pname(m.user_id)), h("time", {}, fmtDc(m.at))),
       body);
     if (instant) row.style.animation = "none";
     log.append(row);
     while (log.children.length > 40) log.firstChild.remove();
-    if (!instant) Snd.msg();
+    if (!instant) { Snd.msg(); if (m.punch) { Music.cut(1500); P.punchT = P.t; } }
     P.setClock(m.at, s.day);
   };
   msgs.forEach((m, i) => {
+    if (m.reveal) beats.push([times[i][1] + 1500, (el, instant) => fizzGo(tags[m.at], instant)]);
     beats.push([times[i][0], (el, instant) => { if (!instant) typingEl.innerHTML = `<span class="dots"><i></i><i></i><i></i></span><b>${esc(pname(m.user_id))}</b> is typing…`; }]);
     beats.push([times[i][1], (el, instant) => { typingEl.innerHTML = ""; add(m, instant); }]);
   });
+  beats.sort((a, b) => a[0] - b[0]);
   return {
     dur, beats,
     setup(el) {
@@ -818,19 +970,27 @@ function chatPlan(s) {
 R.chat = chatPlan;
 
 const CHAIR_SVG = `<svg class="chair" viewBox="0 0 300 360"><defs><radialGradient id="cg" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#ff5fa8"/><stop offset=".6" stop-color="#b0145f"/><stop offset="1" stop-color="#4a0628"/></radialGradient><linearGradient id="cl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#b8862a"/></linearGradient></defs><ellipse cx="150" cy="345" rx="120" ry="12" fill="#000" opacity=".6"/><path d="M60 330 L70 280 L230 280 L240 330" stroke="url(#cl)" stroke-width="8" fill="none"/><path d="M150 18 C 60 18 30 90 34 170 C 36 220 50 262 70 285 L230 285 C 250 262 264 220 266 170 C 270 90 240 18 150 18 Z" fill="url(#cg)" stroke="url(#cl)" stroke-width="6"/><path d="M150 52 C 92 52 74 110 76 170 C 78 210 90 240 100 252 L200 252 C 210 240 222 210 224 170 C 226 110 208 52 150 52 Z" fill="#7a0b43" opacity=".55"/><g class="sitter"><circle cx="150" cy="150" r="30" fill="#000" opacity=".55"/><path d="M95 252 C 100 205 125 188 150 188 C 175 188 200 205 205 252 Z" fill="#000" opacity=".55"/></g><path d="M40 210 C 20 214 18 246 44 252 L84 254 L84 212 Z M260 210 C 280 214 282 246 256 252 L216 254 L216 212 Z" fill="url(#cg)" stroke="url(#cl)" stroke-width="5"/></svg>`;
+const ANON_ICON = '<svg viewBox="0 0 24 24" width="18"><path fill="#888" d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6z"/></svg>';
+// "Anonymous" that crackles away to show who really wrote it. small: the inline chat version.
+const fizzTag = (realId, small) => h("span", {class: "fizz"},
+  h("span", {class: "fz-a"}, small ? null : h("span", {class: "anon", html: ANON_ICON}), small ? "Anonymous entry" : "Anonymous housemate"),
+  h("span", {class: "fz-b"}, img(realId), small ? `Sent by ${pname(realId)}` : pname(realId)));
+const fizzGo = (tag, instant) => { if (!tag) return; tag.classList.add(instant ? "done" : "go"); if (!instant) Snd.noise(1.1, 5000, 400, .12); };
 R.diary = s => {
   const entries = s.entries || [];
   const slots = []; let t = 300;
-  entries.forEach(e => { const d = clamp(900 + e.text.length * 20, 2200, 4600); slots.push([t, d]); t += d; });
-  let whoEl, txtEl, countEl, cur = -1;
+  const typed = e => 200 + e.text.length / 58 * 1000;
+  entries.forEach(e => { const d = Math.max(clamp(900 + e.text.length * 20, 2200, 4600), e.reveal ? typed(e) + 2300 : 0); slots.push([t, d]); t += d; });
+  let whoEl, txtEl, countEl, cur = -1, tag = null;
   return {
     dur: t + 800,
-    beats: entries.map((e, i) => [slots[i][0], (el, instant) => {
-      cur = i; whoEl.replaceChildren(...(e.who ? [img(e.who), pname(e.who)] : [h("span", {class: "anon", html: '<svg viewBox="0 0 24 24" width="18"><path fill="#888" d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6z"/></svg>'}), "Anonymous housemate"]));
+    beats: [...entries.flatMap((e, i) => e.reveal ? [[slots[i][0] + typed(e) + 300, (el, instant) => fizzGo(tag, instant)]] : []), ...entries.map((e, i) => [slots[i][0], (el, instant) => {
+      cur = i; tag = e.reveal ? fizzTag(e.reveal) : null;
+      whoEl.replaceChildren(...(e.who ? [img(e.who), pname(e.who)] : tag ? [tag] : [h("span", {class: "anon", html: ANON_ICON}), "Anonymous housemate"]));
       txtEl._n = -1; countEl.textContent = entries.length > 1 ? `Diary Room, entry ${i + 1} of ${entries.length}` + (e.at ? `, ${fmtTime(e.at)}` : "") : (e.at ? `Diary Room, ${fmtTime(e.at)}` : "Diary Room");
       if (e.at) P.setClock(e.at);
       if (!instant) Snd.tone(220, .4, "sine", .05);
-    }]),
+    }])].sort((x, y) => x[0] - y[0]),
     setup(el) {
       el.classList.add("diary");
       whoEl = h("div", {class: "who"}); txtEl = h("div", {class: "txt"}); countEl = h("div", {class: "count"});
@@ -916,16 +1076,16 @@ R.evict = s => {
   const out = s.evicted || r?.evicted || [];
   const safe = s.safe || [];
   const hasBars = tally.length > 0;
-  const barT = hasBars ? 3200 : 0;
+  const barT = hasBars ? 2600 : 0;
   const doorT = barT + 500;
   // nodoor: a results board only, for votes nobody left the house on (the final's win vote)
   const sayAt = doorT + 1300;
-  const dur = s.nodoor ? barT + 1800 : Math.max(doorT + 3800 + (out.length > 2 ? 800 : 0), sayAt + Voice.ms(s.voice_say) + 400);
+  const dur = s.nodoor ? barT + 1800 : Math.max(doorT + 3200 + (out.length > 2 ? 800 : 0), sayAt + Voice.ms(s.voice_say) + 400);
   let bars = [], door, say, way;
   return {
     dur,
     beats: [
-      ...(hasBars ? [[200, () => Snd.heart()], [1300, () => Snd.heart()], [2400, () => Snd.heart()]] : []),
+      ...(hasBars ? [[200, () => Snd.heart()], [1100, () => Snd.heart()], [2000, () => Snd.heart()]] : []),
       [hasBars ? barT - 400 : 0, () => bars.forEach(b => { if (out.includes(b.id)) b.el.classList.add("out"); if (safe.includes(b.id)) b.el.classList.add("safe"); })],
       ...(s.nodoor ? [] : [
         [doorT, (el, instant) => { way.classList.add("on"); if (!instant) Snd.door(); }],
@@ -948,13 +1108,14 @@ R.evict = s => {
       const label = s.say || (out.length === 1 ? `${pname(out[0])}, you have been evicted from the Big Brother house.` : `${names(out)}, you have been evicted.`);
       say = h("div", {class: "say"}, label, h("small", {}, s.say_sub || "Please leave the house."));
       door = h("div", {class: "door"}, h("div", {class: "pan l"}), h("div", {class: "pan r"}), h("div", {class: "who"}, out.map(id => img(id))));
-      way = h("div", {class: "doorway"}, h("div", {class: "stairs"}), door, say);
+      const bulbs = Array.from({length: 12}, (_, i) => h("i", {class: "bulb", style: `left:${5 + Math.random() * 90}%;top:${55 + Math.random() * 40}%;animation-delay:${(i * .37 + Math.random() * .3).toFixed(2)}s`}));
+      way = h("div", {class: "doorway"}, h("div", {class: "beam l"}), h("div", {class: "beam r"}), ...bulbs, h("div", {class: "stairs"}), door, say);
       if (!s.nodoor) app(el, way);
     },
     update(el, t) {
       if (!hasBars) return;
       const max = Math.max(...bars.map(b => b.n), 1);
-      const k = ease(clamp((t - 300) / 2400, 0, 1));
+      const k = ease(clamp((t - 300) / 1900, 0, 1));
       for (const b of bars) {
         b.i.style.width = (b.n / max * 100 * k) + "%";
         const n = Math.round(b.n * k);
@@ -1020,17 +1181,25 @@ R.tokens = s => {
 
 R.challenge = s => {
   const pic = s.image && D.images[s.image];
-  let res, stamp, im;
-  const dur = 2000 + (s.rules || "").length * 13 + (s.result || "").length * 22 + (pic ? 1500 : 0);
-  const resultAt = Math.max(1200, dur - 1500 - (s.result || "").length * 18);
+  const rules = s.rules || "", moments = s.moments || [], result = s.result || "";
+  let t = 900 + rules.length * 11; const mAt = [];
+  moments.forEach(m => { mAt.push(t); t += clamp(600 + m.length * 20, 1400, 2800); });
+  const resultAt = t;
+  const dur = resultAt + clamp(900 + result.length * 20, 1600, 4000) + (pic ? 600 : 0);
+  let res, stamp, im, items = [];
   return {
     dur,
-    beats: [[resultAt, (el, instant) => { res.classList.add("on"); if (stamp) { stamp.classList.add("on"); if (!instant) Snd.stamp(); } }]],
+    beats: [
+      ...mAt.map((at, i) => [at, (el, instant) => { items[i].classList.add("on"); if (!instant) Snd.tone(660, .05, "triangle", .03); }]),
+      [resultAt, (el, instant) => { res.classList.add("on"); if (stamp) { stamp.classList.add("on"); if (!instant) Snd.stamp(); } }],
+    ],
     setup(el) {
       el.classList.add("chal"); if (!pic) el.classList.add("noimg");
-      res = h("div", {class: "res"}, s.result || "");
+      res = h("div", {class: "res"}, result);
       stamp = s.stamp ? h("div", {class: "stamp " + (s.pass ? "pass" : "fail")}, s.stamp) : null;
-      app(el, h("div", {class: "card"}, stamp, h("div", {class: "no"}, s.label || "Challenge"), h("h3", {}, s.title), h("p", {}, s.rules || ""), res));
+      items = moments.map(m => h("li", {}, m));
+      app(el, h("div", {class: "card"}, stamp, h("div", {class: "no"}, s.label || "Challenge"), h("h3", {}, s.title), h("p", {}, rules),
+        items.length ? h("ul", {class: "moments"}, items) : null, res));
       if (pic) { im = h("img", {src: pic, alt: s.image_alt || ""}); app(el, h("div", {class: "pic"}, im)); }
     },
     update(el, t) {
@@ -1174,7 +1343,7 @@ R.quote = s => {
 
 R.credits = s => {
   const hs = D.housemates.slice().sort(byPlacing);
-  const dur = 12000; let roll;
+  const dur = 8000; let roll;
   return {
     dur,
     setup(el) {
@@ -1217,7 +1386,7 @@ function flatten() {
     const narr = s.type !== "narrator" ? s.narration : null;
     const vms = Voice.ms(s.voice);
     const capDur = narr ? (vms ? vms * 1.1 : clamp(500 + narr.length * 24, 1400, 4200)) : 0;
-    const shift = narr ? Math.min(capDur, 2200) : 0;
+    const shift = narr && !base.noShift ? Math.min(capDur, 2200) : 0;
     const voiceBeat = s.voice ? [[150, (el, instant) => { if (!instant) Voice.play(s.voice); }]] : [];
     const plan = {
       dur: Math.max(base.dur + shift, vms ? 150 + vms + 700 : 0),
@@ -1238,12 +1407,21 @@ function go(i, offset = 0, instant = false) {
   const s = P.list[i], plan = P.plans[i];
   P.i = i; P.t = 0; P.bp = 0; P.burn = null;
   Voice.stop();
+  Music.want = moodFor(s);
   const old = P.el;
   const el = h("div", {class: "scene scene-" + s.type});
   // A seek replaces the scene outright; normal playback cross-fades.
   content.querySelectorAll(".scene.out").forEach(x => x.remove());
   if (old) { if (instant || offset > 0) old.remove(); else { old.classList.add("out"); setTimeout(() => old.remove(), 420); } }
   if (instant || offset > 0) el.style.animation = "none";
+  else {
+    const cut = s.type === "chapter" ? "in-iris"
+      : (["evict", "noms", "tokens", "teaser"].includes(s.type) || s.where === "snug") ? "in-static"
+      : s.type === "chat" ? (i % 2 ? "in-slide-l" : "in-slide-r") : "in-zoom";
+    el.classList.add(cut);
+    if (cut === "in-static") { const st = $("#static"); st.classList.remove("on"); void st.offsetWidth; st.classList.add("on"); }
+  }
+  P.punchT = -1e9; P.drift = [[1, .4], [-1, .3], [.6, -.5], [-.5, -.4]][i % 4];
   content.append(el); P.el = el;
   plan.setup(el);
   caption.textContent = ""; caption._n = -1;
@@ -1261,6 +1439,10 @@ function advance(t, instant = false) {
   P.t = t;
   while (P.bp < plan.beats.length && plan.beats[P.bp][0] <= t) { try { plan.beats[P.bp][1](P.el, instant); } catch (e) { console.error(e); } P.bp++; }
   if (plan.update) try { plan.update(P.el, t); } catch (e) { console.error(e); }
+  // slow camera drift across every scene, plus a quick push-in when a punchline lands
+  const k = clamp(t / plan.dur, 0, 1), since = t - P.punchT;
+  const punch = since >= 0 && since < 900 ? .045 * Math.sin(Math.min(since / 180, 1) * Math.PI / 2) * (1 - since / 900) : 0;
+  if (P.el) { P.el.style.scale = (1 + .028 * k + punch).toFixed(4); P.el.style.translate = `${(P.drift[0] * k * 10).toFixed(1)}px ${(P.drift[1] * k * 8).toFixed(1)}px`; }
   if (plan.caption) {
     const n = clamp(Math.floor(t * (plan.caption.length / Math.max(plan.capDur * .8, 1))), 0, plan.caption.length);
     if (caption._n !== n) { caption._n = n; caption.innerHTML = esc(plan.caption.slice(0, n)) + (n < plan.caption.length ? '<span class="cur"></span>' : ""); }
@@ -1289,6 +1471,7 @@ function setPlaying(on) {
   $("#play-path").setAttribute("d", on ? "M6 4h4v16H6zm8 0h4v16h-4z" : "M6 4l15 8-15 8z");
   $("#btn-play").setAttribute("aria-label", on ? "Pause" : "Play");
   on ? Voice.resume() : Voice.pause();
+  on ? Music.start() : Music.pause();
 }
 
 function seekTo(ms) {
@@ -1357,6 +1540,7 @@ function bindControls() {
     document.querySelectorAll(".speeds button").forEach(x => x.setAttribute("aria-pressed", x === b));
   });
   $("#btn-sound").onclick = e => e.currentTarget.setAttribute("aria-pressed", Snd.toggle());
+  $("#btn-music").onclick = e => { Music.on = !Music.on; e.currentTarget.setAttribute("aria-pressed", Music.on); Music.level(); };
   $("#btn-voice").onclick = e => {
     Voice.on = !Voice.on; e.currentTarget.setAttribute("aria-pressed", Voice.on);
     if (!Voice.on) Voice.stop();
