@@ -129,6 +129,25 @@ def test_puzzle_of_the_day_is_stable_and_rotates_within_its_set():
                     is X._todays_puzzle(start + datetime.timedelta(days=n)))
 
 
+def test_the_live_set_has_a_fortnight_of_fresh_grids_left():
+    """A set loops when it runs out, so without this the crossword quietly repeats old grids (it
+    did, from 6 October 2026). This fails two weeks ahead: time to seed another set."""
+    today = X._today()
+    for k in range(1, 15):
+        d = today + datetime.timedelta(days=k)
+        s = X.active_set(d)
+        assert (d - s["_from"]).days < len(s["puzzles"]), f"{d} repeats an old crossword: seed another set"
+
+
+def test_the_layout_changes_every_day_from_october_2026():
+    """Any layout where every square is crossed both ways, not just the few that look the same
+    upside down, so the grid's shape changes day to day."""
+    st = next(s for s in SETS if s["from"] == "2026-10-07")
+    lays = [json.dumps(sorted(p["black"])) for p in st["puzzles"]]
+    assert all(a != b for a, b in zip(lays, lays[1:]))
+    assert len(set(lays)) >= 100
+
+
 def test_solving_every_clue_completes_and_pays_top_tier():
     import datetime
     d, uid = datetime.date(2026, 3, 4), 4242
