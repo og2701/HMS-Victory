@@ -1,0 +1,1556 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Big Brother Chronicle</title>
+<meta name="description" content="The whole UKPlace Big Brother series, Day 0 to the final, as a replay and a searchable record.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Noto+Sans:wght@400;500;600;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#0a0f1f;        /* the house after lights out */
+  --night-2:#111a33;
+  --night-3:#1b2648;
+  --ink:#e9edf7;
+  --ink-2:#a9b3cc;
+  --ink-3:#6f7a96;
+  --subtitle:#ffd400;     /* narrator captions */
+  --evict:#7b3cff;        /* eviction night */
+  --evict-2:#b48cff;
+  --diary:#d6247a;        /* the diary room chair */
+  --snug:#8cff7a;         /* night-vision wiretap */
+  --token:#f5c542;        /* immunity tokens */
+  --teamA:#ff5a5a; --teamB:#3d8bff;
+  --dc-bg:#313338; --dc-bg-2:#2b2d31; --dc-bg-3:#1e1f22; --dc-text:#dbdee1; --dc-muted:#949ba4; --dc-blurple:#5865f2;
+  --display:"Archivo", "Arial Narrow", system-ui, sans-serif;
+  --caption:"Atkinson Hyperlegible", system-ui, sans-serif;
+  --chat:"Noto Sans", "gg sans", system-ui, sans-serif;
+  --cctv:"VT323", ui-monospace, monospace;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--night);color:var(--ink);font-family:var(--caption);-webkit-font-smoothing:antialiased}
+body{min-height:100vh;background:radial-gradient(1200px 600px at 50% -200px,#1a2a5a 0%,transparent 70%),var(--night)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--subtitle);outline-offset:2px}
+a{color:#8fb4ff}
+
+/* ---------- masthead ---------- */
+.mast{max-width:1180px;margin:0 auto;padding:18px 16px 10px;display:flex;align-items:center;gap:14px}
+.mast svg{width:46px;height:46px;flex:none}
+.mast h1{font-family:var(--display);font-stretch:125%;font-weight:900;font-size:clamp(20px,3.2vw,30px);letter-spacing:-.01em;margin:0;line-height:1}
+.mast p{margin:3px 0 0;color:var(--ink-2);font-size:14px}
+.mast .grow{flex:1;min-width:0}
+.mast select{background:var(--night-2);color:var(--ink);border:1px solid var(--night-3);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;max-width:220px}
+
+/* ---------- the stage ---------- */
+.stage-wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+.stage{position:relative;aspect-ratio:16/9;width:100%;background:#03050c;border-radius:14px;overflow:hidden;
+  box-shadow:0 0 0 1px #24305a,0 30px 80px -30px #000,inset 0 0 120px #000;display:grid;grid-template-rows:auto 1fr auto;isolation:isolate}
+.stage.paused .scene *{animation-play-state:paused!important}
+.stage-top{display:flex;align-items:center;gap:10px;padding:12px 16px 0;z-index:5;pointer-events:none}
+.bug{width:34px;height:34px;opacity:.85}
+.stage-chapter{margin-left:auto;font-family:var(--display);font-stretch:110%;font-weight:700;font-size:14px;color:#ffffffb0;text-align:right}
+.content{position:relative;min-height:0;z-index:2}
+.scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:6px 18px;animation:sceneIn .45s ease both}
+.scene.out{animation:sceneOut .4s ease both;pointer-events:none}
+@keyframes sceneIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+@keyframes sceneOut{to{opacity:0}}
+.band{position:relative;z-index:6;display:grid;grid-template-columns:auto 1fr;align-items:end;gap:16px;padding:8px 18px 14px;min-height:84px;
+  background:linear-gradient(transparent,#000c 45%)}
+.clock{font-family:var(--display);line-height:.9;padding-right:16px;border-right:2px solid #ffffff30;min-width:92px}
+.clock b{display:block;font-weight:900;font-stretch:125%;font-size:30px;letter-spacing:-.02em}
+.clock span{font-size:15px;color:#ffffffc0;font-stretch:100%;font-weight:600}
+.caption{font-family:var(--caption);font-weight:700;color:var(--subtitle);font-size:clamp(15px,2vw,22px);line-height:1.3;text-shadow:0 2px 0 #000,0 0 12px #000;min-height:1.3em;max-width:62ch}
+.caption .cur{display:inline-block;width:.5em;height:1em;background:var(--subtitle);vertical-align:-.12em;margin-left:2px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.stage-vignette{position:absolute;inset:0;pointer-events:none;z-index:7;background:radial-gradient(ellipse at center,transparent 60%,#000a 100%)}
+.bigplay{position:absolute;inset:0;z-index:20;display:grid;place-items:center;background:#03050ccc;border:0;padding:0}
+.bigplay span{display:grid;place-items:center;width:96px;height:96px;border-radius:50%;background:var(--subtitle);color:#000;box-shadow:0 0 0 10px #ffd40030}
+.bigplay svg{width:40px;height:40px;margin-left:6px}
+.bigplay[hidden]{display:none}
+
+/* ---------- controls ---------- */
+.controls{max-width:1180px;margin:0 auto;padding:10px 16px 0;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.cbtn{background:var(--night-2);border:1px solid var(--night-3);border-radius:9px;height:38px;min-width:38px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px}
+.cbtn svg{width:18px;height:18px}
+.cbtn[aria-pressed="true"]{background:var(--subtitle);color:#000;border-color:var(--subtitle)}
+.speeds{display:inline-flex;border:1px solid var(--night-3);border-radius:9px;overflow:hidden}
+.speeds button{background:var(--night-2);border:0;height:36px;padding:0 11px;font-size:14px;font-weight:700}
+.speeds button[aria-pressed="true"]{background:var(--ink);color:#000}
+.timecode{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:14px}
+.scrub{max-width:1180px;margin:0 auto;padding:10px 16px 4px}
+.track{position:relative;height:46px;cursor:pointer;touch-action:none}
+.track .bands{position:absolute;left:0;right:0;top:14px;height:10px;border-radius:6px;overflow:hidden;display:flex;background:var(--night-2)}
+.track .bands i{display:block;height:100%;border-right:2px solid var(--night)}
+.track .fill{position:absolute;left:0;top:14px;height:10px;border-radius:6px;background:#ffffff38;pointer-events:none}
+.track .head{position:absolute;top:8px;width:4px;height:22px;margin-left:-2px;border-radius:3px;background:var(--subtitle);box-shadow:0 0 10px var(--subtitle);pointer-events:none}
+.track .door{position:absolute;top:0;width:10px;height:12px;margin-left:-5px;pointer-events:none}
+.track .door::before{content:"";position:absolute;inset:0;border:2px solid var(--evict-2);border-bottom:0;border-radius:2px 2px 0 0}
+.track .dayl{position:absolute;top:28px;font-size:11px;color:var(--ink-3);transform:translateX(-50%);white-space:nowrap;pointer-events:none}
+.track .tip{position:absolute;bottom:40px;transform:translateX(-50%);background:#000;border:1px solid var(--night-3);border-radius:6px;padding:4px 8px;font-size:12px;white-space:nowrap;pointer-events:none;opacity:0}
+.track:hover .tip{opacity:1}
+.chapters{max-width:1180px;margin:0 auto;padding:4px 16px 0;display:flex;gap:6px;flex-wrap:wrap}
+.chapters button{background:none;border:1px solid var(--night-3);border-radius:20px;padding:5px 12px;font-size:13px;color:var(--ink-2)}
+.chapters button[aria-current="true"]{color:#000;background:var(--ink);border-color:var(--ink)}
+
+/* ---------- shared bits ---------- */
+.av{width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--night-3);flex:none}
+.av.bb{background:#000;padding:4px}
+.nm{font-weight:700}
+
+/* ---------- chat (Discord) ---------- */
+.dc{width:min(860px,100%);height:100%;display:flex;flex-direction:column;background:var(--dc-bg);border-radius:10px;overflow:hidden;box-shadow:0 20px 50px -20px #000;font-family:var(--chat);color:var(--dc-text)}
+.dc-head{flex:none;display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #1f2023;box-shadow:0 1px 0 #0003;font-weight:600;font-size:15px;color:#f2f3f5}
+.dc-head .hash{color:var(--dc-muted);font-size:22px;font-weight:400;line-height:1}
+.dc-head .topic{color:var(--dc-muted);font-weight:400;font-size:13px;border-left:1px solid #3f4147;padding-left:10px;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc-head .who{margin-left:auto;display:flex}
+.dc-head .who img{width:24px;height:24px;border-radius:50%;margin-left:-6px;border:2px solid var(--dc-bg)}
+.dc-log{flex:1;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:8px 0 4px}
+.dc-msg{display:grid;grid-template-columns:40px minmax(0,1fr);column-gap:14px;padding:3px 16px 3px 16px;margin-top:12px;animation:msgIn .25s ease both}
+.dc-msg .av{grid-row:1 / span 3}
+.dc-msg .meta,.dc-msg .body,.dc-msg .reply{grid-column:2}
+.dc-msg.cont{margin-top:0;padding-top:1px}
+.dc-msg.cont .av,.dc-msg.cont .meta{display:none}
+.dc-msg.cont .body{grid-column:2}
+.dc-msg.hl{background:#f0b23214;box-shadow:inset 2px 0 0 #f0b232}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dc-msg .meta{display:flex;align-items:baseline;gap:8px;line-height:1.3}
+.dc-msg .meta .nm{font-size:15.5px}
+.dc-msg .meta time{font-size:12px;color:var(--dc-muted)}
+.dc-msg .body{font-size:15.5px;line-height:1.375;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+.dc-msg .body.jumbo{font-size:44px;line-height:1.1}
+.dc-msg .body .em{width:22px;height:22px;vertical-align:-5px;object-fit:contain}
+.dc-msg .body.jumbo .em{width:48px;height:48px}
+.dc-msg .body .emt{color:var(--dc-muted)}
+.dc-msg .body .men{background:#5865f23d;color:#c9cdfb;border-radius:3px;padding:0 2px;font-weight:500}
+.dc-msg .body .gif{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;background:#00000059;border:1px solid #ffffff26;border-radius:4px;padding:1px 5px;color:#fff;vertical-align:1px}
+.dc-msg .body .lnk{color:#00a8fc}
+.dc-msg .body blockquote{margin:2px 0;padding-left:10px;border-left:4px solid #4e5058}
+.dc-msg .body code{background:#2b2d31;border-radius:4px;padding:0 3px;font-size:.9em}
+.dc-msg .att{display:inline-grid;place-items:center;width:200px;height:90px;border-radius:8px;background:#2b2d31;border:1px solid #1e1f22;color:var(--dc-muted);font-size:13px;margin-top:4px}
+.dc-msg .reply{grid-column:2;font-size:13px;color:var(--dc-muted);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc-typing{flex:none;height:22px;padding:0 16px 6px;font-size:13px;color:var(--dc-muted);font-family:var(--chat)}
+.dc-typing b{color:var(--dc-text)}
+.dc-typing .dots{display:inline-flex;gap:3px;margin-right:6px;vertical-align:1px}
+.dc-typing .dots i{width:5px;height:5px;border-radius:50%;background:var(--dc-muted);animation:dot 1s infinite}
+.dc-typing .dots i:nth-child(2){animation-delay:.15s}.dc-typing .dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{40%{transform:translateY(-3px);background:#fff}}
+.dc.teamA .dc-head{background:linear-gradient(90deg,#ff5a5a33,transparent)}
+.dc.teamB .dc-head{background:linear-gradient(90deg,#3d8bff33,transparent)}
+.dc .day-div{display:flex;align-items:center;gap:8px;margin:14px 16px 2px;color:var(--dc-muted);font-size:12px;font-weight:600}
+.dc .day-div::before,.dc .day-div::after{content:"";flex:1;height:1px;background:#3f4147}
+
+/* snug: wiretap night vision */
+.wiretap{position:relative;width:min(880px,100%);height:100%;border-radius:10px;overflow:hidden;background:#020a03;padding-top:34px;display:flex}
+.wiretap .dc{width:100%;filter:grayscale(1) sepia(1) hue-rotate(58deg) saturate(2.6) brightness(.95) contrast(1.12);background:#1c241c}
+.wiretap::before{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;background:repeating-linear-gradient(0deg,#00000038 0 2px,transparent 2px 4px)}
+.wiretap::after{content:"";position:absolute;inset:-50%;z-index:3;pointer-events:none;opacity:.10;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");animation:grain .6s steps(4) infinite}
+@keyframes grain{0%{transform:translate(0,0)}25%{transform:translate(-8%,4%)}50%{transform:translate(5%,-6%)}75%{transform:translate(-3%,7%)}}
+.burn{position:absolute;z-index:4;font-family:var(--cctv);color:var(--snug);font-size:22px;text-shadow:0 0 6px #8cff7a99;pointer-events:none;letter-spacing:.02em}
+.burn.tl{top:5px;left:14px}.burn.tr{top:5px;right:14px;text-align:right}
+.wiretap .vig{position:absolute;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,#000d 100%)}
+
+/* ---------- narrator establishing shot ---------- */
+.est{position:absolute;inset:0;overflow:hidden}
+.est .sky{position:absolute;inset:0;background:radial-gradient(900px 400px at 70% 120%,#2b3f8a55,transparent),linear-gradient(#050816,#0d1430)}
+.est .house{position:absolute;left:50%;bottom:-2%;width:min(760px,90%);transform:translateX(-50%);opacity:.9}
+.est .faces{position:absolute;left:0;right:0;top:12%;display:flex;justify-content:center;flex-wrap:wrap;gap:18px;padding:0 20px}
+.est .face{display:flex;flex-direction:column;align-items:center;gap:6px;animation:faceIn .6s ease both}
+.est .face img{width:clamp(56px,9vw,96px);height:clamp(56px,9vw,96px);border-radius:50%;box-shadow:0 0 0 3px #ffffff30,0 10px 30px #000}
+.est .face span{font-family:var(--display);font-weight:800;font-stretch:110%;font-size:14px;text-shadow:0 2px 6px #000}
+.est .face.gone img{filter:grayscale(1) brightness(.6)}
+@keyframes faceIn{from{opacity:0;transform:translateY(10px) scale(.9)}}
+.est .big{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(28px,6vw,72px);letter-spacing:-.03em;line-height:.95;padding:0 20px;text-shadow:0 6px 30px #000}
+
+/* ---------- open + chapter cards ---------- */
+.open{flex-direction:column;text-align:center;gap:10px}
+.open .eye{width:min(420px,60%);height:auto}
+.open h2{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(30px,6vw,76px);letter-spacing:-.035em;line-height:.9;margin:0}
+.open p{margin:0;color:var(--ink-2);font-size:clamp(14px,1.8vw,19px)}
+.eye .lid{transform-origin:200px 120px;animation:lidOpen 1.4s .3s cubic-bezier(.6,0,.2,1) both}
+.eye .outline{stroke-dasharray:900;stroke-dashoffset:900;animation:draw 1.8s .2s ease forwards}
+.eye .iris{transform-origin:200px 120px;animation:irisIn 1.6s .9s cubic-bezier(.2,.8,.2,1) both}
+.eye .pupil{transform-origin:200px 120px;animation:pupil 4s 2.4s ease-in-out infinite}
+.eye .rays line{stroke-dasharray:60;stroke-dashoffset:60;animation:draw .8s ease forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes irisIn{from{transform:scale(0) rotate(-120deg);opacity:0}}
+@keyframes pupil{50%{transform:scale(.7)}}
+@keyframes lidOpen{from{transform:scaleY(0)}}
+.chapter{flex-direction:column;align-items:flex-start;justify-content:center;padding:0 7%}
+.chapter .num{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(70px,14vw,180px);line-height:.8;color:transparent;-webkit-text-stroke:2px #ffffff40}
+.chapter h2{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(30px,6vw,80px);letter-spacing:-.035em;line-height:.9;margin:6px 0 10px;max-width:14ch}
+.chapter p{margin:0;font-size:clamp(14px,1.8vw,20px);color:var(--ink-2);max-width:52ch}
+.chapter .days{margin-top:14px;font-family:var(--display);font-weight:700;font-stretch:100%;color:var(--subtitle)}
+.chapter .wm{position:absolute;right:-8%;top:50%;width:60%;transform:translateY(-50%);opacity:.13}
+.chapter .wm .iris{animation:spin 40s linear infinite;transform-origin:200px 120px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- diary room ---------- */
+.diary{background:radial-gradient(600px 500px at 30% 40%,#d6247a40,transparent 70%),radial-gradient(900px 600px at 30% -10%,#ffffff1a,transparent 60%),linear-gradient(#1a0618,#09030c);
+  display:grid;grid-template-columns:minmax(150px,34%) 1fr;gap:3%;align-items:center;padding:4px 5% 0}
+.diary .chair{width:100%;max-height:100%;filter:drop-shadow(0 20px 40px #000)}
+.diary .chair .sitter{transition:opacity .4s}
+.diary .card{align-self:center}
+.diary .who{display:inline-flex;align-items:center;gap:10px;background:var(--diary);color:#fff;padding:6px 14px 6px 6px;border-radius:40px;font-family:var(--display);font-weight:800;font-stretch:110%;font-size:16px}
+.diary .who img{width:34px;height:34px;border-radius:50%}
+.diary .who .anon{width:34px;height:34px;border-radius:50%;background:#000;display:grid;place-items:center}
+.diary .txt{margin-top:14px;font-family:var(--caption);font-size:clamp(18px,2.5vw,30px);line-height:1.3;color:#fff;max-width:30ch;min-height:4em}
+.diary .txt::before{content:"\201C";color:var(--diary);font-family:var(--display);font-weight:900;font-size:1.6em;line-height:0;vertical-align:-.35em;margin-right:4px}
+.diary .count{margin-top:12px;color:#ffffff80;font-size:14px}
+
+/* ---------- Big Brother speaks ---------- */
+.announce{flex-direction:column;gap:14px}
+.announce .bbeye{width:110px;height:auto;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.06);filter:drop-shadow(0 0 30px #3d8bffaa)}}
+.announce .from{font-family:var(--display);font-weight:800;font-stretch:110%;color:#8fb4ff}
+.announce .txt{max-width:62ch;font-size:clamp(15px,1.9vw,21px);line-height:1.45;color:#fff;white-space:pre-wrap;text-align:left;background:#ffffff08;border:1px solid #ffffff14;border-radius:12px;padding:14px 18px;max-height:62%;overflow:hidden}
+.announce .txt .ln{opacity:0;transition:opacity .35s}
+.announce .txt .ln.on{opacity:1}
+
+/* ---------- nominations / votes wall ---------- */
+.wall{flex-direction:column;align-items:stretch;justify-content:flex-start;gap:10px;padding-top:6px}
+.wall h3,.board h3,.tokens h3{margin:0;font-family:var(--display);font-weight:900;font-stretch:120%;font-size:clamp(18px,2.6vw,30px);letter-spacing:-.02em;text-align:center}
+.wall .sub,.board .sub,.tokens .sub{text-align:center;color:var(--ink-2);margin:-4px 0 0;font-size:14px}
+.cols{flex:1;min-height:0;display:grid;gap:10px;grid-auto-columns:1fr;grid-auto-flow:column}
+.col{min-width:0;display:flex;flex-direction:column;gap:6px;background:#ffffff06;border-radius:10px;padding:8px;overflow:hidden}
+.col .hd{display:flex;align-items:center;gap:8px}
+.col .hd img{width:38px;height:38px;border-radius:50%}
+.col .hd .nm{font-family:var(--display);font-stretch:105%;font-size:14px;line-height:1.1}
+.col .hd .n{margin-left:auto;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:26px;color:var(--evict-2)}
+.col.top{background:#7b3cff26;box-shadow:inset 0 0 0 1px #7b3cff80}
+.slip{font-size:13px;line-height:1.3;background:#fff;color:#16121f;border-radius:6px;padding:6px 8px;transform-origin:top left;animation:slip .35s cubic-bezier(.2,1.4,.4,1) both;box-shadow:0 3px 0 #0005}
+.slip i{display:block;font-style:normal;font-size:11px;color:#6a5f80;margin-bottom:1px;font-weight:700}
+@keyframes slip{from{opacity:0;transform:translateY(-10px) rotate(-3deg)}}
+.also{font-size:13px;color:var(--ink-2);text-align:center}
+
+/* ---------- eviction ---------- */
+.board{flex-direction:column;align-items:stretch;justify-content:center;gap:10px;padding:0 6%}
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar{display:grid;grid-template-columns:34px minmax(90px,170px) 1fr 70px;align-items:center;gap:10px}
+.bar img{width:34px;height:34px;border-radius:50%}
+.bar .nm{font-family:var(--display);font-stretch:105%;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .tr{height:22px;background:#ffffff0d;border-radius:4px;overflow:hidden}
+.bar .tr i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5b2bd6,var(--evict-2));border-radius:4px}
+.bar.out .tr i{background:linear-gradient(90deg,#ff3a6a,#ff8aa5)}
+.bar.safe .tr i{background:linear-gradient(90deg,#1f9e6a,#5ff0b0)}
+.bar .v{font-family:var(--display);font-weight:900;font-stretch:120%;font-size:18px;text-align:right;font-variant-numeric:tabular-nums}
+.bar .v small{display:block;font-size:11px;font-weight:600;color:var(--ink-3)}
+.doorway{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:radial-gradient(500px 360px at 50% 60%,#7b3cff55,transparent),#06030f;opacity:0;transition:opacity .5s;z-index:3}
+.doorway.on{opacity:1}
+.door{position:relative;height:66%;aspect-ratio:3/5;flex:none;border:10px solid #2a1e4a;border-bottom:0;border-radius:6px 6px 0 0;background:radial-gradient(circle at 50% 70%,#fff,#d9ccff 30%,#8c6bff 70%);box-shadow:0 0 120px #b48cff99}
+.door .pan{position:absolute;top:0;bottom:0;width:50%;background:linear-gradient(90deg,#3a2b66,#251a46);transition:transform 1.4s cubic-bezier(.6,0,.2,1)}
+.door .pan.l{left:0;transform-origin:left;border-right:2px solid #000}
+.door .pan.r{right:0;transform-origin:right;border-left:2px solid #000}
+.door.open .pan.l{transform:perspective(600px) rotateY(-80deg)}
+.door.open .pan.r{transform:perspective(600px) rotateY(80deg)}
+.door .who{position:absolute;left:50%;bottom:12%;transform:translateX(-50%) scale(.5);opacity:0;transition:all 1.4s .6s ease;display:flex;gap:6px}
+.door.open .who{transform:translateX(-50%) scale(1);opacity:1}
+.door .who img{width:clamp(48px,7vw,84px);height:clamp(48px,7vw,84px);border-radius:50%;box-shadow:0 0 0 4px #fff,0 10px 30px #0008}
+.doorway .say{position:relative;z-index:2;text-align:center;font-family:var(--display);font-weight:900;font-stretch:120%;font-size:clamp(18px,3vw,36px);letter-spacing:-.02em;padding:0 20px;opacity:0;transition:opacity .6s}
+.doorway .say.on{opacity:1}
+.doorway .say small{display:block;font-family:var(--caption);font-weight:400;font-size:clamp(13px,1.6vw,18px);color:var(--evict-2);letter-spacing:0;margin-top:4px}
+.stairs{position:absolute;left:50%;bottom:0;width:min(520px,70%);transform:translateX(-50%);height:14%;background:repeating-linear-gradient(#ffffff14 0 6px,transparent 6px 18px);clip-path:polygon(22% 0,78% 0,100% 100%,0 100%)}
+
+/* ---------- token war ---------- */
+.tokens{display:grid;grid-template-columns:1.2fr 1fr;grid-template-rows:auto 1fr;gap:10px 18px;align-items:stretch;padding-top:4px}
+.tokens .ttl{grid-column:1/-1}
+.block{position:relative;display:flex;flex-direction:column;justify-content:center;gap:10px}
+.bench{display:flex;justify-content:center;gap:clamp(8px,2vw,22px);flex-wrap:wrap;padding:16px 10px 22px;border-radius:14px;background:linear-gradient(#ffffff08,#ffffff03);box-shadow:inset 0 -12px 0 #7b3cff40}
+.seat{display:flex;flex-direction:column;align-items:center;gap:6px;width:clamp(64px,9vw,104px)}
+.seat .ring{position:relative;width:clamp(56px,8vw,90px);height:clamp(56px,8vw,90px);perspective:500px}
+.seat .ring img{width:100%;height:100%;border-radius:50%;box-shadow:0 0 0 3px #ff3a6a;transition:transform .5s}
+.seat.flip .ring img{animation:flip .6s ease}
+@keyframes flip{50%{transform:rotateY(90deg)}}
+.seat .nm{font-family:var(--display);font-stretch:100%;font-size:13px;text-align:center;line-height:1.1}
+.seat .shield{position:absolute;right:-6px;bottom:-4px;width:26px;height:26px}
+.blocklabel{text-align:center;font-family:var(--display);font-weight:800;font-stretch:110%;color:#ff8aa5}
+.coin{position:absolute;width:30px;height:30px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff6c9,var(--token) 45%,#a87b10);box-shadow:0 0 14px #f5c542;z-index:4;pointer-events:none;display:grid;place-items:center}
+.coin svg{width:20px;height:20px}
+.tlog{overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:5px;font-size:14px;min-height:0}
+.tlog div{display:grid;grid-template-columns:52px 1fr;gap:8px;align-items:start;animation:msgIn .3s ease both;background:#ffffff07;border-radius:8px;padding:5px 8px}
+.tlog time{color:var(--ink-3);font-variant-numeric:tabular-nums}
+.tlog .mv{font-weight:700}
+.tlog .swap{color:#ff8aa5}.tlog .gift{color:var(--token)}.tlog .self{color:#5ff0b0}
+
+/* ---------- challenge ---------- */
+.chal{display:grid;grid-template-columns:minmax(220px,38%) 1fr;gap:18px;align-items:center;padding-top:4px}
+.chal.noimg{grid-template-columns:1fr;max-width:760px;margin:0 auto}
+.chal .card{background:#ffffff08;border:1px solid #ffffff17;border-radius:12px;padding:16px 18px;position:relative}
+.chal .card h3{margin:0 0 4px;font-family:var(--display);font-weight:900;font-stretch:115%;font-size:clamp(20px,2.6vw,30px);letter-spacing:-.02em;line-height:1}
+.chal .card .no{color:var(--subtitle);font-family:var(--display);font-weight:700;font-size:14px}
+.chal .card p{margin:10px 0 0;color:var(--ink-2);font-size:clamp(14px,1.6vw,17px);line-height:1.4}
+.chal .res{margin-top:12px;font-size:clamp(15px,1.8vw,19px);line-height:1.35;color:#fff;opacity:0;transition:opacity .5s}
+.chal .res.on{opacity:1}
+.stamp{position:absolute;right:12px;top:-14px;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(20px,3vw,34px);padding:2px 12px;border:4px solid currentColor;border-radius:8px;transform:rotate(-8deg) scale(2.2);opacity:0;transition:all .35s cubic-bezier(.3,1.6,.5,1);background:#0009}
+.stamp.on{opacity:1;transform:rotate(-8deg) scale(1)}
+.stamp.pass{color:#5ff0b0}.stamp.fail{color:#ff5a7a}
+.chal .pic{height:100%;max-height:100%;min-height:0;border-radius:12px;overflow:hidden;position:relative;background:#000}
+.chal .pic img{position:absolute;width:150%;left:0;top:0;transform-origin:0 0;will-change:transform}
+
+/* ---------- stats ---------- */
+.stat{flex-direction:column;text-align:center;gap:6px}
+.stat .v{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(60px,13vw,170px);letter-spacing:-.05em;line-height:.85;font-variant-numeric:tabular-nums}
+.stat .l{font-size:clamp(16px,2.2vw,26px);font-weight:700}
+.stat .rows{margin-top:12px;display:grid;gap:6px;min-width:min(520px,90%)}
+.stat .rows div{display:flex;justify-content:space-between;gap:16px;background:#ffffff08;border-radius:8px;padding:7px 12px;opacity:0;transition:opacity .4s;font-size:15px}
+.stat .rows div.on{opacity:1}
+.stat .rows b{font-variant-numeric:tabular-nums}
+
+/* ---------- cast ---------- */
+.cast{flex-direction:column;gap:10px}
+.cast h3{margin:0;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(20px,3vw,34px);letter-spacing:-.02em}
+.cast .grid{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:10px 8px;width:100%;max-width:980px}
+.cast .m{display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0;transform:translateY(8px);transition:all .35s}
+.cast .m.on{opacity:1;transform:none}
+.cast .m img{width:clamp(36px,5.6vw,64px);height:clamp(36px,5.6vw,64px);border-radius:50%;box-shadow:0 0 0 2px #ffffff30}
+.cast .m span{font-size:clamp(10px,1.1vw,13px);font-weight:700;text-align:center;line-height:1.1}
+.cast .m small{font-size:10px;color:var(--ink-3)}
+
+/* ---------- alliance wall ---------- */
+.web{position:relative;width:100%;height:100%}
+.web svg.strings{position:absolute;inset:0;width:100%;height:100%;z-index:1}
+.web svg.strings line{stroke:#ff3a5a;stroke-width:2;opacity:.75;stroke-dasharray:800;stroke-dashoffset:800;transition:stroke-dashoffset 1.2s ease}
+.web svg.strings line.on{stroke-dashoffset:0}
+.pin{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;z-index:2;opacity:0;transition:opacity .4s}
+.pin.on{opacity:1}
+.pin img{width:clamp(36px,5vw,58px);height:clamp(36px,5vw,58px);border-radius:6px;box-shadow:0 0 0 3px #f1ead8,0 6px 14px #000}
+.pin span{font-size:12px;font-weight:700;background:#f1ead8;color:#222;padding:0 4px;border-radius:2px;white-space:nowrap}
+.gtag{position:absolute;transform:translate(-50%,0);font-family:var(--display);font-weight:800;font-stretch:110%;font-size:14px;color:var(--subtitle);text-align:center;opacity:0;transition:opacity .5s;max-width:240px;z-index:2}
+.gtag.on{opacity:1}
+.gtag small{display:block;font-family:var(--caption);font-weight:400;color:var(--ink-2);font-size:12px}
+
+/* ---------- finale scoreboard ---------- */
+.score{flex-direction:column;align-items:stretch;gap:10px;padding:0 4%}
+.score h3{margin:0;text-align:center;font-family:var(--display);font-weight:900;font-stretch:120%;font-size:clamp(18px,2.6vw,30px)}
+.score .rd{text-align:center;color:var(--subtitle);font-weight:700;min-height:1.3em}
+.fin{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.fcol{display:flex;flex-direction:column;align-items:center;gap:6px;background:#ffffff07;border-radius:12px;padding:10px 6px;transition:background .4s,box-shadow .4s}
+.fcol img{width:clamp(44px,7vw,80px);height:clamp(44px,7vw,80px);border-radius:50%}
+.fcol .nm{font-family:var(--display);font-stretch:100%;font-size:14px;text-align:center}
+.fcol .tot{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(30px,5vw,58px);line-height:.9;font-variant-numeric:tabular-nums}
+.fcol .chips{display:flex;flex-direction:column;gap:4px;width:100%}
+.fcol .chip{font-size:12px;text-align:center;background:#ffffff10;border-radius:6px;padding:3px 4px;animation:msgIn .3s ease both}
+.fcol .chip b{color:var(--subtitle)}
+.fcol.lead{background:#f5c54222;box-shadow:inset 0 0 0 2px var(--token)}
+.tie{text-align:center;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(26px,5vw,60px);color:var(--token);opacity:0;transform:scale(1.6);transition:all .5s cubic-bezier(.3,1.5,.5,1)}
+.tie.on{opacity:1;transform:none}
+
+/* ---------- crown ---------- */
+.crown{flex-direction:column;gap:8px;text-align:center}
+.crown .pair{display:flex;align-items:flex-end;justify-content:center;gap:clamp(20px,5vw,60px)}
+.crown .p{display:flex;flex-direction:column;align-items:center;gap:6px}
+.crown .p img{width:clamp(70px,11vw,140px);height:clamp(70px,11vw,140px);border-radius:50%;box-shadow:0 0 0 4px #fff2}
+.crown .p.win img{width:clamp(100px,16vw,200px);height:clamp(100px,16vw,200px);box-shadow:0 0 0 5px var(--token),0 0 80px #f5c54288}
+.crown .p .nm{font-family:var(--display);font-weight:800;font-stretch:110%}
+.crown .cr{position:relative;width:clamp(60px,9vw,110px);margin-bottom:-18px;transform:translateY(-200px);opacity:0;transition:all 1.2s cubic-bezier(.3,1.3,.5,1);z-index:2}
+.crown .cr.on{transform:none;opacity:1}
+.crown h2{margin:8px 0 0;font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(26px,5vw,64px);letter-spacing:-.03em;line-height:.95;opacity:0;transition:opacity .6s}
+.crown h2.on,.crown p.on{opacity:1}
+.crown p{margin:0;color:var(--ink-2);font-size:clamp(14px,1.8vw,20px);opacity:0;transition:opacity .6s;max-width:60ch}
+canvas.confetti{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none}
+
+/* ---------- quote ---------- */
+.quote{flex-direction:column;gap:14px;text-align:center}
+.quote img{width:clamp(64px,9vw,110px);height:clamp(64px,9vw,110px);border-radius:50%;box-shadow:0 0 0 4px var(--subtitle)}
+.quote blockquote{margin:0;font-family:var(--caption);font-weight:700;font-size:clamp(18px,2.8vw,34px);line-height:1.25;max-width:34ch;color:#fff;min-height:2.5em}
+.quote cite{font-style:normal;color:var(--ink-2)}
+
+/* ---------- credits ---------- */
+.credits{overflow:hidden;align-items:flex-start}
+.roll{width:min(640px,100%);text-align:center;will-change:transform}
+.roll h3{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:28px;margin:30px 0 12px;color:var(--subtitle)}
+.roll .row{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;text-align:left;padding:5px 0}
+.roll .row img{width:40px;height:40px;border-radius:50%}
+.roll .row b{font-family:var(--display);font-stretch:105%}
+.roll .row small{color:var(--ink-3);display:block}
+.roll .row .pl{color:var(--ink-2);font-size:14px;text-align:right}
+.roll .row.gold .pl{color:var(--token);font-weight:700}
+.roll .tot{display:grid;grid-template-columns:1fr auto;gap:6px 20px;text-align:left;max-width:420px;margin:0 auto}
+.roll .tot b{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- explorer ---------- */
+.explorer{max-width:1180px;margin:28px auto 60px;padding:0 16px}
+.explorer > h2{font-family:var(--display);font-weight:900;font-stretch:125%;font-size:clamp(22px,3vw,32px);letter-spacing:-.02em;margin:0 0 4px}
+.explorer > p{margin:0 0 14px;color:var(--ink-2)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--night-3);margin-bottom:16px}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;font-size:15px;color:var(--ink-2);font-weight:700}
+.tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--subtitle)}
+.pane[hidden]{display:none}
+.daysplit{display:grid;grid-template-columns:230px 1fr;gap:18px}
+.daylist{display:flex;flex-direction:column;gap:3px;position:sticky;top:10px;align-self:start;max-height:calc(100vh - 20px);overflow:auto}
+.daylist button{display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:8px;text-align:left;background:none;border:0;border-radius:8px;padding:6px 8px;font-size:13px;color:var(--ink-2)}
+.daylist button b{font-family:var(--display);font-stretch:110%;color:var(--ink);font-size:14px}
+.daylist button[aria-current="true"]{background:var(--night-2);box-shadow:inset 3px 0 0 var(--subtitle)}
+.daylist .vol{height:6px;border-radius:3px;background:#8fb4ff60}
+.daylist .gone{display:flex}
+.daylist .gone img{width:18px;height:18px;border-radius:50%;margin-left:-5px;border:1px solid var(--night);filter:grayscale(1)}
+.dayhead{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 18px;margin-bottom:10px}
+.dayhead h3{margin:0;font-family:var(--display);font-weight:900;font-stretch:120%;font-size:26px;letter-spacing:-.02em}
+.dayhead .watch{margin-left:auto}
+.daysum{color:var(--ink-2);font-size:14px}
+.hours{display:flex;align-items:flex-end;gap:2px;height:40px;margin:8px 0 12px}
+.hours i{flex:1;background:#8fb4ff55;border-radius:2px 2px 0 0;min-height:1px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.filters label{display:inline-flex;align-items:center;gap:5px;font-size:13px;background:var(--night-2);border:1px solid var(--night-3);border-radius:20px;padding:4px 10px;cursor:pointer}
+.filters input{accent-color:var(--subtitle)}
+.evlist{display:flex;flex-direction:column}
+.ev{display:grid;grid-template-columns:62px 26px 1fr;gap:8px;padding:7px 4px;border-bottom:1px solid #ffffff0d;font-size:14px;line-height:1.45}
+.ev time{color:var(--ink-3);font-variant-numeric:tabular-nums;font-size:13px;padding-top:1px}
+.ev .ic{font-size:16px;text-align:center}
+.ev .tx{min-width:0;overflow-wrap:anywhere}
+.ev .tx q{color:var(--ink-2)}
+.ev .tx .pre{white-space:pre-wrap;color:var(--ink-2);margin-top:4px;font-size:13.5px}
+.ev details summary{cursor:pointer;color:var(--ink-2)}
+.ev.sys{opacity:.55}
+.mini{display:inline-flex;align-items:center;gap:4px;font-weight:700;white-space:nowrap}
+.mini img{width:18px;height:18px;border-radius:50%}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;color:var(--ink-3);font-weight:700;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--night-3)}
+.tbl td{padding:7px 8px;border-bottom:1px solid #ffffff0d;vertical-align:middle}
+.tbl td.n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl th.n{text-align:right}
+.tbl .who{display:flex;align-items:center;gap:10px}
+.tbl .who img{width:32px;height:32px;border-radius:50%}
+.tbl .who small{display:block;color:var(--ink-3)}
+.scroller{overflow-x:auto}
+.round{border:1px solid var(--night-3);border-radius:12px;padding:14px;margin-bottom:12px;background:#ffffff04}
+.round h4{margin:0 0 2px;font-family:var(--display);font-stretch:110%;font-size:18px}
+.round .meta{color:var(--ink-3);font-size:13px;margin-bottom:10px}
+.round .bars .bar{grid-template-columns:28px minmax(80px,160px) 1fr 52px}
+.round .bars .bar img{width:28px;height:28px}
+.round .bars .bar .tr i{width:var(--w)}
+.reasons{columns:2 320px;column-gap:20px;margin-top:10px;font-size:13.5px}
+.reasons div{break-inside:avoid;padding:3px 0}
+.reasons q{color:var(--ink-2)}
+.search{width:100%;max-width:420px;background:var(--night-2);border:1px solid var(--night-3);border-radius:8px;padding:9px 12px;color:var(--ink);font:inherit;margin-bottom:12px}
+.diarylist{display:flex;flex-direction:column;gap:8px}
+.dentry{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:10px 12px;border-radius:10px;background:#ffffff05;border-left:3px solid var(--diary)}
+.dentry.anon{border-left-color:#555}
+.dentry .w{font-size:13px;color:var(--ink-2)}
+.dentry .w b{display:block;color:var(--ink)}
+.dentry .t{white-space:pre-wrap;font-size:14.5px;line-height:1.45}
+.chlist{display:flex;flex-direction:column;gap:12px}
+.chitem{border:1px solid var(--night-3);border-radius:12px;padding:14px;background:#ffffff04}
+.chitem h4{margin:0;font-family:var(--display);font-stretch:110%;font-size:18px}
+.chitem .meta{color:var(--ink-3);font-size:13px;margin:2px 0 8px}
+.chitem .res{background:#ffd40014;border-left:3px solid var(--subtitle);padding:8px 10px;border-radius:6px;font-size:14px;margin-bottom:8px}
+.chitem pre{white-space:pre-wrap;font-family:var(--caption);font-size:14px;color:var(--ink-2);margin:6px 0 0}
+.chitem img{max-width:100%;border-radius:8px;margin-top:8px}
+.snugstrip{display:flex;align-items:flex-end;gap:4px;height:70px;margin:6px 0 14px}
+.snugstrip div{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:var(--ink-3)}
+.snugstrip i{width:100%;background:#8cff7a70;border-radius:3px 3px 0 0}
+.faces{display:flex}
+.faces img{width:22px;height:22px;border-radius:50%;margin-left:-6px;border:2px solid var(--night)}
+.faces img:first-child{margin-left:0}
+
+@media (max-width:760px){
+  .mast label{display:none}
+  .stage{aspect-ratio:3/5}
+  .stage-chapter{display:none}
+  .band{min-height:96px;gap:10px;padding:8px 12px 12px}
+  .caption{font-size:14px}
+  .burn{font-size:15px}.burn.tl{display:none}
+  .scene{padding:4px 10px}
+  .dc-msg{padding:3px 10px;column-gap:10px}
+  .dc-msg .body{font-size:14.5px}
+  .clock b{font-size:24px}.clock{min-width:70px;padding-right:10px}
+  .diary{grid-template-columns:1fr;grid-template-rows:38% 1fr;padding:0 6%}
+  .diary .chair{max-height:100%;height:100%;width:auto;justify-self:center}
+  .tokens{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}
+  .chal{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .cast .grid{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .cols{grid-auto-flow:row;grid-template-columns:1fr 1fr;grid-auto-columns:auto}
+  .col .slip:nth-of-type(n+4){display:none}
+  .fin{gap:4px}.fcol{padding:6px 2px}.fcol .chip{font-size:10px}
+  .daysplit{grid-template-columns:1fr}
+  .daylist{position:static;flex-direction:row;overflow-x:auto;max-height:none}
+  .daylist button{grid-template-columns:auto;min-width:64px;text-align:center}
+  .daylist .vol,.daylist .gone,.daylist button span{display:none}
+  .dentry{grid-template-columns:1fr}
+  .bar{grid-template-columns:28px minmax(70px,110px) 1fr 52px}
+  .timecode{margin-left:0;width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<header class="mast">
+  <svg viewBox="0 0 400 240" aria-hidden="true"><use href="#eye-sym"/></svg>
+  <div class="grow">
+    <h1>UKPlace Big Brother</h1>
+    <p id="mast-sub"></p>
+  </div>
+  <label><span class="sr" hidden>Chapter</span><select id="chapter-select" aria-label="Jump to chapter"></select></label>
+</header>
+
+<div class="stage-wrap">
+  <div class="stage paused" id="stage">
+    <div class="stage-top">
+      <svg class="bug" viewBox="0 0 400 240" aria-hidden="true"><use href="#eye-sym"/></svg>
+      <div class="stage-chapter" id="stage-chapter"></div>
+    </div>
+    <div class="content" id="content"></div>
+    <div class="band">
+      <div class="clock"><b id="clock-day">Day 0</b><span id="clock-time"></span></div>
+      <div class="caption" id="caption" aria-live="polite"></div>
+    </div>
+    <div class="stage-vignette"></div>
+    <button class="bigplay" id="bigplay" aria-label="Play the series"><span><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4l15 8-15 8z"/></svg></span></button>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="cbtn" id="btn-play" aria-label="Play"><svg viewBox="0 0 24 24"><path id="play-path" fill="currentColor" d="M6 4l15 8-15 8z"/></svg></button>
+  <button class="cbtn" id="btn-prev" aria-label="Previous scene"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+  <button class="cbtn" id="btn-next" aria-label="Next scene"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+  <div class="speeds" role="group" aria-label="Playback speed">
+    <button data-speed="1" aria-pressed="true">1x</button><button data-speed="2" aria-pressed="false">2x</button><button data-speed="5" aria-pressed="false">5x</button>
+  </div>
+  <button class="cbtn" id="btn-sound" aria-pressed="false" title="Synth sound effects and house hum"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>Sound</button>
+  <button class="cbtn" id="btn-voice" aria-pressed="false" title="Read the narration aloud with your browser's British voice"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>Narrator</button>
+  <button class="cbtn" id="btn-full" aria-label="Full screen"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg></button>
+  <div class="timecode" id="timecode">0:00 / 0:00</div>
+</div>
+<div class="scrub"><div class="track" id="track" role="slider" tabindex="0" aria-label="Season timeline" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+<nav class="chapters" id="chapters" aria-label="Chapters"></nav>
+
+<section class="explorer" id="explorer">
+  <h2>The full record</h2>
+  <p id="explorer-sub"></p>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div id="panes"></div>
+</section>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="irisG" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffe27a"/><stop offset=".35" stop-color="#ff9d1a"/><stop offset=".7" stop-color="#d0420f"/><stop offset="1" stop-color="#3a0d05"/>
+    </radialGradient>
+    <linearGradient id="lidG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d8bff"/><stop offset="1" stop-color="#7b3cff"/></linearGradient>
+    <symbol id="eye-sym" viewBox="0 0 400 240">
+      <g class="lid">
+        <path class="outline" d="M20 120 Q200 -40 380 120 Q200 280 20 120 Z" fill="#050816" stroke="url(#lidG)" stroke-width="10" stroke-linejoin="round"/>
+        <g class="iris">
+          <circle cx="200" cy="120" r="78" fill="url(#irisG)"/>
+          <g stroke="#ffffff38" stroke-width="2">
+            <line x1="200" y1="46" x2="200" y2="66"/><line x1="200" y1="174" x2="200" y2="194"/><line x1="126" y1="120" x2="146" y2="120"/><line x1="254" y1="120" x2="274" y2="120"/>
+            <line x1="148" y1="68" x2="162" y2="82"/><line x1="238" y1="158" x2="252" y2="172"/><line x1="148" y1="172" x2="162" y2="158"/><line x1="238" y1="82" x2="252" y2="68"/>
+          </g>
+          <circle cx="200" cy="120" r="54" fill="none" stroke="#00000055" stroke-width="3"/>
+          <circle class="pupil" cx="200" cy="120" r="30" fill="#020309"/>
+          <circle cx="222" cy="98" r="11" fill="#fff" opacity=".9"/>
+        </g>
+      </g>
+    </symbol>
+    <symbol id="coin-sym" viewBox="0 0 24 24"><path fill="#7a5506" d="M2 12q10-9 20 0q-10 9-20 0z"/><circle cx="12" cy="12" r="4" fill="#fff6c9"/><circle cx="12" cy="12" r="2" fill="#7a5506"/></symbol>
+    <symbol id="shield-sym" viewBox="0 0 24 24"><path fill="#5ff0b0" stroke="#063" stroke-width="1.5" d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/><path d="M8 12l3 3 5-6" stroke="#063" stroke-width="2.4" fill="none" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<script>
+window.BB = /*__DATA__*/null;
+</script>
+<script>
+(() => {
+"use strict";
+const D = window.BB;
+const $ = (s, el = document) => el.querySelector(s);
+const h = (tag, attrs = {}, ...kids) => {
+  const el = tag === "svg" ? document.createElementNS("http://www.w3.org/2000/svg", "svg") : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.setAttribute("class", v);
+    else if (k === "html") el.innerHTML = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k instanceof Node ? k : document.createTextNode(k));
+  return el;
+};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = t => t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+
+// ---------------------------------------------------------------- people
+const HM = {};
+for (const x of D.housemates) HM[x.id] = x;
+const BB_ID = "795003706717372462";
+const EYE_URI = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" fill="#050816"/><path d="M20 200 Q200 40 380 200 Q200 360 20 200 Z" fill="#050816" stroke="#3d8bff" stroke-width="16"/><circle cx="200" cy="200" r="78" fill="#ff9d1a"/><circle cx="200" cy="200" r="30" fill="#020309"/><circle cx="222" cy="178" r="11" fill="#fff"/></svg>`);
+const ANON_URI = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#222"/><circle cx="20" cy="15" r="7" fill="#555"/><path d="M6 38c2-9 8-12 14-12s12 3 14 12z" fill="#555"/></svg>`);
+// "diary" stands in for a diary room entry read out in the house; it never names an anonymous writer.
+const CHAIR_URI = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#3a0620"/><path d="M20 6c-9 0-12 7-12 15 0 5 2 9 4 11h16c2-2 4-6 4-11 0-8-3-15-12-15z" fill="#d6247a" stroke="#f5c542" stroke-width="1.5"/></svg>`);
+const pname = id => id === BB_ID ? "Big Brother" : id === "diary" ? "Diary Room" : (HM[id]?.persona || "a viewer");
+const avatar = id => id === BB_ID ? EYE_URI : id === "diary" ? CHAIR_URI : (D.avatars[id] || ANON_URI);
+const pcolor = id => id === BB_ID ? "#8fb4ff" : id === "diary" ? "#ff5fa8" : (D.colors[id] || "#dbdee1");
+const img = (id, cls) => h("img", {src: avatar(id), alt: "", class: cls});
+// Node.append() turns null into the text "null", so renderers append through this.
+const app = (el, ...kids) => el.append(...kids.flat().filter(k => k != null && k !== false));
+const mini = id => h("span", {class: "mini"}, img(id), pname(id));
+const names = ids => ids.map(pname).reduce((a, n, i, arr) => a + (i === 0 ? "" : i === arr.length - 1 ? " and " : ", ") + n, "");
+
+// ---------------------------------------------------------------- time
+const TZ = "Europe/London";
+const fmtTime = ts => {
+  const d = new Date(ts * 1000);
+  const p = new Intl.DateTimeFormat("en-GB", {timeZone: TZ, hour: "numeric", minute: "2-digit", hour12: true}).formatToParts(d);
+  const hr = p.find(x => x.type === "hour").value, mn = p.find(x => x.type === "minute").value, ap = p.find(x => x.type === "dayPeriod").value.toLowerCase().replace(/\s|\./g, "");
+  return `${hr}.${mn}${ap}`;
+};
+const fmtClock24 = ts => new Intl.DateTimeFormat("en-GB", {timeZone: TZ, hour: "2-digit", minute: "2-digit"}).format(new Date(ts * 1000));
+const fmtDate = ts => new Intl.DateTimeFormat("en-GB", {timeZone: TZ, weekday: "long", day: "numeric", month: "long"}).format(new Date(ts * 1000));
+const fmtDc = ts => {
+  const d = new Date(ts * 1000);
+  return new Intl.DateTimeFormat("en-GB", {timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric"}).format(d) + " " + fmtClock24(ts);
+};
+const mmss = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const money = p => "£" + (p / 100).toFixed(2).replace(/\.00$/, "");
+
+// ---------------------------------------------------------------- message formatting
+const personaNames = Object.values(HM).map(x => x.persona).sort((a, b) => b.length - a.length);
+const mentionRe = new RegExp("@(" + personaNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + "|Big Brother|someone)", "g");
+function fmtMessage(text) {
+  let s = esc(text);
+  s = s.replace(/&lt;(a?):(\w+):(\d+)&gt;/g, (m, a, n, id) => D.emoji[id] ? `<img class="em" src="${D.emoji[id]}" alt=":${n}:">` : `<span class="emt">:${n}:</span>`);
+  s = s.replace(/https?:\/\/\S+/g, u => {
+    if (/klipy|tenor|giphy|\.gif(\?|$)/i.test(u)) return `<span class="gif">GIF</span>`;
+    if (/cdn\.discordapp|media\.discordapp/i.test(u)) return `<span class="gif">IMAGE</span>`;
+    const short = u.replace(/^https?:\/\/(www\.)?/, "").slice(0, 38);
+    return `<span class="lnk">${short}${u.length > 46 ? "…" : ""}</span>`;
+  });
+  s = s.replace(mentionRe, m => `<span class="men">${m}</span>`);
+  s = s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>")
+       .replace(/\|\|(.+?)\|\|/g, "$1").replace(/^&gt; (.*)$/gm, "<blockquote>$1</blockquote>");
+  return s;
+}
+const isJumbo = t => { const stripped = (t || "").replace(/<a?:\w+:\d+>/g, "E").replace(/\s/g, ""); return stripped.length > 0 && stripped.length <= 12 && /^(E|\p{Extended_Pictographic}|‍|️|\p{Emoji_Modifier})+$/u.test(stripped); };
+
+// ---------------------------------------------------------------- sound (synthesised, off by default)
+const Snd = {
+  on: false, ctx: null,
+  init() {
+    if (this.ctx) return;
+    const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    this.ctx = new C(); this.master = this.ctx.createGain(); this.master.gain.value = .55; this.master.connect(this.ctx.destination);
+  },
+  toggle() {
+    this.init(); if (!this.ctx) return false;
+    this.on = !this.on;
+    if (this.on) { this.ctx.resume(); this.hum(true); } else this.hum(false);
+    return this.on;
+  },
+  hum(start) {
+    const c = this.ctx;
+    if (!start) { (this.oscs || []).forEach(o => { try { o.stop(); } catch (e) {} }); this.oscs = []; return; }
+    const g = c.createGain(); g.gain.value = 0; g.gain.linearRampToValueAtTime(.05, c.currentTime + 3);
+    const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 260; f.Q.value = 4;
+    this.oscs = [];
+    [55, 82.41, 110, 164.8].forEach((fr, i) => { const o = c.createOscillator(); o.type = i % 2 ? "sawtooth" : "triangle"; o.frequency.value = fr; o.detune.value = (i - 1.5) * 5; o.connect(f); o.start(); this.oscs.push(o); });
+    const l = c.createOscillator(); l.frequency.value = .07; const lg = c.createGain(); lg.gain.value = 120; l.connect(lg); lg.connect(f.frequency); l.start(); this.oscs.push(l);
+    f.connect(g); g.connect(this.master);
+  },
+  tone(freq, dur = .08, type = "sine", vol = .07, at = 0) {
+    if (!this.on) return; const c = this.ctx, t = c.currentTime + at;
+    const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + .05);
+  },
+  noise(dur = 1.2, from = 300, to = 3000, vol = .12) {
+    if (!this.on) return; const c = this.ctx, t = c.currentTime;
+    const b = c.createBuffer(1, c.sampleRate * dur, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const s = c.createBufferSource(); s.buffer = b; const f = c.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur);
+    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + dur * .3); g.gain.linearRampToValueAtTime(0, t + dur);
+    s.connect(f); f.connect(g); g.connect(this.master); s.start(t);
+  },
+  msg() { this.tone(1046, .05, "sine", .035); },
+  type() { this.tone(2400 + Math.random() * 400, .012, "square", .008); },
+  sting() { [392, 311, 233, 196].forEach((f, i) => this.tone(f, .9, "sawtooth", .03, i * .09)); this.tone(98, 1.6, "sine", .09); },
+  heart() { this.tone(60, .14, "sine", .25); this.tone(55, .16, "sine", .2, .18); },
+  door() { this.tone(70, 1.4, "sine", .2); this.noise(2.4, 200, 1800, .14); },
+  crowd() { this.noise(3.2, 500, 900, .18); },
+  coin() { this.tone(1318, .09, "triangle", .06); this.tone(1760, .2, "triangle", .05, .07); },
+  stamp() { this.tone(90, .2, "square", .12); this.noise(.25, 800, 200, .2); },
+  fanfare() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone(f, .5, "sawtooth", .035, i * .14)); },
+};
+
+// ---------------------------------------------------------------- narrator voice (Web Speech, off by default)
+const Voice = {
+  on: false, speaking: false, voice: null,
+  pick() {
+    const vs = (window.speechSynthesis?.getVoices() || []).filter(v => /en[-_]GB/i.test(v.lang));
+    this.voice = vs.find(v => /daniel|arthur|george|male/i.test(v.name)) || vs[0] || null;
+  },
+  say(text) {
+    if (!this.on || !window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/\.(\d)/g, " $1"));
+    if (this.voice) u.voice = this.voice; u.lang = "en-GB"; u.rate = Math.min(1.7, .92 + (P.speed - 1) * .2); u.pitch = .85;
+    this.speaking = true; u.onend = u.onerror = () => { this.speaking = false; };
+    speechSynthesis.speak(u);
+  },
+  stop() { window.speechSynthesis?.cancel(); this.speaking = false; },
+};
+if (window.speechSynthesis) { Voice.pick(); speechSynthesis.onvoiceschanged = () => Voice.pick(); }
+
+// ---------------------------------------------------------------- scene renderers
+// Each returns a plan: {dur, setup(el), beats:[[ms, fn(el, instant)]], update(el, t)}.
+// Everything is driven by the player clock, so pause, speed and seeking all just work.
+const R = {};
+const typer = (el, text, t0, cps = 38) => t => {
+  const n = clamp(Math.floor((t - t0) * cps / 1000), 0, text.length);
+  if (el._n !== n) { el._n = n; el.textContent = text.slice(0, n); if (n > 0 && n < text.length && n % 3 === 0) Snd.type(); }
+};
+
+R.open = s => ({
+  dur: 9500, beats: [[200, () => Snd.sting()]],
+  setup(el) {
+    el.classList.add("open");
+    app(el, 
+      h("svg", {class: "eye", viewBox: "0 0 400 240", html: '<use href="#eye-sym"/>'}),
+      h("h2", {}, s.title || "UKPlace Big Brother"),
+      h("p", {}, s.sub || ""),
+    );
+  },
+});
+
+R.chapter = s => ({
+  dur: 4800, beats: [[100, () => Snd.sting()]],
+  setup(el) {
+    el.classList.add("chapter");
+    app(el, 
+      h("svg", {class: "wm", viewBox: "0 0 400 240", html: '<use href="#eye-sym"/>'}),
+      h("div", {class: "num"}, String(s.num)),
+      h("h2", {}, s.title), h("p", {}, s.subtitle || ""), h("div", {class: "days"}, s.days || ""),
+    );
+  },
+});
+
+const HOUSE_SVG = `<svg viewBox="0 0 760 300" fill="none"><path d="M40 300V150L210 60l170 90 170-90 170 90v150" stroke="#3d8bff55" stroke-width="3"/><rect x="90" y="170" width="70" height="60" rx="4" fill="#ffd40018" stroke="#ffd40040"/><rect x="260" y="160" width="90" height="70" rx="4" fill="#ffd40026" stroke="#ffd40050"/><rect x="430" y="160" width="90" height="70" rx="4" fill="#ffd40010" stroke="#ffd40030"/><rect x="600" y="170" width="70" height="60" rx="4" fill="#ffd4001c" stroke="#ffd40040"/><path d="M330 300v-60h100v60" stroke="#7b3cff99" stroke-width="3"/><circle cx="380" cy="120" r="26" stroke="#3d8bff88" stroke-width="3"/><circle cx="380" cy="120" r="9" fill="#ff9d1a"/></svg>`;
+R.narrator = s => {
+  const text = s.narration || s.text || "";
+  return {
+    dur: 1800 + text.length * 52 + (s.who?.length ? 600 : 0),
+    noCaptionShift: true,
+    setup(el) {
+      app(el, h("div", {class: "est"},
+        h("div", {class: "sky"}), h("div", {class: "house", html: HOUSE_SVG}),
+        s.big ? h("div", {class: "big"}, s.big) : null,
+        s.who?.length ? h("div", {class: "faces"}, s.who.map((id, i) => h("div", {class: "face" + ((s.gone || []).includes(id) ? " gone" : ""), style: `animation-delay:${.2 + i * .12}s`}, img(id), h("span", {}, pname(id))))) : null,
+      ));
+    },
+  };
+};
+
+function chatPlan(s) {
+  const msgs = s.messages || [];
+  const beats = []; let t = 400;
+  const times = [];
+  msgs.forEach((m, i) => {
+    const len = (m.text || "").length;
+    const typing = i === 0 ? 300 : 450;
+    times.push([t, t + typing]);
+    t += typing + clamp(500 + len * 30, 900, 4200);
+  });
+  const dur = t + 2200;
+  let log, typingEl, lastAuthor = null, lastAt = 0;
+  const add = (m, instant) => {
+    const cont = m.user_id === lastAuthor && m.at - lastAt < 420;
+    lastAuthor = m.user_id; lastAt = m.at;
+    const body = h("div", {class: "body" + (isJumbo(m.text) ? " jumbo" : ""), html: m.text ? fmtMessage(m.text.length > 600 ? m.text.slice(0, 600) + "…" : m.text) : ""});
+    if (!m.text && m.attachments) body.append(h("div", {class: "att"}, "image not archived"));
+    else if (m.attachments) body.append(h("div"), h("div", {class: "att"}, "image not archived"));
+    const row = h("div", {class: "dc-msg" + (cont ? " cont" : "") + (m.hl ? " hl" : "")},
+      img(m.user_id, "av"),
+      h("div", {class: "meta"}, h("span", {class: "nm", style: `color:${pcolor(m.user_id)}`}, pname(m.user_id)), h("time", {}, fmtDc(m.at))),
+      body);
+    if (instant) row.style.animation = "none";
+    log.append(row);
+    while (log.children.length > 40) log.firstChild.remove();
+    if (!instant) Snd.msg();
+    P.setClock(m.at, s.day);
+  };
+  msgs.forEach((m, i) => {
+    beats.push([times[i][0], (el, instant) => { if (!instant) typingEl.innerHTML = `<span class="dots"><i></i><i></i><i></i></span><b>${esc(pname(m.user_id))}</b> is typing…`; }]);
+    beats.push([times[i][1], (el, instant) => { typingEl.innerHTML = ""; add(m, instant); }]);
+  });
+  return {
+    dur, beats,
+    setup(el) {
+      lastAuthor = null;
+      const kind = s.where || s.kind || "house";
+      const snug = kind === "snug";
+      const team = /team/i.test(kind) ? (s.team || "A") : null;
+      const members = s.members || [...new Set(msgs.map(m => m.user_id))];
+      const head = h("div", {class: "dc-head"},
+        h("span", {class: "hash"}, snug ? "🔒" : "#"),
+        snug ? `snug-${s.snug_id || ""}` : team ? `team-${team.toLowerCase()}` : "the-house",
+        s.title ? h("span", {class: "topic"}, s.title) : null,
+        h("span", {class: "who"}, members.slice(0, 8).map(id => img(id))));
+      log = h("div", {class: "dc-log"});
+      typingEl = h("div", {class: "dc-typing"});
+      const dc = h("div", {class: "dc" + (team ? " team" + team : "")}, head, log, typingEl);
+      if (snug) {
+        const first = msgs[0]?.at || s.at;
+        const burn = h("div", {class: "burn tr"}, fmtDc(first));
+        app(el, h("div", {class: "wiretap"}, dc, h("div", {class: "vig"}),
+          h("div", {class: "burn tl"}, `CAM ${String((s.snug_id || 7) % 24 + 1).padStart(2, "0")}  SNUG ${s.snug_id || ""}`), burn));
+        P.burn = burn;
+      } else app(el, dc);
+    },
+    update(el, t) {
+      if (P.burn && msgs.length) {
+        const i = times.findIndex(x => x[1] > t); const m = msgs[i < 0 ? msgs.length - 1 : Math.max(0, i - 1)];
+        P.burn.textContent = fmtDc(m.at) + ":" + String(Math.floor(t / 1000) % 60).padStart(2, "0");
+      }
+    },
+  };
+}
+R.chat = chatPlan;
+
+const CHAIR_SVG = `<svg class="chair" viewBox="0 0 300 360"><defs><radialGradient id="cg" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#ff5fa8"/><stop offset=".6" stop-color="#b0145f"/><stop offset="1" stop-color="#4a0628"/></radialGradient><linearGradient id="cl" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset="1" stop-color="#b8862a"/></linearGradient></defs><ellipse cx="150" cy="345" rx="120" ry="12" fill="#000" opacity=".6"/><path d="M60 330 L70 280 L230 280 L240 330" stroke="url(#cl)" stroke-width="8" fill="none"/><path d="M150 18 C 60 18 30 90 34 170 C 36 220 50 262 70 285 L230 285 C 250 262 264 220 266 170 C 270 90 240 18 150 18 Z" fill="url(#cg)" stroke="url(#cl)" stroke-width="6"/><path d="M150 52 C 92 52 74 110 76 170 C 78 210 90 240 100 252 L200 252 C 210 240 222 210 224 170 C 226 110 208 52 150 52 Z" fill="#7a0b43" opacity=".55"/><g class="sitter"><circle cx="150" cy="150" r="30" fill="#000" opacity=".55"/><path d="M95 252 C 100 205 125 188 150 188 C 175 188 200 205 205 252 Z" fill="#000" opacity=".55"/></g><path d="M40 210 C 20 214 18 246 44 252 L84 254 L84 212 Z M260 210 C 280 214 282 246 256 252 L216 254 L216 212 Z" fill="url(#cg)" stroke="url(#cl)" stroke-width="5"/></svg>`;
+R.diary = s => {
+  const entries = s.entries || [];
+  const slots = []; let t = 300;
+  entries.forEach(e => { const d = clamp(1300 + e.text.length * 30, 2800, 7500); slots.push([t, d]); t += d; });
+  let whoEl, txtEl, countEl, cur = -1;
+  return {
+    dur: t + 800,
+    beats: entries.map((e, i) => [slots[i][0], (el, instant) => {
+      cur = i; whoEl.replaceChildren(...(e.who ? [img(e.who), pname(e.who)] : [h("span", {class: "anon", html: '<svg viewBox="0 0 24 24" width="18"><path fill="#888" d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6z"/></svg>'}), "Anonymous housemate"]));
+      txtEl._n = -1; countEl.textContent = entries.length > 1 ? `Diary Room, entry ${i + 1} of ${entries.length}` + (e.at ? `, ${fmtTime(e.at)}` : "") : (e.at ? `Diary Room, ${fmtTime(e.at)}` : "Diary Room");
+      if (e.at) P.setClock(e.at);
+      if (!instant) Snd.tone(220, .4, "sine", .05);
+    }]),
+    setup(el) {
+      el.classList.add("diary");
+      whoEl = h("div", {class: "who"}); txtEl = h("div", {class: "txt"}); countEl = h("div", {class: "count"});
+      app(el, h("div", {html: CHAIR_SVG, style: "display:contents"}), h("div", {class: "card"}, whoEl, txtEl, countEl));
+    },
+    update(el, t) {
+      if (cur < 0) return;
+      const e = entries[cur], [t0] = slots[cur];
+      typer(txtEl, e.text, t0 + 250, 48)(t);
+    },
+  };
+};
+
+R.announce = s => {
+  const lines = (s.text || "").split("\n");
+  const per = clamp(Math.round(9000 / Math.max(lines.length, 1)), 260, 1300);
+  const dur = 1400 + lines.length * per + (s.text || "").length * 16;
+  let box;
+  return {
+    dur,
+    beats: lines.map((l, i) => [600 + i * per, () => box?.children[i]?.classList.add("on")]),
+    setup(el) {
+      el.classList.add("announce");
+      box = h("div", {class: "txt"}, lines.map(l => h("div", {class: "ln", html: fmtMessage(l) || "&nbsp;"})));
+      app(el, h("svg", {class: "bbeye", viewBox: "0 0 400 240", html: '<use href="#eye-sym"/>'}), h("div", {class: "from"}, s.from || "Big Brother"), box);
+    },
+    update(el, t) {
+      // long announcements scroll as they're read
+      const shown = box.querySelectorAll(".ln.on");
+      const last = shown[shown.length - 1];
+      if (last) { const over = last.offsetTop + last.offsetHeight - box.clientHeight + 16; box.scrollTop = Math.max(0, over); }
+    },
+  };
+};
+
+const roundById = id => D.rounds.find(r => r.id === id);
+
+R.noms = s => {
+  const r = roundById(s.round_id);
+  const isVote = r.kind === "vote";
+  const items = isVote ? r.votes.filter(v => v.by).map(v => ({by: v.by, to: v.nominee, reason: v.reason, at: v.at}))
+                       : r.nominations.map(n => ({by: n.by, to: n.nominee, reason: n.reason, at: n.at}));
+  const counts = {}; items.forEach(x => counts[x.to] = (counts[x.to] || 0) + 1);
+  let order = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const maxCols = s.cols || (innerWidth < 760 ? 4 : 6);
+  const shown = order.slice(0, maxCols), rest = order.slice(maxCols);
+  const flow = items.filter(x => shown.includes(x.to)).sort((a, b) => a.at - b.at);
+  const step = clamp(Math.round(14000 / Math.max(flow.length, 1)), 300, 900);
+  const cols = {}, ns = {}, live = {};
+  const topN = s.top ?? (r.kind === "nominations" ? 4 : 1);
+  return {
+    dur: 1600 + flow.length * step + 3200,
+    beats: [
+      ...flow.map((x, i) => [900 + i * step, (el, instant) => {
+        live[x.to] = (live[x.to] || 0) + 1; ns[x.to].textContent = live[x.to];
+        const slip = h("div", {class: "slip"}, h("i", {}, pname(x.by)), x.reason || "no reason given");
+        if (instant) slip.style.animation = "none";
+        cols[x.to].append(slip);
+        while (cols[x.to].querySelectorAll(".slip").length > 7) cols[x.to].querySelector(".slip").remove();
+        if (!instant) Snd.tone(660 + (live[x.to] * 40), .05, "triangle", .03);
+      }]),
+      [1000 + flow.length * step, () => shown.slice(0, topN).forEach(id => cols[id].classList.add("top"))],
+    ],
+    setup(el) {
+      el.classList.add("wall");
+      const grid = h("div", {class: "cols"});
+      for (const id of shown) {
+        ns[id] = h("span", {class: "n"}, "0");
+        cols[id] = h("div", {class: "col"}, h("div", {class: "hd"}, img(id), h("span", {class: "nm"}, pname(id)), ns[id]));
+        grid.append(cols[id]);
+      }
+      app(el, h("h3", {}, s.title || (isVote ? "The house votes to evict" : "Nominations")),
+        h("p", {class: "sub"}, s.sub || `${items.length} ${isVote ? "votes" : "nominations"}, ${fmtDate(r.opened_at)}`), grid,
+        rest.length ? h("p", {class: "also"}, "Also named: " + rest.map(id => `${pname(id)} (${counts[id]})`).join(", ")) : null);
+    },
+  };
+};
+
+R.evict = s => {
+  const r = s.round_id ? roundById(s.round_id) : null;
+  let tally = s.tally || (r ? r.tally : []);
+  const total = tally.reduce((a, x) => a + x[1], 0) || 1;
+  const out = s.evicted || r?.evicted || [];
+  const safe = s.safe || [];
+  const hasBars = tally.length > 0;
+  const barT = hasBars ? 4800 : 0;
+  const doorT = barT + 800;
+  // nodoor: a results board only, for votes nobody left the house on (the final's win vote)
+  const dur = s.nodoor ? barT + 2600 : doorT + 6400 + (out.length > 2 ? 1500 : 0);
+  let bars = [], door, say, way;
+  return {
+    dur,
+    beats: [
+      ...(hasBars ? [[200, () => Snd.heart()], [1600, () => Snd.heart()], [3000, () => Snd.heart()]] : []),
+      [hasBars ? barT - 400 : 0, () => bars.forEach(b => { if (out.includes(b.id)) b.el.classList.add("out"); if (safe.includes(b.id)) b.el.classList.add("safe"); })],
+      ...(s.nodoor ? [] : [
+        [doorT, (el, instant) => { way.classList.add("on"); if (!instant) Snd.door(); }],
+        [doorT + 900, () => door.classList.add("open")],
+        [doorT + 2600, (el, instant) => { say.classList.add("on"); if (!instant) Snd.crowd(); }]]),
+    ],
+    setup(el) {
+      el.classList.add("board");
+      if (hasBars) {
+        app(el, h("h3", {}, s.title || "The votes are in"), h("p", {class: "sub"}, s.sub || `${total} votes${r?.mode === "save" ? ", the public voted to save" : ""}`));
+        const wrap = h("div", {class: "bars"});
+        bars = tally.slice(0, 8).map(([id, n]) => {
+          const i = h("i"); const v = h("span", {class: "v"}, "0");
+          const row = h("div", {class: "bar"}, img(id), h("span", {class: "nm"}, pname(id)), h("div", {class: "tr"}, i), v);
+          wrap.append(row);
+          return {id, n, i, v, el: row};
+        });
+        app(el, wrap);
+      }
+      const label = s.say || (out.length === 1 ? `${pname(out[0])}, you have been evicted from the Big Brother house.` : `${names(out)}, you have been evicted.`);
+      say = h("div", {class: "say"}, label, h("small", {}, s.say_sub || "Please leave the house."));
+      door = h("div", {class: "door"}, h("div", {class: "pan l"}), h("div", {class: "pan r"}), h("div", {class: "who"}, out.map(id => img(id))));
+      way = h("div", {class: "doorway"}, h("div", {class: "stairs"}), door, say);
+      if (!s.nodoor) app(el, way);
+    },
+    update(el, t) {
+      if (!hasBars) return;
+      const max = Math.max(...bars.map(b => b.n), 1);
+      const k = ease(clamp((t - 400) / 3600, 0, 1));
+      for (const b of bars) {
+        b.i.style.width = (b.n / max * 100 * k) + "%";
+        const n = Math.round(b.n * k);
+        b.v.innerHTML = `${n}<small>${Math.round(n / total * 100)}%</small>`;
+      }
+    },
+  };
+};
+
+R.tokens = s => {
+  const r = s.round_id ? roundById(s.round_id) : null;
+  const moves = s.moves || r?.token_moves || [];
+  const startBlock = () => [...(s.block || (r?.nominees_at_open?.length ? r.nominees_at_open : r?.nominees) || [])];
+  let block = startBlock();
+  const step = clamp(Math.round(26000 / Math.max(moves.length, 1)), 1300, 2600);
+  let bench, logEl, seats = {}, shields = new Set();
+  const seatFor = id => { const sx = h("div", {class: "seat"}, h("div", {class: "ring"}, img(id)), h("span", {class: "nm"}, pname(id))); seats[id] = sx; return sx; };
+  const fly = (fromId, toId, root) => {
+    const a = (seats[fromId] || seats[toId])?.getBoundingClientRect(), b = seats[toId]?.getBoundingClientRect(), base = root.getBoundingClientRect();
+    if (!b) return;
+    const from = a || {left: base.left + base.width / 2, top: base.top + base.height, width: 0, height: 0};
+    const c = h("div", {class: "coin", html: '<svg viewBox="0 0 24 24"><use href="#coin-sym"/></svg>'});
+    root.append(c);
+    c.animate([{left: (from.left - base.left + from.width / 2 - 15) + "px", top: (from.top - base.top) + "px"}, {left: (b.left - base.left + b.width / 2 - 15) + "px", top: (b.top - base.top + 20) + "px", opacity: .2}], {duration: 700, easing: "cubic-bezier(.3,0,.3,1)", fill: "forwards"}).onfinish = () => c.remove();
+  };
+  const moveText = m => m.mode === "swap" ? [`${pname(m.actor)} swaps off the block, `, h("b", {}, pname(m.target)), " goes up"]
+    : m.mode === "gift" ? [`${pname(m.actor)} hands `, h("b", {}, pname(m.target)), " a token"]
+    : [h("b", {}, pname(m.actor)), " uses a token on themself"];
+  return {
+    dur: 1800 + moves.length * step + 3000,
+    beats: moves.map((m, i) => [1200 + i * step, (el, instant) => {
+      const root = el.querySelector(".tokens") || el;
+      if (m.mode === "swap") {
+        const k = block.indexOf(m.actor);
+        if (k >= 0) {
+          block[k] = m.target;
+          const old = seats[m.actor]; const nu = seatFor(m.target); if (!instant) nu.classList.add("flip");
+          old ? old.replaceWith(nu) : bench.append(nu);
+        } else if (!block.includes(m.target)) { block.push(m.target); bench.append(seatFor(m.target)); }
+        if (!instant) { Snd.coin(); fly(m.actor, m.target, root); }
+      } else if (m.mode === "gift") { if (!instant) { Snd.coin(); fly(m.actor, m.target, root); } }
+      else if (m.mode === "self") {
+        shields.add(m.actor);
+        const st = seats[m.actor]; if (st && !st.querySelector(".shield")) st.querySelector(".ring").append(h("svg", {class: "shield", viewBox: "0 0 24 24", html: '<use href="#shield-sym"/>'}));
+        if (!instant) Snd.coin();
+      }
+      const row = h("div", {}, h("time", {}, fmtTime(m.at)), h("span", {}, h("span", {class: "mv " + m.mode}, m.mode === "swap" ? "Swap " : m.mode === "gift" ? "Gift " : "Shield "), ...moveText(m)));
+      if (instant) row.style.animation = "none";
+      logEl.append(row); while (logEl.children.length > 9) logEl.firstChild.remove();
+      P.setClock(m.at);
+    }]),
+    setup(el) {
+      block = startBlock(); seats = {};
+      bench = h("div", {class: "bench"}, block.map(seatFor));
+      logEl = h("div", {class: "tlog"});
+      app(el, h("div", {class: "tokens", style: "width:100%;height:100%;position:relative"},
+        h("div", {class: "ttl"}, h("h3", {}, s.title || "The token wars"), h("p", {class: "sub"}, s.sub || `${moves.length} token moves`)),
+        h("div", {class: "block"}, h("div", {class: "blocklabel"}, "On the block"), bench),
+        logEl));
+    },
+  };
+};
+
+R.challenge = s => {
+  const pic = s.image && D.images[s.image];
+  let res, stamp, im;
+  const dur = 3500 + (s.rules || "").length * 30 + (s.result || "").length * 40 + (pic ? 3000 : 0);
+  const resultAt = dur - 1800 - (s.result || "").length * 30;
+  return {
+    dur,
+    beats: [[resultAt, (el, instant) => { res.classList.add("on"); if (stamp) { stamp.classList.add("on"); if (!instant) Snd.stamp(); } }]],
+    setup(el) {
+      el.classList.add("chal"); if (!pic) el.classList.add("noimg");
+      res = h("div", {class: "res"}, s.result || "");
+      stamp = s.stamp ? h("div", {class: "stamp " + (s.pass ? "pass" : "fail")}, s.stamp) : null;
+      app(el, h("div", {class: "card"}, stamp, h("div", {class: "no"}, s.label || "Challenge"), h("h3", {}, s.title), h("p", {}, s.rules || ""), res));
+      if (pic) { im = h("img", {src: pic, alt: s.image_alt || ""}); app(el, h("div", {class: "pic"}, im)); }
+    },
+    update(el, t) {
+      if (!im) return;
+      const k = clamp(t / dur, 0, 1), box = im.parentElement;
+      const scale = box.clientWidth / im.naturalWidth * 1.9 || 1;
+      const iw = im.naturalWidth * scale, ih = im.naturalHeight * scale;
+      const x = -(iw - box.clientWidth) * (0.5 + 0.5 * Math.sin(k * Math.PI * 2 - Math.PI / 2));
+      const y = -(ih - box.clientHeight) * k;
+      im.style.width = iw + "px"; im.style.transform = `translate(${x}px,${y}px)`;
+    },
+  };
+};
+
+R.stat = s => {
+  const rows = s.rows || [];
+  let v, rowEls = [];
+  return {
+    dur: 3800 + rows.length * 900,
+    beats: [[200, () => Snd.tone(330, .6, "sawtooth", .03)], ...rows.map((r, i) => [2400 + i * 800, (el, instant) => { rowEls[i].classList.add("on"); if (!instant) Snd.tone(880, .05); }])],
+    setup(el) {
+      el.classList.add("stat");
+      v = h("div", {class: "v"}, "0");
+      app(el, v, h("div", {class: "l"}, s.label || ""), rows.length ? h("div", {class: "rows"}, rowEls = rows.map(r => h("div", {}, h("span", {}, r[0]), h("b", {}, r[1])))) : null);
+    },
+    update(el, t) { const k = ease(clamp(t / 1900, 0, 1)); v.textContent = Math.round(s.value * k).toLocaleString("en-GB") + (s.suffix || ""); },
+  };
+};
+
+R.cast = s => {
+  const ids = s.ids || D.housemates.slice().sort((a, b) => (a.moved_in_at || 0) - (b.moved_in_at || 0)).map(x => x.id);
+  const step = 260; let cells = [];
+  return {
+    dur: 1500 + ids.length * step + 3000,
+    beats: ids.map((id, i) => [800 + i * step, (el, instant) => { cells[i].classList.add("on"); if (!instant) Snd.tone(440 + i * 18, .05, "triangle", .03); const at = HM[id]?.moved_in_at; if (at) P.setClock(at, 0); }]),
+    setup(el) {
+      el.classList.add("cast");
+      cells = ids.map(id => h("div", {class: "m"}, img(id), h("span", {}, pname(id)), h("small", {}, HM[id]?.moved_in_at ? fmtTime(HM[id].moved_in_at) : "")));
+      app(el, h("h3", {}, s.title || "The housemates"), h("div", {class: "grid"}, cells));
+    },
+  };
+};
+
+R.alliances = s => {
+  const groups = s.groups || [];
+  const pins = []; let lines = [], tags = [];
+  const layout = groups.map((g, gi) => {
+    // groups sit in equal columns; each ring stays inside its column
+    const col = 100 / groups.length, cx = col * (gi + .5);
+    return g.ids.map((id, i) => {
+      const a = g.ids.length === 1 ? 0 : (i / g.ids.length) * Math.PI * 2 - Math.PI / 2;
+      const rad = g.ids.length === 1 ? 0 : (g.ids.length > 4 ? 15 : 11);
+      return {id, x: cx + Math.cos(a) * Math.min(rad * .62, col * .34), y: 44 + Math.sin(a) * rad * 1.15, g: gi};
+    });
+  });
+  let t = 900; const beats = [];
+  layout.forEach((g, gi) => {
+    g.forEach((p, i) => beats.push([t + i * 180, () => pins[gi][i].classList.add("on")]));
+    t += g.length * 180 + 300;
+    beats.push([t, (el, instant) => { lines[gi].forEach(l => l.classList.add("on")); tags[gi].classList.add("on"); if (!instant) Snd.tone(196, .3, "sawtooth", .03); }]);
+    t += 1500 + (groups[gi].note || "").length * 22;
+  });
+  return {
+    dur: t + 2500, beats,
+    setup(el) {
+      const web = h("div", {class: "web"});
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "strings"); svg.setAttribute("viewBox", "0 0 100 100"); svg.setAttribute("preserveAspectRatio", "none");
+      lines = layout.map(g => { const ls = []; for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) { if (g.length > 4 && j !== i + 1 && !(i === 0 && j === g.length - 1)) continue; const l = document.createElementNS("http://www.w3.org/2000/svg", "line"); l.setAttribute("x1", g[i].x); l.setAttribute("y1", g[i].y); l.setAttribute("x2", g[j].x); l.setAttribute("y2", g[j].y); l.setAttribute("vector-effect", "non-scaling-stroke"); svg.append(l); ls.push(l); } return ls; });
+      web.append(svg);
+      layout.forEach((g, gi) => { pins[gi] = g.map(p => { const e = h("div", {class: "pin", style: `left:${p.x}%;top:${p.y}%`}, img(p.id), h("span", {}, pname(p.id))); web.append(e); return e; }); });
+      tags = groups.map((gr, gi) => { const xs = layout[gi].map(p => p.x); const cx = (Math.min(...xs) + Math.max(...xs)) / 2; const e = h("div", {class: "gtag", style: `left:${cx}%;top:${Math.max(...layout[gi].map(p => p.y)) + 12}%`}, gr.name, h("small", {}, gr.note || "")); web.append(e); return e; });
+      app(el, web);
+    },
+  };
+};
+
+R.scoreboard = s => {
+  const fin = s.finalists; const rounds = s.rounds;
+  const per = 6200; let cols = {}, tots = {}, chips = {}, rd, tie;
+  const totals = {}; fin.forEach(id => totals[id] = 0);
+  const snaps = rounds.map(r => { fin.forEach(id => totals[id] += r.points[id] || 0); return {...totals}; });
+  return {
+    dur: 1500 + rounds.length * per + (s.tie ? 4500 : 2000),
+    beats: [
+      ...rounds.flatMap((r, ri) => [
+        [800 + ri * per, () => { rd.textContent = r.label; }],
+        ...fin.map((id, k) => [1800 + ri * per + k * 500, (el, instant) => {
+          const c = h("div", {class: "chip", html: `${esc(r.detail?.[id] || "")} <b>+${r.points[id] || 0}</b>`}); if (instant) c.style.animation = "none";
+          chips[id].append(c); if (!instant) Snd.tone(523 + (r.points[id] || 0) * 60, .08, "triangle", .05);
+        }]),
+        [1800 + ri * per + fin.length * 500 + 600, () => {
+          fin.forEach(id => tots[id].textContent = snaps[ri][id]);
+          const top = Math.max(...fin.map(id => snaps[ri][id]));
+          fin.forEach(id => cols[id].classList.toggle("lead", snaps[ri][id] === top));
+        }],
+      ]),
+      ...(s.tie ? [[1500 + rounds.length * per + 600, (el, instant) => { tie.classList.add("on"); if (!instant) Snd.fanfare(); }]] : []),
+    ],
+    setup(el) {
+      el.classList.add("score");
+      rd = h("div", {class: "rd"});
+      tie = s.tie ? h("div", {class: "tie"}, s.tie) : null;
+      app(el, h("h3", {}, s.title || "The final"), rd,
+        h("div", {class: "fin"}, fin.map(id => { tots[id] = h("div", {class: "tot"}, "0"); chips[id] = h("div", {class: "chips"}); cols[id] = h("div", {class: "fcol"}, img(id), h("div", {class: "nm"}, pname(id)), tots[id], chips[id]); return cols[id]; })),
+        tie);
+    },
+  };
+};
+
+R.crown = s => {
+  let cr, h2, p, cv, parts = [];
+  return {
+    dur: 12000,
+    beats: [[800, (el, instant) => { cr.classList.add("on"); if (!instant) Snd.fanfare(); }], [2200, () => { h2.classList.add("on"); for (let i = 0; i < 160; i++) parts.push({x: Math.random(), y: -Math.random() * .5, vx: (Math.random() - .5) * .002, vy: .002 + Math.random() * .004, r: Math.random() * 6.28, c: ["#ffd400", "#ff5fa8", "#3d8bff", "#5ff0b0", "#fff"][i % 5]}); }], [3600, () => p.classList.add("on")]],
+    setup(el) {
+      el.classList.add("crown");
+      cr = h("svg", {class: "cr", viewBox: "0 0 100 64", html: '<path d="M6 60 L2 14 L28 34 L50 4 L72 34 L98 14 L94 60 Z" fill="#f5c542" stroke="#7a5506" stroke-width="3" stroke-linejoin="round"/><circle cx="50" cy="40" r="7" fill="#d6247a"/><circle cx="24" cy="46" r="5" fill="#3d8bff"/><circle cx="76" cy="46" r="5" fill="#3d8bff"/>'});
+      h2 = h("h2", {}, s.title); p = h("p", {}, s.sub || "");
+      cv = h("canvas", {class: "confetti"});
+      app(el, cv, h("div", {class: "pair"},
+        s.giver ? h("div", {class: "p"}, img(s.giver), h("span", {class: "nm"}, pname(s.giver))) : null,
+        h("div", {class: "p win"}, cr, img(s.winner), h("span", {class: "nm"}, pname(s.winner)))), h2, p);
+    },
+    update(el, t) {
+      if (!cv) return; const w = cv.width = cv.clientWidth, hh = cv.height = cv.clientHeight; const c = cv.getContext("2d");
+      c.clearRect(0, 0, w, hh);
+      const k = Math.max(0, t - 2200) / 16;
+      for (const q of parts) { const y = q.y + q.vy * k, x = q.x + q.vx * k + Math.sin(k / 20 + q.r) * .01; if (y > 1.1) continue; c.save(); c.translate(x * w, y * hh); c.rotate(q.r + k / 15); c.fillStyle = q.c; c.fillRect(-4, -2, 8, 4); c.restore(); }
+    },
+  };
+};
+
+R.quote = s => {
+  let q;
+  return {
+    dur: 2600 + s.text.length * 48,
+    setup(el) { el.classList.add("quote"); q = h("blockquote"); app(el, s.who ? img(s.who) : null, q, h("cite", {}, s.cite || (s.who ? pname(s.who) : ""))); },
+    update(el, t) { typer(q, s.text, 500, 30)(t); },
+  };
+};
+
+R.credits = s => {
+  const hs = D.housemates.slice().sort(byPlacing);
+  const dur = 26000; let roll;
+  return {
+    dur,
+    setup(el) {
+      el.classList.add("credits");
+      const place = x => D.story.places?.[x.id] || (x.status === "winner" ? "Winner" : x.status === "finalist" ? "Finalist" : `Evicted Day ${x.evicted_day}`);
+      const t = D.meta.totals;
+      roll = h("div", {class: "roll"},
+        h("h3", {}, "Starring"),
+        hs.map(x => h("div", {class: "row" + (x.status === "winner" ? " gold" : "")}, img(x.id), h("div", {}, h("b", {}, x.persona), h("small", {}, x.handle)), h("div", {class: "pl"}, place(x)))),
+        h("h3", {}, "By the numbers"),
+        h("div", {class: "tot"}, ...[["Messages sent", t.messages], ["Snugs opened", t.snugs], ["Diary room entries", t.diary_entries], ["Nominations", t.nominations], ["House and public votes", t.votes], ["Tokens earned on missions", t.tokens_earned], ["Tokens played", t.token_moves], ["Shop purchases", t.shop_purchases]].flatMap(([a, b]) => [h("span", {}, a), h("b", {}, b.toLocaleString("en-GB"))])),
+        h("h3", {}, "Big Brother"), h("p", {}, s.host || "Played by the host, with HMS Victory as Little Brother."),
+        h("div", {style: "height:60vh"}));
+      app(el, roll);
+    },
+    update(el, t) { const k = t / dur; roll.style.transform = `translateY(${el.clientHeight * .9 - k * (roll.scrollHeight)}px)`; },
+  };
+};
+
+// ---------------------------------------------------------------- the player
+const P = {
+  list: [], plans: [], starts: [], total: 0, i: 0, t: 0, bp: 0, playing: false, speed: 1, el: null, burn: null,
+  setClock(at, day) {
+    if (!at) return;
+    $("#clock-time").textContent = fmtTime(at);
+    $("#clock-day").textContent = "Day " + (day ?? P.list[P.i]?.day ?? "");
+  },
+};
+const stage = $("#stage"), content = $("#content"), caption = $("#caption");
+
+function flatten() {
+  D.story.chapters.forEach((c, ci) => {
+    P.list.push({type: "chapter", num: ci + 1, title: c.title, subtitle: c.subtitle, days: c.days, day: c.scenes[0]?.day, at: c.scenes[0]?.at, chapter: ci});
+    c.scenes.forEach(s => P.list.push({...s, chapter: ci}));
+  });
+  let acc = 0;
+  P.plans = P.list.map(s => {
+    const base = (R[s.type] || R.narrator)(s);
+    const narr = s.type !== "narrator" ? s.narration : null;
+    const capDur = narr ? clamp(600 + narr.length * 30, 1500, 5200) : 0;
+    const shift = narr ? capDur : 0;
+    const plan = {
+      dur: base.dur + shift,
+      setup: base.setup,
+      update: base.update ? ((el, t) => base.update(el, t - shift)) : null,
+      beats: (base.beats || []).map(([t, f]) => [t + shift, f]).sort((a, b) => a[0] - b[0]),
+      caption: s.type === "narrator" ? (s.narration || s.text || "") : narr,
+      capDur: s.type === "narrator" ? base.dur : capDur,
+    };
+    P.starts.push(acc); acc += plan.dur;
+    return plan;
+  });
+  P.total = acc;
+}
+
+function go(i, offset = 0, instant = false) {
+  i = clamp(i, 0, P.list.length - 1);
+  const s = P.list[i], plan = P.plans[i];
+  P.i = i; P.t = 0; P.bp = 0; P.burn = null;
+  const old = P.el;
+  const el = h("div", {class: "scene scene-" + s.type});
+  // A seek replaces the scene outright; normal playback cross-fades.
+  content.querySelectorAll(".scene.out").forEach(x => x.remove());
+  if (old) { if (instant || offset > 0) old.remove(); else { old.classList.add("out"); setTimeout(() => old.remove(), 420); } }
+  if (instant || offset > 0) el.style.animation = "none";
+  content.append(el); P.el = el;
+  plan.setup(el);
+  caption.textContent = ""; caption._n = -1;
+  $("#stage-chapter").textContent = s.type === "chapter" ? "" : (D.story.chapters[s.chapter]?.title || "");
+  if (s.at) P.setClock(s.at, s.day); else $("#clock-day").textContent = s.day != null ? "Day " + s.day : "";
+  if (s.day == null) $("#clock-day").textContent = "";
+  document.querySelectorAll("#chapters button").forEach((b, k) => b.setAttribute("aria-current", k === s.chapter));
+  $("#chapter-select").value = s.chapter;
+  if (plan.caption && P.playing && offset < 200) Voice.say(plan.caption);
+  if (offset > 0) advance(offset, true);
+  else if (plan.update) plan.update(el, 0);
+}
+
+function advance(t, instant = false) {
+  const plan = P.plans[P.i];
+  P.t = t;
+  while (P.bp < plan.beats.length && plan.beats[P.bp][0] <= t) { try { plan.beats[P.bp][1](P.el, instant); } catch (e) { console.error(e); } P.bp++; }
+  if (plan.update) try { plan.update(P.el, t); } catch (e) { console.error(e); }
+  if (plan.caption) {
+    const n = clamp(Math.floor(t * (plan.caption.length / Math.max(plan.capDur * .8, 1))), 0, plan.caption.length);
+    if (caption._n !== n) { caption._n = n; caption.innerHTML = esc(plan.caption.slice(0, n)) + (n < plan.caption.length ? '<span class="cur"></span>' : ""); }
+  }
+}
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(now - last, 100); last = now;
+  if (P.playing) {
+    const plan = P.plans[P.i];
+    const t = P.t + dt * P.speed;
+    advance(Math.min(t, plan.dur));
+    if (t >= plan.dur && !(Voice.on && Voice.speaking)) {
+      if (P.i < P.list.length - 1) go(P.i + 1); else setPlaying(false);
+    }
+  }
+  drawHead();
+  requestAnimationFrame(tick);
+}
+
+function setPlaying(on) {
+  P.playing = on;
+  stage.classList.toggle("paused", !on);
+  $("#bigplay").hidden = on;
+  $("#play-path").setAttribute("d", on ? "M6 4h4v16H6zm8 0h4v16h-4z" : "M6 4l15 8-15 8z");
+  $("#btn-play").setAttribute("aria-label", on ? "Pause" : "Play");
+  if (window.speechSynthesis) on ? speechSynthesis.resume() : speechSynthesis.pause();
+  if (on && P.t < 200 && P.plans[P.i].caption) Voice.say(P.plans[P.i].caption);
+}
+
+function seekTo(ms) {
+  ms = clamp(ms, 0, P.total - 1);
+  let i = P.starts.findIndex((s, k) => ms >= s && ms < s + P.plans[k].dur);
+  if (i < 0) i = P.list.length - 1;
+  Voice.stop();
+  go(i, ms - P.starts[i], true);
+}
+const sceneForDay = d => { const i = P.list.findIndex(s => s.type !== "chapter" && s.day >= d); return i < 0 ? 0 : (P.list[i - 1]?.type === "chapter" && P.list[i - 1].day >= d ? i - 1 : i); };
+
+// ---------------------------------------------------------------- scrubber
+const track = $("#track");
+function buildTrack() {
+  const bands = h("div", {class: "bands"});
+  const hues = ["#3d8bff", "#5ff0b0", "#f5c542", "#8cff7a", "#ff5fa8", "#b48cff", "#ffd400", "#ff8aa5"];
+  D.story.chapters.forEach((c, ci) => {
+    const a = P.starts[P.list.findIndex(s => s.chapter === ci)];
+    const lastIdx = P.list.map(s => s.chapter).lastIndexOf(ci);
+    const b = P.starts[lastIdx] + P.plans[lastIdx].dur;
+    bands.append(h("i", {style: `width:${(b - a) / P.total * 100}%;background:${hues[ci % hues.length]}66`, title: c.title}));
+  });
+  track.append(bands, h("div", {class: "fill", id: "fill"}));
+  let lastDay = -1;
+  P.list.forEach((s, i) => {
+    const x = P.starts[i] / P.total * 100;
+    if (s.type === "evict") track.append(h("div", {class: "door", style: `left:${x}%`}));
+    if (s.day != null && s.day !== lastDay && s.type !== "chapter") {
+      if (s.day % (innerWidth < 760 ? 3 : 1) === 0 || s.day === 19) track.append(h("div", {class: "dayl", style: `left:${x}%`}, s.day === 0 ? "D0" : (innerWidth < 760 ? "D" : "") + s.day));
+      lastDay = s.day;
+    }
+  });
+  track.append(h("div", {class: "head", id: "head"}), h("div", {class: "tip", id: "tip"}));
+  const pos = e => { const r = track.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); };
+  let drag = false;
+  track.addEventListener("pointerdown", e => { drag = true; track.setPointerCapture(e.pointerId); seekTo(pos(e) * P.total); });
+  track.addEventListener("pointermove", e => {
+    const k = pos(e); const ms = k * P.total; const i = P.starts.findIndex((s, j) => ms >= s && ms < s + P.plans[j].dur);
+    const sc = P.list[i]; const tip = $("#tip");
+    if (sc) { tip.textContent = (sc.day != null ? `Day ${sc.day}: ` : "") + (sc.title || sc.big || (sc.type === "chapter" ? "Chapter " + sc.num : sc.type)); tip.style.left = clamp(k * 100, 8, 92) + "%"; }
+    if (drag) seekTo(ms);
+  });
+  track.addEventListener("pointerup", () => drag = false);
+  track.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") { go(P.i + 1); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { go(P.i - 1); e.preventDefault(); }
+  });
+}
+function drawHead() {
+  const now = P.starts[P.i] + P.t;
+  const k = now / P.total * 100;
+  const head = $("#head"), fill = $("#fill");
+  if (head) { head.style.left = k + "%"; fill.style.width = k + "%"; }
+  track.setAttribute("aria-valuenow", Math.round(k));
+  const tc = `${mmss(now / P.speed)} / ${mmss(P.total / P.speed)}`;
+  if ($("#timecode").textContent !== tc) $("#timecode").textContent = tc;
+}
+
+// ---------------------------------------------------------------- controls
+function bindControls() {
+  $("#btn-play").onclick = () => setPlaying(!P.playing);
+  $("#bigplay").onclick = () => setPlaying(true);
+  $("#btn-prev").onclick = () => { Voice.stop(); go(P.t > 1500 ? P.i : P.i - 1); };
+  $("#btn-next").onclick = () => { Voice.stop(); go(P.i + 1); };
+  document.querySelectorAll(".speeds button").forEach(b => b.onclick = () => {
+    P.speed = +b.dataset.speed;
+    document.querySelectorAll(".speeds button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  });
+  $("#btn-sound").onclick = e => e.currentTarget.setAttribute("aria-pressed", Snd.toggle());
+  $("#btn-voice").onclick = e => {
+    Voice.on = !Voice.on; e.currentTarget.setAttribute("aria-pressed", Voice.on);
+    if (!Voice.on) Voice.stop(); else if (P.plans[P.i].caption) Voice.say(P.plans[P.i].caption);
+  };
+  $("#btn-full").onclick = () => document.fullscreenElement ? document.exitFullscreen() : stage.requestFullscreen?.();
+  document.addEventListener("keydown", e => {
+    if (/input|select|textarea/i.test(e.target.tagName)) return;
+    if (e.key === " " && e.target === document.body) { setPlaying(!P.playing); e.preventDefault(); }
+  });
+  const sel = $("#chapter-select"), nav = $("#chapters");
+  D.story.chapters.forEach((c, ci) => {
+    sel.append(h("option", {value: ci}, `${ci + 1}. ${c.title}`));
+    nav.append(h("button", {onclick: () => { Voice.stop(); go(P.list.findIndex(s => s.chapter === ci)); }}, `${ci + 1}. ${c.title}`));
+  });
+  sel.onchange = () => { Voice.stop(); go(P.list.findIndex(s => s.chapter === +sel.value)); };
+}
+
+// ---------------------------------------------------------------- explorer
+const EVT = {
+  announcement: ["👁️", "Announcements"], challenge_posted: ["🏁", "Challenges"], challenge_ended: ["🏁", "Challenges"],
+  nominations_opened: ["🗳️", "Nominations"], nominations_closed: ["🗳️", "Nominations"], nomination: ["🗳️", "Nominations"],
+  vote_opened: ["📊", "Votes"], vote_closed: ["📊", "Votes"], vote: ["📊", "Votes"], public_vote_started: ["📊", "Votes"], public_vote_closed: ["📊", "Votes"], public_votes: ["📊", "Votes"],
+  evicted: ["🚪", "Evictions"], winner_crowned: ["👑", "Evictions"], move_in: ["🧳", "Evictions"], reunion: ["🧳", "Evictions"],
+  token_swap: ["🪙", "Tokens"], token_gift: ["🪙", "Tokens"], token_self: ["🛡️", "Tokens"], token_granted: ["🪙", "Tokens"], immunity_granted: ["🛡️", "Tokens"], immunity_expired: ["🛡️", "Tokens"], immunity_cleared: ["🛡️", "Tokens"],
+  diary: ["🪑", "Diary room"], snug: ["🔒", "Snugs"], mission_assigned: ["🤫", "Missions"], mission_resolved: ["🤫", "Missions"], exposed: ["🔎", "Missions"],
+  shop_task: ["🛒", "Shop"], shop_opened: ["🛒", "Shop"], shop_closed: ["🛒", "Shop"], shop_buying_opened: ["🛒", "Shop"],
+  team_rooms_opened: ["🔴", "Challenges"], team_rooms_closed: ["🔵", "Challenges"], teams_cleared: ["🔵", "Challenges"], game_started: ["🎬", "Announcements"],
+};
+const CATS = ["Announcements", "Challenges", "Nominations", "Votes", "Evictions", "Tokens", "Diary room", "Snugs", "Missions", "Shop", "System"];
+const evCat = e => e.system ? "System" : (EVT[e.type]?.[1] || "System");
+function evText(e) {
+  const m = mini, t = e.type;
+  const q = s => s ? h("q", {}, s) : h("span", {style: "color:var(--ink-3)"}, "no reason given");
+  switch (t) {
+    case "move_in": return [m(e.who), " moved into the house"];
+    case "reunion": return [m(e.who), " came back for the final night"];
+    case "announcement": return e.text.length > 260 ? h("details", {}, h("summary", {}, h("b", {}, "Big Brother: "), e.text.split("\n")[0].slice(0, 120)), h("div", {class: "pre"}, e.text)) : [h("b", {}, "Big Brother: "), h("span", {class: "pre", style: "display:inline"}, e.text)];
+    case "challenge_posted": return [h("b", {}, "Challenge posted: "), e.title];
+    case "challenge_ended": return ["Challenge closed: ", e.title];
+    case "nominations_opened": return "Nominations opened, house silenced";
+    case "nominations_closed": return "Nominations closed";
+    case "nomination": return [m(e.actor), " nominated ", m(e.target), ": ", q(e.reason)];
+    case "vote": return [m(e.actor), " voted for ", m(e.target), ": ", q(e.reason)];
+    case "public_votes": return [`${e.count} public votes cast in round ${e.round_id}: `, ...Object.entries(e.by).sort((a, b) => b[1] - a[1]).flatMap(([id, n], i) => [i ? ", " : "", m(id), ` ${n}`])];
+    case "vote_opened": case "public_vote_started": return [t === "vote_opened" ? "House vote opened: " : "Public vote opened: ", ...e.nominees.flatMap((id, i) => [i ? ", " : "", m(id)])];
+    case "vote_closed": case "public_vote_closed": { const r = roundById(e.round_id); return ["Vote closed: ", ...(r?.tally || []).flatMap(([id, n], i) => [i ? ", " : "", m(id), ` ${n}`])]; }
+    case "evicted": return [m(e.who), e.announced === false ? " left the house (backdoor or batch eviction)" : " was evicted"];
+    case "winner_crowned": return [m(e.who), ` was crowned the winner and paid ${e.prize.toLocaleString("en-GB")} UKP`];
+    case "token_swap": return [m(e.actor), " swapped off the block and put ", m(e.target), " up", e.round_id ? ` (round ${e.round_id})` : ""];
+    case "token_gift": return [m(e.actor), " gave ", m(e.target), " a token", e.holds ? ` (they now hold ${e.holds})` : ""];
+    case "token_self": return [m(e.actor), e.from_mission ? " was made immune for completing a mission" : " used a token on themself"];
+    case "token_granted": return [m(e.who), e.source === "host" ? " was given a token by Big Brother" : " earned a token for a mission", e.holds ? ` (now holds ${e.holds})` : ""];
+    case "immunity_granted": return [m(e.who), " won immunity for completing a mission"];
+    case "immunity_expired": case "immunity_cleared": return ["Immunity ended for ", ...(e.who || []).filter(Boolean).flatMap((id, i) => [i ? ", " : "", m(id)])];
+    case "diary": return [e.anonymous ? h("b", {}, "Anonymous: ") : [m(e.who), ": "], h("span", {class: "pre", style: "display:inline"}, e.text)];
+    case "snug": return [`Snug ${e.snug_id} opened by `, m(e.opened_by), " with ", ...e.members.filter(x => x !== e.opened_by).flatMap((id, i) => [i ? ", " : "", m(id)]), h("span", {style: "color:var(--ink-3)"}, `, ${e.messages} messages over ${e.minutes} min`)];
+    case "mission_assigned": return h("details", {}, h("summary", {}, m(e.who), " got a secret mission"), h("div", {class: "pre"}, e.brief || ""));
+    case "mission_resolved": return [m(e.who), "'s mission: ", e.status];
+    case "exposed": return [m(e.actor), " accused ", m(e.target), " of their mission: ", h("q", {}, e.what), e.on_mission ? " (they really were on one)" : " (wrong)"];
+    case "shop_task": return h("details", {}, h("summary", {}, h("b", {}, "Shop task: "), (e.brief || "").split("\n")[0].replace(/\*/g, "").slice(0, 90), ` (budget ${money(e.budget)}, spent ${money(e.spent)}, ${e.result || ""})`),
+      h("div", {class: "pre"}, e.brief || ""), h("div", {class: "pre"}, e.purchases.map(p => `${p.item} (${money(p.price)}) by ${pname(p.by)}`).join("\n")));
+    case "team_rooms_opened": return ["Team rooms opened. ", ...Object.entries(e.teams || {}).flatMap(([k, ids]) => [h("b", {}, `Team ${k}: `), names(ids), ". "])];
+    default: return [t.replace(/_/g, " "), e.actor ? [" by ", m(e.actor)] : "", e.target ? [" for ", m(e.target)] : ""];
+  }
+}
+function groupPublic(evs) {
+  const out = []; let cur = null;
+  for (const e of evs) {
+    if (e.type === "public_vote") {
+      if (!cur || cur.round_id !== e.round_id) { cur = {type: "public_votes", at: e.at, round_id: e.round_id, count: 0, by: {}, day: e.day}; out.push(cur); }
+      cur.count++; cur.by[e.target] = (cur.by[e.target] || 0) + 1;
+    } else out.push(e);
+  }
+  return out;
+}
+
+function buildExplorer() {
+  const tabs = $("#tabs"), panes = $("#panes");
+  const t = D.meta.totals;
+  $("#explorer-sub").textContent = `Every event the bot logged: ${t.events.toLocaleString("en-GB")} of them across ${D.days.length} days, with all ${t.nominations} nominations, ${t.votes} votes, ${t.diary_entries} diary entries and ${t.snugs} snugs.`;
+  const defs = [["days", "Day by day", paneDays], ["cast", "Housemates", paneCast], ["votes", "Votes and nominations", paneVotes], ["chal", "Challenges", paneChallenges], ["diary", "Diary room", paneDiary], ["snugs", "Snugs", paneSnugs]];
+  defs.forEach(([id, label, fn], k) => {
+    const pane = h("div", {class: "pane", id: "pane-" + id, role: "tabpanel", hidden: k > 0});
+    let built = false;
+    const b = h("button", {role: "tab", "aria-selected": k === 0, onclick: () => {
+      tabs.querySelectorAll("button").forEach(x => x.setAttribute("aria-selected", x === b));
+      panes.querySelectorAll(".pane").forEach(p => p.hidden = p !== pane);
+      if (!built) { fn(pane); built = true; }
+    }}, label);
+    tabs.append(b); panes.append(pane);
+    if (k === 0) { fn(pane); built = true; }
+  });
+}
+
+function paneDays(pane) {
+  const list = h("div", {class: "daylist"}), body = h("div");
+  const maxMsgs = Math.max(...D.days.map(d => Object.values(d.messages).reduce((a, b) => a + b, 0)));
+  const on = new Set(CATS.filter(c => c !== "System"));
+  let curDay = 0;
+  const show = d => {
+    curDay = d;
+    const day = D.days.find(x => x.day === d);
+    list.querySelectorAll("button").forEach(b => b.setAttribute("aria-current", +b.dataset.day === d));
+    const msgs = Object.values(day.messages).reduce((a, b) => a + b, 0);
+    const maxH = Math.max(...day.hourly, 1);
+    const evs = groupPublic(day.events).filter(e => on.has(evCat(e)));
+    body.replaceChildren(
+      h("div", {class: "dayhead"}, h("h3", {}, d === 0 ? "Day 0, move-in" : `Day ${d}`), h("span", {class: "daysum"}, new Date(day.date + "T12:00:00Z").toLocaleDateString("en-GB", {weekday: "long", day: "numeric", month: "long"})),
+        h("button", {class: "cbtn watch", onclick: () => { go(sceneForDay(d)); setPlaying(true); stage.scrollIntoView({behavior: "smooth", block: "center"}); }}, "Watch this day")),
+      h("div", {class: "daysum"}, `${msgs.toLocaleString("en-GB")} messages (${day.messages.house || 0} in the house, ${day.messages.snug || 0} in snugs, ${day.messages.team || 0} in team rooms), ${day.snugs_opened} snugs opened, ${day.diary_entries} diary entries` + (day.evicted.length ? `, evicted: ${names(day.evicted)}` : "")),
+      h("div", {class: "hours", title: "Messages per hour, UK time"}, day.hourly.map((n, hr) => h("i", {style: `height:${n / maxH * 100}%`, title: `${hr}:00, ${n} messages`}))),
+      h("div", {class: "filters"}, CATS.map(c => h("label", {}, h("input", {type: "checkbox", checked: on.has(c), onchange: e => { e.target.checked ? on.add(c) : on.delete(c); show(curDay); }}), c))),
+      h("div", {class: "evlist"}, evs.length ? evs.map(e => h("div", {class: "ev" + (e.system ? " sys" : "")}, h("time", {}, fmtClock24(e.at)), h("span", {class: "ic"}, EVT[e.type]?.[0] || "·"), h("div", {class: "tx"}, evText(e)))) : h("p", {class: "daysum"}, "Nothing in the filters you've picked happened today.")),
+    );
+  };
+  D.days.forEach(d => {
+    const msgs = Object.values(d.messages).reduce((a, b) => a + b, 0);
+    list.append(h("button", {"data-day": d.day, onclick: () => show(d.day)}, h("b", {}, `Day ${d.day}`), h("span", {}, h("div", {class: "vol", style: `width:${msgs / maxMsgs * 100}%`})), h("span", {class: "gone"}, d.evicted.map(id => img(id)))));
+  });
+  pane.append(h("div", {class: "daysplit"}, list, body));
+  show(1);
+}
+
+// Finalists in the order the story's places list them, then everyone else, last out first.
+const byPlacing = (a, b) => {
+  const order = Object.keys(D.story.places || {});
+  const ra = order.indexOf(a.id), rb = order.indexOf(b.id);
+  return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb) || (b.eviction_order || 99) - (a.eviction_order || 99);
+};
+function paneCast(pane) {
+  const rows = D.housemates.slice().sort(byPlacing);
+  const place = x => D.story.places?.[x.id] || (x.status === "winner" ? "Winner" : x.status === "finalist" ? "Finalist" : `Evicted Day ${x.evicted_day}, ${x.eviction_order}${["th", "st", "nd", "rd"][(x.eviction_order % 100 > 10 && x.eviction_order % 100 < 14) ? 0 : (x.eviction_order % 10 < 4 ? x.eviction_order % 10 : 0)]} out`);
+  pane.append(h("div", {class: "scroller"}, h("table", {class: "tbl"},
+    h("thead", {}, h("tr", {}, h("th", {}, "Housemate"), h("th", {}, "How it ended"), h("th", {class: "n"}, "Messages"), h("th", {class: "n"}, "Snugs opened"), h("th", {class: "n"}, "In snugs"), h("th", {class: "n"}, "Named diary entries"), h("th", {class: "n"}, "Times nominated"), h("th", {class: "n"}, "Tokens from missions"), h("th", {class: "n"}, "Tokens played"))),
+    h("tbody", {}, rows.map(x => h("tr", {}, h("td", {}, h("div", {class: "who"}, img(x.id), h("div", {}, h("b", {}, x.persona), h("small", {}, x.handle)))), h("td", {}, place(x)),
+      ...[x.messages, x.snugs_opened, x.snugs_in, x.named_diary_entries, x.nominations_received, x.tokens_earned, x.tokens_used].map(v => h("td", {class: "n"}, v.toLocaleString("en-GB")))))))));
+}
+
+function paneVotes(pane) {
+  D.rounds.forEach(r => {
+    const kind = r.kind === "nominations" ? "Nominations" : r.kind === "public_vote" ? (r.mode === "win" ? "Public vote to win" : r.mode === "save" ? "Public vote to save" : "Public vote to evict") : "House eviction vote";
+    const max = Math.max(...r.tally.map(x => x[1]), 1);
+    const total = r.tally.reduce((a, x) => a + x[1], 0) || 1;
+    const items = r.kind === "nominations" ? r.nominations.map(n => [n.by, n.nominee, n.reason]) : r.votes.filter(v => v.by).map(v => [v.by, v.nominee, v.reason]);
+    pane.append(h("div", {class: "round"},
+      h("h4", {}, `Round ${r.id}: ${kind}`),
+      h("div", {class: "meta"}, `Day ${r.day}, ${fmtDate(r.opened_at)}, ${fmtClock24(r.opened_at)} to ${r.closed_at ? fmtClock24(r.closed_at) : "?"}. ${r.total} ${r.kind === "nominations" ? "nominations" : "votes"}` + (r.votes_each > 1 ? `, ${r.votes_each} each` : "")),
+      h("div", {class: "bars"}, r.tally.map(([id, n]) => h("div", {class: "bar" + (r.evicted.includes(id) || r.bottom3.includes(id) ? " out" : "") + (r.winner === id ? " safe" : "")}, img(id), h("span", {class: "nm"}, pname(id)), h("div", {class: "tr"}, h("i", {style: `--w:${n / max * 100}%`})), h("span", {class: "v"}, `${n}`, h("small", {}, `${Math.round(n / total * 100)}%`))))),
+      items.length ? h("details", {open: r.id <= 3}, h("summary", {}, `Who picked whom, and why (${items.length})`), h("div", {class: "reasons"}, items.map(([a, b, why]) => h("div", {}, mini(a), " → ", mini(b), why ? [": ", h("q", {}, why)] : "")))) : h("div", {class: "meta"}, "Public voters were the wider server, so only the totals are kept."),
+      r.token_moves.length ? h("details", {}, h("summary", {}, `Token moves while it was open (${r.token_moves.length})`), h("div", {class: "reasons"}, r.token_moves.map(mv => h("div", {}, fmtClock24(mv.at), " ", mini(mv.actor), ` ${mv.mode} `, mv.target ? mini(mv.target) : "")))) : null,
+    ));
+  });
+}
+
+function paneChallenges(pane) {
+  const res = D.story.challenge_results || {};
+  pane.append(h("div", {class: "chlist"}, D.challenges.map(c => h("div", {class: "chitem"},
+    h("h4", {}, c.title), h("div", {class: "meta"}, `Challenge ${c.id}, Day ${c.day}, posted ${fmtDate(c.posted_at)} at ${fmtClock24(c.posted_at)}` + (c.ended_at ? `, closed ${fmtClock24(c.ended_at)}` : "") + (c.test ? ". A test post before the house opened." : "")),
+    res[c.id] ? h("div", {class: "res"}, res[c.id].text) : null,
+    res[c.id]?.image && D.images[res[c.id].image] ? h("img", {src: D.images[res[c.id].image], alt: res[c.id].image_alt || "", loading: "lazy"}) : null,
+    h("details", {}, h("summary", {}, "The brief Big Brother posted"), h("pre", {}, c.body))))));
+}
+
+function paneDiary(pane) {
+  const all = D.days.flatMap(d => d.events.filter(e => e.type === "diary").map(e => ({...e, day: d.day})));
+  const list = h("div", {class: "diarylist"});
+  const input = h("input", {class: "search", type: "search", placeholder: `Search all ${all.length} diary entries`, "aria-label": "Search diary entries"});
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    const rows = all.filter(e => !q || e.text.toLowerCase().includes(q) || (!e.anonymous && pname(e.who).toLowerCase().includes(q)));
+    list.replaceChildren(...rows.slice(0, 400).map(e => h("div", {class: "dentry" + (e.anonymous ? " anon" : "")},
+      h("div", {class: "w"}, h("b", {}, e.anonymous ? "Anonymous" : pname(e.who)), `Day ${e.day}, ${fmtClock24(e.at)}`), h("div", {class: "t"}, e.text))));
+    if (!rows.length) list.append(h("p", {class: "daysum"}, "No diary entries match that. Try a name or a single word."));
+  };
+  input.oninput = render;
+  pane.append(h("p", {class: "daysum"}, `${all.filter(e => e.anonymous).length} of these were sent anonymously and stay that way here.`), input, list);
+  render();
+}
+
+function paneSnugs(pane) {
+  const all = D.days.flatMap(d => d.events.filter(e => e.type === "snug"));
+  const per = D.days.map(d => d.snugs_opened); const mx = Math.max(...per, 1);
+  pane.append(h("p", {class: "daysum"}, `${all.length} snugs were opened. These are the private threads where the plotting happened; the replay above shows a handful of them.`),
+    h("div", {class: "snugstrip"}, D.days.map(d => h("div", {}, h("i", {style: `height:${d.snugs_opened / mx * 52}px`, title: `Day ${d.day}: ${d.snugs_opened}`}), d.day))),
+    h("div", {class: "scroller"}, h("table", {class: "tbl"},
+      h("thead", {}, h("tr", {}, h("th", {}, "Snug"), h("th", {}, "Opened"), h("th", {}, "Opened by"), h("th", {}, "Who was in it"), h("th", {class: "n"}, "Messages"), h("th", {class: "n"}, "Minutes"))),
+      h("tbody", {}, all.map(e => h("tr", {}, h("td", {}, `#${e.snug_id}`), h("td", {}, `Day ${e.day}, ${fmtClock24(e.at)}`), h("td", {}, mini(e.opened_by)), h("td", {}, h("span", {class: "faces", title: names(e.members)}, e.members.map(id => img(id))), " ", names(e.members.filter(x => x !== e.opened_by))), h("td", {class: "n"}, e.messages), h("td", {class: "n"}, e.minutes)))))));
+}
+
+// ---------------------------------------------------------------- start
+$("#mast-sub").textContent = D.story.tagline || "";
+flatten();
+buildTrack();
+bindControls();
+buildExplorer();
+go(0);
+requestAnimationFrame(tick);
+window.BBPlayer = {P, go, seekTo, setPlaying};
+})();
+</script>
+</body>
+</html>
