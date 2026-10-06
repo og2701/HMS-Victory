@@ -34,7 +34,7 @@ MAX_INPUTS = 20_000
 OB = {
     "bin": (34, 380, "low"), "barrier": (72, 300, "low"), "cones": (60, 380, "low"), "dog": (22, 380, "low"),
     "scaffold": (75, 200, "high"), "washing": (75, 200, "high"), "ladder": (75, 300, "high"),
-    "van": (80, 2500, "block"), "bus": (78, 5000, "block"), "float": (82, 1800, "block"), "cab": (88, 2200, "block"),
+    "van": (80, 2500, "block"), "bus": (78, 5000, "block"), "float": (82, 1800, "block"), "cab": (88, 1000, "block"),
 }
 
 
