@@ -44,6 +44,9 @@ STATE_LAST_NOM_TALLY = "last_nomination_tally"
 STATE_LAST_VOTE_RESULT = "last_vote_result"
 STATE_LAST_PUBLIC_VOTE_RESULT = "bb_last_public_vote_result"
 STATE_PUBLIC_VOTE_EVICT_COUNT = "bb_public_vote_evict_count"
+STATE_PUBLIC_VOTE_MODE = "bb_public_vote_mode"
+MODE_WIN = "win"
+MODE_EVICT = "evict"
 STATE_GAME_STARTED_AT = "game_started_at"
 STATE_HOUSE_MSGS_SINCE_PANEL = "house_msgs_since_panel"
 STATE_HOUSE_SILENT = "house_silent"
@@ -269,6 +272,10 @@ def set_state(key: str, value) -> None:
     DatabaseManager.execute(
         "INSERT OR REPLACE INTO bb_state (key, value) VALUES (?, ?)",
         (key, json.dumps(value)))
+
+
+def public_vote_mode() -> str:
+    return get_state(STATE_PUBLIC_VOTE_MODE, MODE_WIN)
 
 
 def log_event(kind: str, actor: Optional[int] = None, target: Optional[int] = None, **payload) -> None:
@@ -2571,6 +2578,64 @@ class PublicEvictButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb
         asyncio.create_task(refresh_public_vote_board(interaction.client, self.round_id))
 
 
+class PublicWinButton(discord.ui.DynamicItem[discord.ui.Button], template=r"bb:pubwin:(?P<rid>\d+):(?P<uid>\d+)"):
+    """Public vote to win button for #voting. Dynamic so it survives bot restarts."""
+
+    def __init__(self, round_id: int, nominee_id: int, label: str = "Vote", row: Optional[int] = None):
+        self.round_id, self.nominee_id = int(round_id), int(nominee_id)
+        super().__init__(discord.ui.Button(
+            label=label[:80], emoji="🏆", style=discord.ButtonStyle.primary,
+            row=row, custom_id=f"bb:pubwin:{self.round_id}:{self.nominee_id}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(int(match["rid"]), int(match["uid"]), item.label or "Vote")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled():
+            await interaction.response.send_message("Big Brother has left the building.", ephemeral=True)
+            return
+        rnd = get_round(self.round_id)
+        if not rnd or rnd.get("kind") != KIND_PUBLIC_VOTE or rnd.get("status") != "open":
+            await interaction.response.send_message("This public vote has closed.", ephemeral=True)
+            return
+        if self.nominee_id not in rnd["nominees"]:
+            await interaction.response.send_message("That housemate is not in the public vote.", ephemeral=True)
+            return
+        # Active housemates are strictly barred from voting in public votes
+        if is_housemate(interaction.user.id):
+            await interaction.response.send_message(
+                f"{EYE} Housemates cannot vote in the public vote! The public decides your fate.",
+                ephemeral=True
+            )
+            return
+
+        target_name = _name(interaction.guild, self.nominee_id)
+        prior = vote_of(self.round_id, interaction.user.id)
+        if prior and prior[0] == self.nominee_id:
+            await interaction.response.send_message(
+                f"✅ You have already voted for **{target_name}** to win! Your vote is securely recorded.",
+                ephemeral=True
+            )
+            return
+
+        cast_vote(self.round_id, interaction.user.id, self.nominee_id)
+        log_event("public_vote_cast", round_id=self.round_id, voter=interaction.user.id, nominee=self.nominee_id)
+
+        if prior:
+            old_name = _name(interaction.guild, prior[0])
+            await interaction.response.send_message(
+                f"🔄 You changed your vote! You are now voting for **{target_name}** to win (previously voted for **{old_name}**).",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"🗳️ Your vote for **{target_name}** to win has been recorded! Thank you for voting.",
+                ephemeral=True
+            )
+        asyncio.create_task(refresh_public_vote_board(interaction.client, self.round_id))
+
+
 _last_public_vote_board_refresh: dict[int, float] = {}
 
 
@@ -2601,32 +2666,57 @@ async def refresh_public_vote_board(client: discord.Client, round_id: int) -> No
 
 
 def _public_vote_embed(nominee_ids: list[int], guild: Optional[discord.Guild], round_id: int, *, closed: bool = False) -> discord.Embed:
+    is_win = (public_vote_mode() == MODE_WIN)
     if closed:
-        embed = discord.Embed(
-            title=f"{EYE} BIG BROTHER: PUBLIC VOTE CLOSED",
-            description=(
+        if is_win:
+            desc_closed = (
+                "Voting has officially **CLOSED**.\n\n"
+                "The results have been verified by Big Brother.\n"
+                "The winner of Big Brother will be crowned shortly!\n\n"
+                "Stay tuned to find out who wins."
+            )
+            title_closed = f"{EYE} BIG BROTHER: FINAL VOTE CLOSED"
+        else:
+            desc_closed = (
                 "Voting has officially **CLOSED**.\n\n"
                 "The results have been verified by Big Brother.\n"
                 "The housemate with the **most votes to evict** will be evicted shortly!\n\n"
                 "Stay tuned to find out who leaves the house."
-            ),
+            )
+            title_closed = f"{EYE} BIG BROTHER: PUBLIC VOTE CLOSED"
+        embed = discord.Embed(
+            title=title_closed,
+            description=desc_closed,
             colour=0x95A5A6
         )
         embed.set_footer(text="Big Brother is watching.")
         return embed
 
     nominee_lines = "\n".join(f"{i+1}. **{_name(guild, n)}**" for i, n in enumerate(nominee_ids))
-    desc = (
-        "## 🗳️ Public Vote to Evict\n\n"
-        "The public vote is now **OPEN**!\n\n"
-        "Vote for who you want to **EVICT** from the house. "
-        "The housemate with the **most votes to evict** will be evicted from the Big Brother house!\n\n"
-        f"### Housemates Facing Eviction:\n{nominee_lines}\n\n"
-        "👉 **Click a button below to cast your vote for who to get rid of.**\n\n"
-        "-# 1 vote per person · Active housemates cannot vote · You may change your vote at any time before the vote closes."
-    )
+    if is_win:
+        desc = (
+            "## 🗳️ Public Vote to Win\n\n"
+            "The public vote is now **OPEN**!\n\n"
+            "**Housemate you wanna see WIN big brother?**\n\n"
+            "The housemate with the **most votes to win** will be crowned the winner of Big Brother!\n\n"
+            f"### Finalists:\n{nominee_lines}\n\n"
+            "👉 **Click a button below to cast your vote.**\n\n"
+            "-# 1 vote per person · Active housemates cannot vote · You may change your vote at any time before the vote closes."
+        )
+        title = f"{EYE} BIG BROTHER: VOTE TO WIN"
+    else:
+        desc = (
+            "## 🗳️ Public Vote to Evict\n\n"
+            "The public vote is now **OPEN**!\n\n"
+            "Vote for who you want to **EVICT** from the house. "
+            "The housemate with the **most votes to evict** will be evicted from the Big Brother house!\n\n"
+            f"### Housemates Facing Eviction:\n{nominee_lines}\n\n"
+            "👉 **Click a button below to cast your vote for who to get rid of.**\n\n"
+            "-# 1 vote per person · Active housemates cannot vote · You may change your vote at any time before the vote closes."
+        )
+        title = f"{EYE} BIG BROTHER: EVICTION VOTE"
     embed = discord.Embed(
-        title=f"{EYE} BIG BROTHER: EVICTION VOTE",
+        title=title,
         description=desc,
         colour=ACCENT
     )
@@ -2638,21 +2728,25 @@ def _public_vote_embed(nominee_ids: list[int], guild: Optional[discord.Guild], r
 def _public_vote_view(round_id: int, nominee_ids: Iterable[int], guild: Optional[discord.Guild], *, disabled: bool = False) -> discord.ui.View:
     view = discord.ui.View(timeout=None)
     nominees = list(nominee_ids)
+    is_win = (public_vote_mode() == MODE_WIN)
     for i, n in enumerate(nominees):
         name = _name(guild, n)
         row = i // 3 if len(nominees) <= 6 else i // 5
         if disabled:
             btn = discord.ui.Button(
-                label=f"Evict {name}"[:80],
-                emoji="🚪",
+                label=(f"Vote {name}" if is_win else f"Evict {name}")[:80],
+                emoji="🏆" if is_win else "🚪",
                 style=discord.ButtonStyle.secondary,
                 disabled=True,
                 row=row,
-                custom_id=f"bb:pubevict_done:{round_id}:{n}"
+                custom_id=f"bb:pub{'win' if is_win else 'evict'}_done:{round_id}:{n}"
             )
             view.add_item(btn)
         else:
-            view.add_item(PublicEvictButton(round_id, n, label=f"Evict {name}"[:80], row=row))
+            if is_win:
+                view.add_item(PublicWinButton(round_id, n, label=f"Vote {name}"[:80], row=row))
+            else:
+                view.add_item(PublicEvictButton(round_id, n, label=f"Evict {name}"[:80], row=row))
     return view
 
 
@@ -2668,18 +2762,21 @@ async def start_public_vote(client: discord.Client, nominee_ids: list[int]) -> O
     embed = _public_vote_embed(nominee_ids, guild, rid)
     view = _public_vote_view(rid, nominee_ids, guild)
 
+    is_win = (public_vote_mode() == MODE_WIN)
+    msg_content = f"{EYE} **The Big Brother {'Final ' if is_win else ''}Public Vote is now OPEN!**"
     msg = await ch.send(
-        content=f"{EYE} **The Big Brother Public Vote is now OPEN!**",
+        content=msg_content,
         embed=embed,
         view=view,
         allowed_mentions=discord.AllowedMentions.none()
     )
     set_round_message(rid, ch.id, msg.id)
     set_state(STATE_PUBLIC_VOTE_BOARD_MSG, msg.id)
-    log_event("public_vote_started", round_id=rid, nominees=nominee_ids, channel_id=ch.id, message_id=msg.id)
+    log_event("public_vote_started", round_id=rid, nominees=nominee_ids, channel_id=ch.id, message_id=msg.id, mode=public_vote_mode())
+    mode_desc = "Vote to win" if is_win else "Vote to evict"
     await notify_host(client, embed=bb_embed(
         f"Public Vote Started (Round {rid})",
-        f"Vote to evict is now live in <#{ch.id}> with {len(nominee_ids)} housemates:\n"
+        f"{mode_desc} is now live in <#{ch.id}> with {len(nominee_ids)} housemates:\n"
         + "\n".join(f"• {_name(guild, n)}" for n in nominee_ids)
     ))
     return {"id": rid, "channel_id": ch.id, "message_id": msg.id}
@@ -2711,9 +2808,10 @@ async def close_public_vote(client: discord.Client) -> Optional[dict]:
             except Exception as e:
                 log.warning("Big Brother: could not close public vote board: %s", e)
 
-    # In vote to evict: descending sort (most votes to evict first)
+    is_win = (public_vote_mode() == MODE_WIN)
     sorted_nominees = sorted(nominees, key=lambda n: (-tally.get(n, 0), n))
-    evicted_ids = [sorted_nominees[0]] if sorted_nominees else []
+    winner_id = sorted_nominees[0] if (sorted_nominees and is_win) else None
+    evicted_ids = [sorted_nominees[0]] if (sorted_nominees and not is_win) else []
 
     tied = False
     if len(sorted_nominees) >= 2 and total > 0:
@@ -2726,25 +2824,38 @@ async def close_public_vote(client: discord.Client) -> Optional[dict]:
         "closed_at": _now(),
         "total_votes": total,
         "standings": [(n, tally.get(n, 0)) for n in sorted_nominees],
+        "winner_id": winner_id,
         "evicted_ids": evicted_ids,
         "tied_boundary": tied,
-        "pending_evictions": True
+        "pending_evictions": bool(not is_win)
     }
     set_state(STATE_LAST_PUBLIC_VOTE_RESULT, result)
-    log_event("public_vote_closed", round_id=rid, standings=result["standings"], evicted=evicted_ids)
+    log_event("public_vote_closed", round_id=rid, standings=result["standings"],
+              winner=winner_id, evicted=evicted_ids, mode=public_vote_mode())
 
     # Notify host via DM
     standings_lines = []
+    medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣"]
     for i, u in enumerate(sorted_nominees):
         votes = tally.get(u, 0)
         pct = f"({votes / total * 100:.1f}%)" if total > 0 else "(0.0%)"
-        icon = "🚪" if i == 0 else "🟢"
+        if is_win:
+            icon = medals[i] if i < len(medals) else "✨"
+        else:
+            icon = "🚪" if i == 0 else "🟢"
         standings_lines.append(f"`#{i+1}` {icon} **{_name(guild, u)}** — {votes} vote{'s' if votes != 1 else ''} {pct}")
 
-    standings_text = f"**Total votes cast:** `{total}`\n\n### 📋 Final Standings (Most Votes to Evict First):\n" + "\n".join(standings_lines)
+    sort_title = "Most Votes to Win First" if is_win else "Most Votes to Evict First"
+    standings_text = f"**Total votes cast:** `{total}`\n\n"
+    if is_win and winner_id:
+        winner_name = _name(guild, winner_id)
+        standings_text += f"🏆 **WINNER:** **{winner_name}** ({tally.get(winner_id, 0)} votes)\n\n"
+    standings_text += f"### 📋 Final Standings ({sort_title}):\n" + "\n".join(standings_lines)
+
     if tied:
         standings_text += f"\n\n⚠️ **WARNING**: There is a tie for 1st place ({tally.get(sorted_nominees[0], 0)} votes)!"
-    standings_text += "\n\n👉 Return to `bb-control` and press **Evict Housemate** to execute the eviction."
+    if not is_win:
+        standings_text += "\n\n👉 Return to `bb-control` and press **Evict Housemate** to execute the eviction."
 
     await notify_host(client, embed=bb_embed(f"Public Vote Closed (Round {rid})", standings_text))
     return result
@@ -3403,22 +3514,26 @@ async def ensure_control_panel(client: discord.Client) -> None:
 def _public_vote_control_embed(guild: Optional[discord.Guild]) -> discord.Embed:
     rnd = open_round(KIND_PUBLIC_VOTE)
     last = get_state(STATE_LAST_PUBLIC_VOTE_RESULT) or {}
+    is_win = (public_vote_mode() == MODE_WIN)
+    mode_label = "Vote to Win 🏆" if is_win else "Vote to Evict 🚪"
 
     if rnd:
         nominees = rnd["nominees"]
         nom_lines = "\n".join(f"{i+1}. **{_name(guild, n)}**" for i, n in enumerate(nominees))
         total = vote_count(rnd["id"])
+        target_noun = "most votes to win" if is_win else "most eviction votes"
+        result_noun = "calculate the winner" if is_win else "calculate evictions"
         desc = (
-            f"**Status:** 🟢 **LIVE / OPEN**\n"
+            f"**Status:** 🟢 **LIVE / OPEN ({mode_label})**\n"
             f"**Round ID:** `#{rnd['id']}`\n"
             f"**Channel:** <#{public_vote_channel_id()}>\n"
             f"**Opened:** <t:{rnd['opened_at']}:R>\n"
             f"**Total Votes Cast:** `{total}`\n\n"
             f"**Housemates in Vote ({len(nominees)}):**\n{nom_lines}\n\n"
-            f"-# Press **Live Tally** to view who currently has the most eviction votes (ephemeral).\n"
-            f"-# Press **Close Vote** to lock voting in #voting and calculate evictions."
+            f"-# Press **Live Tally** to view who currently has the {target_noun} (ephemeral).\n"
+            f"-# Press **Close Vote** to lock voting in #voting and {result_noun}."
         )
-        embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control (Round #{rnd['id']})", description=desc, colour=0x2ECC71)
+        embed = discord.Embed(title=f"{EYE} Public Vote Control ({mode_label} - Round #{rnd['id']})", description=desc, colour=0x2ECC71)
     elif last.get("pending_evictions"):
         to_evict = last.get("evicted_ids") or last.get("bottom3") or []
         standings = last.get("standings", [])
@@ -3438,12 +3553,14 @@ def _public_vote_control_embed(guild: Optional[discord.Guild]) -> discord.Embed:
             last_info = f"\n\n-# Last public vote: Round #{last.get('round_id')} closed."
         desc = (
             f"**Status:** ⚪ **IDLE (No vote open)**\n"
-            f"**Voting Channel:** <#{public_vote_channel_id()}>\n\n"
-            f"Press **Open Public Vote** below to select housemates to put up for eviction "
+            f"**Voting Channel:** <#{public_vote_channel_id()}>\n"
+            f"**Current Mode:** **{mode_label}**\n\n"
+            f"Press **Open Public Vote** below to select housemates to put up for the {('vote to win' if is_win else 'eviction vote')} "
             f"and launch the vote in <#{public_vote_channel_id()}>.\n\n"
+            f"-# Press **Mode** to switch between Vote to Win and Vote to Evict.\n"
             f"-# Press **Who Nominated** to inspect housemate nominations if a round was held.{last_info}"
         )
-        embed = discord.Embed(title=f"{EYE} Public Eviction Vote Control", description=desc, colour=ACCENT)
+        embed = discord.Embed(title=f"{EYE} Public Vote Control ({mode_label})", description=desc, colour=ACCENT)
 
     embed.set_footer(text="Big Brother Control")
     return embed
@@ -3461,6 +3578,10 @@ class PublicVoteControlView(discord.ui.View):
 
         self.btn_who_noms.disabled = not bool(rnd_noms)
         self.btn_who_voted.disabled = not bool(rnd_pv)
+        cur_mode = public_vote_mode()
+        self.btn_mode.label = "Mode: Win 🏆" if cur_mode == MODE_WIN else "Mode: Evict 🚪"
+        self.btn_mode.style = discord.ButtonStyle.success if cur_mode == MODE_WIN else discord.ButtonStyle.secondary
+        self.btn_mode.disabled = bool(rnd)
         if rnd:
             self.btn_open.disabled = True
             self.btn_tally.disabled = False
@@ -3486,10 +3607,14 @@ class PublicVoteControlView(discord.ui.View):
             await interaction.response.send_message("Need at least two housemates in the house.", ephemeral=True)
             return
 
-        safe = immune_ids() | eviction_safe_ids()
-        choices = [u for u in ins if u not in safe]
-        if len(choices) < 2:
+        is_win = (public_vote_mode() == MODE_WIN)
+        if is_win:
             choices = list(ins)
+        else:
+            safe = immune_ids() | eviction_safe_ids()
+            choices = [u for u in ins if u not in safe]
+            if len(choices) < 2:
+                choices = list(ins)
 
         async def done_pick(inter: discord.Interaction, picked_ids: list[int]):
             view = discord.ui.View(timeout=180)
@@ -3501,7 +3626,8 @@ class PublicVoteControlView(discord.ui.View):
                     await inter2.followup.send("Could not start public vote (already open or channel missing).", ephemeral=True)
                 else:
                     await refresh_public_vote_control(inter2.client)
-                    await inter2.followup.send(f"✅ Public vote to evict opened in <#{public_vote_channel_id()}> with {len(picked_ids)} housemates!", ephemeral=True)
+                    mode_str = "win" if is_win else "evict"
+                    await inter2.followup.send(f"✅ Public vote to {mode_str} opened in <#{public_vote_channel_id()}> with {len(picked_ids)} housemates!", ephemeral=True)
 
             async def cancel_cb(inter2: discord.Interaction):
                 await inter2.response.edit_message(content="Cancelled opening public vote.", view=None)
@@ -3514,16 +3640,24 @@ class PublicVoteControlView(discord.ui.View):
             view.add_item(x_btn)
 
             names_str = "\n".join(f"• {_name(inter.guild, i)}" for i in picked_ids)
+            sub_title = "Vote to Win" if is_win else "Vote to Evict"
+            question_str = "Question: **housemate you wanna see WIN big brother?**\n\n" if is_win else ""
             await inter.response.edit_message(
-                content=f"### Launch Public Vote to Evict\nHousemates included in vote ({len(picked_ids)}):\n{names_str}\n\n"
+                content=f"### Launch Public {sub_title}\nHousemates included in vote ({len(picked_ids)}):\n{names_str}\n\n"
+                        f"{question_str}"
                         f"Will be posted to <#{public_vote_channel_id()}>. **Zero pings** will be sent.\n\n"
                         f"Press **Launch Public Vote** to open the vote.",
                 view=view
             )
 
+        prompt_str = (
+            "Select the finalists to put up for the public vote to win, then press Review Selection."
+            if is_win else
+            "Select the housemates to put up for the public vote to evict, then press Review Selection."
+        )
         await _send_multi(
             interaction,
-            "Select the housemates to put up for the public vote to evict, then press Review Selection.",
+            prompt_str,
             interaction.guild,
             choices,
             done_pick,
@@ -3531,6 +3665,21 @@ class PublicVoteControlView(discord.ui.View):
             max_values=len(choices),
             done_label="Review Selection"
         )
+
+    @discord.ui.button(label="Mode: Win 🏆", style=discord.ButtonStyle.success, custom_id="bb_pv_mode", row=0)
+    async def btn_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only Big Brother operators can use this panel.", ephemeral=True)
+            return
+        if open_round(KIND_PUBLIC_VOTE):
+            await interaction.response.send_message("Cannot change vote mode while a public vote is open.", ephemeral=True)
+            return
+        cur = public_vote_mode()
+        new_mode = MODE_EVICT if cur == MODE_WIN else MODE_WIN
+        set_state(STATE_PUBLIC_VOTE_MODE, new_mode)
+        await refresh_public_vote_control(interaction.client)
+        mode_label = "Vote to Win 🏆" if new_mode == MODE_WIN else "Vote to Evict 🚪"
+        await interaction.response.send_message(f"✅ Public vote mode set to: **{mode_label}**", ephemeral=True)
 
     @discord.ui.button(label="Live Tally", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="bb_pv_tally", row=0)
     async def btn_tally(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -3545,7 +3694,7 @@ class PublicVoteControlView(discord.ui.View):
         total = vote_count(rnd["id"])
         nominees = rnd["nominees"]
 
-        # In vote to evict: descending sort (most votes to evict first)
+        is_win = (public_vote_mode() == MODE_WIN)
         sorted_nominees = sorted(nominees, key=lambda n: (-tally.get(n, 0), n))
 
         embed = discord.Embed(
@@ -3553,17 +3702,23 @@ class PublicVoteControlView(discord.ui.View):
             colour=ACCENT
         )
         lines = []
+        medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣"]
         for i, u in enumerate(sorted_nominees):
             votes = tally.get(u, 0)
             pct = f"({votes / total * 100:.1f}%)" if total > 0 else "(0.0%)"
-            icon = "🚪" if i == 0 else "🟢"
-            tag = " — **Most Eviction Votes**" if i == 0 and votes > 0 else ""
+            if is_win:
+                icon = medals[i] if i < len(medals) else "✨"
+                tag = " — **Leading (Most Votes to Win)**" if i == 0 and votes > 0 else ""
+            else:
+                icon = "🚪" if i == 0 else "🟢"
+                tag = " — **Most Eviction Votes**" if i == 0 and votes > 0 else ""
             lines.append(f"`#{i+1}` {icon} **{_name(interaction.guild, u)}** — **{votes}** vote{'s' if votes != 1 else ''} {pct}{tag}")
 
+        sort_label = "Most Votes to Win First" if is_win else "Most Votes to Evict First"
         desc = (
             f"**Status:** {'🟢 Open' if rnd['status'] == 'open' else '🔒 Closed'}\n"
             f"**Total votes cast:** `{total}`\n\n"
-            f"### 📋 Standings (Most Votes to Evict First)\n"
+            f"### 📋 Standings ({sort_label})\n"
             + ("\n".join(lines) if lines else "*None*")
         )
         if len(sorted_nominees) >= 2 and total > 0:
@@ -3597,7 +3752,7 @@ class PublicVoteControlView(discord.ui.View):
             voters_by_nominee.setdefault(nominee, []).append(voter)
 
         all_nominees = list(voters_by_nominee.keys())
-        # In vote to evict: descending sort (most votes to evict first)
+        is_win = (public_vote_mode() == MODE_WIN)
         sorted_nominees = sorted(all_nominees, key=lambda n: (-len(voters_by_nominee.get(n, [])), n))
 
         embed = discord.Embed(
@@ -3606,11 +3761,13 @@ class PublicVoteControlView(discord.ui.View):
         )
 
         lines = []
+        medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣"]
         for i, u in enumerate(sorted_nominees):
             voters = voters_by_nominee.get(u, [])
             votes = len(voters)
             pct = f"({votes / total * 100:.1f}%)" if total > 0 else "(0.0%)"
-            icon = "🚪" if i == 0 else "🟢"
+            icon = (medals[i] if i < len(medals) else "✨") if is_win else ("🚪" if i == 0 else "🟢")
+            sub_label = "Voted to win by" if is_win else "Voted to evict by"
             if voters:
                 names = [_name(guild, v) for v in voters]
                 names_str = ", ".join(names)
@@ -3626,12 +3783,13 @@ class PublicVoteControlView(discord.ui.View):
                     names_str = ", ".join(truncated)
             else:
                 names_str = "*No votes yet*"
-            lines.append(f"`#{i+1}` {icon} **{_name(guild, u)}** — **{votes}** vote{'s' if votes != 1 else ''} {pct}\n└ **Voted to evict by:** {names_str}")
+            lines.append(f"`#{i+1}` {icon} **{_name(guild, u)}** — **{votes}** vote{'s' if votes != 1 else ''} {pct}\n└ **{sub_label}:** {names_str}")
 
+        sort_label = "Most Votes to Win First" if is_win else "Most Votes to Evict First"
         desc = (
             f"**Round Status:** {'🟢 Open' if rnd['status'] == 'open' else '🔒 Closed'}\n"
             f"**Total votes cast:** `{total}` by `{len(set(v for v, _, _ in breakdown))}` unique voters\n\n"
-            f"### 📋 Voter Breakdown (Most Votes to Evict First)\n"
+            f"### 📋 Voter Breakdown ({sort_label})\n"
             + ("\n\n".join(lines) if lines else "*None*")
         )
 
@@ -3639,7 +3797,7 @@ class PublicVoteControlView(discord.ui.View):
             v_top = len(voters_by_nominee.get(sorted_nominees[0], []))
             v_second = len(voters_by_nominee.get(sorted_nominees[1], []))
             if v_top == v_second and v_top > 0:
-                desc += f"\n\n⚠️ **WARNING**: There is a tie for 1st place ({v_top} votes) between {_name(guild, sorted_nominees[0])} and {_name(guild, sorted_nominees[1])}!"
+                desc += f"\n\n⚠️ **WARNING**: There is a tie for 1st place ({v_top} votes) between {_name(guild, sorted_nominees[0])} and {_name(interaction.guild, sorted_nominees[1])}!"
 
         embed.description = desc[:4000]
         embed.set_footer(text="Confidential · Host & Operators only")
@@ -3661,7 +3819,7 @@ class PublicVoteControlView(discord.ui.View):
             res = await close_public_vote(inter.client)
             await refresh_public_vote_control(inter.client)
             if res:
-                await inter.followup.send("✅ Public vote closed! Final standings delivered to Big Brother's DMs and evictions are ready.", ephemeral=True)
+                await inter.followup.send("✅ Public vote closed! Final standings delivered to Big Brother's DMs.", ephemeral=True)
             else:
                 await inter.followup.send("Could not close vote.", ephemeral=True)
 
@@ -3675,9 +3833,16 @@ class PublicVoteControlView(discord.ui.View):
         view.add_item(c_btn)
         view.add_item(x_btn)
 
-        await interaction.response.send_message(
+        is_win = (public_vote_mode() == MODE_WIN)
+        prompt_txt = (
             "⚠️ **Are you sure you want to CLOSE the public vote?**\n"
-            "This will lock the vote board in #voting, disable all buttons, and finalize evictions based on the highest votes.",
+            "This will lock the vote board in #voting, disable all buttons, and finalize results for the winner."
+            if is_win else
+            "⚠️ **Are you sure you want to CLOSE the public vote?**\n"
+            "This will lock the vote board in #voting, disable all buttons, and finalize evictions based on the highest votes."
+        )
+        await interaction.response.send_message(
+            prompt_txt,
             view=view,
             ephemeral=True
         )

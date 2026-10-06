@@ -1960,14 +1960,25 @@ def test_public_vote_embed_contents(bb):
     nominees = [1, 2, 3, 4, 5, 6]
     rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
 
+    # Vote to Win (default)
     open_embed = bb._public_vote_embed(nominees, None, rid, closed=False)
-    assert "Public Vote to Evict" in open_embed.description
-    assert "most votes to evict" in open_embed.description
+    assert "Public Vote to Win" in open_embed.description
+    assert "Housemate you wanna see WIN big brother?" in open_embed.description
+    assert "most votes to win" in open_embed.description
     assert "Total votes cast: 0" in open_embed.footer.text
 
     closed_embed = bb._public_vote_embed(nominees, None, rid, closed=True)
-    assert "PUBLIC VOTE CLOSED" in closed_embed.title
-    assert "most votes to evict" in closed_embed.description
+    assert "FINAL VOTE CLOSED" in closed_embed.title
+    assert "winner of Big Brother will be crowned" in closed_embed.description
+
+    # Vote to Evict mode
+    bb.set_state(bb.STATE_PUBLIC_VOTE_MODE, "evict")
+    open_evict = bb._public_vote_embed(nominees, None, rid, closed=False)
+    assert "Public Vote to Evict" in open_evict.description
+    assert "most votes to evict" in open_evict.description
+    closed_evict = bb._public_vote_embed(nominees, None, rid, closed=True)
+    assert "PUBLIC VOTE CLOSED" in closed_evict.title
+    assert "most votes to evict" in closed_evict.description
 
 
 def test_public_vote_control_embed_states(bb):
@@ -2087,11 +2098,18 @@ def test_public_vote_to_evict_ranking_and_buttons(bb):
     sorted_nominees = sorted(nominees, key=lambda n: (-tally.get(n, 0), n))
     assert sorted_nominees == [10, 20, 30, 40]
 
-    # Verify buttons use bb:pubevict
+    # Verify buttons in evict mode
+    bb.set_state(bb.STATE_PUBLIC_VOTE_MODE, "evict")
     view = bb._public_vote_view(rid, nominees, None)
     btn_ids = [getattr(b, "custom_id", None) for b in view.children]
     assert f"bb:pubevict:{rid}:10" in btn_ids
     assert f"bb:pubevict:{rid}:20" in btn_ids
+
+    # Verify buttons in win mode
+    bb.set_state(bb.STATE_PUBLIC_VOTE_MODE, "win")
+    view_win = bb._public_vote_view(rid, nominees, None)
+    btn_ids_win = [getattr(b, "custom_id", None) for b in view_win.children]
+    assert f"bb:pubwin:{rid}:10" in btn_ids_win
 
 
 @pytest.mark.asyncio
@@ -2100,7 +2118,7 @@ async def test_close_public_vote_ranks_and_sets_pending(bb, monkeypatch):
     nominees = [10, 20, 30]
     rid = bb.create_round(bb.KIND_PUBLIC_VOTE, nominees=nominees, votes_each=1)
 
-    # 5 votes to evict 20, 2 votes to evict 10, 0 votes to evict 30
+    # 5 votes for 20, 2 votes for 10, 0 votes for 30
     for i in range(5):
         bb.cast_vote(rid, 100 + i, 20)
     for i in range(2):
@@ -2111,6 +2129,8 @@ async def test_close_public_vote_ranks_and_sets_pending(bb, monkeypatch):
     monkeypatch.setattr(bb, "notify_host", mock.AsyncMock())
     monkeypatch.setattr(bb, "_channel", mock.AsyncMock(return_value=None))
 
+    # Test evict mode
+    bb.set_state(bb.STATE_PUBLIC_VOTE_MODE, "evict")
     res = await bb.close_public_vote(fake_client)
     assert res is not None
     assert res["round_id"] == rid
