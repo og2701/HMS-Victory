@@ -73,6 +73,15 @@ def check_panel(p):
         assert s["options"] and {"id", "placeholder", "min", "max", "options"} == set(s)
 
 
+def tiles(p):
+    return [t for s in p["sections"] for t in s["tiles"]]
+
+
+def tile_for(p, **want):
+    """The tiles of a panel whose fields match (title, act, nav, state ...)."""
+    return [t for t in tiles(p) if all(t.get(k) == v for k, v in want.items())]
+
+
 @pytest.mark.parametrize("key", PANEL_KEYS)
 def test_every_panel_builds(key):
     level_up()
@@ -89,30 +98,62 @@ def test_notice_claim_refuses_then_pays():
     key = E.task_progress(p)[0][0]
     p["tasks"]["prog"][key] = D.TASKS[key]["n"]
     E.save_profile(p)
-    ids = [a["id"] for a in view("notice")["actions"]]
-    assert "claim" in ids and "daily_board" in ids
+    ready = tile_for(view("notice"), act="claim")
+    assert len(ready) == 1 and ready[0]["state"] == "ready" and ready[0]["cost"] and ready[0]["sub"] == "Claim"
     before = E.get_profile(1)["septims"]
     r = do("notice", "claim")
     assert E.get_profile(1)["septims"] > before and r["toast"]
+    done = [t for t in tiles(r["panel"]) if t["state"] == "done" and t["cost"]]
+    assert len(done) == 1 and done[0]["sub"] == "Claimed" and not tile_for(r["panel"], act="claim")
     with pytest.raises(common.Refuse):
         do("notice", "claim")
 
 
+def test_notice_tasks_are_short_tiles_with_progress():
+    p = view("notice")
+    tasks = next(s for s in p["sections"] if s["title"].startswith("Tasks"))["tiles"]
+    assert len(tasks) == len(E.task_progress(E.get_profile(1)))
+    for t, (key, task, done, _comp, _claimed) in zip(tasks, E.task_progress(E.get_profile(1))):
+        assert len(t["title"].split()) <= 3 and t["cost"] == D.TASK_REWARDS[task["band"]][0]
+        assert t["meter"] == ([done, task["n"]] if task["n"] > 1 else None)
+        assert t["info"] == task["name"] and t["state"] is None
+
+
 def test_notice_daily_nav_and_spoils_refuse():
-    acts = {a["id"]: a for a in view("notice")["actions"]}
-    assert acts["daily"]["nav"] == "adventure:daily" and acts["daily_board"]["nav"] == "daily_board"
+    p = view("notice")
+    daily = tile_for(p, nav="adventure:daily")[0]
+    assert daily["state"] == "ready" and daily["sub"] == E.daily_location()["name"]
+    assert tile_for(p, nav="daily_board")
+    assert not tile_for(p, act="spoils")
     with pytest.raises(common.Refuse):
         do("notice", "spoils")
     with pytest.raises(common.Refuse):
         do("notice", "bogus")
 
 
+def test_notice_hunt_tile_gates_and_marches():
+    hunt = lambda p: next(s for s in p["sections"] if s["title"] == "The hunt")["tiles"][0]
+    p = view("notice")
+    store = E.world_boss()
+    h = hunt(p)
+    assert h["icon"].startswith(f"c:enemy_wb_{store['boss']}") and h["meter"] == [store["hp"], store["max"]]
+    assert h["state"] == "locked" and not tile_for(p, act="march")           # level 5 first
+    level_up()
+    p = view("notice")
+    assert hunt(p)["state"] == "ready" and hunt(p)["sub"].startswith("Wave")
+    marches = tile_for(p, act="march")
+    assert [t["body"]["value"] for t in marches] == ["attack", "expose", "protect"]
+    assert all(t["state"] == "ready" and len(t["sub"].split()) <= 3 for t in marches)
+    do("notice", "march", {"value": "attack"})
+    p = view("notice")
+    assert hunt(p)["state"] == "done" and not tile_for(p, act="march")
+
+
 def test_march_needs_level_then_hits_the_boss():
     with pytest.raises(common.Refuse):
         do("notice", "march", {"value": "attack"})
     level_up()
-    sel = {s["id"]: s for s in view("notice")["selects"]}
-    assert [o["value"] for o in sel["march"]["options"]] == ["attack", "expose", "protect"]
+    assert [t["body"]["value"] for t in tile_for(view("notice"), act="march")] == ["attack", "expose", "protect"]
     with pytest.raises(common.Refuse):
         do("notice", "march", {"value": "nonsense"})
     r = do("notice", "march", {"value": "attack"})
@@ -125,14 +166,30 @@ def test_march_needs_level_then_hits_the_boss():
     # the staged blows add up to what the engine dealt, and every exchange is cued
     assert sum(b["cue"]["dmg"] for b in beats if b["cue"] and b["cue"]["t"] == "hit") == m["dealt"]
     assert any(b["cue"] and b["cue"]["t"] in ("hit", "miss") for b in beats)
-    assert "march" not in {s["id"] for s in r["panel"]["selects"]}      # one march a day
+    assert not tile_for(r["panel"], act="march")      # one march a day
     with pytest.raises(common.Refuse):
         do("notice", "march", {"values": ["attack"]})
 
 
 def test_daily_board_lists_attempts():
     p = view("daily_board")
-    assert p["sections"][0]["lines"] == ["No attempts yet today. The dungeon waits."]
+    assert p["sections"][0]["lines"] == ["No attempts yet."] and not tiles(p)
+
+
+def test_daily_board_is_a_podium(monkeypatch):
+    def row(name, state, rooms, kills, satchel=0, stone="warrior"):
+        return {"name": name, "state": state, "rooms": rooms, "kills": kills, "satchel": satchel, "stone": stone}
+    monkeypatch.setattr(E, "daily_results", lambda: {
+        "1": row("Tester", "dead", 2, 3), "2": row("Ace", "cleared", 5, 9, 700, "mage"),
+        "3": row("Bee", "cleared", 5, 7, 300, "thief"), "4": row("Cy", "left", 1, 1), "5": row("Di", "launched", 0, 0)})
+    p = view("daily_board")
+    podium, rest = p["sections"]
+    assert [t["title"] for t in podium["tiles"]] == ["Ace", "Bee", "Tester"] and podium["cols"] == 3
+    assert [t["value"] for t in podium["tiles"]] == ["1st", "2nd", "3rd"]
+    assert podium["tiles"][0]["cost"] == 700 and podium["tiles"][0]["sub"] == "Cleared"
+    assert podium["tiles"][2]["state"] == "done" and podium["tiles"][2]["sub"] == "Died room 3"      # me, highlighted
+    assert [t["sub"] for t in rest["tiles"]] == ["Left room 1", "Launched"]
+    assert podium["tiles"][0]["icon"].startswith("c:hero_mage_idle")
 
 
 def test_pit_gates_and_step_in():
@@ -143,12 +200,18 @@ def test_pit_gates_and_step_in():
     level_up()
     p = view("pit")
     assert p["art"] == panels_town.pit_art(0)
-    assert "step_in" in [a["id"] for a in p["actions"]]
+    ladder = next(s for s in p["sections"] if s["title"] == "Ladder")["tiles"][0]
+    assert ladder["meter"] == [0, len(D.PIT_CHAMPS)]
+    nxt = tile_for(p, act="step_in")[0]
+    champ = D.PIT_CHAMPS[0]
+    assert nxt["title"] == champ["name"] and nxt["state"] == "ready" and nxt["sub"] == champ["style"]
+    assert nxt["icon"] == f"s:{panels_town.pit_art(0)}" and nxt["info"]
     r = do("pit", "step_in")
     assert r["nav"] == "bout:pit" and E.pit_bout_active(E.get_profile(1))
     again = do("pit", "step_in")                # a live bout just points back at itself
     assert again["nav"] == "bout:pit"
-    assert "resume" in [a["id"] for a in again["panel"]["actions"]]
+    resume = tile_for(again["panel"], nav="bout:pit")
+    assert resume and resume[0]["state"] == "ready" and not tile_for(again["panel"], act="step_in")
 
 
 def test_pit_bout_plays_to_the_end():
@@ -211,15 +274,16 @@ def test_duel_a_second_profile():
     E.create_profile(2, "Rival", "mage")
     level_up(2, 8)
     p = view("pit")
-    sel = {s["id"]: s for s in p["selects"]}
-    assert [o["value"] for o in sel["duel"]["options"]] == ["2"]
+    rivals = tile_for(p, act="duel")
+    assert [t["body"] for t in rivals] == [{"value": "2"}] and rivals[0]["title"] == "Rival" and rivals[0]["state"] == "ready"
+    assert rivals[0]["value"] == "Lv 8" and rivals[0]["icon"].startswith("c:hero_mage_idle")
     with pytest.raises(common.Refuse):
         do("pit", "duel", {"value": "1"})
     with pytest.raises(common.Refuse):
         do("pit", "duel", {"value": "99"})
     r = do("pit", "duel", {"value": "2"})
     assert r["nav"] == "bout:duel"
-    assert "duel" not in {s["id"] for s in r["panel"]["selects"]}
+    assert not tile_for(r["panel"], act="duel") and tile_for(r["panel"], nav="bout:duel")
     b = bouts.bout(ctx(), "duel")
     assert b["state"] == "playing" and "Rival" in b["foe"]["name"] and b["foe"]["art"] in ("duel_circle", "pit")
     for _ in range(40):
@@ -249,16 +313,23 @@ def test_factions_join_confirm_and_claim():
         do("factions", "join", {"value": "companions"})
     with pytest.raises(common.Refuse):
         do("factions", "claim")
+    locked = tile_for(view("factions"), state="locked")                # below level 8
+    assert len(locked) == len(D.FACTIONS) and all(t["info"] and not t["nav"] for t in locked)
     level_up()
     p = view("factions")
-    assert "join" in [s["id"] for s in p["selects"]]
+    joins = tile_for(p, act="join")
+    assert [t["body"]["value"] for t in joins] == list(D.FACTIONS) and all(t["icon"].startswith("a:faction_") for t in joins)
     r = do("factions", "join", {"values": ["companions"]})        # unsworn: straight in, as views does
     assert E.get_profile(1)["allegiance"] == "companions" and r["toast"]
+    sworn = tile_for(r["panel"], state="done")[0]
+    assert sworn["title"] == "Companions" and sworn["sub"] == "Initiate" and sworn["meter"] and not sworn["act"]
+    week = next(s for s in r["panel"]["sections"] if s["title"] == "This week")["tiles"][0]
+    assert week["meter"] == [0, D.FACTIONS["companions"]["goal"]] and week["state"] is None and not week["act"]
     keys = [k for k in D.FACTIONS if k != "companions"]
     r = do("factions", "join", {"value": keys[0]})                 # sworn: asks first
-    acts = {a["id"]: a for a in r["panel"]["actions"]}
-    assert f"swear:{keys[0]}" in acts and acts[f"swear:{keys[0]}"]["confirm"] and acts["stay"]["nav"] == "factions"
-    assert E.get_profile(1)["allegiance"] == "companions"
+    swear = tile_for(r["panel"], act=f"swear:{keys[0]}")[0]
+    assert swear["confirm"] and swear["state"] == "ready"
+    assert tile_for(r["panel"], nav="factions") and E.get_profile(1)["allegiance"] == "companions"
     r = do("factions", f"swear:{keys[0]}")
     assert E.get_profile(1)["allegiance"] == keys[0]
     with pytest.raises(common.Refuse):
@@ -267,10 +338,23 @@ def test_factions_join_confirm_and_claim():
         do("factions", "promote")
 
 
+def test_factions_claim_is_a_ready_tile():
+    level_up()
+    do("factions", "join", {"value": "companions"})
+    p = E.get_profile(1)
+    p["stats"][D.FACTIONS["companions"]["stat"]] = p["stats"].get(D.FACTIONS["companions"]["stat"], 0) + 999
+    E.save_profile(p)
+    claim = tile_for(view("factions"), act="claim")
+    assert len(claim) == 1 and claim[0]["state"] == "ready" and claim[0]["meter"][0] == claim[0]["meter"][1]
+    assert do("factions", "claim")["toast"]
+
+
 def test_holdings_deed_build_and_gates():
     level_up()
     p = view("holdings")
-    assert {a["id"] for a in p["actions"]} == {"deed"}
+    deed = tile_for(p, act="deed")
+    assert len(deed) == 1 and deed[0]["cost"] == D.HOMESTEAD["land"]["septims"] and deed[0]["state"] == "ready"
+    assert not tile_for(p, act="build")
     with pytest.raises(common.Refuse):
         do("holdings", "build", {"value": "garden"})
     with pytest.raises(common.Refuse):
@@ -288,12 +372,19 @@ def test_holdings_deed_build_and_gates():
         do("holdings", "deed")
     p = view("holdings")
     assert p["art"] in (None, "homestead_1")
-    build = {s["id"]: s for s in p["selects"]}["build"]
-    first = build["options"][0]["value"]
+    built = tile_for(p, state="done")
+    assert built and all(t["sub"] is None for t in built)
+    builds = tile_for(p, act="build")
+    assert builds and all(t["cost"] for t in builds)
+    first = builds[0]["body"]["value"]
     r = do("holdings", "build", {"value": first})
     assert E.get_profile(1)["homestead"]["building"] == first and r["toast"]
+    sends = tile_for(view("holdings"), act="expedition")
+    assert [t["body"]["value"] for t in sends] == list(D.EXPEDITIONS) and sends[0]["icon"].startswith("a:expedition_")
     r = do("holdings", "expedition", {"values": [next(iter(D.EXPEDITIONS))]})
     assert E.expedition(E.get_profile(1)) and r["toast"]
+    assert not tile_for(r["panel"], act="build") and not tile_for(r["panel"], act="expedition")   # one build, one housecarl
+    assert [t["sub"] for t in tile_for(r["panel"], title="Patrol the roads")] == ["1 day left"]
     with pytest.raises(common.Refuse):
         do("holdings", "expedition", {"value": next(iter(D.EXPEDITIONS))})   # housecarl is out
     with pytest.raises(common.Refuse):
@@ -303,9 +394,11 @@ def test_holdings_deed_build_and_gates():
 def test_rankings_boards_and_help_pages():
     level_up()
     r = do("rankings", "board", {"value": "wealth"})
-    assert r["panel"]["sections"][0]["title"].endswith("The Coffers")
-    chosen = [o["value"] for o in r["panel"]["selects"][0]["options"] if o["chosen"]]
-    assert chosen == ["wealth"] and len(r["panel"]["selects"][0]["options"]) == 8
+    boards = tile_for(r["panel"], act="board")
+    assert len(boards) == 8 and [t["body"]["value"] for t in boards if t["state"] == "done"] == ["wealth"]
+    rows = r["panel"]["sections"][1]
+    assert rows["title"].endswith("The Coffers") and rows["tiles"][0]["value"] == "1st" and rows["tiles"][0]["cost"] is not None
+    assert rows["tiles"][0]["title"] == "You" and rows["tiles"][0]["state"] == "done"
     with pytest.raises(common.Refuse):
         do("rankings", "board", {"value": "nope"})
     for page in __import__("lib.features.skyrim.views", fromlist=["x"]).HELP_PAGES:
@@ -313,9 +406,20 @@ def test_rankings_boards_and_help_pages():
         check_panel(r["panel"])
         assert [o["value"] for o in r["panel"]["selects"][0]["options"] if o["chosen"]] == [page]
     with pytest.raises(common.Refuse):
+        do("rankings", "other")
+    with pytest.raises(common.Refuse):
         do("help", "page", {"value": "zzz"})
     with pytest.raises(common.Refuse):
         do("help", "other")
+
+
+def test_help_guide_is_six_icon_tiles():
+    p = view("help")
+    ts = tiles(p)
+    assert [t["icon"] for t in ts] == ["i:door", "i:sword", "i:eye", "i:heart", "i:coin", "i:star"]
+    assert all(len(t["title"].split()) <= 3 and len(t["sub"].split()) <= 4 and t["info"] for t in ts)
+    assert [o["value"] for o in p["selects"][0]["options"] if o["chosen"]] == ["guide"]
+    assert len(p["selects"][0]["options"]) > 6               # the chapters stay reachable
 
 
 def test_march_beats_cue_every_kind_of_exchange():

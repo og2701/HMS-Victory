@@ -20,12 +20,6 @@ _SKILL_LABELS = {"blade": "One-Handed", "marksman": "Marksman", "destruction": "
                  "sneak": "Sneak", "speech": "Speech", "lockpicking": "Lockpicking"}
 
 
-def _bar(value: int, lo: int = 15, hi: int = 100, width: int = 8) -> str:
-    """The same filled/empty bar views.py draws."""
-    filled = round(width * (value - lo) / (hi - lo)) if hi != lo else 0
-    return "▰" * max(0, filled) + "▱" * max(0, width - filled)
-
-
 def _values(body: dict) -> list[str]:
     """A select posts {"values": [...]} or {"value": "..."}; take either."""
     body = body or {}
@@ -47,6 +41,15 @@ def _fresh(profile: dict, ctx: dict) -> dict:
     return E.get_profile(ctx["uid"]) or profile
 
 
+
+_SKILL_ICON = {"blade": "sword", "marksman": "bow", "destruction": "flame", "sneak": "hood", "speech": "speech",
+               "lockpicking": "door"}
+
+
+def _skill_tile(key, _value=None, **kw):
+    return common.tile(_SKILL_LABELS.get(key, key), icon=f"a:skill_{key}|i:{_SKILL_ICON.get(key, 'star')}", **kw)
+
+
 # ---- character ---------------------------------------------------------------------------------------------
 
 @view("character")
@@ -54,7 +57,6 @@ def character(profile, ctx):
     stone = D.STONES[profile["stone"]]
     s = profile["skills"]
     into, need = D.xp_into_level(profile["xp"])
-    words = " ".join(D.SHOUT_WORDS[:profile["words"]]) if profile["words"] else "not yet learned"
     boosted = set(stone["boost"])
     legend = E.legacy_rank(profile)
     pts = E.perk_points(profile)
@@ -63,108 +65,92 @@ def character(profile, ctx):
 
     blurb = [f"Level {E.level(profile)} {E.archetype(profile)}"
              + (f"  ·  🏛️ Legend {'⭐' * legend}" if legend else ""),
-             f"Blessed by {stone['name']}  ·  XP {_bar(into, 0, need)} {into}/{need}"]
+             f"Blessed by {stone['name']}  ·  XP {into}/{need}",
+             "Stone-blessed skills learn faster."]
     if legend:
         boons = [D.BOONS[b] for b in E.legacy(profile).get("boons", []) if b in D.BOONS]
         if boons:
             blurb.append("🏛️ Boons: " + "  ·  ".join(f"{b['emoji']} {b['name']}" for b in boons))
+
+    skills = [_skill_tile(key, s.get(key, 0), value=s.get(key, 0), meter=(s.get(key, 0), 100),
+                          badge="Blessed" if key in boosted else None,
+                          state="max" if s.get(key, 0) >= 100 else None)
+              for key in _SKILL_LABELS]
+
+    wt, at = profile["weapon_tier"], profile["armour_tier"]
+    wk, ak = D.GEAR_TIERS[wt]["key"], D.GEAR_TIERS[at]["key"]
+    gear = [common.tile(D.GEAR_TIERS[wt]["name"], icon=f"a:weapon_{wk}|i:sword",
+                        sub=f"+{temper['weapon']} tempered" if temper.get("weapon") else "weapon"),
+            common.tile(D.GEAR_TIERS[at]["name"], icon=f"a:armour_{ak}|i:shield",
+                        sub=f"soaks {E.soak_pct(profile)}%")]
+    if profile["words"]:
+        gear.append(common.tile("Voice", icon="i:shout", value=f"{E.voice_charges(profile)}/{profile['words']}",
+                                info=" ".join(D.SHOUT_WORDS[:profile["words"]])))
+
+    hero = [common.tile("Hearts", icon="i:heart", value=E.heart_max(profile)),
+            common.tile("Souls", icon="i:soul", value=profile["souls"])]
+    streak = E.current_streak(profile)
+    if streak >= 2:
+        hero.append(common.tile("Streak", icon="i:flame", value=streak, sub="days"))
+    if legend:
+        hero.append(common.tile("Legend", icon="i:crown", value=legend))
     if profile.get("alduin_slain"):
-        n = profile["alduin_slain"]
-        blurb.append(f"⭐ **Slayer of Alduin**{f' (x{n})' if n > 1 else ''}")
-
-    stats = [common.stat("Level", E.level(profile), "⭐"),
-             common.stat("Hearts", E.heart_max(profile), "❤️"),
-             common.stat("Potions", f"{profile['potions']}/{E.potion_cap(profile)}", "🧪"),
-             common.stat("Septims", f"{profile['septims']:,}", "💰"),
-             common.stat("Souls", profile["souls"], "🐉"),
-             common.stat("Collection", f"{E.collection_pct(profile)}%", "📦")]
-    # the numbers above aren't repeated below: the sections carry the skills, the gear and the rest
-
-    skill_lines = [f"{label:<12} **{s.get(key, 0)}** {_bar(s.get(key, 0))}" + ("  ✨" if key in boosted else "")
-                   for key, label in _SKILL_LABELS.items()]
-    skill_lines.append("Stone-blessed skills ✨ learn faster.")
-    t_bit = (f"  ·  🪓 +{temper.get('weapon', 0)}/+{temper.get('armour', 0)} tempered"
-             if temper.get("weapon") or temper.get("armour") else "")
-    gear = [f"**Gear**: {E.gear_name(profile, 'weapon')}  ·  {E.gear_name(profile, 'armour')} "
-            f"(soaks {E.soak_pct(profile)}%){t_bit}",
-            f"**The Voice**: 🗣️ {words}  ·  breath {E.voice_charges(profile)}/{profile['words']}"
-            f"  ·  🐉 {profile['souls']} soul{'s' if profile['souls'] != 1 else ''}"]
-    extra = []
-    doc = profile.get("doctrines") or {}
-    if doc:
-        bits = [f"{D.DOCTRINES[sk][ch]['emoji']} {D.DOCTRINES[sk][ch]['name']}"
-                for sk in doc for ch in E.doctrine_keys(profile, sk) if ch in D.DOCTRINES.get(sk, {})]
-        star = f"  ·  ⭐x{E.legendary_stars(profile)}" if E.legendary_stars(profile) else ""
-        extra.append(f"**Doctrines**: {'  ·  '.join(bits)}{star}")
-    pet = E.active_companion(profile)
-    if pet:
-        extra.append(f"**Companion**: {pet['emoji']} {pet['name']} - {pet['passive']}")
+        hero.append(common.tile("Alduin", icon="i:skull", value=f"x{profile['alduin_slain']}", state="done",
+                                info="Slayer of Alduin."))
     wonders = [k for k in (profile.get("wonders") or []) if k in D.WONDERS]
     if wonders:
-        shelf = " ".join(D.WONDERS[k]["emoji"] for k in wonders)
-        extra.append(f"**Wonders**: ✨ {shelf}  ({len(wonders)}/{len(D.WONDERS)})")
-    streak = E.current_streak(profile)
-    foot = []
-    if streak >= 2:
-        foot.append(f"🔥 {streak}-day streak")
-    if pts:
-        foot.append(f"📜 {pts} perk point{'s' if pts != 1 else ''} to spend")
-    if foot:
-        extra.append("  ·  ".join(foot))
+        hero.append(common.tile("Wonders", icon="i:diamond", value=f"{len(wonders)}/{len(D.WONDERS)}", nav="collection"))
 
-    actions = [
-        common.action("masteries", f"Masteries ({open_n})" if open_n else "Masteries", "✨",
-                      "primary" if open_n else "secondary", nav="masteries"),
-        common.action("perks", f"Perks ({pts})" if pts else "Perks", "📜",
-                      "primary" if pts else "secondary", nav="perks"),
-        common.action("collection", f"Collection {E.collection_pct(profile)}%", "📦", nav="collection"),
-        common.action("records", "Records", "🎖️", nav="records"),
-        common.action("companion", "Companion", "🐾", nav="companion"),
-    ]
+    pet = E.active_companion(profile)
+    more = [common.tile("Perks", icon="s:perks", badge=f"{pts}" if pts else None, state="ready" if pts else None, nav="perks"),
+            common.tile("Masteries", icon="s:masteries", badge=f"{open_n}" if open_n else None,
+                        state="ready" if open_n else None, nav="masteries"),
+            common.tile("Collection", icon="s:collection", value=f"{E.collection_pct(profile)}%", nav="collection"),
+            common.tile("Records", icon="s:records", nav="records"),
+            common.tile("Companion", icon=f"s:{pet['art']}" if pet else "s:stray", nav="companion")]
     ready, _line = E.retire_ready(profile)
     if ready or legend or profile.get("alduin_slain"):
-        actions.append(common.action("hall", "Hall of Legends" + (" - retirement awaits" if ready else ""), "🏛️",
-                                     "danger" if ready else "secondary", nav="hall"))
+        more.append(common.tile("Hall", icon="s:hall_of_legends", state="ready" if ready else None, nav="hall"))
     return common.panel("character", f"{stone['emoji']} {profile['name']}", back="town", blurb=blurb,
-                        stats=stats, sections=[common.section("Skills, which grow as you use them", skill_lines),
-                                               common.section("Gear and Voice", gear),
-                                               *([common.section("Standing", extra)] if extra else [])],
-                        actions=actions)
+                        sections=[common.section("Skills", tiles=skills, cols=3),
+                                  common.section("Gear", tiles=gear, cols=3),
+                                  common.section("You", tiles=hero, cols=3),
+                                  common.section("More", tiles=more, cols=3)])
 
 
 # ---- perks -------------------------------------------------------------------------------------------------
 
+_PERK_EFFECT = {"stalwart": "+1 heart", "honed_edge": "+4% attack", "muffled": "+6% sneak",
+                "persuasive": "+7% persuade", "juggernaut": "+6% soak", "alchemist": "+1 pocket",
+                "deep_pockets": "+20% coin", "quick_study": "+10% XP"}
+
+
 @view("perks")
 def perks(profile, ctx):
     pts = E.perk_points(profile)
-    lines = []
+    tiles = []
     for key, perk in D.PERKS.items():
         have = E.perk_rank(profile, key)
-        lines.append(f"{perk['emoji']} **{perk['name']}** {have}/{perk['ranks']} - {perk['desc']}")
-    actions, selects = [], []
-    has_voice = profile.get("words", 0) > 0
-    sections = [common.section("Perks", lines)]
-    if has_voice:
+        maxed = have >= perk["ranks"]
+        can = pts > 0 and not maxed
+        tiles.append(common.tile(perk["name"], icon=f"a:perk_{key}|i:star", pips=(have, perk["ranks"]),
+                                 sub=_PERK_EFFECT.get(key, "per rank"), state="max" if maxed else "ready" if can else None,
+                                 act="take" if can else None, body={"value": key} if can else None,
+                                 info=perk["desc"]))
+    sections = [common.section("Perks", tiles=tiles, cols=2)]
+    if profile.get("words", 0) > 0:
         breath = E.voice_charges(profile)
         full = breath >= profile["words"]
-        state = ("your breath is already **full** - nothing to restore"
-                 if full else f"breath {breath}/{profile['words']}")
-        sections.append(common.section("Meditation", [
-            f"🧘 Spend a point to still the mind and restore the Voice in full ({state}). "
-            f"The Greybeards approve. ({int(profile.get('meditations') or 0)} so far)"]))
-        hint = ("Your breath is already full." if full else "" if pts > 0 else "No perk points to spend.")
-        actions.append(common.action("meditate", "Meditate - breath already full" if full else "Meditate (1 pt)",
-                                     "🧘", "secondary" if full or not pts else "primary",
-                                     disabled=full or pts <= 0, hint=hint))
-    opts = [common.option(key, f"{perk['name']} ({E.perk_rank(profile, key)}/{perk['ranks']})", perk["desc"],
-                          perk["emoji"])
-            for key, perk in D.PERKS.items() if E.perk_rank(profile, key) < perk["ranks"]]
-    if pts > 0 and opts:
-        selects.append(common.select("take", "Spend a perk point...", opts))
+        can = not full and pts > 0
+        sections.append(common.section("Meditate", tiles=[common.tile(
+            "Meditate", icon="i:shout", value=f"{breath}/{profile['words']}", sub="1 point",
+            state="ready" if can else "locked", act="meditate" if can else None,
+            info="Your breath is already full." if full else "No perk points to spend.")]))
     return common.panel("perks", "📜 Perks", back="character",
-                        blurb=[f"One point per level. Points to spend: **{pts}**"],
-                        stats=[common.stat("Perk points", pts, "📜")], sections=sections,
-                        actions=actions, selects=selects)
+                        blurb=["One perk point per level.",
+                               "Meditating spends a point to restore the Voice in full. The Greybeards approve "
+                               f"({int(profile.get('meditations') or 0)} so far)."],
+                        stats=[common.stat("Points", pts, "📜")], sections=sections)
 
 
 @act("perks")
@@ -196,52 +182,49 @@ async def perks_act(profile, ctx, action, body):
 def masteries(profile, ctx):
     chosen = profile.get("doctrines") or {}
     sections = []
-    if chosen:
-        rows = []
-        for sk in chosen:
-            for ch in E.doctrine_keys(profile, sk):
-                doc = D.DOCTRINES.get(sk, {}).get(ch)
-                if doc:
-                    rows.append(f"{doc['emoji']} **{doc['name']}** ({_SKILL_LABELS.get(sk, sk)}) - {doc['desc']}")
-        sections.append(common.section("Your Doctrines", rows))
+    owned = []
+    for sk in chosen:
+        for ch in E.doctrine_keys(profile, sk):
+            doc = D.DOCTRINES.get(sk, {}).get(ch)
+            if doc:
+                owned.append(common.tile(doc["name"], icon=f"a:skill_{sk}|i:{_SKILL_ICON.get(sk, 'star')}",
+                                         sub=_SKILL_LABELS.get(sk, sk), state="done", info=doc["desc"]))
     stars = E.legendary_stars(profile)
     if stars:
-        sections.append(common.section("Legendary skills", [f"⭐ **Legendary skills reset:** {stars}"]))
+        owned.append(common.tile("Stars", icon="i:star", value=stars, info="Legendary skills reset."))
+    if owned:
+        sections.append(common.section("Yours", tiles=owned, cols=3))
     open_choices = E.doctrine_choices_open(profile)
-    if open_choices:
-        rows = []
-        for sk in open_choices:
-            pair = "  vs  ".join(f"{D.DOCTRINES[sk][c]['emoji']} {D.DOCTRINES[sk][c]['name']}"
-                                 for c in E.doctrine_options_open(profile, sk))
-            rows.append(f"{_SKILL_LABELS.get(sk, sk)}: {pair}")
-        sections.append(common.section("Doctrines to choose (a skill just hit 100)", rows))
-    elif not chosen:
-        sections.append(common.section("Doctrines", ["No skill at 100 yet. Master one and its Doctrine unlocks here."]))
-    selects = []
-    if open_choices:
+    for sk in open_choices:
         opts = []
-        for sk in open_choices:
-            for ch in E.doctrine_options_open(profile, sk):
-                doc = D.DOCTRINES[sk][ch]
-                opts.append(common.option(f"{sk}:{ch}", f"{_SKILL_LABELS.get(sk, sk)}: {doc['name']}",
-                                          doc["desc"], doc["emoji"]))
-        selects.append(common.select("doctrine", "Choose a Doctrine (permanent)...", opts))
+        for ch in E.doctrine_options_open(profile, sk):
+            doc = D.DOCTRINES[sk][ch]
+            opts.append(common.tile(doc["name"], icon=f"a:skill_{sk}|i:{_SKILL_ICON.get(sk, 'star')}", sub="permanent",
+                                    state="ready", act="doctrine", body={"value": f"{sk}:{ch}"},
+                                    confirm=f"Learn {doc['name']}? It is permanent. {doc['desc']}", info=doc["desc"]))
+        sections.append(common.section(_SKILL_LABELS.get(sk, sk), tiles=opts))
     ready = E.legendary_ready(profile)
     if ready:
-        opts = []
+        leg = []
         for sk in ready:
             more = len(E.doctrine_options_open(profile, sk)) > 0
-            desc = ("Resets to 15, keeps its Doctrine - re-master it to earn the other."
-                    if more else "Resets this skill to 15. Keeps its Doctrines.")
-            opts.append(common.option(sk, f"{_SKILL_LABELS.get(sk, sk)} → Legendary", desc, "⭐"))
-        selects.append(common.select("legendary", "Make a skill Legendary (reset to 15 for a ⭐)...", opts))
+            leg.append(common.tile(_SKILL_LABELS.get(sk, sk), icon=f"a:skill_{sk}|i:star", sub="reset for a star",
+                                   state="ready", act="legendary", body={"value": sk},
+                                   confirm=f"Make {_SKILL_LABELS.get(sk, sk)} Legendary? It resets to 15 and keeps "
+                                           f"its Doctrine{' - re-master it to earn the other' if more else ''}.",
+                                   info="Resets to 15 for a star. The Doctrine stays."))
+        sections.append(common.section("Legendary", tiles=leg, cols=3))
+    if not owned and not open_choices:
+        s = profile["skills"]
+        sections.append(common.section("Reach 100", tiles=[
+            _skill_tile(k, s.get(k, 0), value=s.get(k, 0), meter=(s.get(k, 0), 100), state="locked",
+                        info="A Doctrine unlocks at 100.") for k in _SKILL_LABELS], cols=3))
     return common.panel(
         "masteries", "✨ Masteries", back="character",
         blurb=["Every skill you carry to **100** unlocks a permanent **Doctrine** - pick one of two. Make a "
                "mastered skill **Legendary** to reset it to 15 for a ⭐ (the Doctrine stays) - carry it back to 100 "
-               "and the OTHER Doctrine is yours too. This is how two maxed Dragonborn end up fighting differently."],
-        stats=[common.stat("Doctrines open", len(open_choices), "✨"), common.stat("Legendary stars", stars, "⭐")],
-        sections=sections, selects=selects)
+               "and the OTHER Doctrine is yours too."],
+        sections=sections)
 
 
 @act("masteries")
@@ -271,15 +254,34 @@ async def masteries_act(profile, ctx, action, body):
 
 # ---- collection --------------------------------------------------------------------------------------------
 
+_BOOK_ICON = {"Bestiary": "skull", "Marked foes": "eye", "Dragon Wall": "wing", "Encounters": "rune",
+              "Places cleared": "door", "Recipes brewed": "flask", "Pacts honoured": "diamond",
+              "Legends slain": "crown", "Pit champions": "sword", "Companions": "heart", "Wonders": "star",
+              "Cairn depths": "soul"}
+
+
 @view("collection")
 def collection(profile, ctx):
-    rows = []
-    for emoji, label, done, total, _missing in E.collection_summary(profile):
-        rows.append(f"{emoji} **{label}**  {_bar(done, 0, max(1, total), 6)}  {done}/{total}")
-    return common.panel("collection", f"📦 The Collection Log - {E.collection_pct(profile)}%", back="character",
+    pct = E.collection_pct(profile)
+    book = []
+    for _emoji, label, done, total, missing in E.collection_summary(profile):
+        book.append(common.tile(label, icon=f"i:{_BOOK_ICON.get(label, 'star')}", value=f"{done}/{total}",
+                                meter=(done, max(1, total)), state="done" if not missing else None,
+                                info=f"{len(missing)} still to find." if missing else "Complete."))
+    owned = set(profile.get("wonders") or [])
+    wonders = []
+    for key, w in D.WONDERS.items():
+        if key in owned:
+            wonders.append(common.tile(w["name"], icon=f"a:wonder_{key}|i:star", state="done", info=w["blurb"]))
+        else:
+            wonders.append(common.tile("???", icon=f"a:wonder_{key}|i:diamond", state="locked", info="Not found yet."))
+    return common.panel("collection", "📦 Collection", back="character",
                         blurb=["Everything unique, ever. Fill the book."],
-                        stats=[common.stat("Complete", f"{E.collection_pct(profile)}%", "📦")],
-                        sections=[common.section("The book", rows)])
+                        sections=[common.section("Complete", tiles=[common.tile(
+                                      "Book", icon="s:collection", value=f"{pct}%", meter=(pct, 100),
+                                      state="done" if pct >= 100 else None)], cols=1),
+                                  common.section("The book", tiles=book, cols=3),
+                                  common.section("Wonders", tiles=wonders, cols=4)])
 
 
 # ---- records -----------------------------------------------------------------------------------------------
@@ -288,75 +290,73 @@ def collection(profile, ctx):
 def records(profile, ctx):
     r = E.records_of(profile)
     st = profile["stats"]
-    bests = [("💰", "Richest satchel banked", r.get("satchel"), "septims"),
-             ("⚔️", "Most kills in one delve", r.get("kills_delve"), "kills"),
-             ("🩸", "Biggest single kill", r.get("kill_loot"), "septims"),
-             ("💀", "Deepest Soul Cairn descent", r.get("depth"), "floors"),
-             ("🔥", "Longest delve streak", r.get("streak"), "days"),
-             ("🗡️", "Best Pit rank", r.get("pit_rank"), None)]
-    best_rows = []
-    for emoji, label, val, unit in bests:
-        if val:
-            shown = E.pit_title(val) if label.startswith("Best Pit") else f"{val:,}{' ' + unit if unit else ''}"
-            best_rows.append(f"{emoji} **{label}**: {shown}")
-        else:
-            best_rows.append(f"{emoji} {label}: no mark set yet")
-    career = [f"{st['delves']} delves · {st['clears']} cleared · {st['deaths']} deaths · "
-              f"{st['kills']} kills · {st['dragons']} dragons · {st['sneaks']} sneaks · "
-              f"{st['persuades']} persuasions · {st['sweetrolls']} sweetrolls · "
-              f"{int(st.get('pact_clears', 0))} pact clears · {int(profile.get('meditations') or 0)} meditations"]
+    career = [("Delves", "delves", "door"), ("Cleared", "clears", "shield"), ("Kills", "kills", "sword"),
+              ("Dragons", "dragons", "wing"), ("Deaths", "deaths", "skull"), ("Sneaks", "sneaks", "hood"),
+              ("Persuades", "persuades", "speech"), ("Sweetrolls", "sweetrolls", "coin"),
+              ("Pact clears", "pact_clears", "rune")]
+    tiles = [common.tile(label, icon=f"i:{icon}", value=f"{int(st.get(key, 0)):,}") for label, key, icon in career]
+    tiles.append(common.tile("Meditations", icon="i:shout", value=int(profile.get("meditations") or 0)))
     if st.get("launched"):
-        career.append(f"...and launched into low orbit by a giant, {st['launched']} time(s).")
-    sections = [common.section("Personal bests", best_rows), common.section("Career deeds", career)]
+        tiles.append(common.tile("Launched", icon="i:wing", value=st["launched"], info="Into low orbit, by a giant."))
+
+    def best(title, icon, val, coin=False, shown=None):
+        if val:
+            return common.tile(title, icon=f"i:{icon}", cost=int(val) if coin else None,
+                               value=None if coin else (shown if shown is not None else f"{val:,}"))
+        return common.tile(title, icon=f"i:{icon}", value="-", state="locked", info="No mark set yet.")
+
+    bests = [best("Best satchel", "coin", r.get("satchel"), coin=True),
+             best("Delve kills", "sword", r.get("kills_delve")),
+             best("Biggest kill", "skull", r.get("kill_loot"), coin=True),
+             best("Cairn depth", "soul", r.get("depth")),
+             best("Delve streak", "flame", r.get("streak")),
+             best("Pit rank", "crown", r.get("pit_rank"),
+                  shown=E.pit_title(r["pit_rank"]) if r.get("pit_rank") else None)]
+    sections = [common.section("Career", tiles=tiles, cols=3), common.section("Bests", tiles=bests, cols=3)]
     try:
         from lib.features.skyrim import badges as B
         got, total, missing = B.progress(profile)
         if total:
-            rows = [f"{got}/{total} earned (each pays UKPence the first time)"]
-            if missing:
-                rows.append("Still out there: " + "  ·  ".join(missing[:6])
-                            + (f"  (+{len(missing) - 6} more)" if len(missing) > 6 else ""))
-            sections.append(common.section("🎖️ Server badges", rows))
+            sections.append(common.section("Badges", tiles=[common.tile(
+                "Badges", icon="i:crown", value=f"{got}/{total}", meter=(got, total),
+                state="done" if not missing else None,
+                info=("Next: " + ", ".join(missing[:3])) if missing else "All earned.")], cols=1))
     except Exception:
         log.debug("skyrim badge progress line failed", exc_info=True)
-    rivalry = E.rivalry_lines(profile)
-    if rivalry:
-        sections.append(common.section("The rivalry ledger (ghost duels)", rivalry[:6]))
-    stats = [common.stat("Delves", st["delves"], "🗺️"), common.stat("Cleared", st["clears"], "🏰"),
-             common.stat("Kills", st["kills"], "⚔️"), common.stat("Dragons", st["dragons"], "🐉"),
-             common.stat("Deaths", st["deaths"], "💀")]
-    return common.panel("records", "🎖️ Hall of Records", back="character",
-                        blurb=["Personal bests, kept forever. Every delve is an attempt."],
-                        stats=stats, sections=sections)
+    rivals = []
+    names = E.all_profiles() if profile.get("rivals") else {}
+    for uid, rv in list((profile.get("rivals") or {}).items())[:6]:
+        w, l = int(rv.get("w", 0)), int(rv.get("l", 0))
+        rivals.append(common.tile(names.get(uid, {}).get("name", "A rival"), icon="i:sword", value=f"{w}-{l}",
+                                  state="done" if w > l else None))
+    if rivals:
+        sections.append(common.section("Rivals", tiles=rivals, cols=3))
+    return common.panel("records", "🎖️ Records", back="character",
+                        blurb=["Personal bests, kept forever. Every delve is an attempt."], sections=sections)
 
 
 # ---- companion ---------------------------------------------------------------------------------------------
 
+_PET_EDGE = {"meeko": "blocks a wound", "vix": "+8% ingredients", "pincer": "+5% septims", "corvus": "+2% crit"}
+
+
 @view("companion")
 def companion(profile, ctx):
     owned = profile.get("companions") or []
-    rows = []
-    if not owned:
-        rows.append("The road has offered you no friends yet. Keep an eye out for the 🐾 **stray** - "
-                    "something small may choose you.")
-    for key in D.COMPANIONS:
-        pet = D.COMPANIONS[key]
+    tiles = []
+    for key, pet in D.COMPANIONS.items():
         if key in owned:
-            tick = "🐾" if profile.get("companion") == key else "▫️"
-            rows.append(f"{tick} {pet['emoji']} **{pet['name']}** ({pet['species']}) - {pet['passive']}")
+            active = profile.get("companion") == key
+            tiles.append(common.tile(pet["name"], icon=f"s:{pet['art']}", sub=_PET_EDGE.get(key, "helps you"),
+                                     state="done" if active else None, act=None if active else "choose",
+                                     body=None if active else {"value": key}, info=pet["passive"]))
         else:
-            rows.append("❔ Someone out there hasn't found you yet...")
-    selects = []
-    if len(owned) > 1:
-        opts = [common.option(k, D.COMPANIONS[k]["name"], D.COMPANIONS[k]["passive"], D.COMPANIONS[k]["emoji"],
-                              chosen=profile.get("companion") == k)
-                for k in owned if k in D.COMPANIONS]
-        selects.append(common.select("choose", "Who walks with you today?", opts))
+            tiles.append(common.tile("???", icon="i:heartEmpty", state="locked", info="Not found yet."))
     active = E.active_companion(profile)
     return common.panel("companion", "🐾 Companions", art=active.get("art") if active else None, back="character",
-                        blurb=["Strays found on the road, kept forever. One walks with you at a time."],
-                        stats=[common.stat("Found", f"{len(owned)}/{len(D.COMPANIONS)}", "🐾")],
-                        sections=[common.section("Your companions", rows)], selects=selects)
+                        blurb=["Strays found on the road, kept forever. One walks with you at a time.",
+                               "Keep an eye out for the stray."],
+                        sections=[common.section("Walks with you", tiles=tiles, cols=2)])
 
 
 @act("companion")
@@ -380,6 +380,7 @@ async def companion_act(profile, ctx, action, body):
 # the profile (tied to the legend rank they were made at, so a new life starts with none), surviving a restart. The
 # inherited ability is saved on the profile too, like views.py does.
 
+
 def _picks(profile: dict) -> dict:
     rank = E.legacy_rank(profile)
     pk = profile.get("hall_picks")
@@ -388,53 +389,63 @@ def _picks(profile: dict) -> dict:
     return pk
 
 
+_DEED_SHORT = {"warden_clear": "Rune Warden", "caravan_rescue": "Scout home", "vault_quiet": "Quiet vault",
+               "warden_styles": "Three styles", "caravan_guard": "Guard duty", "vault_parley": "Parley",
+               "reborn": "Reborn", "cairn_20": "Cairn 20", "faction_story": "Faction story"}
+
+
 def _hall_sections(profile) -> list:
     lg = E.legacy(profile)
     hall = E.H.ensure(profile)
     sections = []
     owned = []
     for b in lg.get("boons", []) + hall["boons"]:
-        boon = D.BOONS.get(b) or D.HALL_BOONS.get(b)
-        if boon:
-            owned.append(f"{boon['emoji']} **{boon['name']}** - {boon['desc']}")
-    sections.append(common.section("Your boons (forever)", owned))
-    deeds = []
-    if E.legacy_rank(profile) < D.LEGACY_MAX:
-        deeds.append("Deeds can be earned now; their boons awaken at Legend 5.")
+        if b in D.BOONS:
+            owned.append(common.tile(D.BOONS[b]["name"], icon=f"a:boon_{b}|i:crown", state="done", info=D.BOONS[b]["desc"]))
+        elif b in D.HALL_BOONS:
+            owned.append(common.tile(D.HALL_BOONS[b]["name"], icon=f"a:hallboon_{b}|i:crown", state="done",
+                                     info=D.HALL_BOONS[b]["desc"]))
+    if owned:
+        sections.append(common.section("Boons", tiles=owned, cols=3))
+    asleep = E.legacy_rank(profile) < D.LEGACY_MAX
     for chapter in D.HALL_CHAPTERS:
         boon = D.HALL_BOONS[chapter["boon"]]
-        deeds.append(f"**{chapter['name']}** → {boon['emoji']} {boon['name']}")
-        for key in chapter["deeds"]:
-            deeds.append(f"{'✅' if key in hall['deeds'] else '▫️'} {D.HALL_DEEDS[key]}")
-    sections.append(common.section("Hall deeds (Skyrim records, earned automatically)", deeds))
+        tiles = [common.tile(_DEED_SHORT.get(key, "Deed"), icon="i:star", state="done" if key in hall["deeds"] else "locked",
+                             info=D.HALL_DEEDS[key]) for key in chapter["deeds"]]
+        has = chapter["boon"] in hall["boons"]
+        tiles.append(common.tile(boon["name"], icon=f"a:hallboon_{chapter['boon']}|i:crown",
+                                 state="done" if has else "locked",
+                                 info=boon["desc"] + (" Awakens at Legend 5." if asleep else "")))
+        sections.append(common.section(chapter["name"], tiles=tiles, cols=4))
     stories = []
     for key, saved in hall["stories"].items():
         if key in D.FACTION_STORIES:
             spec = D.FACTION_STORIES[key]
-            stories.append(f"📜 **{spec['name']}** · {spec['title'] if saved.get('complete') else 'first chapter remembered'}")
-    sections.append(common.section("Stories", stories))
+            stories.append(common.tile(spec["name"], icon=f"a:faction_{key}|i:star",
+                                       sub=spec["title"] if saved.get("complete") else "begun",
+                                       state="done" if saved.get("complete") else None))
+    if stories:
+        sections.append(common.section("Stories", tiles=stories, cols=3))
     legends = []
     for i, ep in enumerate(lg.get("epitaphs") or [], start=1):
         boon = D.BOONS.get(ep.get("boon"), {})
-        legends.append(f"⭐ **Legend {i} - {ep.get('name', '?')}**: {ep.get('days', 0)} days, "
-                       f"level {ep.get('level', '?')}, {ep.get('dragons', 0)} dragons, Alduin x{ep.get('alduin', 0)}."
-                       + (f" Took {boon['name']}." if boon else ""))
-        if ep.get("line"):
-            legends.append(ep["line"])
-    sections.append(common.section("Your legends", legends))
+        legends.append(common.tile(f"Legend {i}", icon="i:crown", value=f"L{ep.get('level', '?')}", sub=str(ep.get("name", "?")),
+                                   state="done", info=(f"{ep.get('days', 0)} days, {ep.get('dragons', 0)} dragons, "
+                                                       f"Alduin x{ep.get('alduin', 0)}." + (f" Took {boon['name']}." if boon else "")
+                                                       + (f" {ep['line']}" if ep.get("line") else ""))))
+    if legends:
+        sections.append(common.section("Your legends", tiles=legends, cols=3))
     others = []
     for uid, other in E.all_profiles().items():
         if int(uid) == int(profile["user_id"]):
             continue
         for i, ep in enumerate((other.get("legacy") or {}).get("epitaphs") or [], start=1):
             others.append((other.get("name", "?"), i, ep))
-    seats = []
-    for name, i, ep in others[-8:]:
-        boon = D.BOONS.get(ep.get("boon"), {})
-        seats.append(f"⭐ **{name}**, Legend {i} - {ep.get('days', 0)} days, level {ep.get('level', '?')}, "
-                     f"{ep.get('dragons', 0)} dragons, Alduin x{ep.get('alduin', 0)}."
-                     + (f" Took {boon['name']}." if boon else ""))
-    sections.append(common.section("The other seats", seats))
+    seats = [common.tile(name, icon="i:crown", value=f"L{ep.get('level', '?')}", sub=f"Legend {i}",
+                         info=f"{ep.get('days', 0)} days, {ep.get('dragons', 0)} dragons, Alduin x{ep.get('alduin', 0)}.")
+             for name, i, ep in others[-6:]]
+    if seats:
+        sections.append(common.section("Other seats", tiles=seats, cols=3))
     return sections
 
 
@@ -449,31 +460,31 @@ def hall(profile, ctx):
                        and i["choice"] == selected.get("choice")), None)
     boon_key = pk["boon"] if pk["boon"] in offer else None
     stone_key = pk["stone"] if pk["stone"] in D.STONES else profile["stone"]
-    sections = _hall_sections(profile)
-    selects, actions = [], []
-    blurb = ["Retire a champion and begin again. Level, skills, gear, gold, perks and the Voice reset to a fresh "
-             "start; your collection, records, wonders, companions and the estate persist. The first five legends "
-             "choose a boon; later lives add a new seat, with three more boons earned through Hall deeds."]
+    lg_rank = E.legacy_rank(profile)
+    head = [common.tile("Seats", icon="i:crown", value=lg_rank),
+            common.tile("Retire", icon="s:hall_of_legends", state="ready" if ready else "locked",
+                        info="The Hall is ready for you." if ready else f"Needs {common.clean(req_line)}.")]
+    if lg_rank >= D.LEGACY_MAX:
+        h = E.H.ensure(profile)
+        head.append(common.tile("Deeds", icon="i:star", value=f"{len(h['deeds'])}/{len(D.HALL_DEEDS)}"))
+    sections = [common.section("Hall", tiles=head, cols=3)]
+    actions = []
     if ready:
-        sections.append(common.section("Ready", [
-            "🏛️ **The Hall is ready for you.** "
-            + ("Choose a boon, then retire." if offer else "Retire again to begin another life.")
-            + " There is no undoing it.",
-            "🪨 The one who wakes on the cart is a stranger: you may take a **different Guardian Stone** on the "
-            "way out."]))
         if offer:
-            selects.append(common.select("boon", "🏛️ Choose your legend's boon...", [
-                common.option(k, D.BOONS[k]["name"], D.BOONS[k]["desc"], D.BOONS[k]["emoji"], chosen=k == boon_key)
-                for k in offer]))
+            sections.append(common.section("Pick a boon", tiles=[
+                common.tile(D.BOONS[k]["name"], icon=f"a:boon_{k}|i:crown", state="done" if k == boon_key else "ready",
+                            act="boon", body={"value": k}, info=D.BOONS[k]["desc"]) for k in offer]))
         if inheritance:
-            sections.append(common.section("Inherited ability", [
-                chosen_inh["label"] if chosen_inh else "Choose one below before retiring."]))
-            selects.append(common.select("inherit", "Carry one learned ability into your next life", [
-                common.option(f"{i['skill']}:{i['choice']}", i["label"], chosen=i is chosen_inh)
-                for i in inheritance[:25]]))
-        selects.append(common.select("stone", "🪨 Wake under a different Guardian Stone...", [
-            common.option(k, s["name"], s["blurb"], s["emoji"], chosen=k == stone_key)
-            for k, s in D.STONES.items()]))
+            sections.append(common.section("Carry an ability", tiles=[
+                common.tile(D.DOCTRINES[i["skill"]][i["choice"]]["name"],
+                            icon=f"a:skill_{i['skill']}|i:{_SKILL_ICON.get(i['skill'], 'star')}",
+                            sub=_SKILL_LABELS.get(i["skill"], i["skill"]),
+                            state="done" if i is chosen_inh else "ready", act="inherit",
+                            body={"value": f"{i['skill']}:{i['choice']}"}) for i in inheritance[:25]], cols=3))
+        sections.append(common.section("Wake under", tiles=[
+            common.tile(s["name"].replace("The ", "").replace(" Stone", ""), icon="i:rune",
+                        state="done" if k == stone_key else None, act="stone", body={"value": k}, info=s["blurb"])
+            for k, s in D.STONES.items()], cols=3))
         b = D.BOONS.get(boon_key)
         stone = D.STONES[stone_key]
         swapping = stone_key != profile["stone"]
@@ -490,16 +501,12 @@ def hall(profile, ctx):
                 else "Choose an ability to inherit first." if inheritance and not chosen_inh else "")
         actions.append(common.action("retire", "Retire them, forever", "🏛️", "danger", disabled=bool(hint),
                                      hint=hint, confirm=common.clean(confirm)))
-    else:
-        sections.append(common.section("Next retirement", [f"The next retirement asks: {req_line}."]))
-    lg_rank = E.legacy_rank(profile)
-    stats = [common.stat("Seats", lg_rank, "🏛️"),
-             common.stat("Next retirement", "ready" if ready else req_line, "🎯")]
-    if lg_rank >= D.LEGACY_MAX:
-        h = E.H.ensure(profile)
-        stats.append(common.stat("Hall deeds", f"{len(h['deeds'])}/{len(D.HALL_DEEDS)}", "▫️"))
+    sections += _hall_sections(profile)
+    blurb = ["Retire a champion and begin again. Level, skills, gear, gold, perks and the Voice reset to a fresh "
+             "start; your collection, records, wonders, companions and the estate persist. The first five legends "
+             "choose a boon; later lives add a new seat, with three more boons earned through Hall deeds."]
     return common.panel("hall", "🏛️ The Hall of Legends", art="hall_of_legends", back="character",
-                        blurb=blurb, stats=stats, sections=sections, actions=actions, selects=selects)
+                        blurb=blurb, sections=sections, actions=actions)
 
 
 @act("hall")

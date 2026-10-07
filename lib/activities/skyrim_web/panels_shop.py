@@ -85,21 +85,27 @@ async def shop_act(profile, ctx, action, body):
 
 # ---- property ----------------------------------------------------------------------------------------------
 
+_HOME_ICONS = {"breezehome": "s:homestead_1", "alchemy_lab": "i:flask", "trophy_room": "i:crown"}
+
+
 @view("property")
 def property_(profile, ctx):
-    lines, opts = [], []
+    tiles = []
     for key, item in D.HOME_ITEMS.items():
-        owned = E.home_owned(profile, key)
-        tick = "✅ owned" if owned else f"{item['price']:,} septims"
-        lines.append(f"{item['emoji']} **{item['name']}** ({tick}) - {item['desc']}")
-        if not owned and (not item["requires"] or E.home_owned(profile, item["requires"])):
-            opts.append(common.option(key, f"Buy {item['name']} ({item['price']:,})", item["desc"], item["emoji"]))
-    return common.panel(
-        "property", "🏠 Property - Belethor's side business", back="shop",
-        blurb=["\"A house? I know a man who knows a Jarl. For a price.\""],
-        stats=[common.stat("Septims", f"{profile['septims']:,}", "💰")],
-        sections=[common.section("On the market", lines)],
-        selects=[common.select("buy", "Buy a property or furnishing...", opts)])
+        icon = _HOME_ICONS.get(key, "i:diamond")
+        if E.home_owned(profile, key):
+            tiles.append(common.tile(item["name"], icon=icon, state="done", info=item["desc"]))
+        elif item["requires"] and not E.home_owned(profile, item["requires"]):
+            need = D.HOME_ITEMS[item["requires"]]["name"]
+            tiles.append(common.tile(item["name"], icon=icon, cost=item["price"], sub=f"needs {need}", state="locked",
+                                     info=f"Buy {need} first. {item['desc']}"))
+        else:
+            tiles.append(common.tile(item["name"], icon=icon, cost=item["price"],
+                                     state="ready" if profile["septims"] >= item["price"] else None,
+                                     act="buy", body={"value": key}, info=item["desc"]))
+    return common.panel("property", "🏠 Property", back="shop",
+                        blurb=["\"A house? I know a man who knows a Jarl. For a price.\""],
+                        sections=[common.section("On the market", tiles=tiles, cols=3)])
 
 
 @act("property")
@@ -119,27 +125,29 @@ async def property_act(profile, ctx, action, body):
 @view("rumours")
 def rumours(profile, ctx):
     state = E.rumours_of(profile)
-    lines = []
+    lvl = E.level(profile)
+    tiles = []
     for key, r in D.RUMOURS.items():
         loc = D.LOCATIONS[r["loc"]]
+        icon = f"s:{loc['art']}" if loc.get("art") else "i:skull"
+        name = r["name"].capitalize()
         if state.get(key) == "slain":
-            lines.append(f"✅ {r['emoji']} **{r['name'].capitalize()}** - settled. {loc['name']} stands quiet, "
-                         f"because of you.")
+            tiles.append(common.tile(name, icon=icon, sub="settled", state="done",
+                                     info=f"{loc['name']} stands quiet, because of you."))
         elif state.get(key) == "heard":
-            lines.append(f"🗺️ {r['emoji']} **{r['name'].capitalize()}** - heard. **{loc['name']}** waits on your "
-                         f"Adventure map.")
+            tiles.append(common.tile(name, icon=icon, sub=loc["name"], state="ready", nav="map"))
+        elif lvl < r["min_level"]:
+            tiles.append(common.tile(name, icon=icon, cost=r["price"], sub=f"level {r['min_level']}", state="locked",
+                                     info=f"Come back at level {r['min_level']}."))
         else:
-            lines.append(f"❔ {r['emoji']} **{r['name'].capitalize()}** ({r['price']:,} septims, level "
-                         f"{r['min_level']}+) - {r['blurb']}")
-    opts = [common.option(k, f"{r['name'].capitalize()} ({r['price']:,})", r["blurb"], r["emoji"])
-            for k, r in D.RUMOURS.items() if not state.get(k) and E.level(profile) >= r["min_level"]]
+            tiles.append(common.tile(name, icon=icon, cost=r["price"],
+                                     state="ready" if profile["septims"] >= r["price"] else None,
+                                     act="buy", body={"value": key}, info=r["blurb"]))
     return common.panel(
-        "rumours", "🗣️ Rumours - Belethor leans in", back="shop",
+        "rumours", "🗣️ Rumours", back="shop",
         blurb=["\"For a few septims I'll tell you where the LEGENDS sleep. One-time hunts, friend - the kind you "
                "tell grandchildren about. If you get to have any.\""],
-        stats=[common.stat("Septims", f"{profile['septims']:,}", "💰")],
-        sections=[common.section("Whispers", lines)],
-        selects=[common.select("buy", "Buy a whisper...", opts)])
+        sections=[common.section("Whispers", tiles=tiles, cols=3)])
 
 
 @act("rumours")
@@ -158,48 +166,51 @@ async def rumours_act(profile, ctx, action, body):
 
 # ---- the lab bench -----------------------------------------------------------------------------------------
 
+_RECIPE_SUB = {"healing": "+1 potion", "vigor": "+1 heart", "fortitude": "+10% soak", "fury": "+6% attack",
+               "true_shot": "+6% crit"}
+_RECIPE_ICON = {"healing": "i:flask", "vigor": "i:heart", "fortitude": "i:shield", "fury": "i:flame", "true_shot": "i:eye"}
+
+
+def _ing_icon(key):
+    return f"a:ingredient_{key}|i:flask"
+
+
 @view("alchemy")
 def alchemy(profile, ctx):
     pouch = profile.get("ingredients") or {}
     sections = []
-    if pouch:
-        bits = [f"{D.INGREDIENTS[k]['emoji']} {D.INGREDIENTS[k]['name']} ×{n}"
-                for k, n in sorted(pouch.items()) if k in D.INGREDIENTS]
-        sections.append(common.section("Your pouch", ["  ·  ".join(bits)]))
-    else:
-        sections.append(common.section("Your pouch", ["Your pouch is empty. Elites, bounties and dragons drop the "
-                                                      "good stuff."]))
+    bag = [common.tile(D.INGREDIENTS[k]["name"], icon=_ing_icon(k), value=f"x{n}")
+           for k, n in sorted(pouch.items()) if k in D.INGREDIENTS and n > 0]
+    if bag:
+        sections.append(common.section("Pouch", tiles=bag, cols=4))
     stock = E.elixir_stock(profile)
     if stock:
-        shelf = "  ·  ".join(f"{D.RECIPES[k]['emoji']} {D.RECIPES[k]['name']} ×{n}" for k, n in sorted(stock.items()))
-        sections.append(common.section("🧪 Your elixir shelf", [
-            shelf, "Pick which to drink on the Adventure picker before you set out - one of each type per delve, "
-                   "effects stack."]))
-    lab = E.home_owned(profile, "alchemy_lab")
-    selects = []
-    if not lab:
-        sections.append(common.section("Locked", ["🔒 You need an **Alchemy Lab** (a Breezehome upgrade in "
-                                                  "Property) to brew."]))
+        sections.append(common.section("Elixirs", tiles=[
+            common.tile(D.RECIPES[k]["name"], icon=f"a:recipe_{k}|{_RECIPE_ICON.get(k, 'i:flask')}", value=f"x{n}",
+                        sub=_RECIPE_SUB.get(k)) for k, n in sorted(stock.items()) if k in D.RECIPES], cols=3))
+    if not E.home_owned(profile, "alchemy_lab"):
+        sections.append(common.section("Brew", tiles=[
+            common.tile("Alchemy Lab", icon="s:alchemy", sub="not yet", state="locked", nav="property",
+                        info="Buy the Alchemy Lab in Property to brew.")], cols=1))
     else:
-        rows = []
+        recipes = []
         for key, r in D.RECIPES.items():
-            cost = "  ".join(f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in r["cost"].items())
-            rows.append(f"{'✅' if E.can_brew(profile, key) else '◻️'} {r['emoji']} **{r['name']}** - {r['desc']}  ({cost})")
-        sections.append(common.section("Recipes", rows))
-        src = E.ingredient_sources()
-        guide = "  ·  ".join(f"{D.INGREDIENTS[k]['emoji']} {', '.join(src[k])}" for k in D.INGREDIENTS if k in src)
-        sections.append(common.section("🏹 Where to hunt", [guide]))
-        opts = [common.option(k, D.RECIPES[k]["name"], D.RECIPES[k]["desc"], D.RECIPES[k]["emoji"])
-                for k in D.RECIPES if E.can_brew(profile, k)]
-        selects.append(common.select("brew", "Brew a recipe...", opts))
-    stats = [common.stat("Potions", f"{profile['potions']}/{E.potion_cap(profile)}", "🧪"),
-             common.stat("Elixirs on the shelf", sum(stock.values()), "⚗️"),
-             common.stat("Alchemy Lab", "yes" if lab else "not yet", "🏠")]
+            icon = f"a:recipe_{key}|{_RECIPE_ICON.get(key, 'i:flask')}"
+            missing = [f"{n - pouch.get(k, 0)}x {D.INGREDIENTS[k]['name']}" for k, n in r["cost"].items()
+                       if pouch.get(k, 0) < n]
+            if E.can_brew(profile, key):
+                recipes.append(common.tile(r["name"], icon=icon, sub=_RECIPE_SUB.get(key), state="ready",
+                                           act="brew", body={"value": key}, info=r["desc"]))
+            else:
+                recipes.append(common.tile(r["name"], icon=icon, sub=_RECIPE_SUB.get(key), state="locked",
+                                           info="Need " + ", ".join(missing) + "." if missing else r["desc"]))
+        sections.append(common.section("Brew", tiles=recipes, cols=2))
     return common.panel(
-        "alchemy", "⚗️ The Lab Bench", back="shop",
+        "alchemy", "⚗️ Lab Bench", back="shop",
         blurb=["Brew looted ingredients into potions and one-delve elixirs. Ingredients ride at risk in your "
-               "satchel, so it pays to walk out alive."],
-        stats=stats, sections=sections, selects=selects)
+               "satchel, so it pays to walk out alive. Elites, bounties and dragons drop the good stuff. Pick "
+               "elixirs on the Adventure picker before you set out - one of each type per delve."],
+        sections=sections)
 
 
 @act("alchemy")
@@ -225,38 +236,35 @@ async def alchemy_act(profile, ctx, action, body):
 def grindstone(profile, ctx):
     temper = profile.get("temper") or {"weapon": 0, "armour": 0}
     pouch = profile.get("ingredients") or {}
-    lines, actions = [], []
-    for slot, emoji in (("weapon", "⚔️"), ("armour", "🛡️")):
+    tiles = []
+    for slot, fallback in (("weapon", "i:sword"), ("armour", "i:shield")):
         g = temper.get(slot, 0)
-        star = "✦" * g + "·" * (E.TEMPER_MAX_GRADE - g)
+        tier = D.GEAR_TIERS[profile[f"{slot}_tier"]]["name"].lower()
+        icon = f"a:{slot}_{tier}|{fallback}"
+        pips = (g, E.TEMPER_MAX_GRADE)
         if g >= E.TEMPER_MAX_GRADE:
-            lines.append(f"{emoji} **{slot.title()}** [{star}] - honed to perfection.")
-            actions.append(common.action(slot, f"Temper {slot}", emoji, "primary", disabled=True,
-                                         hint="Honed to perfection."))
+            tiles.append(common.tile(slot.title(), icon=icon, pips=pips, state="max", info="Honed to perfection."))
             continue
         c = E.temper_cost(g)
-        mats = "  ".join(f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in c["mats"].items())
         eff = f"+{E.TEMPER_FIGHT_PER_GRADE}% attack" if slot == "weapon" else f"+{E.TEMPER_SOAK_PER_GRADE}% soak"
-        lines.append(f"{emoji} **{slot.title()}** [{star}] → grade {g + 1} ({eff}): {c['septims']:,} septims + {mats}")
-        actions.append(common.action(slot, f"Temper {slot}", emoji, "primary",
-                                     hint=f"{c['septims']:,} septims + {mats}"))
-    sections = [common.section("The stone", lines)]
-    if pouch:
-        sections.append(common.section("🎒 Materials", ["  ".join(
-            f"{D.INGREDIENTS[k]['emoji']}×{n}" for k, n in sorted(pouch.items()) if k in D.INGREDIENTS)]))
-    src = E.ingredient_sources()
-    mats_used = sorted({m for c in D.TEMPER_COSTS for m in c["mats"]})
-    sections.append(common.section("🏹 Where to hunt", ["  ·  ".join(
-        f"{D.INGREDIENTS[m]['emoji']} {D.INGREDIENTS[m]['name']} - {', '.join(src.get(m, ['?']))}"
-        for m in mats_used)]))
-    stats = [common.stat("Septims", f"{profile['septims']:,}", "💰"),
-             common.stat("Weapon temper", f"{temper.get('weapon', 0)}/{E.TEMPER_MAX_GRADE}", "⚔️"),
-             common.stat("Armour temper", f"{temper.get('armour', 0)}/{E.TEMPER_MAX_GRADE}", "🛡️")]
+        mats = ", ".join(f"{n}x {D.INGREDIENTS[k]['name']}" for k, n in c["mats"].items())
+        ok = profile["septims"] >= c["septims"] and all(pouch.get(k, 0) >= n for k, n in c["mats"].items())
+        tiles.append(common.tile(slot.title(), icon=icon, pips=pips, cost=c["septims"], sub=eff,
+                                 state="ready" if ok else None, act=slot, info=f"Needs {mats}."))
+    need = {}
+    for g in range(E.TEMPER_MAX_GRADE):
+        for k in E.temper_cost(g)["mats"]:
+            need[k] = pouch.get(k, 0)
+    sections = [common.section("The stone", tiles=tiles, cols=2)]
+    mats = [common.tile(D.INGREDIENTS[k]["name"], icon=_ing_icon(k), value=f"x{n}") for k, n in sorted(need.items())
+            if k in D.INGREDIENTS]
+    if mats:
+        sections.append(common.section("Materials", tiles=mats, cols=4))
     return common.panel(
-        "grindstone", "🪓 The Grindstone", back="shop",
+        "grindstone", "🪓 Grindstone", back="shop",
         blurb=["Hone gear past its tier with septims and looted materials. Bonuses that the 86% cap can't "
                "swallow: sharper weapons feed **Overkill**, tougher armour soaks more."],
-        stats=stats, sections=sections, actions=actions)
+        sections=sections)
 
 
 @act("grindstone")
@@ -273,38 +281,40 @@ async def grindstone_act(profile, ctx, action, body):
 
 # ---- Daedric pacts -----------------------------------------------------------------------------------------
 
+_PACT_ICON = {"boethiah": "i:sword", "namira": "i:skull", "dagon": "i:flame", "clavicus": "i:door"}
+_PACT_CURSE = {"boethiah": "can miss", "namira": "no potions", "dagon": "crushing hits", "clavicus": "no fleeing"}
+
+
 @view("pacts")
 def pacts(profile, ctx):
     sworn = profile.get("nextpacts") or []
-    lines = []
+    locked = E.level(profile) < E.PACT_MIN_LEVEL
+    tiles = []
     for key, pact in D.PACTS.items():
-        price = pact.get("mult_note") or f"x{pact['mult']:g}"
-        lines.append(f"{'⚖️' if key in sworn else '◻️'} {pact['emoji']} **{pact['name']}** ({price}) - {pact['desc']}")
-    sections = [common.section("The Princes' terms", lines)]
-    stats = [common.stat("Sworn", len(sworn), "⚖️")]
+        icon = f"a:pact_{key}|{_PACT_ICON.get(key, 'i:skull')}"
+        mult = f"x{pact['mult']:g}" + ("+" if pact.get("per_other") else "")
+        curse = _PACT_CURSE.get(key, "a curse")
+        if locked:
+            tiles.append(common.tile(pact["name"].split("'")[0], icon=icon, value=mult, sub=curse, state="locked",
+                                     info=f"The Princes don't bargain with the unproven (level {E.PACT_MIN_LEVEL}+)."))
+            continue
+        now = [k for k in sworn if k != key] if key in sworn else sworn + [key]
+        tiles.append(common.tile(pact["name"].split("'")[0], icon=icon, value=mult, sub=curse,
+                                 state="done" if key in sworn else None, act="swear", body={"values": now},
+                                 info=pact["desc"]))
+    stats = []
     if sworn:
         fake = E.Delve(profile["user_id"], "x", 0, "embershard",
                        [{"kind": "enemy", "key": "skeever", "boss": False, "resolved": False}],
                        hearts=1, shout_charges=0, pacts=sworn)
-        mult = f"x{E.pact_mult(fake):g}"
-        sections.append(common.section("Sworn", [
-            f"Satchel **{mult}** on your next delve (cap x{E.PACT_MULT_CAP:g})."]))
-        stats.append(common.stat("Satchel", mult, "💰"))
-    locked = E.level(profile) < E.PACT_MIN_LEVEL
-    if locked:
-        sections.append(common.section("Locked", [f"🔒 The Princes don't bargain with the unproven "
-                                                   f"(level {E.PACT_MIN_LEVEL}+)."]))
-    opts = [common.option(key, f"{p['name']} ({p.get('mult_note') or 'x' + format(p['mult'], 'g')})", p["desc"],
-                          p["emoji"], chosen=key in sworn) for key, p in D.PACTS.items()]
-    selects = [] if locked else [common.select("swear", "Swear your pacts (pick none to clear)...", opts,
-                                               min=0, max=len(D.PACTS))]
+        stats.append(common.stat("Satchel", f"x{E.pact_mult(fake):g}", "💰"))
     return common.panel(
         "pacts", "⚖️ Daedric Pacts", back="town",
-        blurb=["Swear curses on your **next delve** for a multiplied satchel if you bank it. Death loses "
-               "everything, as ever. Pacts don't bind the Daily, Skuldafn or the Cairn - the Princes want to "
-               "watch you *choose* it."],
-        stats=stats, sections=sections,
-        actions=[common.action("adventure", "To the roads", "🗺️", nav="adventure")], selects=selects)
+        blurb=["Swear curses on your **next delve** for a multiplied satchel if you bank it (cap "
+               f"x{E.PACT_MULT_CAP:g}). Death loses everything, as ever. Pacts don't bind the Daily, Skuldafn or "
+               "the Cairn - the Princes want to watch you *choose* it. Tap a pact again to lift it."],
+        stats=stats, sections=[common.section("Pacts", tiles=tiles, cols=2)],
+        actions=[common.action("adventure", "To the roads", "🗺️", nav="adventure")])
 
 
 @act("pacts")

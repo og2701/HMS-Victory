@@ -97,11 +97,17 @@ def test_every_panel_builds(prof):
 
 def test_character_nav_and_hall_gate(prof):
     p = PANELS["character"]["view"](prof, CTX)
-    ids = [a["id"] for a in p["actions"]]
-    assert ids == ["masteries", "perks", "collection", "records", "companion"]
-    assert all(a["nav"] == a["id"] for a in p["actions"])
+    navs = [t["nav"] for t in tiles_of(p) if t["nav"]]
+    assert navs == ["perks", "masteries", "collection", "records", "companion"]
+    skills = [t for t in tiles_of(p) if t["meter"]]
+    assert len(skills) == 6 and all(t["meter"][1] == 100 and t["icon"].startswith("a:skill_") for t in skills)
+    assert any(t["badge"] == "Blessed" for t in skills)
+    assert {t["icon"] for t in tiles_of(p)} >= {"a:weapon_iron|i:sword", "a:armour_iron|i:shield"}
     prof["alduin_slain"] = 1
-    assert "hall" in [a["id"] for a in PANELS["character"]["view"](prof, CTX)["actions"]]
+    assert "hall" in [t["nav"] for t in tiles_of(PANELS["character"]["view"](prof, CTX))]
+    level_up(prof, 6)
+    perks_tile = next(t for t in tiles_of(PANELS["character"]["view"](E.get_profile(UID), CTX)) if t["nav"] == "perks")
+    assert perks_tile["state"] == "ready" and perks_tile["badge"]
 
 
 def test_perks_take_and_meditate(prof):
@@ -109,17 +115,25 @@ def test_perks_take_and_meditate(prof):
     refused("perks", "meditate")
     level_up(prof, 6)
     p = PANELS["perks"]["view"](E.get_profile(UID), CTX)
-    assert select(p, "take")["options"]
+    stalwart = next(t for t in tiles_of(p) if t["act"] == "take" and t["body"] == {"value": "stalwart"})
+    assert stalwart["state"] == "ready" and stalwart["pips"] == [0, 2] and stalwart["icon"] == "a:perk_stalwart|i:star"
+    assert not p["selects"]
     r = run("perks", "take", {"value": "stalwart"})
     check_result(r, "perks")
     assert E.get_profile(UID)["perks"]["stalwart"] == 1
+    assert next(t for t in tiles_of(r["panel"]) if t["title"] == "Stalwart Heart")["pips"] == [1, 2]
     refused("perks", "take", {"values": ["nonsense"]})
     refused("perks", "meditate")                                # no Voice yet
     q = E.get_profile(UID)
     q["words"] = 2
     q["voice"] = {"charges": 0, "date": E._today_str()}
     E.save_profile(q)
-    check_result(run("perks", "meditate"), "perks")
+    mt = next(t for t in tiles_of(PANELS["perks"]["view"](E.get_profile(UID), CTX)) if t["title"] == "Meditate")
+    assert mt["act"] == "meditate" and mt["state"] == "ready"
+    r = run("perks", "meditate")
+    check_result(r, "perks")
+    mt = next(t for t in tiles_of(r["panel"]) if t["title"] == "Meditate")
+    assert mt["state"] == "locked" and mt["act"] is None
     assert E.get_profile(UID)["meditations"] == 1
     assert E.voice_charges(E.get_profile(UID)) == 2
     refused("perks", "meditate")                                # breath full
@@ -132,12 +146,16 @@ def test_masteries_doctrine_and_legendary(prof):
     prof["skills"]["blade"] = 100
     E.save_profile(prof)
     p = PANELS["masteries"]["view"](E.get_profile(UID), CTX)
-    opts = select(p, "doctrine")["options"]
-    assert opts and ":" in opts[0]["value"]
-    assert select(p, "legendary")["options"][0]["value"] == "blade"
-    check_result(run("masteries", "doctrine", {"value": opts[0]["value"]}), "masteries")
+    opts = [t for t in tiles_of(p) if t["act"] == "doctrine"]
+    assert len(opts) == 2 and ":" in opts[0]["body"]["value"] and all(t["confirm"] for t in opts)
+    leg = next(t for t in tiles_of(p) if t["act"] == "legendary")
+    assert leg["body"] == {"value": "blade"} and leg["confirm"]
+    r = run("masteries", "doctrine", dict(opts[0]["body"]))
+    check_result(r, "masteries")
     assert E.get_profile(UID)["doctrines"]["blade"]
-    refused("masteries", "doctrine", {"value": opts[1]["value"]})   # slot already used
+    assert any(t["state"] == "done" and t["title"] == D.DOCTRINES["blade"][opts[0]["body"]["value"].split(":")[1]]["name"]
+               for t in tiles_of(r["panel"]))
+    refused("masteries", "doctrine", dict(opts[1]["body"]))   # slot already used
     check_result(run("masteries", "legendary", {"values": ["blade"]}), "masteries")
     q = E.get_profile(UID)
     assert q["skills"]["blade"] == 15 and q["legendary"]["blade"] == 1
@@ -145,22 +163,36 @@ def test_masteries_doctrine_and_legendary(prof):
 
 def test_collection_and_records(prof):
     p = PANELS["collection"]["view"](prof, CTX)
-    assert p["sections"][0]["lines"]
+    wonders = next(s for s in p["sections"] if s["title"] == "Wonders")
+    assert wonders["cols"] == 4 and len(wonders["tiles"]) == len(D.WONDERS)
+    assert all(t["state"] == "locked" and t["info"] == "Not found yet." for t in wonders["tiles"])
+    assert p["sections"][0]["tiles"][0]["meter"] is not None
+    prof["wonders"] = ["golden_sweetroll"]
+    E.save_profile(prof)
+    p = PANELS["collection"]["view"](E.get_profile(UID), CTX)
+    w = next(s for s in p["sections"] if s["title"] == "Wonders")["tiles"]
+    assert w[0]["state"] == "done" and w[0]["icon"] == "a:wonder_golden_sweetroll|i:star" and w[1]["state"] == "locked"
     prof["records"] = {"satchel": 1200, "pit_rank": 2}
     p = PANELS["records"]["view"](prof, CTX)
-    text = " ".join(l for s in p["sections"] for l in s["lines"])
-    assert "1,200 septims" in text and "no mark set yet" in text
+    ts = {t["title"]: t for t in tiles_of(p)}
+    assert ts["Best satchel"]["cost"] == 1200 and ts["Pit rank"]["value"] == E.pit_title(2)
+    assert ts["Delve kills"]["state"] == "locked" and ts["Delve kills"]["info"]
+    assert ts["Delves"]["value"] == "0" and {"Kills", "Dragons", "Deaths", "Cleared"} <= set(ts)
 
 
 def test_companion_choose(prof):
-    assert not PANELS["companion"]["view"](prof, CTX)["selects"]
+    p = PANELS["companion"]["view"](prof, CTX)
+    assert all(t["state"] == "locked" and not t["act"] for t in tiles_of(p))
     refused("companion", "choose", {"value": "meeko"})          # not found yet
     prof["companions"] = ["meeko", "vix"]
     prof["companion"] = "meeko"
     E.save_profile(prof)
     p = PANELS["companion"]["view"](E.get_profile(UID), CTX)
     assert p["art"] == "pet_meeko"
-    assert [o["chosen"] for o in select(p, "choose")["options"]] == [True, False]
+    ts = tiles_of(p)
+    assert [t["state"] for t in ts[:2]] == ["done", None] and ts[0]["act"] is None
+    assert ts[1]["act"] == "choose" and ts[1]["body"] == {"value": "vix"} and ts[1]["icon"] == "s:pet_vix"
+    assert ts[2]["state"] == "locked"
     r = run("companion", "choose", {"value": "vix"})
     check_result(r, "companion")
     assert E.get_profile(UID)["companion"] == "vix" and r["panel"]["art"] == "pet_vix"
@@ -178,13 +210,16 @@ def make_ready_to_retire(p):
 def test_hall_flow(prof):
     p = PANELS["hall"]["view"](prof, CTX)
     assert not p["selects"] and not p["actions"]
+    assert not any(t["act"] for t in tiles_of(p))
+    assert next(t for t in tiles_of(p) if t["title"] == "Retire")["state"] == "locked"
     refused("hall", "retire")
     refused("hall", "boon", {"value": "old_soul"})
     make_ready_to_retire(prof)
     q = E.get_profile(UID)
     p = PANELS["hall"]["view"](q, CTX)
-    offer = [o["value"] for o in select(p, "boon")["options"]]
+    offer = [t["body"]["value"] for t in tiles_of(p) if t["act"] == "boon"]
     assert offer == E.boon_offer(q) and len(offer) == 3
+    assert next(t for t in tiles_of(p) if t["title"] == "Retire")["state"] == "ready"
     retire = next(a for a in p["actions"] if a["id"] == "retire")
     assert retire["disabled"] and retire["confirm"]
     refused("hall", "retire")                                   # no boon picked
@@ -195,7 +230,8 @@ def test_hall_flow(prof):
     r = run("hall", "stone", {"value": other})
     retire = next(a for a in r["panel"]["actions"] if a["id"] == "retire")
     assert not retire["disabled"] and D.BOONS[offer[0]]["name"] in retire["confirm"]
-    assert next(o for o in select(r["panel"], "stone")["options"] if o["value"] == other)["chosen"]
+    assert next(t for t in tiles_of(r["panel"]) if t["act"] == "stone" and t["body"]["value"] == other)["state"] == "done"
+    assert next(t for t in tiles_of(r["panel"]) if t["act"] == "boon" and t["body"]["value"] == offer[0])["state"] == "done"
     r = run("hall", "retire")
     check_result(r, "hall")
     after = E.get_profile(UID)
@@ -207,17 +243,19 @@ def test_hall_flow(prof):
 def test_hall_inherit(prof):
     prof["skills"]["blade"] = 100
     E.save_profile(prof)
-    run("masteries", "doctrine", {"value": select(PANELS["masteries"]["view"](E.get_profile(UID), CTX),
-                                                  "doctrine")["options"][0]["value"]})
+    run("masteries", "doctrine", next(t for t in tiles_of(PANELS["masteries"]["view"](E.get_profile(UID), CTX))
+                                      if t["act"] == "doctrine")["body"])
     make_ready_to_retire(E.get_profile(UID))
     p = PANELS["hall"]["view"](E.get_profile(UID), CTX)
-    inh = select(p, "inherit")["options"]
+    inh = [t for t in tiles_of(p) if t["act"] == "inherit"]
     assert inh
-    boon = select(p, "boon")["options"][0]["value"]
+    boon = next(t for t in tiles_of(p) if t["act"] == "boon")["body"]["value"]
     run("hall", "boon", {"value": boon})
     refused("hall", "retire")                                   # inheritance not chosen
     refused("hall", "inherit", {"value": "blade:nonsense"})
-    check_result(run("hall", "inherit", {"value": inh[0]["value"]}), "hall")
+    r = run("hall", "inherit", dict(inh[0]["body"]))
+    check_result(r, "hall")
+    assert next(t for t in tiles_of(r["panel"]) if t["act"] == "inherit" and t["body"] == inh[0]["body"])["state"] == "done"
     assert E.get_profile(UID)["inheritance"]
     run("hall", "retire")
     assert E.get_profile(UID)["doctrines"]
@@ -271,7 +309,10 @@ def test_shop_dragon_gate_disables(prof):
 
 def test_property_buy(prof):
     p = PANELS["property"]["view"](prof, CTX)
-    assert [o["value"] for o in select(p, "buy")["options"]] == ["breezehome"]   # the rest need the house first
+    ts = {t["title"]: t for t in tiles_of(p)}
+    assert not p["selects"] and set(ts) == {"Breezehome", "Alchemy Lab", "Trophy Room"}
+    assert ts["Breezehome"]["act"] == "buy" and ts["Breezehome"]["body"] == {"value": "breezehome"}
+    assert ts["Alchemy Lab"]["state"] == "locked" and not ts["Alchemy Lab"]["act"]   # the rest need the house first
     refused("property", "buy", {"value": "alchemy_lab"})
     refused("property", "buy", {"value": "breezehome"})         # no coin
     prof["septims"] = 100_000
@@ -279,7 +320,8 @@ def test_property_buy(prof):
     r = run("property", "buy", {"value": "breezehome"})
     check_result(r, "property")
     assert E.home_owned(E.get_profile(UID), "breezehome")
-    assert "alchemy_lab" in [o["value"] for o in select(r["panel"], "buy")["options"]]
+    ts = {t["title"]: t for t in tiles_of(r["panel"])}
+    assert ts["Breezehome"]["state"] == "done" and ts["Alchemy Lab"]["act"] == "buy"
     refused("property", "buy", {"value": "breezehome"})
 
 
@@ -287,15 +329,19 @@ def test_rumours_buy(prof):
     key = next(iter(D.RUMOURS))
     r = D.RUMOURS[key]
     p = PANELS["rumours"]["view"](prof, CTX)
-    assert not p["selects"]                                     # level too low
+    ts = tiles_of(p)
+    assert len(ts) == len(D.RUMOURS) and not p["selects"]
+    assert next(t for t in ts if t["cost"] == r["price"] and t["state"] == "locked")["info"]   # level too low
     refused("rumours", "buy", {"value": key})
     level_up(prof, r["min_level"])
     q = E.get_profile(UID)
     q["septims"] = r["price"]
     E.save_profile(q)
     p = PANELS["rumours"]["view"](E.get_profile(UID), CTX)
-    assert key in [o["value"] for o in select(p, "buy")["options"]]
-    check_result(run("rumours", "buy", {"value": key}), "rumours")
+    assert key in [t["body"]["value"] for t in tiles_of(p) if t["act"] == "buy"]
+    r2 = run("rumours", "buy", {"value": key})
+    check_result(r2, "rumours")
+    assert "map" in [t["nav"] for t in tiles_of(r2["panel"])]   # heard: go and find it
     q = E.get_profile(UID)
     assert q["septims"] == 0 and E.rumours_of(q)[key] == "heard"
     refused("rumours", "buy", {"value": key})
@@ -304,13 +350,17 @@ def test_rumours_buy(prof):
 
 def test_alchemy_brew(prof):
     p = PANELS["alchemy"]["view"](prof, CTX)
-    assert not p["selects"] and any("Alchemy Lab" in l for s in p["sections"] for l in s["lines"])
+    lab = tiles_of(p)[-1]
+    assert not p["selects"] and lab["title"] == "Alchemy Lab" and lab["state"] == "locked" and lab["nav"] == "property"
     refused("alchemy", "brew", {"value": "vigor"})
     prof["home"] = ["alchemy_lab", "breezehome"]
     prof["ingredients"] = {"troll_fat": 1, "blue_flower": 1}
     E.save_profile(prof)
     p = PANELS["alchemy"]["view"](E.get_profile(UID), CTX)
-    assert "vigor" in [o["value"] for o in select(p, "brew")["options"]]
+    ts = {t["title"]: t for t in tiles_of(p)}
+    assert ts["Draught of Vigor"]["state"] == "ready" and ts["Draught of Vigor"]["body"] == {"value": "vigor"}
+    assert ts["Potion of Healing"]["state"] == "locked" and "Bone Meal" in ts["Potion of Healing"]["info"]
+    assert ts["Troll Fat"]["value"] == "x1"
     r = run("alchemy", "brew", {"value": "vigor"})
     check_result(r, "alchemy")
     q = E.get_profile(UID)
@@ -321,7 +371,9 @@ def test_alchemy_brew(prof):
 
 def test_grindstone_temper(prof):
     p = PANELS["grindstone"]["view"](prof, CTX)
-    assert [a["id"] for a in p["actions"]] == ["weapon", "armour"]
+    ts = {t["title"]: t for t in tiles_of(p)}
+    assert not p["actions"] and ts["Weapon"]["act"] == "weapon" and ts["Armour"]["act"] == "armour"
+    assert ts["Weapon"]["pips"] == [0, E.TEMPER_MAX_GRADE] and ts["Weapon"]["cost"] == E.temper_cost(0)["septims"]
     refused("grindstone", "weapon")
     cost = E.temper_cost(0)
     prof["septims"] = cost["septims"]
@@ -335,21 +387,24 @@ def test_grindstone_temper(prof):
     q["temper"]["armour"] = E.TEMPER_MAX_GRADE
     E.save_profile(q)
     p = PANELS["grindstone"]["view"](q, CTX)
-    assert next(a for a in p["actions"] if a["id"] == "armour")["disabled"]
+    assert next(t for t in tiles_of(p) if t["title"] == "Armour")["state"] == "max"
     refused("grindstone", "armour")
 
 
 def test_pacts_swear(prof):
     p = PANELS["pacts"]["view"](prof, CTX)
-    assert not p["selects"]                                     # locked below the level
+    assert not p["selects"] and all(t["state"] == "locked" and not t["act"] for t in tiles_of(p))   # below the level
     refused("pacts", "swear", {"values": ["boethiah"]})
     level_up(prof, E.PACT_MIN_LEVEL)
     p = PANELS["pacts"]["view"](E.get_profile(UID), CTX)
-    sel = select(p, "swear")
-    assert sel["min"] == 0 and sel["max"] == len(D.PACTS)
+    ts = tiles_of(p)
+    assert len(ts) == len(D.PACTS) and all(t["act"] == "swear" for t in ts)
+    assert ts[0]["body"] == {"values": ["boethiah"]}
     r = run("pacts", "swear", {"values": ["boethiah", "namira", "bogus"]})
     check_result(r, "pacts")
     assert E.get_profile(UID)["nextpacts"] == ["boethiah", "namira"]
-    assert [o["value"] for o in select(r["panel"], "swear")["options"] if o["chosen"]] == ["boethiah", "namira"]
+    ts = tiles_of(r["panel"])
+    assert [t["state"] for t in ts] == ["done", "done", None, None]
+    assert ts[0]["body"] == {"values": ["namira"]}               # tapping a sworn pact lifts it
     r = run("pacts", "swear", {"values": []})
     assert E.get_profile(UID)["nextpacts"] == [] and r["toast"]
