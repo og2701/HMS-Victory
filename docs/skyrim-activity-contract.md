@@ -93,7 +93,7 @@ says, whether it's lit up (something to do there, as the green buttons were), a 
 ```
 SkDelve = { id, rev, kind, state,                  // state: playing|cleared|left|fled|dead|launched|abandoned
   location: {key, name, band}, depth, room: {idx, total | null, kind: "enemy"|"event", key, name, boss,
-    art, cut | null, affix: {name, blurb} | null, bounty: bool, story: string | null, text: string[] },
+    art, cut | null, affix: {name, blurb} | null, bounty: bool, story: string | null (the story room's variant key, e.g. "runes"), text: string[] },
   enemy: { key, name, tier, hp, maxHp, intent: {key, label, hint, counter, guardAvailable, maxWound,
            guardHint}, airborne: bool, grounded: bool } | null,
   you: { hearts, maxHearts, satchel, potions, shoutCharges, venom: bool, blessed: bool, engaged: bool,
