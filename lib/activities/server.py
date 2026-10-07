@@ -214,6 +214,10 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
             return {"game": "home", "home": _home(client, uid, channel)}
         # opened from a room's Join in #casino: pick that room out
         return {"game": "countdown", "countdown": {**_countdown_lobby(client, uid), "focus": game[10:] or None}}
+    if game == "skyrim":
+        # the town (or the class pick), like GET /skyrim; it's the bot's own engine, so no gate beyond the usual
+        from lib.activities.skyrim_web import common as sk_common, core as sk_core
+        return {"game": game, "skyrim": sk_core._home_data(sk_common.load(uid, _name(client, uid)))}
     if game.startswith("watch:"):
         player, key = _watched(game)
         if not _casino_open(channel):
@@ -226,7 +230,25 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
-    return {**home.state(client, uid), "casinoOpen": _casino_open(channel)}
+    return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel)}
+
+
+def _skyrim_card(uid: int, channel) -> dict | None:
+    """Skyrim's tile on the home screen: your level and adventures left, or an invitation if you've no character.
+    Until it's the activity's /skyrim (config.SKYRIM_AS_ACTIVITY) it only shows where the casino's being tested."""
+    if not getattr(config, "SKYRIM_ENABLED", True):
+        return None
+    if not getattr(config, "SKYRIM_AS_ACTIVITY", False) and not _casino_open(channel):
+        return None
+    try:
+        from lib.features.skyrim import engine as E
+        profile = E.get_profile(uid)
+        if profile is None:
+            return {"level": 0, "delvesLeft": 0, "live": False}
+        return {"level": E.level(profile), "delvesLeft": E.delves_left(profile), "live": bool(profile.get("active_delve"))}
+    except Exception:
+        log.debug("skyrim home card failed", exc_info=True)
+        return None
 
 
 async def _none():

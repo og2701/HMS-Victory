@@ -500,6 +500,10 @@ PUZZLES_AS_ACTIVITY = True
 ACTIVITIES_ALLOWED_CHANNELS = []                      # [] = anywhere; list channel ids to lock it down
 ACTIVITIES_ENTRY_COMMAND = "launch"                   # the App Launcher's built-in command, renamed on boot
 ACTIVITIES_ENTRY_DESCRIPTION = "HMS Games: the daily puzzles and the casino"
+# /skyrim in the activity (lib/activities/skyrim_web): True hands /skyrim to the activity app and retires HMS Victory's
+# own Discord /skyrim on the next boot; False keeps the classic one and opens the activity version on /test-skyrim.
+# Either way it's the same engine and the same saves.
+SKYRIM_AS_ACTIVITY = False
 # The typed commands that open the activity, and which game each one opens it on
 # (lib/activities/launcher.py): command name -> (game, description). Any other typed command
 # the app has is deleted on boot.
@@ -510,6 +514,8 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     "climb": ("climb", "Climb HMS Victory - bounce up the rigging for UKPence"),
     "spitfire": ("spitfire", "Fly the Spitfire - weave through the barrage balloons for UKPence"),
     "paperboy": ("paperboy", "Do the paper round - deliver to the lit doorsteps for UKPence"),
+    **({"skyrim": ("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")} if SKYRIM_AS_ACTIVITY
+       else {"test-skyrim": ("skyrim", "Play Skyrim in the activity (testing)")}),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),

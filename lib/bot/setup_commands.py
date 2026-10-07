@@ -897,10 +897,12 @@ def define_commands(tree, client):
             from lib.features.crossword import handle_crossword_command
             await handle_crossword_command(interaction)
 
-    @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")
-    async def skyrim_command(interaction: Interaction):
-        from lib.features.skyrim import handle_skyrim_command
-        await handle_skyrim_command(interaction)
+    # With SKYRIM_AS_ACTIVITY on, /skyrim belongs to the UK Place Activities app (config.ACTIVITIES_LAUNCH_COMMANDS)
+    if not getattr(config, "SKYRIM_AS_ACTIVITY", False):
+        @command("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")
+        async def skyrim_command(interaction: Interaction):
+            from lib.features.skyrim import handle_skyrim_command
+            await handle_skyrim_command(interaction)
 
     @command("county-dex", "Your county ball collection and completion progress")
     async def county_dex_command(interaction: Interaction):

@@ -454,8 +454,7 @@ def _holdings_panel(profile: dict, finished: str | None = None) -> dict:
     for slot in slots:
         if E.expedition_ready(profile, slot):
             acts.append(common.action(
-                "haul", "Collect the haul" if len(slots) == 1 else f"Collect haul {slot}", "🧭", "success",
-                hint=str(slot)))
+                f"haul:{slot}", "Collect the haul" if len(slots) == 1 else f"Collect haul {slot}", "🧭", "success"))
     buildable = E.homestead_buildable(profile)
     if "land" in hs["built"] and buildable and not hs.get("building"):
         opts = []
@@ -502,8 +501,9 @@ async def holdings_act(profile, ctx, action, body):
         if not res:
             raise Refuse("Nothing waiting.")
         toast = res
-    elif action == "haul":
-        vals = _values(body)
+    elif action == "haul" or action.startswith("haul:"):
+        # the slot rides on the action ("haul:2"), or in the body from an older page
+        vals = [action.split(":", 1)[1]] if ":" in action else _values(body)
         try:
             slot = int(vals[0]) if vals else E.expedition_slots(profile)[0]
         except ValueError:
