@@ -162,7 +162,10 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int, p
             new_overwrite = copy.copy(overwrite)
             new_overwrite.send_messages = False
             await channel.set_permissions(target, overwrite=new_overwrite)
-            
+
+    target_timestamp = time.time() + seconds
+    move_ts = int(target_timestamp)
+
     if private:
         embed = discord.Embed(
             title="Channel Archived",
@@ -175,13 +178,12 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int, p
         bot.add_view(view)
         embed = discord.Embed(
             title="Channel Archived",
-            description=(f"{interaction.user.mention} has archived this channel. It will be moved to the archive in {seconds} seconds.\n"
+            description=(f"{interaction.user.mention} has archived this channel. It will be moved to the archive <t:{move_ts}:R> (<t:{move_ts}:f>).\n"
                          "If you want to still be able to see it after that, click the button below to toggle the **Archivist** role."),
             color=0xFFA500,
         )
         msg = await channel.send(embed=embed, view=view)
-        
-    target_timestamp = time.time() + seconds
+
     persistent_views = load_persistent_views()
     persistent_views[f"archive_{channel.id}"] = {"msg_id": msg.id, "move_timestamp": target_timestamp, "private": private}
     save_persistent_views(persistent_views)
@@ -189,6 +191,6 @@ async def archive_channel(interaction: discord.Interaction, bot, seconds: int, p
     if private:
         await interaction.followup.send("Channel will be archived immediately!", ephemeral=True)
     else:
-        await interaction.followup.send(f"Channel will be archived in {seconds // 3600} hours!", ephemeral=True)
+        await interaction.followup.send(f"Channel will be archived <t:{move_ts}:R>!", ephemeral=True)
     
     asyncio.create_task(schedule_archive_move(channel, guild, target_timestamp, bot, private))
