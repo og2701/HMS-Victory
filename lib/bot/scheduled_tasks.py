@@ -563,8 +563,10 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, mute_visitors, CronTrigger(hour=3, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="mute_visitors_job", name="Mute visitors overnight")
     _add_process_job(scheduler, unmute_visitors, CronTrigger(hour=7, minute=0, timezone="Europe/London"), args=[client.get_guild(GUILD_ID)], id="unmute_visitors_job", name="Unmute visitors in the morning")
     
-    _add_process_job(scheduler, backup_database, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
-    _add_process_job(scheduler, backup_json_data, IntervalTrigger(minutes=5, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
+    # Hourly, on the clock (so a restart never pushes one back): every five minutes was ~43 MB each time, about 12 GB
+    # a day out of the instance, nearly all of its data-transfer bill
+    _add_process_job(scheduler, backup_database, CronTrigger(minute=0, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
+    _add_process_job(scheduler, backup_json_data, CronTrigger(minute=1, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
     # Once a day, locally: chronicle.db is ~2GB and growing, too big for the Discord
     # backup path, and it's kept on the instance by decision.
     _add_process_job(scheduler, backup_chronicle, CronTrigger(hour=4, minute=20, timezone="Europe/London"), args=[client], id="backup_chronicle_job", name="Snapshot Chronicle History")
