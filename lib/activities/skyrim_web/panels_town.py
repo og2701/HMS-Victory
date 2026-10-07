@@ -123,6 +123,62 @@ def _notice_panel(profile: dict, extra: list | None = None) -> dict:
         sections=secs, actions=acts, selects=selects)
 
 
+# ---- the week's hunt, as a fight the activity can stage ----
+
+# where each hunt is fought: one of the delve backdrops (public/skyrim/stage)
+_WB_STAGE = {"marauder_king": "camp", "pale_lady": "vale", "risen_legion": "fort", "red_hand": "peak",
+             "white_terror": "ice_cave", "otar": "barrow", "greymaw": "vale", "iron_colossus": "dwemer",
+             "tide_mother": "cave", "sky_shadow": "peak"}
+_HIT = re.compile(r"\(\*\*-(\d+)\*\*\)\.?$")
+_ANSWER = re.compile(r"\(((?:❤️)+|💀 none) left\)\.?$")
+
+
+def march_beats(lines, boss: dict) -> list[dict]:
+    """wb_march's story, line by line, each with the cue that stages it: a blow landing or missing, the boss's
+    answer, the hunt's turning points, the fall. Lines that are only story carry no cue."""
+    misses = {m.rstrip(".") for m in boss.get("miss") or []} | {f"{boss['name']} turns your blow aside"}
+    out = []
+    for raw in lines:
+        line = common.clean(raw)
+        cue = None
+        hit, answer = _HIT.search(line), _ANSWER.search(line)
+        if hit:
+            d = int(hit.group(1))
+            cue = {"t": "hit", "dmg": d, "crit": d >= 2 or "CLEAN" in line, "style": "blade"}
+        elif answer:
+            left = 0 if "none" in answer.group(1) else answer.group(1).count("❤")
+            cue = {"t": "hurt", "hearts": 2 if "CRUSHING" in line else 1, "crushing": "CRUSHING" in line, "left": left}
+        elif line.rstrip(".") in misses:
+            cue = {"t": "miss", "style": "blade"}
+        elif "**The hunt turns**" in line or "**It is nearly done**" in line:
+            cue = {"t": "beat"}
+        elif "shield-bearers drag you clear" in line:
+            cue = {"t": "down"}
+        elif line.startswith("🏆") and boss["slain"] in line:
+            cue = {"t": "kill", "crit": True, "boss": True}
+        elif line.startswith("🌩️"):
+            cue = {"t": "rise"}
+        out.append({"line": line, "cue": cue})
+    return out
+
+
+async def _post_march_report(ctx, profile, boss, role, lines, dealt, slain, store):
+    """The march told in the channel, the same report the Discord game posts. Best-effort."""
+    client, ch_id = ctx.get("client"), ctx.get("ch")
+    if client is None or not ch_id:
+        return
+    try:
+        import discord
+        ch = client.get_channel(int(ch_id))
+        if ch is None or not hasattr(ch, "send"):
+            return
+        report, files, _head = V.march_report(int(profile["user_id"]), boss, role, lines, dealt, slain, store)
+        await ch.send(view=report, files=files, allowed_mentions=discord.AllowedMentions.none())
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("skyrim: couldn't post the activity march report", exc_info=True)
+
+
 @view("notice")
 def notice(profile, ctx):
     return _notice_panel(profile)
@@ -148,7 +204,9 @@ async def notice_act(profile, ctx, action, body):
             raise Refuse("Choose attack, expose or protect.")
         if not E.wb_available(profile):
             raise Refuse("No march is available right now.")
-        boss = E.wb_boss(E.world_boss())             # the boss being fought: a killing blow summons the next wave
+        before = E.world_boss()
+        key, boss = before["boss"], E.wb_boss(before)     # the boss being fought: a killing blow summons the next wave
+        pool = {"hp": int(before["hp"]), "max": int(before["max"]), "wave": int(before.get("wave", 1))}
         try:
             lines, dealt, slain, store = E.wb_march(profile, role=role)
         except ValueError as e:
@@ -159,11 +217,18 @@ async def notice_act(profile, ctx, action, body):
                 "🏆 Defeated · 0 HP" if slain else f"❤️ {store['hp']}/{store['max']} remain"]
         extra = [common.section(f"{boss['emoji']} {boss['name']}", head + list(lines)
                                 + (["🏆 The wave falls. A stronger wave rises; your spoils are ready."] if slain else []))]
-        toast = ("🏆 THE WAVE FALLS - and a greater one rises. Claim your spoils on the Notice Board." if slain
-                 else f"📯 Your march takes **{dealt}** off the pool.")
-        cues = [{"t": "hit", "dmg": int(dealt), "crit": False, "style": "blade"}]
-        if slain:
-            cues.append({"t": "kill", "crit": False, "boss": True})
+        march = {"boss": {"key": key, "name": common.clean(boss["name"]), "cut": f"enemy_wb_{key}", "art": boss["art"],
+                          "stage": _WB_STAGE.get(key, "camp"), "dragon": boss.get("type") == "dragon"},
+                 "role": {"key": role, "label": spec["label"]}, "hearts": E.heart_max(profile), "pool": pool,
+                 "beats": march_beats(lines, boss), "dealt": int(dealt), "slain": bool(slain),
+                 "after": {"hp": int(store["hp"]), "max": int(store["max"]), "wave": int(store.get("wave", 1)),
+                           "next": common.clean(E.wb_boss(store)["name"]) if slain else None,
+                           "nextKey": store["boss"] if slain else None}}
+        await _post_march_report(ctx, profile, boss, role, lines, dealt, slain, store)
+        await common.after(ctx, profile)
+        out = common.result(_notice_panel(profile, extra), profile)
+        out["march"] = march
+        return out
     else:
         raise Refuse("You can't do that here.")
     await common.after(ctx, profile)

@@ -140,7 +140,15 @@ Worked out by comparing the delve and profile before and after the action, plus 
            // "bout:pit", "bout:duel") instead of posting
   selects: [{ id, placeholder, min, max, options: [{value, label, blurb, emoji, chosen}] }] }
 
-SkPanelResult = { panel: SkPanel, toast: string | null, cues: SkCue[], nav: string | null, hero: SkHero }
+SkPanelResult = { panel: SkPanel, toast: string | null, cues: SkCue[], nav: string | null, hero: SkHero, march?: SkMarch }
+
+// the Notice Board's march on the week's hunt, staged as a fight before the board redraws
+SkMarch = { boss: {key, name, cut, art, stage, dragon: bool}, role: {key, label}, hearts: number,
+            pool: {hp, max, wave},                       // the shared pool before the march
+            beats: [{ line: string, cue: SkMarchCue | null }],
+            dealt: number, slain: bool, after: {hp, max, wave, next: string | null, nextKey: string | null} }
+SkMarchCue = {t: "hit", dmg, crit, style} | {t: "miss", style} | {t: "hurt", hearts, crushing, left}
+           | {t: "beat"} | {t: "down"} | {t: "kill", crit, boss} | {t: "rise"}
 ```
 
 Posting a select sends `{values: [..]}` (or `{value}` when `max` is 1).

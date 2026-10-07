@@ -103,8 +103,15 @@ def test_march_needs_level_then_hits_the_boss():
     with pytest.raises(common.Refuse):
         do("notice", "march", {"value": "nonsense"})
     r = do("notice", "march", {"value": "attack"})
-    assert r["cues"][0]["t"] == "hit" and r["cues"][0]["dmg"] >= 0
-    assert r["toast"] and r["hero"]["name"] == "Tester"
+    m = r["march"]
+    assert r["hero"]["name"] == "Tester" and m["role"]["key"] == "attack"
+    assert m["boss"]["cut"] == f"enemy_wb_{m['boss']['key']}"
+    assert m["slain"] or m["after"]["hp"] == m["pool"]["hp"] - m["dealt"]     # a kill brings the next wave's pool
+    beats = m["beats"]
+    assert beats[0]["line"] == D.WORLD_BOSSES[m["boss"]["key"]]["arrive"] and beats[0]["cue"] is None
+    # the staged blows add up to what the engine dealt, and every exchange is cued
+    assert sum(b["cue"]["dmg"] for b in beats if b["cue"] and b["cue"]["t"] == "hit") == m["dealt"]
+    assert any(b["cue"] and b["cue"]["t"] in ("hit", "miss") for b in beats)
     assert "march" not in {s["id"] for s in r["panel"]["selects"]}      # one march a day
     with pytest.raises(common.Refuse):
         do("notice", "march", {"values": ["attack"]})
@@ -296,3 +303,15 @@ def test_rankings_boards_and_help_pages():
         do("help", "page", {"value": "zzz"})
     with pytest.raises(common.Refuse):
         do("help", "other")
+
+
+def test_march_beats_cue_every_kind_of_exchange():
+    from lib.activities.skyrim_web.panels_town import march_beats
+    boss = D.WORLD_BOSSES["white_terror"]
+    beats = march_beats([boss["arrive"], f"-# 💥 A CLEAN strike - {boss['hit'][0]} (**-2**).", f"-# {boss['miss'][0]}.",
+                         f"-# {boss['answer'][0]} - 💥 a CRUSHING blow (❤️ left).", "-# ⚔️ **The hunt turns** - half its hearts are spent.",
+                         f"-# {boss['answer'][1]} (💀 none left).", "The shield-bearers drag you clear. Your wounds mend by morning.",
+                         f"🏆 **{boss['slain']}**", "🌩️ **The hold barely draws breath** - something rises."], boss)
+    assert [b["cue"] and b["cue"]["t"] for b in beats] == [None, "hit", "miss", "hurt", "beat", "hurt", "down", "kill", "rise"]
+    assert beats[1]["cue"] == {"t": "hit", "dmg": 2, "crit": True, "style": "blade"}
+    assert beats[3]["cue"]["crushing"] and beats[3]["cue"]["left"] == 1 and beats[5]["cue"]["left"] == 0

@@ -3315,14 +3315,8 @@ async def _choose_march_role(interaction, profile):
     await _edit_panel(interaction, "\n".join(lines), [row, _back_row()])
 
 
-async def _post_march_board(interaction: Interaction, profile, role="attack"):
-    """Resolve the march and post it as a PUBLIC battle report - the group sees
-    every blow on the shared pool, exactly like a delve board (no buttons: a
-    march is one charge, told start to finish)."""
-    boss = E.wb_boss(E.world_boss())              # the boss being FOUGHT - a killing
-    lines, dealt, slain, store = E.wb_march(profile, role=role)   # blow summons the next wave
-    E.save_profile(profile)
-    uid = int(profile["user_id"])
+def march_report(uid: int, boss: dict, role: str, lines, dealt: int, slain: bool, store: dict):
+    """The public battle report for one march: (view, files, head lines). The activity posts the same one."""
     view = discord.ui.LayoutView(timeout=None)
     files = _gallery_files(view, boss["art"]) if _asset_bytes(boss["art"]) else []
     head = [f"## {boss['emoji']} {boss['name']}",
@@ -3335,6 +3329,18 @@ async def _post_march_board(interaction: Interaction, profile, role="attack"):
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay("\n".join(head + compact)))
     view.add_item(box)
+    return view, files, head
+
+
+async def _post_march_board(interaction: Interaction, profile, role="attack"):
+    """Resolve the march and post it as a PUBLIC battle report - the group sees
+    every blow on the shared pool, exactly like a delve board (no buttons: a
+    march is one charge, told start to finish)."""
+    boss = E.wb_boss(E.world_boss())              # the boss being FOUGHT - a killing
+    lines, dealt, slain, store = E.wb_march(profile, role=role)   # blow summons the next wave
+    E.save_profile(profile)
+    uid = int(profile["user_id"])
+    view, files, head = march_report(uid, boss, role, lines, dealt, slain, store)
     try:
         msg = await interaction.channel.send(view=view, files=files,
                                        allowed_mentions=discord.AllowedMentions.none())

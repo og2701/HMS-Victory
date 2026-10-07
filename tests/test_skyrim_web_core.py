@@ -270,3 +270,57 @@ def test_discord_hub_has_no_jump_link_for_an_activity_delve():
 
     assert V._in_activity(live)
     assert V._delve_jump_url(Inter(), live) is None
+
+
+# ---- every kind of road the map can send you down ----
+
+def veteran(**extra):
+    """A character past the tutorial, with whatever unlocks a test needs."""
+    run(core.home(CTX))
+    core.create(CTX, "warrior")
+    p = E.get_profile(UID)
+    p["tutorial_started"] = True
+    p["stats"]["delves"] = 3
+    p.update(extra)
+    E.save_profile(p)
+    return p
+
+
+def test_the_daily_launches_on_todays_road():
+    veteran()
+    o = core.offers(CTX)
+    assert o["daily"] and o["daily"]["available"]
+    d = run(core.launch(CTX, "", "daily"))["delve"]
+    check_delve(d)
+    assert d["kind"] == "daily" and d["location"]["key"] == E.daily_location()["key"]
+
+
+def test_a_heard_rumour_shows_as_a_legend_and_launches():
+    rk = sorted(D.RUMOURS)[0]
+    veteran(rumours={rk: "heard"}, xp=10 ** 7)        # legend lairs have level gates
+    lair = D.RUMOURS[rk]["loc"]
+    assert lair in [g["key"] for g in core.offers(CTX)["legends"]]
+    d = run(core.launch(CTX, lair, "normal"))["delve"]
+    check_delve(d)
+    assert d["location"]["key"] == lair
+
+
+def test_the_soul_cairn_opens_after_alduin_and_goes_by_depth():
+    veteran(alduin_slain=1)
+    o = core.offers(CTX)
+    assert o["soulcairn"] and o["soulcairn"]["available"]
+    d = run(core.launch(CTX, "", "soulcairn"))["delve"]
+    check_delve(d)
+    assert d["kind"] == "soulcairn" and d["room"]["total"] is None and d["depth"] >= 0
+
+
+def test_alduin_waits_for_the_gates_then_launches():
+    p = veteran(xp=10 ** 7)
+    assert not core.offers(CTX)["alduin"]["available"]      # high level alone shows the path, still shut
+    p["words"] = len(D.SHOUT_WORDS)
+    p["stats"]["dragons"] = 50
+    E.save_profile(p)
+    assert core.offers(CTX)["alduin"]["available"]
+    d = run(core.launch(CTX, "", "alduin"))["delve"]
+    check_delve(d)
+    assert d["kind"] == "alduin" and d["location"]["key"] == "skuldafn"
