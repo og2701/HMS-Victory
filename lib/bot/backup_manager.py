@@ -17,9 +17,9 @@ from config import *
 logger = logging.getLogger(__name__)
 MAX_PART_SIZE = 8 * 1024 * 1024
 DB_BACKUP_PREFIX = "database_backup_"
-# How far back the restore will look for a database backup. The channel also carries a
-# json_backup_ every five minutes, so 100 messages reached back about eight hours - a
-# daily database backup was never once inside the window it was searched in.
+# How far back the restore will look for a database backup. The channel also carries the
+# json_backup_ archives (every five minutes back then, so 100 messages reached back about eight
+# hours - a daily database backup was never once inside the window it was searched in).
 DB_RESTORE_SCAN_LIMIT = 5000
 MAX_DATABASE_BACKUP_BYTES = 512 * 1024 * 1024
 MAX_DATABASE_ARCHIVE_BYTES = 512 * 1024 * 1024
