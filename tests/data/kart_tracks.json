@@ -1,0 +1,18 @@
+{
+ "tracks": {
+  "village": {
+   "length": 1247,
+   "laps": 3
+  }
+ },
+ "cars": {
+  "cab": 26,
+  "bus": 27.4,
+  "float": 24.6,
+  "robin": 25,
+  "scooter": 24,
+  "van": 27,
+  "icecream": 26.2,
+  "mini": 25.6
+ }
+}

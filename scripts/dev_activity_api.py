@@ -89,12 +89,14 @@ def main(port: int) -> None:
     from lib.activities import auth, server
     from lib.activities.casino import base
     base._FILE = os.path.join(tmp, "activity_casino.json")
-    from lib.activities import countdown, countdown_posts, duel, duel_posts, launcher
+    from lib.activities import countdown, countdown_posts, duel, duel_posts, kart, kart_posts, launcher
     duel._FILE = os.path.join(tmp, "activity_duels.json")
     countdown._FILE = os.path.join(tmp, "activity_countdown.json")
+    kart._FILE = os.path.join(tmp, "activity_kart.json")
     _post_to_folder(launcher, os.path.join(tmp, "posts"))
     duel.listeners.append(duel_posts.on_event)
     countdown.listeners.append(countdown_posts.on_event)
+    kart.listeners.append(kart_posts.on_event)
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
@@ -134,8 +136,11 @@ def main(port: int) -> None:
         print(f"third player (Countdown): http://localhost:5174/?local={auth.make_session(THIRD, WORKSHOP)}&game=countdown",
               flush=True)
         print(f"paperboy: http://localhost:5174/?local={auth.make_session(PLAYER, WORKSHOP)}&game=paperboy", flush=True)
+        for who, uid in (("tester", PLAYER), ("rival", RIVAL), ("pooja", THIRD)):
+            print(f"kart ({who}): http://localhost:5174/?local={auth.make_session(uid, WORKSHOP)}&game=kart", flush=True)
         asyncio.get_running_loop().create_task(duel.run_sweeper())
         asyncio.get_running_loop().create_task(countdown.run_sweeper())
+        asyncio.get_running_loop().create_task(kart.run_sweeper())
         await asyncio.Event().wait()
 
     asyncio.run(run())
