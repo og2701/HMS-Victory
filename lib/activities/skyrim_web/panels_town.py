@@ -94,13 +94,43 @@ def _toast(text) -> str:
 
 # ---- notice board ----------------------------------------------------------------------------------------
 
-def _notice_panel(profile: dict, extra: list | None = None) -> dict:
-    text = V._notice_text(profile)
+def _notice_tasks(profile: dict) -> list[str]:
+    """The week's tasks as short rows: what, how far, what it pays (views._notice_text, minus the explaining)."""
+    rows = []
+    for _key, t, done, comp, claimed in E.task_progress(profile):
+        septims, _xp = D.TASK_REWARDS[t["band"]]
+        if claimed:
+            rows.append(f"✅ {t['name']} · claimed")
+        elif comp:
+            rows.append(f"✅ **{t['name']}** · {septims} septims to claim")
+        else:
+            rows.append(f"⬜ {t['name']}" + (f" · {done}/{t['n']}" if t["n"] > 1 else "") + f" · {septims} septims")
+    return rows
+
+
+def _notice_hunt(profile: dict, store: dict, boss: dict) -> list[str]:
+    """The week's hunt in three lines: what it is, how much is left, whether you can march today."""
+    out = [common.clean(boss["blurb"]),
+           f"{V._bar(store['hp'], 0, store['max'], 12)} **{store['hp']}/{store['max']}** hearts left"]
+    if E.level(profile) < E.WB_MIN_LEVEL:
+        out.append(f"🔒 The hunt opens at level {E.WB_MIN_LEVEL}.")
+    elif E.wb_marched_today(profile, store):
+        out.append("You've marched today. The line re-forms at dawn.")
+    else:
+        out.append("One march a day. Pick your part below.")
+    return out
+
+
+def _notice_panel(profile: dict) -> dict:
+    tasks = _notice_tasks(profile)
     E.save_profile(profile)      # keep the weekly tracker rollover, as views does
-    pre, sections = _by_headings(text)
     store = E.world_boss()
     boss = E.wb_boss(store)
     pts, total = E.task_points(profile)
+    wave = int(store.get("wave", 1))
+    sections = [common.section("This week's tasks", tasks),
+                common.section(f"The hunt: {boss['name']}" + (f" · wave {wave}" if wave > 1 else ""),
+                               _notice_hunt(profile, store, boss))]
     acts = []
     if E.daily_available(profile):
         acts.append(common.action("daily", "Brave the daily", "📅", "success", nav="adventure:daily",
@@ -114,13 +144,11 @@ def _notice_panel(profile: dict, extra: list | None = None) -> dict:
     if E.wb_available(profile):
         selects.append(common.select("march", "📯 March on it: choose your part", [
             common.option(role, spec["label"], spec["hint"], spec["emoji"]) for role, spec in P.HUNT_ROLES.items()]))
-    secs = list(extra or []) + sections
     return common.panel(
-        "notice", "The Notice Board", art="notice_board", back="town", blurb=pre,
+        "notice", "The Notice Board", art="notice_board", back="town",
         stats=[common.stat("Task points", f"{pts}/{total}", "📋"),
-               common.stat(boss["name"], f"{store['hp']}/{store['max']} hearts", boss["emoji"]),
-               common.stat("Wave", store.get("wave", 1), "🌊")],
-        sections=secs, actions=acts, selects=selects)
+               common.stat("Hunt", f"{store['hp']}/{store['max']} hearts", boss["emoji"])],
+        sections=sections, actions=acts, selects=selects)
 
 
 # ---- the week's hunt, as a fight the activity can stage ----
@@ -186,7 +214,7 @@ def notice(profile, ctx):
 
 @act("notice")
 async def notice_act(profile, ctx, action, body):
-    toast, cues, extra = None, [], None
+    toast = None
     if action == "claim":
         res = E.claim_tasks(profile)
         if not res:
@@ -213,10 +241,6 @@ async def notice_act(profile, ctx, action, body):
             raise Refuse(str(e))
         E.save_profile(profile)
         spec = P.HUNT_ROLES[role]
-        head = [f"{spec['emoji']} {spec['label']} · **{dealt} damage**",
-                "🏆 Defeated · 0 HP" if slain else f"❤️ {store['hp']}/{store['max']} remain"]
-        extra = [common.section(f"{boss['emoji']} {boss['name']}", head + list(lines)
-                                + (["🏆 The wave falls. A stronger wave rises; your spoils are ready."] if slain else []))]
         march = {"boss": {"key": key, "name": common.clean(boss["name"]), "cut": f"enemy_wb_{key}", "art": boss["art"],
                           "stage": _WB_STAGE.get(key, "camp"), "dragon": boss.get("type") == "dragon"},
                  "role": {"key": role, "label": spec["label"]}, "hearts": E.heart_max(profile), "pool": pool,
@@ -226,13 +250,13 @@ async def notice_act(profile, ctx, action, body):
                            "nextKey": store["boss"] if slain else None}}
         await _post_march_report(ctx, profile, boss, role, lines, dealt, slain, store)
         await common.after(ctx, profile)
-        out = common.result(_notice_panel(profile, extra), profile)
+        out = common.result(_notice_panel(profile), profile)
         out["march"] = march
         return out
     else:
         raise Refuse("You can't do that here.")
     await common.after(ctx, profile)
-    return common.result(_notice_panel(profile, extra), profile, toast=toast, cues=cues)
+    return common.result(_notice_panel(profile), profile, toast=toast)
 
 
 # ---- daily board -----------------------------------------------------------------------------------------

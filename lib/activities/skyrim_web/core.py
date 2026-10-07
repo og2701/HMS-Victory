@@ -16,6 +16,7 @@ import os
 import time
 import zlib
 
+import config
 from lib.activities.skyrim_web import common
 from lib.features.skyrim import data as D
 from lib.features.skyrim import engine as E
@@ -126,6 +127,9 @@ def _spot(label: str, glow: bool = False, badge: str | None = None, locked: str 
     return out
 
 
+_FACTION_LEVEL = int(getattr(config, "SKYRIM_DRAGON_MIN_LEVEL", 8))     # engine.join_faction's gate
+
+
 def _town(profile) -> dict:
     """views._hub_rows: which buildings are lit (the green buttons) and which are shut."""
     if profile is None:
@@ -155,7 +159,9 @@ def _town(profile) -> dict:
         "notice": _spot(f"Notice Board {mood_emoji}".strip() if daily else "Notice Board", glow=notice_hot,
                         badge=notice_badge),
         "pit": _spot("The Pit", glow=E.pit_available(profile), locked=pit_locked),
-        "factions": _spot("Factions", glow=fac_ready, badge="Claim!" if fac_ready else None),
+        "factions": _spot("Factions", glow=fac_ready, badge="Claim!" if fac_ready else None,
+                          locked=None if profile.get("allegiance") or E.level(profile) >= _FACTION_LEVEL
+                          else f"The factions open at level {_FACTION_LEVEL}."),
         "holdings": _spot("Holdings", glow=hold_ready, badge="Ready" if hold_ready else None),
         "hall": _spot("Hall of Legends", glow=bool(ready), badge="Retirement awaits" if ready else None,
                       locked=None if hall_open else "The Hall opens once Alduin has fallen."),
