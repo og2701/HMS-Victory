@@ -382,17 +382,15 @@ async def companion_act(profile, ctx, action, body):
 
 # ---- the Hall of Legends -----------------------------------------------------------------------------------
 
-# The boon and the stone are picked in separate requests and only used when the player retires, so the picks wait
-# here (per player, tied to the legend rank they were made at). The inherited ability is saved on the profile,
-# like views.py does.
-_PICKS: dict[int, dict] = {}
-
+# The boon and the stone are picked in separate requests and only used when the player retires, so the picks wait on
+# the profile (tied to the legend rank they were made at, so a new life starts with none), surviving a restart. The
+# inherited ability is saved on the profile too, like views.py does.
 
 def _picks(profile: dict) -> dict:
-    uid, rank = int(profile["user_id"]), E.legacy_rank(profile)
-    pk = _PICKS.get(uid)
-    if not pk or pk.get("rank") != rank:
-        pk = _PICKS[uid] = {"rank": rank, "boon": None, "stone": None}
+    rank = E.legacy_rank(profile)
+    pk = profile.get("hall_picks")
+    if not isinstance(pk, dict) or pk.get("rank") != rank:
+        pk = profile["hall_picks"] = {"rank": rank, "boon": None, "stone": None}
     return pk
 
 
@@ -524,6 +522,7 @@ async def hall_act(profile, ctx, action, body):
         if key not in E.boon_offer(profile):
             raise Refuse("Fate never offered that boon.")
         pk["boon"] = key
+        E.save_profile(profile)
         b = D.BOONS[key]
         return common.result(hall(profile, ctx), profile, toast=f"{b['emoji']} {b['name']} chosen.")
     if action == "stone":
@@ -531,6 +530,7 @@ async def hall_act(profile, ctx, action, body):
         if key not in D.STONES:
             raise Refuse("No such Guardian Stone.")
         pk["stone"] = key
+        E.save_profile(profile)
         return common.result(hall(profile, ctx), profile, toast=f"{D.STONES[key]['emoji']} {D.STONES[key]['name']} chosen.")
     if action == "inherit":
         sk, _, ch = _one(body).partition(":")
@@ -561,8 +561,8 @@ async def hall_act(profile, ctx, action, body):
     err = E.retire(profile, boon_key, stone_key, expected_rank=expected)
     if err:
         raise Refuse(common.clean(err))
+    profile.pop("hall_picks", None)
     E.save_profile(profile)
-    _PICKS.pop(int(profile["user_id"]), None)
     await common.after(ctx, profile)
     n = E.legacy_rank(profile)
     toast = (f"🏛️ **Legend {n} takes their seat in the Hall.** Hey, you. You're finally awake... again. "

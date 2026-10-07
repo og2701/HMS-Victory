@@ -23,7 +23,6 @@ def prof(tmp_path, monkeypatch):
               "PERSISTENT_VIEWS_FILE"):
         monkeypatch.setattr(config, k, str(tmp_path / (k + ".json")))
     monkeypatch.setattr(F, "PERSISTENT_VIEWS_FILE", str(tmp_path / "PERSISTENT_VIEWS_FILE.json"))
-    panels_character._PICKS.clear()
     p = E.create_profile(UID, "Tester", "warrior")
     E.drain_log()
     return p
