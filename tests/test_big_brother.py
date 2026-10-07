@@ -18,8 +18,12 @@ def shop(bb):
 
 
 @pytest.fixture
-def bb():
+def bb(monkeypatch):
+    import config
     import database
+
+    # The event is over and the flag is off in config; the tests still exercise the live code.
+    monkeypatch.setattr(config, "BIG_BROTHER_ENABLED", True)
 
     if database.DatabaseManager._connection is not None:
         database.DatabaseManager._connection.close()

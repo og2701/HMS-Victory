@@ -776,7 +776,7 @@ DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.
 # shows phase and counts; nomination tallies, vote results, diary entries and mission
 # reports go to the host's DMs (BIG_BROTHER_HOST_ID).
 # ---------------------------------------------------------------------------
-BIG_BROTHER_ENABLED = True
+BIG_BROTHER_ENABLED = False                         # the series ended on Day 19 (6 Oct 2026); dormant from here
 BIG_BROTHER_HOST_ID = USERS.CHIN                    # gets every secret by DM
 BIG_BROTHER_OPERATOR_IDS = {USERS.CHIN, USERS.OGGERS}  # may press the control panel
 BIG_BROTHER_HOUSE_CHANNEL = 1550122475159945306     # housemates only: challenges, announcements
