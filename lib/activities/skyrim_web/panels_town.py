@@ -212,23 +212,6 @@ def march_beats(lines, boss: dict) -> list[dict]:
     return out
 
 
-async def _post_march_report(ctx, profile, boss, role, lines, dealt, slain, store):
-    """The march told in the channel, the same report the Discord game posts. Best-effort."""
-    client, ch_id = ctx.get("client"), ctx.get("ch")
-    if client is None or not ch_id:
-        return
-    try:
-        import discord
-        ch = client.get_channel(int(ch_id))
-        if ch is None or not hasattr(ch, "send"):
-            return
-        report, files, _head = V.march_report(int(profile["user_id"]), boss, role, lines, dealt, slain, store)
-        await ch.send(view=report, files=files, allowed_mentions=discord.AllowedMentions.none())
-    except Exception:
-        import logging
-        logging.getLogger(__name__).warning("skyrim: couldn't post the activity march report", exc_info=True)
-
-
 @view("notice")
 def notice(profile, ctx):
     return _notice_panel(profile)
@@ -270,7 +253,7 @@ async def notice_act(profile, ctx, action, body):
                  "after": {"hp": int(store["hp"]), "max": int(store["max"]), "wave": int(store.get("wave", 1)),
                            "next": common.clean(E.wb_boss(store)["name"]) if slain else None,
                            "nextKey": store["boss"] if slain else None}}
-        await _post_march_report(ctx, profile, boss, role, lines, dealt, slain, store)
+        # played in the activity, the march stays in it: no battle report in the channel (Discord's /skyrim still posts one)
         await common.after(ctx, profile)
         out = common.result(_notice_panel(profile), profile)
         out["march"] = march
