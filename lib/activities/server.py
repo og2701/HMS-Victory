@@ -146,7 +146,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked in ("home", "duel", "countdown") or asked.startswith(("duel:", "countdown:")):
+    if asked in _STATE or asked in ("home", "duel", "countdown", "skyrim") or asked.startswith(("duel:", "countdown:")):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked

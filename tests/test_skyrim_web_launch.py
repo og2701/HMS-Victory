@@ -53,3 +53,11 @@ def test_the_launch_commands_follow_the_switch():
     assert ("skyrim" in launch) == bool(config.SKYRIM_AS_ACTIVITY)
     assert ("test-skyrim" in launch) == (not config.SKYRIM_AS_ACTIVITY)
     assert (launch.get("skyrim") or launch.get("test-skyrim"))[0] == "skyrim"
+
+
+def test_the_skyrim_command_opens_skyrim_not_home():
+    from lib.activities import launcher
+    launcher.want(4242, "skyrim")             # what /skyrim does before launching the activity
+    assert server._game_for(4242, {}) == "skyrim"
+    assert server._game_for(4242, {"game": "skyrim"}) == "skyrim"      # a Play link naming it
+    assert server._game_for(4242, {}) == "home"                        # the request is used once
