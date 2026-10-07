@@ -324,3 +324,11 @@ def test_alduin_waits_for_the_gates_then_launches():
     d = run(core.launch(CTX, "", "alduin"))["delve"]
     check_delve(d)
     assert d["kind"] == "alduin" and d["location"]["key"] == "skuldafn"
+
+
+def test_a_wonder_found_in_the_activity_is_not_announced_but_others_still_are():
+    E.drain_wonders()
+    E.wlog(UID, "golden_sweetroll")          # found in the activity: its reveal plays there, nothing in the channel
+    E.wlog(9999, "dragon_tear")              # found through Discord's /skyrim, waiting for its own announcement
+    run(common.after(CTX))
+    assert E.drain_wonders() == [(9999, "dragon_tear")]

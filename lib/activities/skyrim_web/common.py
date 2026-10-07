@@ -130,24 +130,17 @@ def need(uid: int) -> dict:
 
 async def after(ctx: dict, profile: dict | None = None):
     """What views.py did after every interaction, for the Discord side: the engine's audit lines to the game-log
-    thread, any Wonder found announced in the channel the activity was opened in, and server badges. All of it
-    best-effort: none of it may break the game."""
+    thread and server badges. Nothing is posted in the channel: a Wonder found in the activity stays in the activity
+    (the reveal plays there), so this player's finds come off the announcement queue and anyone else's (found through
+    Discord's /skyrim, waiting for its own flush) go back on it. All of it best-effort: none of it may break the game."""
     import logging
     from lib.features.skyrim import views as V
     client = ctx.get("client")
     await V._flush_game_log(client)
-    try:
-        found = E.drain_wonders()
-        ch = client.get_channel(int(ctx["ch"])) if found and client is not None and ctx.get("ch") else None
-        for user_id, key in found:
-            if ch is None or not hasattr(ch, "send"):
-                break
-            p = E.get_profile(user_id)
-            owned = len([k for k in (p.get("wonders") or []) if k in D.WONDERS]) if p else None
-            import discord
-            await ch.send(E.wonder_announcement(user_id, key, owned), allowed_mentions=discord.AllowedMentions(users=True))
-    except Exception:
-        logging.getLogger(__name__).debug("skyrim wonder announcement failed", exc_info=True)
+    uid = int(ctx["uid"])
+    for user_id, key in E.drain_wonders():
+        if user_id != uid:
+            E.wlog(user_id, key)
     if profile is not None and client is not None:
         try:
             from lib.features.skyrim import badges
