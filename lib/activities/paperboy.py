@@ -223,6 +223,7 @@ WARDROBE = {
     "bag-postsack": ("bag", "Post Sack", 5000, "postsack"),
     "bag-hamper": ("bag", "Wicker Hamper", 6000, "hamper"),
     "bag-treasure": ("bag", "Treasure Chest", 12000, "treasure"),
+    "bag-birkin": ("bag", "Birkin", 45000, "birkin"),
     "hat-none": ("hat", "No Hat", 0, "none"),
     "hat-bowler": ("hat", "Bowler", 4000, "bowler"),
     "hat-tophat": ("hat", "Top Hat", 5000, "tophat"),
