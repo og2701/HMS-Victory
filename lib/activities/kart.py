@@ -540,6 +540,7 @@ class Live:
         self.paces: dict[int, Pace] = {}
         self.task: asyncio.Task | None = None
         self.events: dict[int, list[float]] = {}
+        self.away: set[int] = set()       # pages in the background (a phone flicked to another app): they can't drive CPUs
         grid_len = race_length(room) / _track(room)["laps"]
         for g in room["grid"]:
             if g["cpu"]:
@@ -580,9 +581,11 @@ class Live:
         if not r:
             return
         now = self.pilot()
-        if now in self.socks and now not in r["left"]:
+        if now in self.socks and now not in r["left"] and now not in self.away:
             return
-        new = next((u for u in _present(r) if u in self.socks), None)
+        new = next((u for u in _present(r) if u in self.socks and u not in self.away), None)
+        if new is None and (now not in self.socks or now in r["left"]):
+            new = next((u for u in _present(r) if u in self.socks), None)
         if new is not None and new != now:
             r["pilot"] = new
             _later(self.everyone({"t": "pilot", "id": str(new)}))
@@ -654,6 +657,12 @@ class Live:
                     self.states[kid] = state
                     if len(state) > 6 and isinstance(state[6], (int, float)):
                         r["prog"][kid] = round(float(state[6]), 1)
+        elif kind == "away":
+            if msg.get("away"):
+                self.away.add(uid)
+            else:
+                self.away.discard(uid)
+            self.repilot()
         elif kind == "e":
             if self.allowed(uid):
                 await self.everyone({"t": "e", "from": str(uid), "e": msg.get("e")}, but=uid)
