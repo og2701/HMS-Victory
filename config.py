@@ -503,7 +503,7 @@ ACTIVITIES_ENTRY_DESCRIPTION = "HMS Games: the daily puzzles and the casino"
 # /skyrim in the activity (lib/activities/skyrim_web): True hands /skyrim to the activity app and retires HMS Victory's
 # own Discord /skyrim on the next boot; False keeps the classic one and opens the activity version on /test-skyrim.
 # Either way it's the same engine and the same saves.
-SKYRIM_AS_ACTIVITY = False
+SKYRIM_AS_ACTIVITY = True
 # The typed commands that open the activity, and which game each one opens it on
 # (lib/activities/launcher.py): command name -> (game, description). Any other typed command
 # the app has is deleted on boot.
