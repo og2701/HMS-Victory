@@ -216,6 +216,20 @@ class Launcher(discord.Client):
         self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay)
 
 
+async def _call(session, method: str, url: str, **kw):
+    """One commands-API request, waiting out Discord's rate limit (it allows about five in a burst, so a longer
+    command list would otherwise lose the rest). Returns (status, JSON body or None)."""
+    for _ in range(5):
+        async with session.request(method, url, **kw) as r:
+            body = await r.json() if r.content_type == "application/json" else None
+            if r.status != 429:
+                return r.status, body
+            wait = float((body or {}).get("retry_after", 1.0))
+        log.info("activity commands API rate-limited; retrying in %.1fs", wait)
+        await asyncio.sleep(min(wait, 30.0) + 0.1)
+    return 429, None
+
+
 async def _register(session) -> None:
     """Create or update each typed command and delete any the config no longer lists
     (the /test- ones, say), leaving the Entry Point command alone."""
@@ -227,14 +241,13 @@ async def _register(session) -> None:
         body = {"name": name, "description": description, "type": 1,
                 "integration_types": [0],   # installed to a server
                 "contexts": [0]}            # used in a server channel
-        async with session.post(base, json=body, headers=headers) as r:
-            log.info("activity launch command /%s registered (%s)", name, r.status)
-    async with session.get(base, headers=headers) as r:
-        existing = await r.json() if r.status == 200 else []
-    for c in existing:
+        status, _ = await _call(session, "POST", base, json=body, headers=headers)
+        log.info("activity launch command /%s registered (%s)", name, status)
+    status, existing = await _call(session, "GET", base, headers=headers)
+    for c in (existing if status == 200 and isinstance(existing, list) else []):
         if c.get("type") == 1 and c.get("name") not in wanted:
-            async with session.delete(f"{base}/{c['id']}", headers=headers) as r:
-                log.info("old activity command /%s removed (%s)", c.get("name"), r.status)
+            status, _ = await _call(session, "DELETE", f"{base}/{c['id']}", headers=headers)
+            log.info("old activity command /%s removed (%s)", c.get("name"), status)
 
 
 async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
