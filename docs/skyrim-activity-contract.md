@@ -134,7 +134,7 @@ Worked out by comparing the delve and profile before and after the action, plus 
 { key, title, art | null, back | null,              // back: the panel key (or "town") the back button goes to
   blurb: string[],
   stats: [{label, value, icon}],
-  sections: [{title, lines: string[]}],
+  sections: [{title, lines: string[], tiles: SkTile[], cols: number}],   // lead with tiles; lines are a few short notes
   actions: [{ id, label, emoji, style, disabled, hint, nav | null, confirm | null }],
            // style: primary|success|danger|secondary; nav: open that panel (or "adventure", "delve",
            // "bout:pit", "bout:duel") instead of posting
@@ -188,3 +188,13 @@ Each one is a port of a views.py screen: same rules, same engine calls, same wor
 | `hall` | `_hub_hall`, `_hall_text` | `boon` (select), `inherit` (select), `stone` (select), `retire` (confirm) |
 | `rankings` | `_hub_rankings`, `_rank_metric` | `board` (select of the eight boards) |
 | `help` | `_hub_help`, `HELP_PAGES` | `page` (select) |
+
+// a picture card on a panel: read at a glance, tapped to act (common.tile)
+SkTile = { title, icon: string | null,          // "a:<icon art>" | "s:<scene>" | "c:<cut-out>" | "i:<drawn icon>", "x|y" falls back to y
+           value: string | null, cost: number | null, // a count or rank; a price in septims (drawn as coin)
+           sub: string | null,                         // a few words at most
+           meter: [n, of] | null, pips: [n, of] | null,
+           state: "ready" | "locked" | "done" | "max" | null,
+           act: string | null, body: object | null,   // tapping posts act (with body) like a panel action
+           nav: string | null, confirm: string | null, badge: string | null,
+           info: string | null }                      // shown when there's nothing to do (or it's locked)

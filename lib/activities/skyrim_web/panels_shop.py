@@ -29,50 +29,39 @@ def _fail(err):
 
 @view("shop")
 def shop(profile, ctx):
-    lines = [f"🧪 **Health potion** - {E.shop_price(profile, D.POTION_PRICE)} septims  "
-             f"({profile['potions']}/{E.potion_cap(profile)} pockets)"]
-    actions = []
-    pocket_full = profile["potions"] >= E.potion_cap(profile)
-    actions.append(common.action("potion", "Buy potion", "🧪", "primary", disabled=pocket_full,
-                                 hint="Your potion pockets are full." if pocket_full else ""))
+    cap = E.potion_cap(profile)
+    full = profile["potions"] >= cap
+    buy = [common.tile("Potion", icon="a:potion|i:flask", cost=E.shop_price(profile, D.POTION_PRICE),
+                       pips=(profile["potions"], cap), state="max" if full else None, act=None if full else "potion",
+                       info="Your potion pockets are full." if full else None)]
     for slot, scale in (("weapon", 1.0), ("armour", 0.8)):
         tier = profile[f"{slot}_tier"]
-        emoji = "⚔️" if slot == "weapon" else "🛡️"
         if tier >= len(D.GEAR_TIERS) - 1:
-            lines.append(f"{emoji} {E.gear_name(profile, slot)} - nothing finer exists in Tamriel.")
-            actions.append(common.action(slot, f"Upgrade {slot}", emoji, "primary", disabled=True,
-                                         hint="Nothing finer exists in Tamriel."))
-        else:
-            nxt = D.GEAR_TIERS[tier + 1]
-            price = E.shop_price(profile, int(nxt["price"] * scale))
-            req = f"  (needs {nxt['dragons']} dragons slain)" if nxt["dragons"] else ""
-            # the slot is named in words: the activity drops a line's leading emoji, which was all that told them apart
-            lines.append(f"{emoji} {slot.capitalize()}: upgrade to **{nxt['emoji']} {nxt['name']}** - {price:,} septims{req}")
-            short = profile["stats"]["dragons"] < nxt["dragons"]
-            actions.append(common.action(
-                slot, f"Upgrade {slot}", emoji, "primary", disabled=short,
-                hint=f"Needs {nxt['dragons']} dragons slain ({profile['stats']['dragons']}/{nxt['dragons']})."
-                if short else f"{nxt['name']}: {price:,} septims"))
+            top = D.GEAR_TIERS[tier]
+            buy.append(common.tile(top["name"], icon=f"a:{slot}_{top['name'].lower()}|i:{'sword' if slot == 'weapon' else 'shield'}",
+                                   sub=f"best {slot}", state="max", info="Nothing finer exists in Tamriel."))
+            continue
+        nxt = D.GEAR_TIERS[tier + 1]
+        short = profile["stats"]["dragons"] < nxt["dragons"]
+        buy.append(common.tile(nxt["name"], icon=f"a:{slot}_{nxt['name'].lower()}|i:{'sword' if slot == 'weapon' else 'shield'}",
+                               cost=E.shop_price(profile, int(nxt["price"] * scale)),
+                               sub=f"{nxt['dragons']} dragons first" if short else f"next {slot}",
+                               state="locked" if short else None, act=None if short else slot,
+                               info=f"Slay {nxt['dragons']} dragons first ({profile['stats']['dragons']}/{nxt['dragons']})." if short else None))
     style = profile.get("armour_style", "heavy")
-    other = "light" if style == "heavy" else "heavy"
-    lines.append(f"👕 Armour style: **{style}** - "
-                 + ("full protection, worn loud." if style == "heavy"
-                    else f"quieter (+{D.LIGHT_SNEAK_BONUS} sneak), thinner protection."))
-    actions.append(common.action("style", f"Go {other}", "👕", "secondary"))
-    actions += [common.action("property", "Property", "🏠", nav="property"),
-                common.action("grindstone", "Grindstone", "🪓", "primary", nav="grindstone"),
-                common.action("alchemy", "Lab Bench", "⚗️", "primary", nav="alchemy"),
-                common.action("rumours", "Rumours", "🗣️", nav="rumours")]
-    note = (f"Weapons add +{D.WEAPON_FIGHT_PER_TIER}% to all attack styles per tier; heavy armour soaks "
-            f"{D.ARMOUR_SOAK_PER_TIER}%/tier, light {D.LIGHT_SOAK_PER_TIER}%/tier. Switching to {other} is free.")
-    stats = [common.stat("Septims", f"{profile['septims']:,}", "💰"),
-             common.stat("Potions", f"{profile['potions']}/{E.potion_cap(profile)}", "🧪"),
-             common.stat("Weapon", E.gear_name(profile, "weapon"), "⚔️"),
-             common.stat("Armour", E.gear_name(profile, "armour"), "🛡️"),
-             common.stat("Dragons slain", profile["stats"]["dragons"], "🐉")]
-    return common.panel("shop", "🏪 Belethor's General Goods", back="town", blurb=[_QUOTE], stats=stats,
-                        sections=[common.section("For sale", lines), common.section("Good to know", [note])],
-                        actions=actions)
+    fit = [common.tile("Heavy", icon="i:shield", sub="more armour", state="done" if style == "heavy" else None,
+                       act=None if style == "heavy" else "style", info="You're in heavy armour."),
+           common.tile("Light", icon="i:hood", sub=f"+{D.LIGHT_SNEAK_BONUS}% sneak", state="done" if style == "light" else None,
+                       act=None if style == "light" else "style", info="You're in light armour.")]
+    rooms = [common.tile("Property", icon="s:property", nav="property"),
+             common.tile("Grindstone", icon="s:grindstone", nav="grindstone"),
+             common.tile("Lab bench", icon="s:alchemy", nav="alchemy"),
+             common.tile("Rumours", icon="s:rumours", nav="rumours")]
+    note = (f"Weapons add +{D.WEAPON_FIGHT_PER_TIER}% to every attack per tier. Heavy armour soaks "
+            f"{D.ARMOUR_SOAK_PER_TIER}% a tier, light {D.LIGHT_SOAK_PER_TIER}%. Switching is free.")
+    return common.panel("shop", "🏪 Belethor's", back="town", blurb=[_QUOTE, note],
+                        sections=[common.section("Buy", tiles=buy, cols=3), common.section("Armour", tiles=fit),
+                                  common.section("In the back", tiles=rooms)])
 
 
 @act("shop")

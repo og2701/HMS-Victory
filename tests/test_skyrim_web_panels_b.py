@@ -49,11 +49,24 @@ def do(key, action, body=None, uid=1):
     return run(PANELS[key]["act"](E.get_profile(uid), ctx(uid), action, body or {}))
 
 
+TILE_KEYS = {"title", "icon", "value", "cost", "sub", "meter", "pips", "state", "act", "body", "nav", "confirm", "badge", "info"}
+
+
+def check_tile(t):
+    """A tile is read at a glance: a short name, a few words of sub, a known state."""
+    assert set(t) == TILE_KEYS and t["title"] and len(t["title"].split()) <= 5
+    assert t["sub"] is None or len(t["sub"].split()) <= 7
+    assert t["state"] in (None, "ready", "locked", "done", "max")
+    assert t["icon"] is None or t["icon"][:2] in ("a:", "s:", "c:", "i:")
+
+
 def check_panel(p):
     assert set(p) == {"key", "title", "art", "back", "blurb", "stats", "sections", "actions", "selects"}
     assert p["title"] and isinstance(p["blurb"], list)
     for s in p["sections"]:
-        assert s["lines"]
+        assert s["lines"] or s["tiles"]
+        for t in s["tiles"]:
+            check_tile(t)
     for a in p["actions"]:
         assert set(a) == {"id", "label", "emoji", "style", "disabled", "hint", "nav", "confirm"}
     for s in p["selects"]:

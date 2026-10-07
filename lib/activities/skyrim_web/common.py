@@ -176,15 +176,31 @@ def stat(label: str, value, icon: str = "") -> dict:
     return {"label": label, "value": str(value), "icon": icon}
 
 
-def section(title: str, body) -> dict:
-    return {"title": clean(title), "lines": lines(body)}
+def tile(title: str, *, icon: str | None = None, value=None, cost: int | None = None, sub: str | None = None, meter=None, pips=None,
+         state: str | None = None, act: str | None = None, body: dict | None = None, nav: str | None = None,
+         confirm: str | None = None, badge: str | None = None, info: str | None = None) -> dict:
+    """SkTile: one picture card on a screen, read at a glance and tapped to act. Keep words to a name (a few words),
+    a value (a count, a rank), a cost in septims (drawn as coin) and at most a few words of sub. icon: "a:<key>" game icon art (public/skyrim/icon),
+    "s:<key>" a scene, "c:<key>" a cut-out, "i:<name>" a drawn icon; "a:x|i:y" falls back to y. meter / pips:
+    (n, of) as a bar / as diamonds. state: "ready" (something to do here), "locked", "done", "max" or None. A tap
+    posts act (with body) to the screen, or goes to nav; a tile with neither, or a locked one, shows info."""
+    return {"title": clean(title), "icon": icon, "value": None if value is None else clean(str(value)),
+            "cost": None if cost is None else int(cost),
+            "sub": clean(sub) if sub else None, "meter": [int(meter[0]), int(meter[1])] if meter else None,
+            "pips": [int(pips[0]), int(pips[1])] if pips else None, "state": state, "act": act, "body": body or None,
+            "nav": nav, "confirm": confirm, "badge": clean(badge) if badge else None, "info": clean(info) if info else None}
+
+
+def section(title: str, body=(), tiles=None, cols: int = 2) -> dict:
+    """A block of a screen: tiles (cols across) and/or a few short lines."""
+    return {"title": clean(title), "lines": lines(body), "tiles": list(tiles or []), "cols": cols}
 
 
 def panel(key: str, title: str, *, art: str | None = None, back: str | None = "town", blurb=(), stats=(),
           sections=(), actions=(), selects=()) -> dict:
-    """SkPanel."""
+    """SkPanel. The blurb is the screen's flavour and rules, kept behind an info button: lead with tiles."""
     return {"key": key, "title": clean(title), "art": art, "back": back, "blurb": lines(list(blurb)),
-            "stats": list(stats), "sections": [s for s in sections if s and s.get("lines")],
+            "stats": list(stats), "sections": [s for s in sections if s and (s.get("lines") or s.get("tiles"))],
             "actions": list(actions), "selects": [s for s in selects if s and s.get("options")]}
 
 

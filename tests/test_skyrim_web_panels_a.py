@@ -43,6 +43,17 @@ def refused(key, action, body=None):
         run(key, action, body)
 
 
+TILE_KEYS = {"title", "icon", "value", "cost", "sub", "meter", "pips", "state", "act", "body", "nav", "confirm", "badge", "info"}
+
+
+def check_tile(t):
+    """A tile is read at a glance: a short name, a few words of sub, a known state."""
+    assert set(t) == TILE_KEYS and t["title"] and len(t["title"].split()) <= 5
+    assert t["sub"] is None or len(t["sub"].split()) <= 7
+    assert t["state"] in (None, "ready", "locked", "done", "max")
+    assert t["icon"] is None or t["icon"][:2] in ("a:", "s:", "c:", "i:")
+
+
 def check_panel(p, key):
     assert set(p) == {"key", "title", "art", "back", "blurb", "stats", "sections", "actions", "selects"}
     assert p["key"] == key and isinstance(p["title"], str) and p["title"]
@@ -52,7 +63,9 @@ def check_panel(p, key):
     for s in p["stats"]:
         assert set(s) == {"label", "value", "icon"} and isinstance(s["value"], str)
     for s in p["sections"]:
-        assert isinstance(s["title"], str) and s["lines"] and all(isinstance(x, str) for x in s["lines"])
+        assert isinstance(s["title"], str) and (s["lines"] or s["tiles"]) and all(isinstance(x, str) for x in s["lines"])
+        for t in s["tiles"]:
+            check_tile(t)
     for a in p["actions"]:
         assert set(a) == {"id", "label", "emoji", "style", "disabled", "hint", "nav", "confirm"}
         assert a["style"] in ("primary", "success", "danger", "secondary")
@@ -210,12 +223,16 @@ def test_hall_inherit(prof):
     assert E.get_profile(UID)["doctrines"]
 
 
+def tiles_of(p):
+    return [t for s in p["sections"] for t in s["tiles"]]
+
+
 def test_shop_actions(prof):
     p = PANELS["shop"]["view"](prof, CTX)
-    ids = [a["id"] for a in p["actions"]]
-    assert ids == ["potion", "weapon", "armour", "style", "property", "grindstone", "alchemy", "rumours"]
-    assert {a["id"]: a["nav"] for a in p["actions"] if a["nav"]} == {
-        k: k for k in ("property", "grindstone", "alchemy", "rumours")}
+    ts = tiles_of(p)
+    assert not p["actions"] and [t["act"] for t in ts if t["act"]] == ["weapon", "armour", "style"]   # pockets are full
+    assert next(t for t in ts if t["title"] == "Potion")["state"] == "max"
+    assert [t["nav"] for t in ts if t["nav"]] == ["property", "grindstone", "alchemy", "rumours"]
     refused("shop", "potion")                                   # pockets already full or no coin
     prof["potions"] = 0
     prof["septims"] = 1_000_000
@@ -232,7 +249,7 @@ def test_shop_actions(prof):
     assert E.get_profile(UID)["armour_tier"] == 1
     r = run("shop", "style")
     assert E.get_profile(UID)["armour_style"] == "light" and "light" in r["toast"]
-    assert next(a for a in r["panel"]["actions"] if a["id"] == "style")["label"] == "Go heavy"
+    assert next(t for t in tiles_of(r["panel"]) if t["act"] == "style")["title"] == "Heavy"
     q = E.get_profile(UID)
     q["septims"] = 0
     E.save_profile(q)
@@ -247,8 +264,8 @@ def test_shop_dragon_gate_disables(prof):
     E.save_profile(prof)
     last = D.GEAR_TIERS[-1]
     p = PANELS["shop"]["view"](E.get_profile(UID), CTX)
-    w = next(a for a in p["actions"] if a["id"] == "weapon")
-    assert last["dragons"] and w["disabled"] and "dragons" in w["hint"]
+    w = next(t for t in tiles_of(p) if t["title"] == last["name"])
+    assert last["dragons"] and w["state"] == "locked" and not w["act"] and "dragons" in w["info"]
     refused("shop", "weapon")
 
 
