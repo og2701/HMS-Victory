@@ -71,6 +71,9 @@ def main(port: int) -> None:
     if hasattr(config, "CROSSWORD_STATE_FILE"):
         config.CROSSWORD_STATE_FILE = os.path.join(tmp, "crossword.json")
     config.PERSISTENT_VIEWS_FILE = os.path.join(tmp, "persistent_views.json")
+    # Skyrim's saves too, so playing it here never touches this checkout's data/json
+    for name in ("PROFILES", "DAILY", "GRAVEYARD", "WORLDBOSS"):
+        setattr(config, f"SKYRIM_{name}_FILE", os.path.join(tmp, f"skyrim_{name.lower()}.json"))
     from lib.core import file_operations
     file_operations.PERSISTENT_VIEWS_FILE = config.PERSISTENT_VIEWS_FILE
 
