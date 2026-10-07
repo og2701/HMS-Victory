@@ -76,23 +76,17 @@ def character(profile, ctx):
              common.stat("Hearts", E.heart_max(profile), "❤️"),
              common.stat("Potions", f"{profile['potions']}/{E.potion_cap(profile)}", "🧪"),
              common.stat("Septims", f"{profile['septims']:,}", "💰"),
-             common.stat("Weapon", E.gear_name(profile, "weapon"), "⚔️"),
-             common.stat("Armour", f"{E.gear_name(profile, 'armour')} (soaks {E.soak_pct(profile)}%)", "🛡️"),
-             common.stat("Voice", f"{E.voice_charges(profile)}/{profile['words']}", "🗣️"),
              common.stat("Souls", profile["souls"], "🐉"),
              common.stat("Collection", f"{E.collection_pct(profile)}%", "📦")]
-    for key, label in (("blade", "One-Handed"), ("marksman", "Marksman"), ("destruction", "Destruction"),
-                       ("sneak", "Sneak"), ("speech", "Speech"), ("lockpicking", "Lockpicking")):
-        stats.append(common.stat(label, s[key] if key in s else 0, "✨" if key in boosted else ""))
+    # the numbers above aren't repeated below: the sections carry the skills, the gear and the rest
 
     skill_lines = [f"{label:<12} **{s.get(key, 0)}** {_bar(s.get(key, 0))}" + ("  ✨" if key in boosted else "")
                    for key, label in _SKILL_LABELS.items()]
+    skill_lines.append("Stone-blessed skills ✨ learn faster.")
     t_bit = (f"  ·  🪓 +{temper.get('weapon', 0)}/+{temper.get('armour', 0)} tempered"
              if temper.get("weapon") or temper.get("armour") else "")
     gear = [f"**Gear**: {E.gear_name(profile, 'weapon')}  ·  {E.gear_name(profile, 'armour')} "
             f"(soaks {E.soak_pct(profile)}%){t_bit}",
-            f"**Hearts**: ❤️ {E.heart_max(profile)}  ·  🧪 {profile['potions']}/{E.potion_cap(profile)}"
-            f"  ·  💰 {profile['septims']:,}",
             f"**The Voice**: 🗣️ {words}  ·  breath {E.voice_charges(profile)}/{profile['words']}"
             f"  ·  🐉 {profile['souls']} soul{'s' if profile['souls'] != 1 else ''}"]
     extra = []
@@ -110,12 +104,13 @@ def character(profile, ctx):
         shelf = " ".join(D.WONDERS[k]["emoji"] for k in wonders)
         extra.append(f"**Wonders**: ✨ {shelf}  ({len(wonders)}/{len(D.WONDERS)})")
     streak = E.current_streak(profile)
-    foot = [f"📦 collection {E.collection_pct(profile)}%"]
+    foot = []
     if streak >= 2:
         foot.append(f"🔥 {streak}-day streak")
     if pts:
         foot.append(f"📜 {pts} perk point{'s' if pts != 1 else ''} to spend")
-    extra.append("  ·  ".join(foot))
+    if foot:
+        extra.append("  ·  ".join(foot))
 
     actions = [
         common.action("masteries", f"Masteries ({open_n})" if open_n else "Masteries", "✨",
@@ -131,10 +126,9 @@ def character(profile, ctx):
         actions.append(common.action("hall", "Hall of Legends" + (" - retirement awaits" if ready else ""), "🏛️",
                                      "danger" if ready else "secondary", nav="hall"))
     return common.panel("character", f"{stone['emoji']} {profile['name']}", back="town", blurb=blurb,
-                        stats=stats, sections=[common.section("Skills (improve by use; ✨ = stone-blessed, learns faster)",
-                                                              skill_lines),
+                        stats=stats, sections=[common.section("Skills, which grow as you use them", skill_lines),
                                                common.section("Gear and Voice", gear),
-                                               common.section("Standing", extra)],
+                                               *([common.section("Standing", extra)] if extra else [])],
                         actions=actions)
 
 

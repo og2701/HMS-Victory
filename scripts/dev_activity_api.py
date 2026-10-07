@@ -64,7 +64,8 @@ def _post_to_folder(launcher, folder: str) -> None:
 
 
 def main(port: int) -> None:
-    tmp = tempfile.mkdtemp(prefix="hms-activity-dev-")
+    # DEV_ACTIVITY_DATA reuses an earlier run's folder, so a restart keeps the test saves
+    tmp = os.environ.get("DEV_ACTIVITY_DATA") or tempfile.mkdtemp(prefix="hms-activity-dev-")
     import config
     config.JSON_DATA_DIR = tmp
     config.WORDLE_STATE_FILE = os.path.join(tmp, "wordle.json")
