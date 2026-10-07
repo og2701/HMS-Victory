@@ -698,7 +698,8 @@ async def ws(request, read_session, name_of):
         if old is not None and old is not sock:
             await old.close()
         live.repilot()
-        await sock.send_str(json.dumps({"t": "hi", "now": time.time(), "room": view(r, uid, name_of)}))
+        # where everyone last was, so a page that's reloaded mid-race picks its kart up where it left it
+        await sock.send_str(json.dumps({"t": "hi", "now": time.time(), "room": view(r, uid, name_of), "k": live.states}))
         async for m in sock:
             if m.type != WSMsgType.TEXT:
                 continue

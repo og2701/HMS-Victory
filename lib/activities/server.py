@@ -242,7 +242,8 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
-    return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel)}
+    return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel),
+            "kart": bool(getattr(config, "KART_LIVE", False))}
 
 
 def _skyrim_card(uid: int, channel) -> dict | None:
