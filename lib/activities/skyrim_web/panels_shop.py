@@ -46,7 +46,8 @@ def shop(profile, ctx):
             nxt = D.GEAR_TIERS[tier + 1]
             price = E.shop_price(profile, int(nxt["price"] * scale))
             req = f"  (needs {nxt['dragons']} dragons slain)" if nxt["dragons"] else ""
-            lines.append(f"{emoji} Upgrade to **{nxt['emoji']} {nxt['name']}** - {price:,} septims{req}")
+            # the slot is named in words: the activity drops a line's leading emoji, which was all that told them apart
+            lines.append(f"{emoji} {slot.capitalize()}: upgrade to **{nxt['emoji']} {nxt['name']}** - {price:,} septims{req}")
             short = profile["stats"]["dragons"] < nxt["dragons"]
             actions.append(common.action(
                 slot, f"Upgrade {slot}", emoji, "primary", disabled=short,
