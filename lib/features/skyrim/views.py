@@ -881,7 +881,10 @@ async def _show_hub_root(interaction: Interaction, profile, *, first_response=Fa
             row.add_item(discord.ui.Button(style=discord.ButtonStyle.link, label="Resume adventure",
                                            url=url, emoji="↩️"))
             rows.insert(0, row)
-    view, files = _panel_view(_hub_text(profile), rows, art_key="hub")
+    text = _hub_text(profile)
+    if live and live.playing() and _in_activity(live):
+        text += f"\n\n-# {_ACTIVITY_NOTE}"
+    view, files = _panel_view(text, rows, art_key="hub")
     if first_response:
         await interaction.response.send_message(view=view, files=files, ephemeral=True)
     else:
@@ -928,7 +931,17 @@ async def _hub_adventure(interaction: Interaction):
     await _open_location_picker(interaction, edit_hub=True)
 
 
+_ACTIVITY_NOTE = "Your adventure is open in the HMS Games activity."
+
+
+def _in_activity(delve: E.Delve) -> bool:
+    """An adventure started in the HMS Games activity has a negative id and no Discord message."""
+    return delve.message_id is not None and int(delve.message_id) < 0
+
+
 def _delve_jump_url(interaction: Interaction, delve: E.Delve) -> str | None:
+    if _in_activity(delve):
+        return None
     if interaction.guild_id is None or delve.channel_id is None or delve.message_id is None:
         return None
     return f"https://discord.com/channels/{interaction.guild_id}/{delve.channel_id}/{delve.message_id}"
@@ -958,6 +971,8 @@ async def _open_location_picker(interaction: Interaction, edit_hub: bool = False
                    if bound else f"A new adventure ends this one. You keep **{kept:,} gold** and "
                    f"**{T.quantity(live.ingredients)} ingredients**"
                    + ("; the flee penalty applies." if live.engaged else ".")))
+        if _in_activity(live):
+            text += f"\n-# {_ACTIVITY_NOTE}"
         row = discord.ui.ActionRow()
         url = _delve_jump_url(interaction, live)
         if url:
@@ -3685,6 +3700,8 @@ def reattach_skyrim_view(client, key, value):
     if not delve.playing() or profile is None or profile.get("active_delve") != int(key):
         E.delete_delve(key)
         return
+    if int(key) < 0:
+        return          # started in the activity: no Discord message, so no view to register
     try:
         delve.message_id = int(key)
         # A committed turn may have crashed before Discord received the new

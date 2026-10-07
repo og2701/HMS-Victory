@@ -717,6 +717,8 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/countdown/room/{{id}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/{{action}}", countdown_action)
+        from lib.activities.skyrim_web import routes as skyrim_routes
+        skyrim_routes.register(app, prefix)
     return app
 
 
