@@ -660,9 +660,25 @@ async def rankings_act(profile, ctx, action, body):
 
 # ---- help ------------------------------------------------------------------------------------------------
 
-def _help_panel(profile: dict, page: str = "start") -> dict:
+# the activity's own first page: the whole loop in seven short steps, for the screen in front of you (the Discord
+# chapters behind it are the full rules, written for the bot's buttons)
+_GUIDE = [
+    "**1. Go adventuring.** Tap Adventure, pick a banner on the map and set out. Green is easy, red is hard.",
+    "**2. Fight.** Tap Blade, Bow or Fire. The number on each is your chance to hit.",
+    "**3. Read the foe.** The sign over it is its next move. The glowing button answers it best.",
+    "**4. Stay alive.** Run out of hearts and your satchel's loot stays behind. Drink a potion, or Bank to walk out with it.",
+    "**5. Spend it in town.** Better gear at Belethor's, perk points on your Character, tasks on the Notice Board.",
+    "**6. Not sure what next?** Follow the gold marker in town.",
+    "Adventures refill through the day, up to 12. The Pit opens at level 5.",
+]
+
+
+def _help_panel(profile: dict, page: str = "guide") -> dict:
+    opts = [common.option("guide", "How to play", "", "🧭", page == "guide")] + [
+        common.option(k, lab, "", em or "📖", k == page) for k, (em, lab, _t) in V.HELP_PAGES.items()]
     if page not in V.HELP_PAGES:
-        page = "start"
+        return common.panel("help", "How to play", art="help", back="town", sections=[common.section("", _GUIDE)],
+                            selects=[common.select("page", "📖 More chapters...", opts)])
     emoji, label, text = V.HELP_PAGES[page]
     foot = (f"-# A delve returns at {', '.join(f'{h:02d}:00' for h in E._slot_hours())} UK and they stack up to "
             f"{getattr(config, 'SKYRIM_DELVE_MAX_STORED', 12)} while you're away - no midnight rush. "
@@ -671,7 +687,6 @@ def _help_panel(profile: dict, page: str = "start") -> dict:
     if blocks:
         blocks[0]["title"] = blocks[0]["title"] or label
     blocks.append(common.section("", [foot]))
-    opts = [common.option(k, lab, "", em or "📖", k == page) for k, (em, lab, _t) in V.HELP_PAGES.items()]
     return common.panel("help", f"{emoji} {label}", art=None, back="town", sections=blocks,
                         selects=[common.select("page", "📖 More chapters...", opts)])
 
@@ -686,6 +701,6 @@ async def help_act(profile, ctx, action, body):
     if action != "page":
         raise Refuse("You can't do that here.")
     page = _one(body, "chapter")
-    if page not in V.HELP_PAGES:
+    if page not in V.HELP_PAGES and page != "guide":
         raise Refuse("There's no such chapter.")
     return common.result(_help_panel(profile, page), profile)
