@@ -218,6 +218,18 @@ WARDROBE = {
     "bag-black": ("bag", "Midnight", 500, "#26262E"),
     "bag-hivis": ("bag", "Hi-Vis", 500, "#C8F020"),
     "bag-gold": ("bag", "Solid Gold", 2000, "#E8B530"),
+    # bags that are models of their own, in place of the satchel (the look names the model, not a colour)
+    "bag-teachest": ("bag", "Tea Chest", 4000, "teachest"),
+    "bag-postsack": ("bag", "Post Sack", 5000, "postsack"),
+    "bag-hamper": ("bag", "Wicker Hamper", 6000, "hamper"),
+    "bag-treasure": ("bag", "Treasure Chest", 12000, "treasure"),
+    "hat-none": ("hat", "No Hat", 0, "none"),
+    "hat-bowler": ("hat", "Bowler", 4000, "bowler"),
+    "hat-tophat": ("hat", "Top Hat", 5000, "tophat"),
+    "hat-bobby": ("hat", "Bobby's Helmet", 6000, "bobby"),
+    "hat-cavalier": ("hat", "Cavalier's Plume", 7500, "cavalier"),
+    "hat-bicorne": ("hat", "Admiral's Bicorne", 10000, "bicorne"),
+    "hat-crown": ("hat", "Crown", 15000, "crown"),
     "trail-none": ("trail", "No Trail", 0, "none"),
     "trail-paper": ("trail", "Paper Trail", 1000, "paper"),
     "trail-confetti": ("trail", "Confetti", 2000, "confetti"),
@@ -234,7 +246,7 @@ WARDROBE = {
     "bell-fanfare": ("bell", "Fanfare", 1000, "fanfare"),
     "bell-siren": ("bell", "Nee-Naw", 1200, "siren"),
 }
-SLOTS = ("bike", "top", "hair", "bag", "trail", "bell")
+SLOTS = ("bike", "top", "hair", "hat", "bag", "trail", "bell")
 FREE = [k for k, v in WARDROBE.items() if v[2] == 0]
 WEARING = {WARDROBE[k][0]: k for k in FREE}
 
