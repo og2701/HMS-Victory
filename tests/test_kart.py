@@ -301,3 +301,53 @@ def test_a_practice_race_is_kept_and_a_made_up_one_isnt(em):
         K.record_practice(A, {"track": "silverstone", "field": [{"cpu": False, "car": "cab", "place": 1, "time": 9}]})
     with pytest.raises(K.Refuse):
         K.record_practice(A, {"track": "the moon", "field": field})
+
+
+def test_anyone_can_watch_a_race_under_way(em):
+    rid = race(em, (A, B), stake=0)
+    with pytest.raises(K.Refuse):
+        K.watch(E, "nope", name_of)
+    seen = K.watch(E, rid, name_of)
+    assert seen["state"] == "race" and len(seen["grid"]) == K.SEATS
+    # it's in the lobby's list of races to watch, for everyone but the people in it
+    assert [r["id"] for r in K.lobby(E, name_of, 0)["live"]] == [rid]
+    assert K.lobby(A, name_of, 0)["live"] == []
+    # a race still filling up isn't there to watch
+    waiting = K.open_room(D, 0, "cab")["id"]
+    with pytest.raises(K.Refuse):
+        K.watch(E, waiting, name_of)
+
+
+class FakeSock:
+    def __init__(self):
+        self.got = []
+
+    async def send_str(self, text):
+        self.got.append(json.loads(text))
+
+
+def test_watchers_hear_everything_and_see_whats_on_the_road(em):
+    import asyncio
+    rid = race(em, (A, B), stake=0)
+    tick(em, K.LOAD_SECONDS + K.COUNTDOWN)
+    live = K.Live(K._rooms[rid])
+    racer, watcher = FakeSock(), FakeSock()
+    live.socks[A] = racer
+    live.watchers[E] = watcher
+    asyncio.run(live.handle(B, {"t": "e", "e": {"k": "add", "th": {"id": 7, "kind": "cone", "owner": str(B)}}}))
+    assert [m["t"] for m in watcher.got] == ["e"] and [m["t"] for m in racer.got] == ["e"]
+    assert list(live.things) == [7]
+    asyncio.run(live.handle(B, {"t": "e", "e": {"k": "del", "id": 7}}))
+    assert live.things == {}
+    # a watcher is never handed the CPU karts to drive
+    live.socks.pop(A)
+    live.repilot()
+    assert K._rooms[rid].get("pilot") != E
+
+
+def test_a_race_under_way_has_a_watch_button(em):
+    from lib.activities import kart_posts
+    rid = race(em, (A, B), stake=0)
+    ids = [c.custom_id for row in kart_posts.view(K._rooms[rid], "start", None).children
+           if hasattr(row, "children") for c in row.children if hasattr(c, "custom_id")]
+    assert f"ukplace:kartwatch:{rid}" in ids and "ukplace:play:kart" in ids

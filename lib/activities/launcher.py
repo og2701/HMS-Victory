@@ -220,6 +220,27 @@ class KartJoin(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:kar
             await _launch(interaction, f"kart:{self.rid}")
 
 
+class KartWatch(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:kartwatch:(?P<rid>[0-9a-f]+)"):
+    """Watch on a UKP Kart race's post while it runs: opens the activity watching that race."""
+
+    def __init__(self, rid: str):
+        super().__init__(discord.ui.Button(label="Watch", style=discord.ButtonStyle.primary,
+                                           custom_id=f"ukplace:kartwatch:{rid}"))
+        self.rid = rid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["rid"])
+
+    async def callback(self, interaction: discord.Interaction):
+        from lib.activities import kart
+        r = kart.room_info(self.rid)
+        if r is None or r.get("over") or r.get("state") != "race":
+            await interaction.response.send_message("That race has finished. Open UKP Kart to start your own.", ephemeral=True)
+        else:
+            await _launch(interaction, f"kart:watch:{self.rid}")
+
+
 class KartPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:play:kart"):
     """Play UKP Kart: opens the activity on UKP Kart's races."""
 
@@ -251,7 +272,7 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
-        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay, KartJoin, KartPlay)
+        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay, KartJoin, KartWatch, KartPlay)
 
 
 async def _call(session, method: str, url: str, **kw):

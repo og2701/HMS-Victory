@@ -31,6 +31,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /kart/open {stake, car}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
     GET  /kart/room/<id>      a room (polled while waiting for the start)
+    GET  /kart/watch/<id>     a race under way, to watch (anyone; the WebSocket's hello then says watch)
     GET  /kart/ws             the race itself, a WebSocket (kart.ws)
     GET  /health
 """
@@ -773,6 +774,17 @@ async def kart_room(request):
         return _error(str(e), 422)
 
 
+async def kart_watch(request):
+    who, err = _kart_request(request)
+    if err is not None:
+        return err
+    client = request.app[CLIENT]
+    try:
+        return _json(kart.watch(who["uid"], request.match_info["id"], lambda u: _name(client, u)))
+    except kart.Refuse as e:
+        return _error(str(e), 422)
+
+
 async def kart_ws(request):
     client = request.app[CLIENT]
 
@@ -834,6 +846,7 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/kart", kart_lobby)
         app.router.add_get(f"{prefix}/kart/ws", kart_ws)
         app.router.add_get(f"{prefix}/kart/room/{{id}}", kart_room)
+        app.router.add_get(f"{prefix}/kart/watch/{{id}}", kart_watch)
         app.router.add_post(f"{prefix}/kart/{{action}}", kart_action)
         from lib.activities.skyrim_web import routes as skyrim_routes
         skyrim_routes.register(app, prefix)
