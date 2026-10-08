@@ -3,6 +3,18 @@
   "village": {
    "length": 1247,
    "laps": 3
+  },
+  "silverstone": {
+   "length": 1453,
+   "laps": 3
+  },
+  "wobbling": {
+   "length": 1315,
+   "laps": 3
+  },
+  "clanking": {
+   "length": 1377,
+   "laps": 3
   }
  },
  "cars": {
