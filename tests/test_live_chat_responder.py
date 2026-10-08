@@ -2811,11 +2811,46 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
              patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
             res = await handle_one_off_owner_mention(client, message)
         self.assertTrue(res)
-        self.assertEqual(mock_plan.call_args[1]["attachments"], [(1, "image.jpg (from a message in the reply chain)")])
+        self.assertEqual(mock_plan.call_args[1]["attachments"], [(1, "image.jpg (from shuto's message in the reply chain)")])
         self.assertEqual(mock_edit.call_args[0][0], b"HENRY")
         self.assertEqual(mock_synth_edit.call_args[1]["prev_prompt"], "An image posted by shuto (no caption)")
         self.assertEqual(mock_synth_edit.call_args[1]["prompt"], "Edit the attached image to show the hoover being smashed up")
         self.assertIn("file", message.reply.call_args[1])
+        mock_gen.assert_not_called()
+
+    @patch("lib.features.chat_responder.download_image_bytes", side_effect=lambda url, *a, **k: {"https://cdn/pepys.png": b"PEPYS"}[url])
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"painted", 30, 200))
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt", return_value=("edit", "the deep-fried picture on a canvas Pepys is painting", "Art.", 10, 5))
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_an_attachment_and_the_replied_bot_picture_are_both_used(self, mock_find, mock_gather, _ch, _act, mock_synth_edit, mock_edit, mock_gen, _dl):
+        # 2026-10-08: "put this on a canvas on an art stand that this guy is painting", replying to the bot's deep-fried
+        # picture with a portrait attached. Only the portrait reached the planner, so the bot painted Count Johncula.
+        client = MagicMock(); client.user.id = 999999999
+        bot_pic = MagicMock(); bot_pic.filename = "edited.png"; bot_pic.content_type = "image/png"; bot_pic.url = "https://cdn/fried.png"; bot_pic.read = AsyncMock(return_value=b"FRIED")
+        bot_msg = MagicMock(); bot_msg.id = 7; bot_msg.content = "Ah, once more into the frying pan."; bot_msg.author.id = client.user.id
+        bot_msg.mentions = []; bot_msg.attachments = [bot_pic]; bot_msg.reference = None
+        ref = MagicMock(); ref.message_id = 7; ref.resolved = bot_msg
+        message = self._leader_message(client, f"<@{client.user.id}> put this on a canvas on an art stand that this guy is painting", reference=ref)
+        portrait = MagicMock(); portrait.filename = "pepys.png"; portrait.content_type = "image/png"; portrait.url = "https://cdn/pepys.png"; portrait.read = AsyncMock(return_value=b"PEPYS")
+        message.attachments = [portrait]
+        plan = self._plan(action="edit", request="Put the deep-fried picture on a canvas on an easel that the man in the portrait is painting",
+                          edit_source="attachment", subjects=[{"kind": "thing", "user_id": None, "name": None, "note": "canvas"}],
+                          attachment_roles=[{"index": 1, "role": "subject_likeness"}, {"index": 2, "role": "edit_target"}])
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan) as mock_plan, \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(mock_plan.call_args[1]["attachments"],
+                         [(1, "pepys.png"), (2, "edited.png (the bot's own picture that this message replies to)")])
+        images, prompt = mock_edit.call_args[0][0], mock_edit.call_args[0][1]
+        self.assertEqual(images, [b"FRIED", b"PEPYS"])                       # the picture to change first, the painter second
+        self.assertTrue(prompt.startswith("Edit the FIRST image. The other images are references (image 2: the likeness of the person to show)"))
         mock_gen.assert_not_called()
 
     @patch("lib.features.chat_responder.generate_image_openai", return_value=(b"img", 20, 200))

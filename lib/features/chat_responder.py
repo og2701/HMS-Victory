@@ -3757,6 +3757,7 @@ FIELDS
   The caller is only the subject when they mean themselves ("draw me", "what do I look like", "my message history"). "(attached)" after a name means a picture is attached, not that the caller is the subject.
 - edit_source (for action=edit): "attachment" if the change applies to an image attached to this request; "replied_image" if it applies to an image in the reply chain; "last_bot_image" for the bot's most recent image in the channel; "none" otherwise.
 - attachment_roles: one entry per attachment index listed in ATTACHMENTS: "edit_target" (the picture to change), "subject_likeness" (a photo/profile picture of the subject to base their look on), "style" (an art/style reference like a sprite sheet), "content" (something to put in the picture), "ignore".
+- SEVERAL IMAGES: ATTACHMENTS says where each came from. "this guy" / "this man" / "her" / "him" next to an attached photo of a person means the person IN that photo (subject_likeness), never a server member and never the caller. "this" / "it" in a reply to a picture means the picture replied to. Putting one picture into a new scene with another ("put this on a canvas this guy is painting", "him holding this", "put this in that") is action "generate" with each image given its role (the person: subject_likeness; the thing placed in the scene: content), not an edit of either.
 - recipient_ids: user ids the result should be sent/shown to ("... and send it to @X"). Not subjects.
 - include_bot_in_picture: true if the bot itself should appear (subject kind bot, or "with you", "your history together", "you and him", "your thoughts on ...").
 - reason: one short line.
@@ -4338,6 +4339,19 @@ def reference_lead(roles: Optional[List[str]], count: int) -> str:
     words = {"subject_likeness": "the subject's likeness", "style": "style only (era, palette, composition; not its people)", "content": "something to include in the picture", "edit_target": "the picture to change"}
     listed = "; ".join(f"image {i}: {words.get(r, r)}" for i, r in enumerate(roles, 1))
     return f"Using the attached images as references ({listed}): "
+
+
+def edit_reference_lead(roles: Optional[List[str]], count: int) -> str:
+    """For an edit sent with references: the first image is the picture to change, the rest are what to take."""
+    if count <= 0:
+        return ""
+    roles = [r or "subject_likeness" for r in (roles or [])][:count]
+    while len(roles) < count:
+        roles.append("subject_likeness")
+    words = {"subject_likeness": "the likeness of the person to show", "style": "style only (palette, era, composition; not its people)",
+             "content": "something to put into the picture", "edit_target": "another picture to work in"}
+    listed = "; ".join(f"image {i}: {words.get(r, r)}" for i, r in enumerate(roles, 2))
+    return f"Edit the FIRST image. The other images are references ({listed}). Keep the first image as it is apart from this change: "
 
 
 async def produce_image(
@@ -5497,6 +5511,20 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         # Images the requester attached themselves: used as references, or as the thing to edit. A delegated
         # "pls do this" inherits the images from the message it points at.
         reference_attachments = own_image_attachments(message)
+        attachment_sources: Dict[int, str] = {id(a): "attached to this request" for a in reference_attachments}
+        if reference_attachments and ref_msg is not None and delegated_from is None:
+            # An attachment AND a reply to a picture ("put this on a canvas this guy is painting", replying to the
+            # bot's image with a portrait attached): offer both, the bot's own picture included, labelled by source.
+            replied_atts = [a for a in own_image_attachments(ref_msg) if a not in reference_attachments]
+            if replied_atts:
+                ref_author_id = getattr(getattr(ref_msg, "author", None), "id", None)
+                label = ("the bot's own picture that this message replies to" if ref_author_id == bot_id else
+                         f"from {_member_display_name(getattr(ref_msg, 'author', None), 'someone')}'s message that this replies to")
+                for a in replied_atts:
+                    attachment_sources[id(a)] = label
+                reference_attachments = (reference_attachments + replied_atts)[:4]
+                logger.info("Request offers %d attached image(s) and %d from the replied-to message for the planner",
+                            len(own_image_attachments(message)), len(replied_atts))
         if not reference_attachments and delegated_from is not None:
             reference_attachments = own_image_attachments(delegated_from)
             if reference_attachments:
@@ -5510,6 +5538,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 atts = own_image_attachments(m)
                 if atts:
                     reference_attachments = atts
+                    for a in atts:
+                        attachment_sources[id(a)] = f"from {_member_display_name(getattr(m, 'author', None), 'someone')}'s message in the reply chain"
                     logger.info("Reply chain offers %d image(s) from %s for the planner", len(atts), _member_display_name(getattr(m, "author", None), "someone"))
                     break
         reference_images = [att.url for att in reference_attachments]
@@ -5663,7 +5693,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 caller_name=caller_name,
                 caller_id=caller_id,
                 attachments=[
-                    (i, getattr(a, "filename", f"image{i}") + ("" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
+                    (i, getattr(a, "filename", f"image{i}") + (f" ({attachment_sources[id(a)]})" if id(a) in attachment_sources and a not in own_image_attachments(message) else
+                                                               "" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
                     for i, a in enumerate(reference_attachments, 1)
                 ],
                 reply_chain=chain_for_plan,
@@ -5708,9 +5739,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     src_msg = message
                 else:
                     src_msg = next((m for m in reply_chain if plan_edit_attachment in own_image_attachments(m)), message)
-                    who = _member_display_name(getattr(src_msg, "author", None), "a user")
-                    cap = _strip_bot_address(getattr(src_msg, "content", "") or "", bot_id)
-                    desc = f"An image posted by {who}" + (f" with the caption: \"{cap}\"" if cap else " (no caption)")
+                    if getattr(getattr(src_msg, "author", None), "id", None) == bot_id:
+                        # one of ours: the prompt it was made from describes it best
+                        desc = _extract_recent_image_prompt_from_history() or (getattr(src_msg, "content", "") or "The bot's previous picture")
+                    else:
+                        who = _member_display_name(getattr(src_msg, "author", None), "a user")
+                        cap = _strip_bot_address(getattr(src_msg, "content", "") or "", bot_id)
+                        desc = f"An image posted by {who}" + (f" with the caption: \"{cap}\"" if cap else " (no caption)")
                 recent_img_info = (src_msg, plan_edit_attachment, desc)
             elif is_edit_req and plan.get("edit_source") == "replied_image":
                 for m in reply_chain:
@@ -5900,14 +5935,36 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             if edit_type == "edit" and prev_att:
                 try:
                     orig_bytes = await prev_att.read()
-                    img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
-                        edit_image_openai,
-                        orig_bytes,
-                        edit_prompt,
-                    )
-                except Exception as edit_err:
-                    logger.warning("OpenAI image edit call failed (%s), falling back to generations: %s", edit_err, edit_prompt)
-                    img_bytes = None
+                except Exception as read_err:
+                    logger.warning("Couldn't read the picture to edit (%s)", read_err)
+                    orig_bytes = None
+                ref_blobs: List[bytes] = []
+                for url in (reference_images or [])[:3]:
+                    try:
+                        ref_blobs.append(await asyncio.to_thread(download_image_bytes, url))
+                    except Exception as dl_err:
+                        logger.warning("Could not download edit reference %s: %s", url, dl_err)
+                if orig_bytes is not None and ref_blobs:
+                    # the picture to change first, then what the request takes from the others
+                    try:
+                        img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                            edit_image_openai, [orig_bytes] + ref_blobs, edit_reference_lead(reference_roles, len(ref_blobs)) + edit_prompt,
+                        )
+                        logger.info("Edited with %d reference image(s) alongside the picture", len(ref_blobs))
+                    except Exception as edit_err:
+                        # a refusal included: the picture alone, then the generator (which rewrites refused prompts), get their go
+                        logger.warning("Edit with references failed (%s); trying the picture alone", edit_err)
+                        img_bytes = None
+                if img_bytes is None and orig_bytes is not None:
+                    try:
+                        img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
+                            edit_image_openai,
+                            orig_bytes,
+                            edit_prompt,
+                        )
+                    except Exception as edit_err:
+                        logger.warning("OpenAI image edit call failed (%s), falling back to generations: %s", edit_err, edit_prompt)
+                        img_bytes = None
 
             if img_bytes is None:
                 try:
