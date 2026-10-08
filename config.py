@@ -590,6 +590,9 @@ GEMINI_MODEL = "gemini-2.5-flash"
 # Join-watch raid screening models (image-capable). OpenAI is primary (reads
 # OPENAI_TOKEN); the Gemini model is the automatic fallback if that call fails.
 JOIN_WATCH_OPENAI_MODEL = "gpt-5.4-mini"
+# The records analyst (lib/features/records_analyst.py): read-only SQL research for server questions the fixed
+# records menu in data_queries can't answer.
+RECORDS_ANALYST_MODEL = "gpt-5.4-mini"
 JOIN_WATCH_GEMINI_MODEL = "gemini-3.5-flash"
 RULES_CHANNEL_ID = None            # set to your rules channel id for accurate analysis (else data/rules.txt / generic)
 USER_ANALYSIS_MSG_LIMIT = 1000     # hard cap on messages gathered (only heavy chatters reach it)

@@ -4054,6 +4054,34 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sanitize_ai_mentions(resolve_name_mentions("@Johnny and @everyone", guild, [johnny])), f"<@797> and @{zwsp}everyone")
         self.assertEqual(resolve_name_mentions("email me@example.com", guild, [johnny]), "email me@example.com")
 
+    def test_records_research_only_for_text_about_the_server(self):
+        from lib.features.chat_responder import wants_records_research
+        self.assertTrue(wants_records_research(_jev_signals(action="reply", confidence=0.99, server_records=0.93)))
+        self.assertFalse(wants_records_research(_jev_signals(action="reply", confidence=0.99, server_records=0.2)))
+        self.assertFalse(wants_records_research(_jev_signals(action="generate", confidence=0.99, server_records=0.93)))
+        self.assertFalse(wants_records_research(_jev_signals(action="reply", confidence=0.99, server_records=0.93, stats_opinion=0.9)))
+        self.assertFalse(wants_records_research(_jev_signals(action="reply", confidence=0.99, server_records=0.93, text_creation=0.9)))
+        self.assertFalse(wants_records_research(None))
+
+    def test_records_scope_keeps_staff_channels_out(self):
+        from lib.features.chat_responder import records_scope
+        everyone, member_role = MagicMock(name="everyone"), MagicMock(name="member")
+        def chan(cid, name, visible_to):
+            ch = MagicMock(); ch.id = cid; ch.name = name; ch.type = None
+            ch.permissions_for.side_effect = lambda r: MagicMock(view_channel=r in visible_to)
+            return ch
+        guild = MagicMock()
+        guild.default_role = everyone
+        guild.get_role.return_value = member_role
+        guild.text_channels = [chan(1, "general", {everyone}), chan(2, "members-only", {member_role}), chan(3, "staff", set())]
+        guild.voice_channels, guild.threads = [], []
+        m1 = MagicMock(); m1.id = 10; m1.bot = False; m1.name = "kim"; m1.display_name = "Kim"; m1.nick = None; m1.global_name = "Kim"
+        bot = MagicMock(); bot.id = 11; bot.bot = True
+        guild.members = [m1, bot]
+        scope = records_scope(guild)
+        self.assertEqual([c for c, _ in scope.public_channels], ["1", "2"])
+        self.assertEqual([m[0] for m in scope.members], ["10"])
+
     def test_a_name_in_ping_brackets_never_reaches_discord(self):
         # 2026-10-08: "<@ogme> The biggest casino win on the server? ..." went out as literal text
         from lib.features.chat_responder import (resolve_name_mentions, sanitize_ai_mentions, strip_leading_self_address,

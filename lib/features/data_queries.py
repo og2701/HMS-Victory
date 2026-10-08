@@ -54,14 +54,18 @@ CASINO_GAMES = {
     "blackjack": "blackjack", "higher_lower": "higherlower", "red_dog": "reddog", "roulette": "roulette",
     "slots": "slots", "video_poker": "videopoker", "three_card_poker": "tcp", "mines": "mines", "chest": "chest",
     "penalty": "penalty", "darts": "darts", "glass_bridge": "glass", "blockade": "blockade",
+    "plinko": "plinko", "penny_falls": "pennyfalls",
 }
 PVP_GAMES = {"connect4": "connect4", "battleship": "battleship", "rps": "rps"}
 GAME_LABELS = {
     "blackjack": "blackjack", "higher_lower": "higher or lower", "red_dog": "red dog", "roulette": "roulette",
     "slots": "slots", "video_poker": "video poker", "three_card_poker": "three card poker", "mines": "mines",
     "chest": "chest", "penalty": "penalty shootout", "darts": "darts", "glass_bridge": "glass bridge",
-    "blockade": "blockade", "connect4": "Connect 4", "battleship": "Battleship", "rps": "rock paper scissors",
+    "blockade": "blockade", "plinko": "plinko", "penny_falls": "penny falls (Davy Jones' Locker)",
+    "connect4": "Connect 4", "battleship": "Battleship", "rps": "rock paper scissors",
 }
+# The casino_results.game value -> its label, for naming the game a single round was played on.
+_CASINO_LABEL_BY_DB = {db: GAME_LABELS[key] for key, db in CASINO_GAMES.items()}
 
 # The ledger (user_transactions) records a free-text reason with every credit and debit. These
 # patterns turn it into sources, for "how much has X earned from chatting" and "who's spent the
@@ -69,7 +73,7 @@ GAME_LABELS = {
 # reconstructed history (just "blackjack"), so the patterns are loose on purpose.
 _CASINO_PATTERNS = ["%lackjack%", "%igher%ower%", "%slots%", "%oulette%", "%ed dog%", "reddog%", "%ideo%oker%",
                     "tcp%", "%hree card%", "%ines %", "mines%", "%hest %", "chest%", "%enalty%", "%arts %", "darts%",
-                    "%lass%ridge%", "glass%", "%lockade%"]
+                    "%lass%ridge%", "glass%", "%lockade%", "Plinko%", "Davy Jones%"]
 SOURCES: Dict[str, Tuple[str, List[str]]] = {
     "chatting": ("chatting", ["Chatting activity reward%"]),
     "top_chatter": ("top chatter of the day", ["Top chatter daily reward%"]),
@@ -162,6 +166,32 @@ def _casino(expr: str, since: Optional[int], game: Optional[str]) -> Rows:
     g = CASINO_GAMES.get(game or "")
     return _agg("casino_results", expr, ts_col="timestamp", since=since,
                 where="game = ?" if g else "", params=(g,) if g else ())
+
+
+def _casino_single(mode: str, since: Optional[int], game: Optional[str]) -> List[Tuple[str, int, str]]:
+    """Each member's biggest single-round win (max) or loss (min, reported as a positive size), with the game,
+    day and stake of that round, so "on what game?" under the table has its answer in the table.
+
+    SQLite hands back the bare columns from the row holding the MIN or MAX, which is that round.
+    """
+    g = CASINO_GAMES.get(game or "")
+    clauses, p = (["game = ?"], [g]) if g else ([], [])
+    if since is not None:
+        clauses.append("timestamp >= ?")
+        p.append(int(since))
+    w = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    agg = "MIN" if mode == "min" else "MAX"
+    out: List[Tuple[str, int, str]] = []
+    for u, v, gm, staked, ts in _fetch(f"SELECT user_id, {agg}(net), game, staked, timestamp FROM casino_results {w} GROUP BY user_id", tuple(p)):
+        try:
+            v, staked, ts = int(v), int(staked or 0), int(ts)
+        except (TypeError, ValueError):
+            continue
+        if u is None or (v >= 0 if mode == "min" else v <= 0):
+            continue
+        day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d %b %Y")
+        out.append((str(u), abs(v), f"on {_CASINO_LABEL_BY_DB.get(gm, gm)}, {day}, {staked:,} staked"))
+    return out
 
 
 def _pvp(kind: str, since: Optional[int], game: Optional[str]) -> Rows:
@@ -567,7 +597,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
     _m("casino_biggest_win", "biggest single casino win", "UKP",
        "Largest net win in a single casino round",
        ["biggest single win", "what's the most anyone's won in one go", "steven's best casino win"],
-       lambda since, game: _casino("COALESCE(MAX(net),0)", since, game),
+       lambda since, game: _casino_single("max", since, game),
        windowable=True, games="casino"),
     _m("casino_worst_day", "biggest single-day casino loss", "UKP",
        "The most UKP a member has lost at the casino in ONE DAY (net over the day), and which day",
@@ -609,7 +639,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
     _m("casino_biggest_loss", "biggest single casino loss", "UKP",
        "Largest net loss in a single casino round",
        ["biggest single loss", "worst hand anyone's had", "kim's worst casino loss"],
-       lambda since, game: [(u, -v) for u, v in _casino("COALESCE(MIN(net),0)", since, game)],
+       lambda since, game: _casino_single("min", since, game),
        windowable=True, games="casino", ignore_lowest=True),
     # --- pvp
     _m("pvp_wins", "PvP wins", "wins",

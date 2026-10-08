@@ -7,7 +7,8 @@ questions or the thresholds in lib/features/mention_signals.py.
     TYPESAFE_API_KEY=... python scripts/eval_mention_routing.py [-v]
 
 A records case passes when the code would answer from the database with one of the expected metrics or
-lists; a chat case passes when it would not touch the database. -v prints every case's raw picks.
+lists, or hand it to the records analyst when "research" is among them; a chat case passes when it would not
+touch the database. -v prints every case's raw picks.
 """
 
 import asyncio
@@ -17,6 +18,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.features.mention_signals import judge_mention  # noqa: E402
+
+TABLE = "Top 3 by biggest single casino win\n```\n 1. 40,080 UKP  Honey G  (on mines, 21 Jul 2026, 5,000 staked)\n 2. 30,000 UKP  Not a Gambler Burger\n```"
+BIGGEST = "Honey G's 40,080 UKP win is the biggest one. Quite the haul."
 
 CONCURRENCY = 6
 BOT_LAST = "The biggest single casino win was over $39 million, bagged by a chap in Las Vegas. Quite a tidy sum, that."
@@ -46,6 +50,18 @@ CASES = [
     ("biggest yapper this week", {"messages"}, None),
     ("what's in the house bank", {"bank"}, None),
     ("who owns yorkshire", {"county_owners"}, None),
+    # beyond the fixed menu: the records analyst digs it out
+    ("on what game?", {"research"}, TABLE),
+    ("what happened to it after it was won?", {"research"}, BIGGEST),
+    ("who did honey g pay after that", {"research", "paid_out"}, BIGGEST),
+    ("how much has the house made off mines", {"research", "bank"}, None),
+    ("how many people joined yesterday", {"research", "economy_today", "busiest_days"}, None),
+    ("what's the most bought thing in the shop", {"research", "purchases", "shop_stock"}, None),
+    ("who has the highest paperboy score", {"research"}, None),
+    ("who's caught the most counties", {"counties", "unique_counties", "research"}, None),
+    ("when did kim last post", {"last_seen", "research"}, None),
+    ("how many lottery tickets have been sold", {"research", "lottery", "lottery_tickets"}, None),
+    ("what's on the iceberg", {"iceberg", "research"}, None),
     # not the server's records
     ("biggest casino win ever in las vegas", "chat", None),
     ("what's the biggest lottery win in uk history", "chat", None),
@@ -71,6 +87,8 @@ def route(sig):
         return "records", (sig.data_list if shape == "list" else sig.data_metric)
     if sig.says("stats_opinion"):
         return "opinion", None
+    if sig.records_sure and not sig.says("text_creation"):
+        return "research", None
     return "chat", None
 
 
@@ -82,7 +100,7 @@ async def run_case(sem, text, expected, replied):
         )
     kind, pick = route(sig)
     if isinstance(expected, set):
-        ok = kind == "records" and pick in expected
+        ok = (kind == "records" and pick in expected) or (kind == "research" and "research" in expected)
     else:
         ok = kind == expected
     return text, expected, kind, pick, ok, sig

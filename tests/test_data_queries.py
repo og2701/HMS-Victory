@@ -566,3 +566,39 @@ class TestRender(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBiggestSingleRound(unittest.TestCase):
+    """The biggest win/loss rows carry the game, day and stake, so "on what game?" under the table is answered."""
+
+    def _fetch(self, sql, params=()):
+        self.sql.append((sql, tuple(params)))
+        if "MAX(net), game, staked, timestamp" in sql:
+            return [("1", 40080, "mines", 5000, 1784635620), ("2", 30000, "slots", 10000, 1785336000), ("3", -50, "darts", 50, 1785336000)]
+        if "MIN(net), game, staked, timestamp" in sql:
+            return [("1", -9000, "blackjack", 9000, 1784635620), ("2", 200, "slots", 100, 1785336000)]
+        return []
+
+    def setUp(self):
+        self.sql = []
+
+    def test_biggest_win_names_the_game_day_and_stake(self):
+        with patch.object(dq, "_fetch", self._fetch):
+            res = compute(QuerySpec(metric="casino_biggest_win", shape="leaderboard", limit=3))
+        self.assertEqual([u for u, _ in res.rows], ["1", "2"])           # a "biggest win" that lost isn't one
+        self.assertEqual(res.details["1"], "on mines, 21 Jul 2026, 5,000 staked")
+        out = render(res, {"1": "Honey G", "2": "Burger"})
+        self.assertIn("Honey G  (on mines, 21 Jul 2026, 5,000 staked)", out)
+
+    def test_biggest_loss_is_a_positive_size_with_its_game(self):
+        with patch.object(dq, "_fetch", self._fetch):
+            res = compute(QuerySpec(metric="casino_biggest_loss", shape="leaderboard", limit=3))
+        self.assertEqual(res.rows, [("1", 9000)])
+        self.assertIn("blackjack", res.details["1"])
+
+    def test_game_filter_and_new_games(self):
+        self.assertEqual(dq.CASINO_GAMES["plinko"], "plinko")
+        self.assertEqual(dq.CASINO_GAMES["penny_falls"], "pennyfalls")
+        with patch.object(dq, "_fetch", self._fetch):
+            compute(QuerySpec(metric="casino_biggest_win", shape="leaderboard", game="plinko"))
+        self.assertIn("plinko", self.sql[-1][1])

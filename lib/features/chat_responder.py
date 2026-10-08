@@ -300,7 +300,11 @@ NOTE: Use this topic as an initial grievance, backdrop, or when relevant, but fo
 def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """Calculate USD cost based on token counts and model pricing."""
     m = (model or "").lower()
-    if "jev" in m:
+    if "gpt-5.4-mini" in m:
+        # gpt-5.4-mini: $0.75 / 1M prompt, $4.50 / 1M completion (reasoning included)
+        input_cost = (prompt_tokens / 1_000_000) * 0.75
+        output_cost = (completion_tokens / 1_000_000) * 4.50
+    elif "jev" in m:
         # TypeSafe Jev: $0.042 / 1M input; output is not metered
         input_cost = (prompt_tokens / 1_000_000) * 0.042
         output_cost = 0.0
@@ -5097,6 +5101,81 @@ async def post_collected_records(client: Any, message: Any, collected: List[Any]
     return True
 
 
+def wants_records_research(signals: Any) -> bool:
+    """Jev's records check says this is about the server, it wants text, and it isn't a written piece or a verdict."""
+    return (signals is not None and getattr(signals, "action", None) == "reply" and getattr(signals, "records_sure", False)
+            and not signals.says("stats_opinion") and not signals.says("text_creation"))
+
+
+def records_scope(guild: Any) -> Any:
+    """Names for ids, and the channels a plain member can read: the analyst never sees staff channels' messages."""
+    from lib.features.records_analyst import Scope
+    scope = Scope()
+    if guild is None:
+        return scope
+    try:
+        scope.members = [(str(m.id), _member_display_name(m), getattr(m, "name", "") or "")
+                         for m in getattr(guild, "members", []) or [] if not getattr(m, "bot", False)]
+    except Exception as e:
+        logger.debug("records scope: members unavailable: %s", e)
+    try:
+        from config import ROLES
+        member_role = guild.get_role(ROLES.MEMBER) if hasattr(guild, "get_role") else None
+    except Exception:
+        member_role = None
+    roles = [r for r in (getattr(guild, "default_role", None), member_role) if r is not None]
+    seen = set()
+    private_thread = getattr(getattr(discord, "ChannelType", None), "private_thread", object())
+    for ch in list(getattr(guild, "text_channels", []) or []) + list(getattr(guild, "voice_channels", []) or []) + list(getattr(guild, "threads", []) or []):
+        try:
+            if getattr(ch, "type", None) == private_thread or ch.id in seen:
+                continue
+            if any(ch.permissions_for(r).view_channel for r in roles):
+                scope.public_channels.append((str(ch.id), getattr(ch, "name", "") or ""))
+                seen.add(ch.id)
+        except Exception:
+            continue
+    return scope
+
+
+async def answer_with_records_analyst(
+    message: Any,
+    clean_prompt: str,
+    *,
+    caller_id: Optional[int],
+    caller_name: str,
+    other_mentions: List[Any],
+    replied: Optional[Tuple[str, str]],
+    recent_chat: str,
+    raw_content: str,
+) -> bool:
+    """Research a records question the fixed menu can't answer and post the answer. False means fall through."""
+    from lib.features import records_analyst as ra
+    guild = getattr(message, "guild", None)
+    try:
+        scope = records_scope(guild)
+        mentioned = [(_member_display_name(u), str(u.id)) for u in other_mentions if isinstance(getattr(u, "id", None), int)]
+        res = await ra.answer(clean_prompt, scope=scope, asker=(caller_name, str(caller_id)), mentioned=mentioned,
+                              replied_to=replied, recent_chat=recent_chat)
+    except Exception as e:
+        logger.warning("Records analyst failed for %r: %s", clean_prompt[:80], e)
+        return False
+    if res is None or not res.text.strip():
+        return False
+    live_chat_manager.record_usage(ra.MODEL, res.prompt_tokens, res.completion_tokens, is_reply=True)
+    text = sanitize_ai_mentions(strip_leading_self_address(res.text.strip(), caller_id, [caller_name]), guild=guild)
+    if len(text) > 1990:
+        text = text[:1985] + "..."
+    await message.reply(text, mention_author=True,
+                        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True))
+    logger.info("Records analyst for %s (%d queries, %d+%d tokens): %r -> %r", caller_name, len(res.queries),
+                res.prompt_tokens, res.completion_tokens, clean_prompt[:80], text[:200])
+    live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
+    live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": text})
+    asyncio.create_task(live_chat_manager.update_dashboard())
+    return True
+
+
 async def answer_data_query(
     client: Any,
     message: Any,
@@ -5558,6 +5637,16 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         return True
                 except Exception as e:
                     logger.warning("Identifying a records entry failed: %s", e)
+
+        # A question about the server that the fixed records menu couldn't answer ("on what game?" under a table,
+        # "what happened to it after it was won?"): a model researches it read-only against the database.
+        if wants_records_research(signals):
+            if await answer_with_records_analyst(
+                message, clean_prompt, caller_id=caller_id, caller_name=caller_name, other_mentions=other_mentions,
+                replied=(replied_to_author or "someone", replied_to_text) if replied_to_text else None,
+                recent_chat=recent_one_off_exchanges(4), raw_content=raw_content,
+            ):
+                return True
 
         # Jev already read the message. When it is sure this wants text and nothing is attached that a
         # picture could be made from, the planner's paraphrase and people-resolution add nothing a text
