@@ -23,7 +23,8 @@ FONTS = ROOT / "data" / "fonts"
 CAR_NAMES = {"cab": "Black Cab", "bus": "Routemaster", "thomas": "Thomas", "brum": "Brum", "mini": "Mini",
              "robin": "Three-Wheeler", "wg": "Wallace & Gromit", "fryup": "Full English", "roadman": "Roadman",
              "scooter": "Nan's Scooter"}
-TRACK_NAMES = {"village": "Little Puddleton"}
+TRACK_NAMES = {"village": "Little Puddleton", "silverstone": "Silverstone", "wobbling": "Much Wobbling",
+               "clanking": "Great Clanking"}
 
 _HEAD = ("<!doctype html><html><head><meta charset='utf-8'><style>"
          "@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=block');"

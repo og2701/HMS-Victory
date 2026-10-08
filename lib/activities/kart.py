@@ -46,7 +46,16 @@ SPLIT_BIG = [0.6, 0.3, 0.1]
 # The tracks and karts, as src/kart/track.ts and src/kart/sim.ts have them: the lap's length in metres
 # (tests/test_kart.py checks it against tests/data/kart_tracks.json, made from the page's own code), and
 # each kart's top speed in m/s, which is what caps how fast the bot believes someone's going.
-TRACKS = {"village": {"length": 1247, "laps": 3}}
+TRACKS = {"village": {"length": 1247, "laps": 3}, "silverstone": {"length": 1453, "laps": 3},
+          "wobbling": {"length": 1315, "laps": 3}, "clanking": {"length": 1377, "laps": 3}}
+_last_track: str | None = None
+
+
+def _pick_track() -> str:
+    """A track for a new room, at random, never the one the last room was on."""
+    global _last_track
+    _last_track = random.choice([t for t in TRACKS if t != _last_track] or list(TRACKS))
+    return _last_track
 CARS = {"cab": 26.0, "bus": 27.4, "thomas": 27.2, "brum": 25.2, "mini": 25.6, "robin": 25.0, "wg": 26.0, "fryup": 25.6,
         "roadman": 24.6, "scooter": 24.0}
 PACE = 1.12                  # how far over its top speed a kart may average (boosts, drafting)
@@ -186,7 +195,7 @@ def open_room(uid: int, stake, car=None, channel: int | None = None) -> dict:
     _check_stake(uid, stake)
     now = time.time()
     r = {"id": secrets.token_hex(4), "host": uid, "players": [uid], "left": [], "cars": {str(uid): _car(car)},
-         "stake": stake, "state": "lobby", "track": "village", "created": now, "expires": now + LOBBY_SECONDS,
+         "stake": stake, "state": "lobby", "track": _pick_track(), "created": now, "expires": now + LOBBY_SECONDS,
          "over": False, "ch": int(channel) if channel else None}
     _rooms[r["id"]] = r
     _save()

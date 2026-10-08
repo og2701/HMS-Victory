@@ -13,6 +13,8 @@ os.environ.setdefault("OPENAI_TOKEN", "mock-token")
 
 from lib.activities import kart as K  # noqa: E402
 
+PICK_TRACK = K._pick_track
+
 A, B, D, E = 111, 222, 333, 444
 NAMES = {A: "Anne", B: "Ben", D: "Dot", E: "Eve"}
 name_of = NAMES.get
@@ -35,6 +37,8 @@ def em(tmp_path, monkeypatch):
     K._posts.clear()
     K._live.clear()
     monkeypatch.setattr(K, "_loaded", True)
+    # the timings below are the village's; the track picking has its own test
+    monkeypatch.setattr(K, "_pick_track", lambda: "village")
     clock = [1_000_000.0]
     monkeypatch.setattr(K.time, "time", lambda: clock[0])
     economy.clock = clock
@@ -238,3 +242,14 @@ def test_only_its_testers_get_in_until_it_goes_live(monkeypatch):
     assert not any(game == "kart" for game, _ in config.ACTIVITIES_LAUNCH_COMMANDS.values())
     monkeypatch.setattr(config, "KART_LIVE", True)
     assert server._kart_allowed(2)
+
+
+def test_each_room_gets_a_track_and_never_the_last_ones(em, monkeypatch):
+    monkeypatch.setattr(K, "_pick_track", PICK_TRACK)
+    seen = []
+    for uid in (A, B, D, E):
+        rid = K.open_room(uid, 0)["id"]
+        seen.append(K._rooms[rid]["track"])
+        K.leave(uid, rid)
+    assert all(t in K.TRACKS for t in seen)
+    assert all(a != b for a, b in zip(seen, seen[1:]))
