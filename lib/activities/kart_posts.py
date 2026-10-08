@@ -117,6 +117,10 @@ def view(room: dict, event: str, image: str | None) -> discord.ui.LayoutView:
     row = discord.ui.ActionRow()
     if event in ("open", "seats") and len(room["players"]) < kart.SEATS:
         row.add_item(discord.ui.Button(label="Join", style=discord.ButtonStyle.success, custom_id=f"ukplace:kart:{room['id']}"))
+    elif event == "start":
+        # the race under way: anyone can watch it
+        row.add_item(discord.ui.Button(label="Watch", style=discord.ButtonStyle.primary, custom_id=f"ukplace:kartwatch:{room['id']}"))
+        row.add_item(discord.ui.Button(label="Play UKP Kart", style=discord.ButtonStyle.secondary, custom_id="ukplace:play:kart"))
     else:
         row.add_item(discord.ui.Button(label="Play UKP Kart",
                                        style=discord.ButtonStyle.success if event in ENDED else discord.ButtonStyle.secondary,

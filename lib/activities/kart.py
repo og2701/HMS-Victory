@@ -604,7 +604,21 @@ def lobby(uid: int, name_of, balance: int) -> dict:
         "open": [{"id": r["id"], "host": _person(r["host"], name_of), "players": len(_present(r)), "seats": SEATS,
                   "stake": r["stake"], "expiresIn": max(0, round(r["expires"] - now))}
                  for r in _rooms.values() if r["state"] == "lobby" and not r.get("over") and uid not in r["players"]],
+        "live": [{"id": r["id"], "host": _person(r["host"], name_of), "players": len(_present(r)), "stake": r["stake"],
+                  "track": r.get("track", "village")}
+                 for r in _rooms.values() if r["state"] == "race" and not r.get("over") and uid not in r["players"]],
     }
+
+
+def watch(uid: int, rid: str, name_of) -> dict:
+    """A race under way, for someone who wants to watch it (in it or not)."""
+    _load()
+    r = _rooms.get(rid)
+    if r is not None and _advance(r, time.time()):
+        _save()
+    if r is None or r.get("over") or r["state"] != "race":
+        raise Refuse("That race has finished.")
+    return view(r, uid, name_of)
 
 
 def room(uid: int, rid: str, name_of) -> dict:
@@ -624,6 +638,8 @@ def room(uid: int, rid: str, name_of) -> dict:
 HZ = 15                       # how often everyone's positions go round
 MAX_MESSAGE = 4096            # bytes: a page's update for itself and up to seven CPU karts fits easily
 EVENTS_PER_SECOND = 30        # item throws and hits a page may pass on
+MAX_WATCHERS = 50             # people watching one race who aren't in it
+MAX_THINGS = 64               # cones and the like on the road, kept for a watcher who arrives mid-race
 
 _live: dict[str, "Live"] = {}
 
@@ -647,6 +663,10 @@ class Live:
         self.task: asyncio.Task | None = None
         self.events: dict[int, list[float]] = {}
         self.away: set[int] = set()       # pages in the background (a phone flicked to another app): they can't drive CPUs
+        # people watching who aren't in the race: they hear everything and say nothing, and never drive the CPUs
+        self.watchers: dict[int, object] = {}
+        # what's on the road (thrown cones, hubcaps in flight), so someone who starts watching mid-race sees it too
+        self.things: dict[int, dict] = {}
         grid_len = race_length(room) / _track(room)["laps"]
         for g in room["grid"]:
             if g["cpu"]:
@@ -669,13 +689,14 @@ class Live:
 
     async def everyone(self, msg: dict, but: int | None = None) -> None:
         text = json.dumps(msg, separators=(",", ":"))
-        for uid, ws in list(self.socks.items()):
-            if uid == but:
-                continue
-            try:
-                await ws.send_str(text)
-            except Exception:
-                self.socks.pop(uid, None)
+        for socks in (self.socks, self.watchers):
+            for uid, ws in list(socks.items()):
+                if uid == but:
+                    continue
+                try:
+                    await ws.send_str(text)
+                except Exception:
+                    socks.pop(uid, None)
 
     def pilot(self) -> int | None:
         r = _rooms.get(self.rid)
@@ -771,7 +792,16 @@ class Live:
             self.repilot()
         elif kind == "e":
             if self.allowed(uid):
-                await self.everyone({"t": "e", "from": str(uid), "e": msg.get("e")}, but=uid)
+                e = msg.get("e")
+                if isinstance(e, dict):
+                    th = e.get("th")
+                    if e.get("k") == "add" and isinstance(th, dict) and isinstance(th.get("id"), int):
+                        if len(self.things) >= MAX_THINGS:
+                            self.things.pop(next(iter(self.things)))
+                        self.things[th["id"]] = th
+                    elif e.get("k") == "del" and isinstance(e.get("id"), int):
+                        self.things.pop(e["id"], None)
+                await self.everyone({"t": "e", "from": str(uid), "e": e}, but=uid)
         elif kind == "fin":
             kid = str(msg.get("id") or uid)
             if kid != str(uid) and not (kid.startswith("cpu") and self.pilot() == uid):
@@ -785,6 +815,36 @@ class Live:
                 await self.everyone({"t": "fin", "id": kid, "at": r["finish"][kid], "place": place})
                 if _advance(r, time.time()):
                     _save()
+
+
+async def _watch(sock, live: Live, r: dict, uid: int, name_of):
+    """Someone watching a race they aren't in: everything that goes round, from where it's got to, and nothing
+    they send counts but a ping (to set their clock by)."""
+    from aiohttp import WSMsgType
+    if len(live.watchers) >= MAX_WATCHERS and uid not in live.watchers:
+        await sock.send_str(json.dumps({"t": "no", "why": "Too many people are watching that race."}))
+        await sock.close()
+        return sock
+    old = live.watchers.get(uid)
+    live.watchers[uid] = sock
+    if old is not None and old is not sock:
+        await old.close()
+    try:
+        await sock.send_str(json.dumps({"t": "hi", "now": time.time(), "room": view(r, uid, name_of), "k": live.states,
+                                        "things": list(live.things.values()), "watch": True}))
+        async for m in sock:
+            if m.type != WSMsgType.TEXT:
+                continue
+            try:
+                msg = json.loads(m.data)
+            except ValueError:
+                continue
+            if isinstance(msg, dict) and msg.get("t") == "ping":
+                await live.send(sock, {"t": "pong", "c": msg.get("c"), "s": time.time()})
+    finally:
+        if live.watchers.get(uid) is sock:
+            live.watchers.pop(uid, None)
+    return sock
 
 
 async def ws(request, read_session, name_of):
@@ -803,7 +863,9 @@ async def ws(request, read_session, name_of):
         who = read_session(str(hello.get("s") or ""))
         _load()
         r = _rooms.get(str(hello.get("room") or ""))
-        if who is None or r is None or who["uid"] not in r["players"] or r["state"] != "race":
+        racing = who is not None and r is not None and who["uid"] in r["players"]
+        watching = bool(hello.get("watch")) and who is not None and r is not None and not racing and not r.get("over")
+        if r is None or r["state"] != "race" or not (racing or watching):
             await sock.send_str(json.dumps({"t": "no", "why": "That race isn't running."}))
             await sock.close()
             return sock
@@ -812,6 +874,8 @@ async def ws(request, read_session, name_of):
         if live is None:
             live = _live[r["id"]] = Live(r)
             live.task = asyncio.ensure_future(live.tick())
+        if watching:
+            return await _watch(sock, live, r, uid, name_of)
         old = live.socks.get(uid)
         live.socks[uid] = sock
         if old is not None and old is not sock:
