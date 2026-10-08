@@ -29,6 +29,7 @@ mapping's prefix isn't worth betting the launch on:
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
     GET  /kart                UKP Kart: your race room and the ones you could join
     POST /kart/open {stake, car}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
+    POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
     GET  /kart/room/<id>      a room (polled while waiting for the start)
     GET  /kart/ws             the race itself, a WebSocket (kart.ws)
     GET  /health
@@ -732,7 +733,7 @@ async def kart_lobby(request):
 
 
 async def kart_action(request):
-    """open / join / car / leave / start; answers with the lobby as it now stands."""
+    """open / join / car / leave / start / practice; answers with the lobby as it now stands."""
     who, err = _kart_request(request)
     if err is not None:
         return err
@@ -749,6 +750,8 @@ async def kart_action(request):
             kart.leave(uid, rid)
         elif action == "start":
             kart.start(uid, rid)
+        elif action == "practice":
+            kart.record_practice(uid, body)
         else:
             return _error("That isn't a UKP Kart action.", 404)
     except kart.Refuse as e:

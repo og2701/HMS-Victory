@@ -320,3 +320,16 @@ def test_hms_victory_plays_to_what_you_have_left(em, monkeypatch):
     # you hold grapeshot and chainshot; it holds the same. Grapeshot beats chainshot, chainshot doesn't beat grapeshot
     picks = [D._bot_pick(m) for _ in range(300)]
     assert set(picks) <= {"grapeshot", "chainshot"} and picks.count("grapeshot") > 200
+
+
+def test_every_match_is_kept_even_practice(em):
+    from database import DatabaseManager
+    mid = start(em, 500)
+    D.forfeit(B, mid)
+    row = DatabaseManager.fetch_one("SELECT mode, stake, outcome FROM game_records WHERE game = ? AND id = ?", (D.GAME, mid))
+    assert tuple(row) == ("game", 500, "forfeit")
+    places = dict(DatabaseManager.fetch_all("SELECT user_id, place FROM game_record_players WHERE game = ? AND id = ?", (D.GAME, mid)))
+    assert places[str(A)] == 1 and places[str(B)] == 2
+    p = D.vs_bot(A)["id"]
+    D.forfeit(A, p)
+    assert DatabaseManager.fetch_one("SELECT mode FROM game_records WHERE game = ? AND id = ?", (D.GAME, p))[0] == "practice"

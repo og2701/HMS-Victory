@@ -91,7 +91,7 @@ def _e(text: str) -> str:
 
 
 def _page(body: str) -> str:
-    return f"{_HEAD}{_CSS}</style></head><body>{body}</body></html>"
+    return f"{_HEAD}{_CSS}</style></head><body>{body}{FIT}</body></html>"
 
 
 def _img(path: Path, cls: str = "") -> str:
@@ -113,8 +113,20 @@ def _av(uid, names: dict, faces: dict | None) -> str:
     return f'<span class="av">{initial}{pic}</span>'
 
 
-def _plate(name: str) -> str:
-    return f'<div class="plate"><span>UK</span><b>{_e(name.upper())}</b></div>'
+# every plate's name shrunk a pixel at a time until it fits, once as the page loads and again once the font's in
+FIT = ("<script>function fit(){document.querySelectorAll('.plate b').forEach(function(b){"
+       "var s=parseFloat(getComputedStyle(b).fontSize);if(b.scrollWidth>b.clientWidth)b.style.letterSpacing='0';"
+       "while(b.scrollWidth>b.clientWidth&&s>12){s-=1;b.style.fontSize=s+'px';}});}"
+       "fit();if(document.fonts)document.fonts.ready.then(fit);</script>")
+
+
+def _plate(name: str, cpu: bool = False) -> str:
+    """A name on a number plate, in smaller letters the longer it is so it fits (a CPU's plate is wider); the page
+    shrinks it further if it still doesn't (FIT)."""
+    base, room = (20, 22) if cpu else (27, 10)
+    size = base if len(name) <= room else max(14, round(base * room / len(name)))
+    style = "" if size == base else f' style="font-size:{size}px;letter-spacing:.02em"'
+    return f'<div class="plate"><span>UK</span><b{style}>{_e(name.upper())}</b></div>'
 
 
 def _clock(t: float) -> str:
@@ -171,7 +183,7 @@ def result_page(room: dict, names: dict, faces: dict | None = None) -> str:
             right = f'<div class="won pay">+{int(shares[kid]):,}<small>{_clock(fin.get(kid, 0))}</small></div>'
         cls = "cpu" if cpu else "top" if kid in winners else "gone" if int(kid) in room.get("left", []) else ""
         face = "" if cpu else _av(int(kid), names, faces)
-        rows.append(f'<div class="row {cls}"><div class="place">{place}<i>{_ord(place)}</i></div>{face}{_plate(name)}'
+        rows.append(f'<div class="row {cls}"><div class="place">{place}<i>{_ord(place)}</i></div>{face}{_plate(name, cpu)}'
                     f'{_kart(g.get("car", "cab"))}{right}</div>')
     refund = '<div class="stamp">STAKES BACK</div>' if room.get("how") == "refund" and room.get("stake") else ""
     return _page(f'<div class="card"><div class="banner"><b>UKP KART</b></div>{_signs(room)}'

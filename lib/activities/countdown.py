@@ -327,6 +327,13 @@ def _finish(room: dict, now: float) -> None:
                 pvp_stats.record_result(GAME, w, l, stake, "win")
     except Exception:
         log.warning("couldn't log countdown room %s", room["id"], exc_info=True)
+    from lib.activities import archive
+    ranked = sorted(room["players"], key=lambda u: -room["scores"].get(str(u), 0))
+    share = room.get("share", 0)
+    archive.keep(GAME, room["id"], "game", stake, room["how"], [
+        {"user_id": u, "place": ranked.index(u) + 1, "payout": share if (u in winners or room["how"] == "refund") else 0,
+         "result": "refund" if room["how"] == "refund" else ("win" if u in winners else ("left" if u in room.get("left", []) else "lose"))}
+        for u in room["players"]], room, room.get("ended"))
     _emit("over", room)
 
 

@@ -254,3 +254,45 @@ def test_each_room_gets_a_track_and_never_the_last_ones(em, monkeypatch):
         K.leave(uid, rid)
     assert all(t in K.TRACKS for t in seen)
     assert all(a != b for a, b in zip(seen, seen[1:]))
+
+
+def test_every_race_is_kept_with_every_kart_in_it(em):
+    from database import DatabaseManager
+    rid = race(em, (A, B, D, E), stake=100)
+    r = K._rooms[rid]
+    tick(em, K.LOAD_SECONDS + K.COUNTDOWN)
+    live = K._live[rid] = K.Live(r)
+    lap = K.race_length(r)
+    r["pilot"] = A
+    K.claim_finish(r, "cpu0", 140, r["green"] + 140, None)
+    for i, u in enumerate((D, E, A)):
+        drive(r, u, lap + 40, 150 + i * 5)
+        K.claim_finish(r, str(u), 150 + i * 5, r["green"] + 150 + i * 5, live.paces[u])
+    r.setdefault("laps", {})[str(D)] = K._lap(r, 49.25)
+    tick(em, 150 + K.AFTER_FIRST + 5)
+    K.sweep()
+    race_row = DatabaseManager.fetch_one("SELECT mode, track, stake, pot, outcome, host_id FROM kart_races WHERE id = ?", (rid,))
+    assert tuple(race_row) == ("race", "village", 100, 400, "race", str(A))
+    rows = DatabaseManager.fetch_all("SELECT user_id, name, place, finish_time, best_lap, payout FROM kart_results WHERE race_id = ? ORDER BY place", (rid,))
+    assert len(rows) == K.SEATS
+    assert rows[0][0] is None and rows[0][1] and rows[0][2] == 1          # the CPU that won, by name
+    assert [r_[0] for r_ in rows[1:4]] == [str(D), str(E), str(A)]
+    assert rows[1][4] == 49.25 and rows[1][5] == r["shares"][str(D)]
+    ben = next(r_ for r_ in rows if r_[0] == str(B))
+    assert ben[3] is None and ben[5] == 0                                  # never got home
+    # a lap no kart could do isn't kept
+    assert K._lap(r, 3) is None
+
+
+def test_a_practice_race_is_kept_and_a_made_up_one_isnt(em):
+    from database import DatabaseManager
+    field = [{"cpu": True, "name": "Mr Bean", "car": "mini", "place": 2, "time": 170.5},
+             {"cpu": False, "car": "cab", "place": 1, "time": 168.2, "lap": 54.1}]
+    rid = K.record_practice(A, {"track": "silverstone", "field": field})
+    assert tuple(DatabaseManager.fetch_one("SELECT mode, track, host_id FROM kart_races WHERE id = ?", (rid,))) == ("practice", "silverstone", str(A))
+    mine = DatabaseManager.fetch_one("SELECT place, finish_time, best_lap FROM kart_results WHERE race_id = ? AND user_id = ?", (rid, str(A)))
+    assert tuple(mine) == (1, 168.2, 54.1)
+    with pytest.raises(K.Refuse):
+        K.record_practice(A, {"track": "silverstone", "field": [{"cpu": False, "car": "cab", "place": 1, "time": 9}]})
+    with pytest.raises(K.Refuse):
+        K.record_practice(A, {"track": "the moon", "field": field})

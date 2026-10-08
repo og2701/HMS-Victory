@@ -317,3 +317,20 @@ def test_the_result_is_posted_afresh_and_the_first_post_points_to_it(em, monkeyp
     shrunk = [s for s in sent if s[0] == "edit" and "the result's below" in s[2]]
     assert shrunk and shrunk[0][1] == 101                # the first message became the pointer
     assert sent[-1][0] == "post" and f"<@{A}> won **Countdown**" in sent[-1][1]   # and the result is new
+
+
+def test_every_finished_game_is_kept_whole(em):
+    from database import DatabaseManager
+    import json as _json
+    rid = game(em, (A, B, D), stake=100)
+    for _ in range(3):
+        rigged(rid, "satirendl")
+        C.declare(A, rid, "islander")
+        C.declare(B, rid, "trail")
+        C.declare(D, rid, "tail")
+        tick(em, C.REVEAL_SECONDS)
+    C.room(B, rid, name_of)
+    row = DatabaseManager.fetch_one("SELECT mode, stake, outcome, data FROM game_records WHERE game = ? AND id = ?", (C.GAME, rid))
+    assert row[0] == "game" and row[1] == 100 and len(_json.loads(row[3])["rounds"]) == 3
+    people = dict(DatabaseManager.fetch_all("SELECT user_id, place FROM game_record_players WHERE game = ? AND id = ?", (C.GAME, rid)))
+    assert people[str(A)] == 1 and set(people) == {str(A), str(B), str(D)}

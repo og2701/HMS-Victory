@@ -943,6 +943,66 @@ def init_db():
                 timestamp  INTEGER NOT NULL
             )
         ''')
+        # UKP Kart: every race, against people through the bot or a practice run, and every kart in it (a CPU's has
+        # no user_id). Kept for good; lib/activities/kart.py writes them. mode: 'race' | 'practice'; outcome: 'race'
+        # (someone got home) | 'refund' (nobody did, stakes back). Times are seconds from the green.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS kart_races (
+                id         TEXT PRIMARY KEY,
+                mode       TEXT NOT NULL,
+                track      TEXT NOT NULL,
+                laps       INTEGER NOT NULL,
+                stake      INTEGER NOT NULL DEFAULT 0,
+                pot        INTEGER NOT NULL DEFAULT 0,
+                outcome    TEXT NOT NULL,
+                host_id    TEXT,
+                channel_id TEXT,
+                started    INTEGER,
+                ended      INTEGER NOT NULL
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS kart_results (
+                race_id     TEXT NOT NULL,
+                slot        INTEGER NOT NULL,
+                user_id     TEXT,
+                name        TEXT,
+                car         TEXT NOT NULL,
+                place       INTEGER NOT NULL,
+                finish_time REAL,
+                best_lap    REAL,
+                payout      INTEGER NOT NULL DEFAULT 0,
+                left_early  INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (race_id, slot)
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_kart_results_user ON kart_results(user_id)')
+        # the activity's other games against people (Countdown, Broadside), every finished one kept whole
+        # (lib/activities/archive.py): the game as it ended in data (JSON), and each player's place and result
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS game_records (
+                game    TEXT NOT NULL,
+                id      TEXT NOT NULL,
+                mode    TEXT NOT NULL,
+                stake   INTEGER NOT NULL DEFAULT 0,
+                outcome TEXT NOT NULL,
+                ended   INTEGER NOT NULL,
+                data    TEXT NOT NULL,
+                PRIMARY KEY (game, id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS game_record_players (
+                game    TEXT NOT NULL,
+                id      TEXT NOT NULL,
+                user_id TEXT,
+                place   INTEGER,
+                result  TEXT,
+                payout  INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_game_record_players_user ON game_record_players(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_kart_races_ended ON kart_races(ended)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pvp_game ON pvp_results(game)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_pvp_winner ON pvp_results(game, winner_id)')
         # One-time migration: fold the legacy connect4_results into the unified table. Guarded

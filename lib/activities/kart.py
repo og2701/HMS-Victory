@@ -330,6 +330,81 @@ def _advance(room: dict, now: float) -> bool:
     return False
 
 
+def _lap(r: dict, lap) -> float | None:
+    """A best lap a page reports, if it's a believable one: no quicker than the fastest kart flat out round a lap."""
+    try:
+        lap = float(lap)
+    except (TypeError, ValueError):
+        return None
+    quickest = _track(r)["length"] / (max(CARS.values()) * 1.5)
+    return round(lap, 3) if quickest <= lap < 600 else None
+
+
+def _record(room: dict) -> None:
+    """The race, kept for good in kart_races and kart_results: the track, the stake and the pot, then every kart in
+    finishing order with its time, best lap and what it won. Best-effort: a failure here never touches the payout."""
+    try:
+        from database import DatabaseManager
+        fin, laps, shares, left = room.get("finish", {}), room.get("laps", {}), room.get("shares", {}), set(room.get("left", []))
+        place = {kid: i + 1 for i, kid in enumerate(order(room))}
+        DatabaseManager.execute(
+            "INSERT OR REPLACE INTO kart_races (id, mode, track, laps, stake, pot, outcome, host_id, channel_id, started, ended) "
+            "VALUES (?, 'race', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (room["id"], room.get("track", "village"), _track(room)["laps"], room["stake"], room.get("pot", 0), room.get("how", "race"),
+             str(room["host"]), str(room["ch"]) if room.get("ch") else None, int(room.get("green") or room.get("started") or 0),
+             int(room.get("ended") or time.time())))
+        for g in room.get("grid", []):
+            kid = g["id"]
+            DatabaseManager.execute(
+                "INSERT OR REPLACE INTO kart_results (race_id, slot, user_id, name, car, place, finish_time, best_lap, payout, left_early) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (room["id"], g["slot"], None if g["cpu"] else kid, g.get("name") if g["cpu"] else None, g["car"], place.get(kid, len(place)),
+                 fin.get(kid), laps.get(kid), int(shares.get(kid, 0)), 0 if g["cpu"] else int(int(kid) in left)))
+    except Exception:
+        log.error("couldn't keep kart race %s", room.get("id"), exc_info=True)
+
+
+def record_practice(uid: int, body: dict) -> str:
+    """A practice race the page ran on its own (CPU karts only), kept like a race against people. The page says how it
+    went, so it's checked for being a race that could have happened, but no money ever rides on one."""
+    track = str(body.get("track") or "")
+    if track not in TRACKS:
+        raise Refuse("That isn't a UKP Kart track.")
+    field = body.get("field")
+    if not isinstance(field, list) or not 1 <= len(field) <= SEATS:
+        raise Refuse("That isn't a race.")
+    length = TRACKS[track]["length"] * TRACKS[track]["laps"]
+    rows, mine = [], 0
+    for slot, k in enumerate(field):
+        if not isinstance(k, dict):
+            raise Refuse("That isn't a race.")
+        cpu = bool(k.get("cpu"))
+        mine += 0 if cpu else 1
+        car = _car(k.get("car"))
+        try:
+            place = int(k.get("place"))
+            t = float(k["time"]) if k.get("time") is not None else None
+        except (TypeError, ValueError):
+            raise Refuse("That isn't a race.")
+        if not 1 <= place <= len(field) or (t is not None and not length / (CARS[car] * 1.5) <= t < 3600):
+            raise Refuse("That isn't a race.")
+        rows.append((slot, None if cpu else str(uid), str(k.get("name") or "")[:40] if cpu else None, car, place, t,
+                     _lap({"track": track}, k.get("lap")) if not cpu else None))
+    if mine != 1:
+        raise Refuse("That isn't a race.")
+    from database import DatabaseManager
+    rid = "p" + secrets.token_hex(6)
+    now = int(time.time())
+    DatabaseManager.execute(
+        "INSERT INTO kart_races (id, mode, track, laps, stake, pot, outcome, host_id, channel_id, started, ended) "
+        "VALUES (?, 'practice', ?, ?, 0, 0, 'race', ?, NULL, NULL, ?)", (rid, track, TRACKS[track]["laps"], str(uid), now))
+    for slot, user, name, car, place, t, lap in rows:
+        DatabaseManager.execute(
+            "INSERT INTO kart_results (race_id, slot, user_id, name, car, place, finish_time, best_lap, payout, left_early) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)", (rid, slot, user, name, car, place, t, lap))
+    return rid
+
+
 def order(room: dict) -> list[str]:
     """Everyone on the grid in finishing order: those home by their times, then the rest by how far they got."""
     fin = room.get("finish", {})
@@ -392,6 +467,7 @@ def _settle(room: dict, now: float) -> None:
                 pvp_stats.record_result(GAME, winners[0], lo, stake, "win")
     except Exception:
         log.warning("couldn't log kart room %s", room["id"], exc_info=True)
+    _record(room)
     _emit("over", room)
     live = _live.get(room["id"])
     if live:
@@ -701,6 +777,10 @@ class Live:
             if kid != str(uid) and not (kid.startswith("cpu") and self.pilot() == uid):
                 return
             place = claim_finish(r, kid, msg.get("at") or 0, now, self.paces.get(uid) if kid == str(uid) else None)
+            if place is not None and kid == str(uid):
+                lap = _lap(r, msg.get("lap"))
+                if lap:
+                    r.setdefault("laps", {})[kid] = lap
             if place is not None:
                 await self.everyone({"t": "fin", "id": kid, "at": r["finish"][kid], "place": place})
                 if _advance(r, time.time()):

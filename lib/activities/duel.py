@@ -258,7 +258,8 @@ def _finish(m: dict, winner: str | None, how: str, now: float) -> None:
     a crash between the two can't pay out twice."""
     m.update(over=True, winner=winner, how=how, ended=now)
     stake, a, b = m["stake"], m["a"], m["b"]
-    if m.get("bot"):                # practice: nothing to pay, nothing to count
+    if m.get("bot"):                # practice: nothing to pay, nothing to count, but it's kept
+        _keep(m, "practice")
         _emit("over", m)
         return
     if m.get("paid"):
@@ -287,7 +288,22 @@ def _finish(m: dict, winner: str | None, how: str, now: float) -> None:
             pvp_stats.record_result(GAME, a if winner == "a" else b, b if winner == "a" else a, stake, outcome)
     except Exception:
         log.warning("couldn't log broadside match %s", m["id"], exc_info=True)
+    _keep(m, "game")
     _emit("over", m)
+
+
+def _keep(m: dict, mode: str) -> None:
+    """The match kept for good (lib/activities/archive.py): every round's moves, who won, what it paid."""
+    from lib.activities import archive
+    winner, payout = m.get("winner"), m.get("payout", 0)
+    def side(s):
+        uid = m[s] if not (mode == "practice" and s == "b") else None
+        if winner is None:
+            return {"user_id": uid, "place": None, "result": m.get("how"), "payout": payout}
+        won = winner == s
+        return {"user_id": uid, "place": 1 if won else 2, "result": "win" if won else m.get("how") if m.get("how") in ("left", "forfeit") else "lose",
+                "payout": payout if won else 0}
+    archive.keep(GAME, m["id"], mode, m.get("stake", 0), m.get("how") or "", [side("a"), side("b")], m, m.get("ended"))
 
 
 def _tidy(now: float) -> bool:
