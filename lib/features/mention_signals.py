@@ -66,6 +66,13 @@ SURE_SHAPE_CONFIDENCE = 0.85
 SHAPE_WITH_SURE_METRIC_CONFIDENCE = 0.3
 SURE_METRIC_CONFIDENCE = 0.6
 DEFAULT_SHAPE_METRIC_CONFIDENCE = 0.8
+# When the separate server_records Noul says the message is about this server's own records, the metric and
+# list picks only need to be the clear favourite, and a missing or torn shape defaults to the natural one. The
+# two signals are asked independently, so agreement between them is stronger evidence than either alone:
+# "whats the single biggest casino win" had casino_biggest_win at 0.52 but shape none at 0.66, because
+# nothing told Jev the server runs its own casino, and the bot answered with Las Vegas trivia.
+RECORDS_METRIC_CONFIDENCE = 0.35
+RECORDS_SHAPE_CONFIDENCE = 0.3
 # The follow-up call that picks a named person out of the people directory.
 NAMED_SUBJECT_CONFIDENCE = 0.6
 
@@ -75,6 +82,14 @@ BOT_DESCRIPTION = (
     "HMS Victory, also called Vic: a Discord bot with a dry British persona. It replies in text and can "
     "generate or edit images (portraits, caricatures, sprite sheets, comics, anything visual) with an AI "
     "image generator."
+)
+
+SERVER_DESCRIPTION = (
+    "UK Place, the Discord server the bot lives in. It runs its own economy and keeps records of all of it: "
+    "UKPence (UKP) balances and payments, XP and levels, messages, a house casino (slots, blackjack, roulette, mines, "
+    "plinko, higher or lower, red dog, poker, darts, penalties, glass bridge and more), PvP games and wagers, badges, "
+    "counties, shutcoins, the lottery, predictions, the shop and the house bank. Questions about casino wins, losses, "
+    "balances, rankings or anyone's figures mean THIS server's records unless they clearly point at the outside world."
 )
 
 _GROUP_COUNT_OPTIONS: Dict[str, Any] = {"not_given": "No number of people was asked for, or the number counts something other than people"}
@@ -195,6 +210,22 @@ for _g in list(CASINO_GAMES) + list(PVP_GAMES):
     _DATA_GAME_OPTIONS[_g] = GAME_LABELS[_g]
 
 QUESTIONS.update({
+    "server_records": {
+        "type": "noul",
+        "instructions": {
+            "question": "Does `message.text` (or the request it hands off to, see `replied_to`) ask for a figure, ranking, record or fact sheet from THIS server's own records (see `server`), rather than about the outside world?",
+            "rules": [
+                "The server runs its own casino and economy, so 'biggest casino win', 'who's lost the most gambling', 'richest', 'most xp', 'top chatter' and 'how much has X won' are about the server's records, with or without 'in the server'.",
+                "Only an explicit pointer outside the server makes it the outside world: a real place, a real casino, 'ever in history', 'in the world', 'in real life', 'in the UK lottery'.",
+                "A follow-up that narrows the bot's last answer to the server ('in the server', 'no, on here', 'I mean here') is yes.",
+                "Banter or an opinion that only mentions the casino or money ('the casino is rigged', 'I'm skint') is no, as is a picture request.",
+            ],
+        },
+        "criteria": {
+            "true": {"examples": ["whats the single biggest casino win", "the biggest casino win, in the server", "who's lost the most at blackjack", "who's the richest", "top 10 shutcoin users", "how much has steven won at roulette", "biggest yapper this week", "what's in the house bank"]},
+            "false": {"examples": ["biggest casino win ever in las vegas", "what's the best odds game in a real casino", "the casino is rigged", "draw the richest member as a pig", "who won the euromillions last night"]},
+        },
+    },
     "stats_opinion": {
         "type": "noul",
         "instructions": "Does `message.text` (or the request it hands off to, see `replied_to`) ask for an OPINION, pick, verdict or ranking that should be based on the server's records, rather than a specific figure? Examples of yes: 'who is your favourite member based on stats', 'who's the best member', 'who deserves a medal', 'answer this based on stats', 'rate the server's gamblers'.",
@@ -217,6 +248,7 @@ QUESTIONS.update({
             "question": "If `message.text` asks for a figure from the server's own records, which metric is it about? Otherwise none.",
             "rules": [
                 "Records questions ask for a count, balance, amount, rank, ranking, leaderboard, 'who has the most/least', 'how much/many does X have', or a server total.",
+                "The server runs its own casino and economy (see `server`): 'biggest casino win', 'richest', 'most xp' with no outside-world pointer are records questions about it.",
                 "A picture request, banter, an opinion or a question about the outside world is none, even if it mentions money or XP in passing.",
                 "If `message.text` corrects or refines a records answer the bot just gave (see `replied_to` and `recent_chat`: 'users, not holders', 'no, this month', 'make it 20', 'lowest', 'in ukp not xp'), it is the SAME records question with the correction applied: pick the corrected metric, not none.",
                 "'Shutcoin users' are the people who USE shutcoins (shutcoins_used); 'holders' hold them (shutcoins).",
@@ -229,7 +261,8 @@ QUESTIONS.update({
         "instructions": {
             "question": "If `message.text` asks for something from the server's records, what shape of answer does it want? Otherwise none.",
             "rules": [
-                "A superlative about an unnamed member ('who has the most', 'who's the richest', 'biggest yapper', 'most shut member') is a leaderboard: the answer is the top of a ranked list.",
+                "The server runs its own casino and economy (see `server`): a question about its biggest win, richest member or most xp is a records question even without 'in the server'.",
+                "A superlative about an unnamed member ('who has the most', 'who's the richest', 'biggest yapper', 'most shut member', 'the single biggest casino win') is a leaderboard: the answer is the top of a ranked list.",
                 "person is only for a member identified by name, @mention, or as the caller.",
                 "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the lottery, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
                 "A target figure in the message ('closest to 100k', 'nearest to a million', 'who has about 50') is closest: the members nearest to that number, not the top of the list.",
@@ -237,7 +270,7 @@ QUESTIONS.update({
             ],
         },
         "criteria": {
-            "leaderboard": {"what": "A ranked list of members by a number, or the single top or bottom member", "examples": ["top 10 shutcoin users", "who's got the most xp", "richest members", "who's lost the most this week", "biggest yapper", "who's been shut the most"]},
+            "leaderboard": {"what": "A ranked list of members by a number, or the single top or bottom member", "examples": ["top 10 shutcoin users", "who's got the most xp", "richest members", "who's lost the most this week", "biggest yapper", "who's been shut the most", "whats the single biggest casino win", "biggest casino win in the server"]},
             "person": {"what": "One member's own figure or date", "examples": ["how much xp does steven have", "how many shutcoins have I got", "what rank is @johnny", "when did steven first show up", "when was kim last here"]},
             "compare": {"what": "Two members set against each other on a number", "examples": ["who has more ukpence, me or steven", "compare my xp with kim's"]},
             "total": {"what": "One number for the whole server", "examples": ["how much ukpence is in circulation", "how many messages were sent today", "total badges handed out"]},
@@ -297,7 +330,7 @@ QUESTIONS.update({
     },
 })
 
-_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion", "data_multi")
+_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion", "data_multi", "server_records")
 ACTIONS = ("generate", "edit", "reply")
 DATA_SHAPES = SHAPES + ("none",)
 DATA_SUBJECTS = ("caller", "mentioned_user", "someone_named", "not_applicable")
@@ -321,6 +354,7 @@ class MentionSignals:
     data_lowest: float
     stats_opinion: float
     data_multi: float
+    server_records: float
     group_count: Optional[int]
     data_metric: str = "none"
     data_metric_confidence: float = 0.0
@@ -347,30 +381,53 @@ class MentionSignals:
         return self.action == "reply" and self.action_confidence >= REPLY_GATE_CONFIDENCE
 
     @property
+    def records_sure(self) -> bool:
+        """The separate server_records Noul agrees this is about the server's own records."""
+        return self.server_records >= NOUL_THRESHOLD
+
+    @property
+    def list_sure(self) -> bool:
+        if self.data_list == "none":
+            return False
+        bar = RECORDS_METRIC_CONFIDENCE if self.records_sure else DATA_QUERY_CONFIDENCE
+        return self.data_list_confidence >= bar
+
+    @property
     def effective_shape(self) -> str:
         """The shape to answer in. A confident list pick wins whenever the shape is 'list' or no metric was
         picked: "what's the lottery pot" comes back shape total with metric none and list lottery, and the
         list is the only one of the three that names something the code can produce."""
-        list_sure = self.data_list != "none" and self.data_list_confidence >= DATA_QUERY_CONFIDENCE
+        list_sure = self.list_sure
         metric_sure = self.metric_sure
         if list_sure and (self.data_shape == "list" or not metric_sure):
             return "list"
         if self.data_shape == "list":
             return "none"
         if self.data_shape == "none":
-            return "leaderboard" if (self.data_metric != "none" and self.data_metric_confidence >= DEFAULT_SHAPE_METRIC_CONFIDENCE) else "none"
+            if self.data_metric != "none" and self.data_metric_confidence >= DEFAULT_SHAPE_METRIC_CONFIDENCE:
+                return "leaderboard"
+            # The records Noul says it IS a records question even though the shape pick said none: answer in
+            # the shape the subject implies, a member's own figure or the top of the board.
+            return self._records_default_shape() if (self.records_sure and metric_sure) else "none"
         if self.data_shape_confidence >= DATA_QUERY_CONFIDENCE:
             return self.data_shape
         if (self.data_metric != "none" and self.data_metric_confidence >= SURE_METRIC_CONFIDENCE
                 and self.data_shape_confidence >= SHAPE_WITH_SURE_METRIC_CONFIDENCE):
             return self.data_shape
+        if self.records_sure and metric_sure:
+            return self.data_shape if self.data_shape_confidence >= RECORDS_SHAPE_CONFIDENCE else self._records_default_shape()
         return "none"
+
+    def _records_default_shape(self) -> str:
+        return "person" if self.data_subject in ("caller", "mentioned_user", "someone_named") else "leaderboard"
 
     @property
     def metric_sure(self) -> bool:
         if self.data_metric == "none":
             return False
         if self.data_metric_confidence >= DATA_QUERY_CONFIDENCE:
+            return True
+        if self.records_sure and self.data_metric_confidence >= RECORDS_METRIC_CONFIDENCE:
             return True
         return (self.data_shape not in ("none", "list") and self.data_shape_confidence >= SURE_SHAPE_CONFIDENCE
                 and self.data_metric_confidence >= METRIC_WITH_SURE_SHAPE_CONFIDENCE)
@@ -445,6 +502,7 @@ def build_state(
     chain = [{"author": who, "text": (txt or "").strip()[:220]} for who, txt in (reply_chain or [])]
     return {
         "bot": BOT_DESCRIPTION,
+        "server": SERVER_DESCRIPTION,
         "message": {
             "author": caller_name,
             "text": (prompt or "").strip(),

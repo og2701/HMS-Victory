@@ -4054,6 +4054,34 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sanitize_ai_mentions(resolve_name_mentions("@Johnny and @everyone", guild, [johnny])), f"<@797> and @{zwsp}everyone")
         self.assertEqual(resolve_name_mentions("email me@example.com", guild, [johnny]), "email me@example.com")
 
+    def test_a_name_in_ping_brackets_never_reaches_discord(self):
+        # 2026-10-08: "<@ogme> The biggest casino win on the server? ..." went out as literal text
+        from lib.features.chat_responder import (resolve_name_mentions, sanitize_ai_mentions, strip_leading_self_address,
+                                                 unbracket_name_mentions)
+        zwsp = "\u200b"
+        self.assertEqual(unbracket_name_mentions("<@ogme> hi"), "@ogme hi")
+        self.assertEqual(unbracket_name_mentions("<@123> and <@!456> stay"), "<@123> and <@!456> stay")
+        self.assertEqual(unbracket_name_mentions("<@&789> role"), "<@&789> role")
+        caller = MagicMock(); caller.id = 42; caller.nick = None; caller.global_name = "ogme (handsome and benevolent)"
+        caller.display_name = "ogme (handsome and benevolent)"; caller.name = "ogme01"
+        names = ["ogme (handsome and benevolent)", "ogme01", "ogme (handsome and benevolent)", None]
+        raw = "<@ogme> The biggest casino win on the server? Haven't got the figures in front of me."
+        out = strip_leading_self_address(sanitize_ai_mentions(resolve_name_mentions(raw, None, [caller])), 42, names)
+        self.assertEqual(out, "The biggest casino win on the server? Haven't got the figures in front of me.")
+        # the full display name in brackets goes the same way, and '@ogme' mid-sentence becomes a real ping
+        pipeline = lambda t: strip_leading_self_address(sanitize_ai_mentions(resolve_name_mentions(t, None, [caller])), 42, names)
+        self.assertEqual(pipeline("<@ogme (handsome and benevolent)> Right then."), "Right then.")
+        self.assertEqual(pipeline("Right then, <@ogme>, here it is."), "Right then, <@42>, here it is.")
+        # a first name two known users share is ambiguous, so it stays plain text
+        other = MagicMock(); other.id = 43; other.nick = None; other.global_name = "ogme (the other one)"
+        other.display_name = "ogme (the other one)"; other.name = "ogme_two"
+        self.assertEqual(resolve_name_mentions("hi @ogme", None, [caller, other]), "hi @ogme")
+        # a bracketed name of someone else is plain text, not a fake ping
+        self.assertEqual(sanitize_ai_mentions("ask <@kim>"), f"ask @{zwsp}kim")
+        # a sentence that merely starts with the caller's first name is left alone
+        self.assertEqual(strip_leading_self_address("Ogme is right about that.", 42, names), "Ogme is right about that.")
+        self.assertEqual(strip_leading_self_address("Ogme, you're right.", 42, names), "you're right.")
+
     def test_strip_leading_self_address(self):
         from lib.features.chat_responder import strip_leading_self_address
         self.assertEqual(strip_leading_self_address("<@797>\n\nAh, yes, Johnny. A real bargain.", 797, ["Johnny"]), "Ah, yes, Johnny. A real bargain.")

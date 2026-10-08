@@ -297,6 +297,60 @@ class TestDataSignals(unittest.TestCase):
         self.assertEqual(parse_signals(answers, {}).effective_shape, "none")
 
 
+    def test_the_server_is_described_and_asked_about(self):
+        self.assertIn("server_records", QUESTIONS)
+        self.assertIn("server_records", ms._NOUL_KEYS)
+        state = build_state("whats the single biggest casino win", caller_name="ogme")
+        self.assertIn("casino", state["server"])
+        self.assertIn("UKPence", state["server"])
+
+    def test_records_noul_routes_a_metric_the_shape_pick_doubted(self):
+        # 2026-10-08, live: "whats the single biggest casino win" -> casino_biggest_win 0.52, shape none 0.66,
+        # and the bot answered with Las Vegas trivia
+        live = dict(metric="casino_biggest_win", metric_conf=0.52, shape="none", shape_conf=0.66, limit="single", limit_conf=0.9)
+        sig = parse_signals(_with_data(_answers(server_records=0.93), **live), {})
+        self.assertTrue(sig.records_sure)
+        self.assertEqual(sig.effective_shape, "leaderboard")
+        self.assertTrue(sig.data_query_requested())
+        # without the records Noul nothing changes: the old bar still applies
+        self.assertFalse(parse_signals(_with_data(_answers(server_records=0.2), **live), {}).data_query_requested())
+        # "the biggest casino win, in the server" -> 0.55 / none 0.33
+        sig = parse_signals(_with_data(_answers(server_records=0.98), metric="casino_biggest_win", metric_conf=0.55,
+                                       shape="none", shape_conf=0.33), {})
+        self.assertTrue(sig.data_query_requested())
+
+    def test_records_noul_still_needs_a_clear_favourite_metric(self):
+        sig = parse_signals(_with_data(_answers(server_records=0.95), metric="casino_net", metric_conf=0.3, shape="none", shape_conf=0.5), {})
+        self.assertFalse(sig.data_query_requested())
+        sig = parse_signals(_with_data(_answers(server_records=0.95), metric="none", metric_conf=0.9, shape="leaderboard", shape_conf=0.9), {})
+        self.assertFalse(sig.data_query_requested())
+
+    def test_records_default_shape_follows_the_subject(self):
+        named = parse_signals(_with_data(_answers(server_records=0.9), metric="casino_net", metric_conf=0.45, shape="none",
+                                         shape_conf=0.5, subject="someone_named"), {})
+        self.assertEqual(named.effective_shape, "person")
+        caller = parse_signals(_with_data(_answers(server_records=0.9), metric="xp", metric_conf=0.45, shape="none",
+                                          shape_conf=0.5, subject="caller"), {})
+        self.assertEqual(caller.effective_shape, "person")
+        # a torn shape under the records Noul keeps a plausible favourite, else falls back to the default
+        torn = parse_signals(_with_data(_answers(server_records=0.9), metric="casino_net", metric_conf=0.45, shape="total", shape_conf=0.32), {})
+        self.assertEqual(torn.effective_shape, "total")
+        hopeless = parse_signals(_with_data(_answers(server_records=0.9), metric="casino_net", metric_conf=0.45, shape="total", shape_conf=0.2), {})
+        self.assertEqual(hopeless.effective_shape, "leaderboard")
+
+    def test_records_noul_lowers_the_list_bar(self):
+        answers = _with_data(_answers(server_records=0.9), metric="none", shape="list", shape_conf=0.6)
+        answers["data_list"] = {"choice": "house_bank" if "house_bank" in QUESTIONS["data_list"]["criteria"] else sorted(QUESTIONS["data_list"]["criteria"])[0], "confidence": 0.4}
+        self.assertTrue(parse_signals(answers, {}).data_query_requested())
+        answers["server_records"] = {"type": "noul", "noul": 0.1}
+        self.assertFalse(parse_signals(answers, {}).data_query_requested())
+
+    def test_records_noul_never_turns_a_picture_into_a_table(self):
+        sig = parse_signals(_with_data(_answers(action="generate", probs={"generate": 0.9, "edit": 0.05, "reply": 0.05}, server_records=0.95),
+                                       metric="ukpence", metric_conf=0.6, shape="none"), {})
+        self.assertFalse(sig.data_query_requested())
+
+
 class TestJudgeNamedSubject(unittest.IsolatedAsyncioTestCase):
     async def test_no_candidates_or_key_means_nobody(self):
         session = _FakeSession([])

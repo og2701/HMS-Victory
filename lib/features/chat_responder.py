@@ -132,6 +132,13 @@ ONE_OFF_SYSTEM_PROMPT = build_one_off_system_prompt()
 
 
 _AT_NAME_RE = re.compile(r"(?<![<\w])@([A-Za-z0-9_.\-]{2,32})(?![\w>])")
+# '<@ogme>': the model copies the <@ID> ping format but writes a name where the id goes. Discord shows it as
+# literal text, so it is turned back into '@ogme' for the name resolution and self-address stripping below.
+_BRACKETED_NAME_RE = re.compile(r"<@!?([^\d\s<>@&!][^<>@\n]{0,60}?)>")
+
+
+def unbracket_name_mentions(text: str) -> str:
+    return _BRACKETED_NAME_RE.sub(r"@\1", text) if text and "<@" in text else text
 
 
 def resolve_name_mentions(
@@ -144,19 +151,31 @@ def resolve_name_mentions(
 
     Anything that doesn't resolve is left alone for sanitize_ai_mentions to defang (it could be a role).
     """
+    text = unbracket_name_mentions(text)
     if not text or "@" not in text:
         return text
     lookup: Dict[str, int] = {}
     for n, uid in (name_map or {}).items():
         if isinstance(n, str) and n.strip() and isinstance(uid, int):
             lookup[n.strip().lower()] = uid
+    firsts: Dict[str, set] = {}
     for u in known_users or []:
         uid = getattr(u, "id", None)
         if not isinstance(uid, int):
             continue
         for n in (getattr(u, "nick", None), getattr(u, "global_name", None), getattr(u, "display_name", None), getattr(u, "name", None)):
             if isinstance(n, str) and n.strip():
-                lookup[n.strip().lower()] = uid
+                n = n.strip()
+                lookup[n.lower()] = uid
+                if re.search(r"[\s(\[|]", n):
+                    # '@ogme (handsome and benevolent)' in full, then 'ogme' alone as a fallback below
+                    text = re.sub(rf"(?<![<\w])@{re.escape(n)}(?!\w)", f"<@{uid}>", text, flags=re.IGNORECASE)
+                    first = re.split(r"[\s(\[|]", n)[0]
+                    if len(first) >= 3:
+                        firsts.setdefault(first.lower(), set()).add(uid)
+    for first, uids in firsts.items():
+        if len(uids) == 1:
+            lookup.setdefault(first, next(iter(uids)))
 
     def _sub(m):
         raw = m.group(1)
@@ -208,15 +227,26 @@ def cap_caption_length(caption: str, limit: int = 1900) -> str:
 
 
 def strip_leading_self_address(text: str, caller_id: Optional[int], caller_names: Optional[List[str]] = None) -> str:
-    """Drop a leading '<@caller>' / '@Caller' / 'Caller,' from a reply: the Discord reply already pings them."""
+    """Drop a leading '<@caller>' / '@Caller' / 'Caller,' from a reply: the Discord reply already pings them.
+
+    A display name like 'ogme (handsome and benevolent)' is matched in full and by its first word, since the
+    model shortens it. A name needs a separator after it, so a sentence that merely starts with the word is
+    left alone; the model's '<@ogme>' is resolved to the caller's real ping first, which needs none.
+    """
     if not text:
         return text
-    out = text
+    out = unbracket_name_mentions(text)
     if caller_id is not None:
         out = re.sub(rf"^\s*(?:<@!?{caller_id}>\s*[,:!.-]*\s*)+", "", out)
+    names = set()
     for n in caller_names or []:
         if isinstance(n, str) and len(n.strip()) >= 2:
-            out = re.sub(rf"^\s*@?{re.escape(n.strip())}\s*[,:!.-]+\s*", "", out, flags=re.IGNORECASE)
+            names.add(n.strip())
+            first = re.split(r"[\s(\[|]", n.strip())[0]
+            if len(first) >= 3:
+                names.add(first)
+    for n in sorted(names, key=len, reverse=True):
+        out = re.sub(rf"^\s*(?:@\u200b?)?{re.escape(n)}\s*[,:!.-]+\s*", "", out, flags=re.IGNORECASE)
     return out.lstrip() if out.strip() else text
 
 
@@ -227,6 +257,7 @@ def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> st
     """
     if not text:
         return text
+    text = unbracket_name_mentions(text)
 
     zwsp = "\u200b"
 
@@ -6058,16 +6089,22 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             context, target_users = gathered
         else:
             context, target_users = str(gathered), {}
-        if signals is not None and signals.says("stats_opinion"):
+        opinion = signals is not None and signals.says("stats_opinion")
+        if opinion or (signals is not None and signals.records_sure):
             # "Who's your favourite member, based on stats": code picks the facts, the model picks among them.
+            # A records question the database path couldn't answer gets the same real figures, so the reply
+            # can use them, or say plainly which figure it couldn't pull, instead of guessing at the world.
             try:
                 digest = await records_digest_for(client, message, bot_id)
                 if digest:
+                    how = ("Base your pick or verdict on these and say which figure swung it" if opinion else
+                           "This message is about the server's own records, not the outside world. Answer from these if they "
+                           "cover it; if the exact figure isn't here, say you couldn't pull that one and name the closest figure that is")
                     context = (
                         "SERVER RECORDS DIGEST (real figures from the bot's database; the ONLY figures you may cite. "
-                        "Base your pick or verdict on these and say which figure swung it):\n" + digest + "\n\n" + (context or "")
+                        f"{how}):\n" + digest + "\n\n" + (context or "")
                     ).strip()
-                    logger.info("Stats digest attached for %s: %r", caller_name, clean_prompt[:80])
+                    logger.info("Stats digest attached for %s (%s): %r", caller_name, "opinion" if opinion else "records", clean_prompt[:80])
             except Exception as e:
                 logger.warning("Stats digest failed: %s", e)
         image_urls = await extract_image_urls(message, client)
