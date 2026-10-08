@@ -507,7 +507,7 @@ SKYRIM_AS_ACTIVITY = True
 # UKP Kart (lib/activities/kart.py): False while it's being tried out: only KART_TESTERS see its tile on the home
 # screen or can get into it, there's no command for it and race rooms aren't posted anywhere; True gives it /kart and
 # a tile under Together for everyone. KART_MAX_STAKE caps what a room can be opened for.
-KART_LIVE = False
+KART_LIVE = True
 KART_TESTERS = [404634271861571584]  # oggers
 KART_MAX_STAKE = 5000
 # The typed commands that open the activity, and which game each one opens it on
