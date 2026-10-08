@@ -44,6 +44,9 @@ _CSS = """*{margin:0;box-sizing:border-box} html,body{background:transparent} bo
 .sign.route i{font-style:normal;color:#F7C51E}
 .sign.money{background:#1D5EBD;outline-color:#1D5EBD}
 .sign.money img{width:30px;height:30px}
+.sign.fast{background:#6B2FD6;outline-color:#6B2FD6;color:#fff;max-width:640px}
+.sign.fast b{font-variant-numeric:tabular-nums}
+.sign.fast i{font-style:normal;color:#E4D6FF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .sign.fun{background:#fff;color:#141414;border-color:#141414;outline-color:#fff}
 .rows{display:flex;flex-direction:column;gap:12px;margin:28px 64px 0}
 .row{display:flex;align-items:center;gap:14px;height:86px;padding:0 12px 0 10px;background:#1E2026;border:3px solid #3C3F47;position:relative}
@@ -186,7 +189,15 @@ def result_page(room: dict, names: dict, faces: dict | None = None) -> str:
         rows.append(f'<div class="row {cls}"><div class="place">{place}<i>{_ord(place)}</i></div>{face}{_plate(name, cpu)}'
                     f'{_kart(g.get("car", "cab"))}{right}</div>')
     refund = '<div class="stamp">STAKES BACK</div>' if room.get("how") == "refund" and room.get("stake") else ""
-    return _page(f'<div class="card"><div class="banner"><b>UKP KART</b></div>{_signs(room)}'
+    # the race's fastest lap, F1 style, for anyone whose page reported one
+    laps = {k: t for k, t in room.get("laps", {}).items() if k in ranked}
+    fast = ""
+    if laps:
+        kid = min(laps, key=laps.get)
+        g = grid.get(kid, {})
+        who = (g.get("name") or "CPU") if kid.startswith("cpu") else names.get(int(kid), "Someone")
+        fast = f'<div class="sub"><div class="sign fast">FASTEST LAP <b>{_clock(laps[kid])}</b> <i>{_e(who.upper())}</i></div></div>'
+    return _page(f'<div class="card"><div class="banner"><b>UKP KART</b></div>{_signs(room)}{fast}'
                  f'<div class="rows">{"".join(rows)}</div>{refund}</div>')
 
 

@@ -230,7 +230,11 @@ def test_the_cards_draw_every_stage(em):
     tick(em, 200)
     K.sweep()
     out = kart_card.page(r, names, "over")
-    assert "BEN" in out and "+" in out
+    assert "BEN" in out and "+" in out and "FASTEST LAP" not in out
+    # the race's fastest lap, a CPU's here, once the pages have reported their laps
+    r["laps"] = {str(B): K._lap(r, 52.4), "cpu0": K._lap(r, 50.1)}
+    out = kart_card.page(r, names, "over")
+    assert "FASTEST LAP <b>0:50.10</b>" in out
 
 
 def test_only_its_testers_get_in_until_it_goes_live(monkeypatch):
@@ -286,12 +290,13 @@ def test_every_race_is_kept_with_every_kart_in_it(em):
 
 def test_a_practice_race_is_kept_and_a_made_up_one_isnt(em):
     from database import DatabaseManager
-    field = [{"cpu": True, "name": "Mr Bean", "car": "mini", "place": 2, "time": 170.5},
+    field = [{"cpu": True, "name": "Mr Bean", "car": "mini", "place": 2, "time": 170.5, "lap": 55.3},
              {"cpu": False, "car": "cab", "place": 1, "time": 168.2, "lap": 54.1}]
     rid = K.record_practice(A, {"track": "silverstone", "field": field})
     assert tuple(DatabaseManager.fetch_one("SELECT mode, track, host_id FROM kart_races WHERE id = ?", (rid,))) == ("practice", "silverstone", str(A))
     mine = DatabaseManager.fetch_one("SELECT place, finish_time, best_lap FROM kart_results WHERE race_id = ? AND user_id = ?", (rid, str(A)))
     assert tuple(mine) == (1, 168.2, 54.1)
+    assert DatabaseManager.fetch_one("SELECT best_lap FROM kart_results WHERE race_id = ? AND name = 'Mr Bean'", (rid,))[0] == 55.3
     with pytest.raises(K.Refuse):
         K.record_practice(A, {"track": "silverstone", "field": [{"cpu": False, "car": "cab", "place": 1, "time": 9}]})
     with pytest.raises(K.Refuse):

@@ -389,7 +389,7 @@ def record_practice(uid: int, body: dict) -> str:
         if not 1 <= place <= len(field) or (t is not None and not length / (CARS[car] * 1.5) <= t < 3600):
             raise Refuse("That isn't a race.")
         rows.append((slot, None if cpu else str(uid), str(k.get("name") or "")[:40] if cpu else None, car, place, t,
-                     _lap({"track": track}, k.get("lap")) if not cpu else None))
+                     _lap({"track": track}, k.get("lap"))))
     if mine != 1:
         raise Refuse("That isn't a race.")
     from database import DatabaseManager
@@ -706,7 +706,7 @@ class Live:
         if r is None:
             return
         out = {"t": "over", "order": order(r), "winners": r.get("winners", []), "shares": r.get("shares", {}),
-               "how": r.get("how")}
+               "how": r.get("how"), "laps": r.get("laps", {})}
         _later(self.everyone(out))
 
     async def tick(self) -> None:
@@ -777,7 +777,7 @@ class Live:
             if kid != str(uid) and not (kid.startswith("cpu") and self.pilot() == uid):
                 return
             place = claim_finish(r, kid, msg.get("at") or 0, now, self.paces.get(uid) if kid == str(uid) else None)
-            if place is not None and kid == str(uid):
+            if place is not None:
                 lap = _lap(r, msg.get("lap"))
                 if lap:
                     r.setdefault("laps", {})[kid] = lap
