@@ -13,11 +13,14 @@ bikes, hoodies, hair colours, bags, trails and bells, all for show: nothing boug
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date as _date, timedelta
 
 from database import DatabaseManager
 from lib.activities import paperboy_sim
 from lib.activities.score_limits import rng
+
+log = logging.getLogger(__name__)
 
 # ---- the day's theme ----------------------------------------------------------------------------
 
@@ -297,6 +300,10 @@ def kit(uid: int) -> dict:
             "catalogue": [{"id": k, "slot": v[0], "name": v[1], "cost": v[2], "look": v[3]} for k, v in WARDROBE.items()]}
 
 
+# wardrobe items that come with a server badge (seeded in database.py)
+BADGE_FOR = {"bag-birkin": "paperboy_birkin"}
+
+
 def buy(uid: int, item: str) -> dict:
     """Buy something and put it on."""
     if item not in WARDROBE:
@@ -311,6 +318,12 @@ def buy(uid: int, item: str) -> dict:
     wearing[WARDROBE[item][0]] = item
     DatabaseManager.execute("UPDATE paperboy_kit SET owned = ?, wearing = ?, spent = spent + ? WHERE user_id = ?",
                             (json.dumps(owned), json.dumps(wearing), cost, str(uid)))
+    if item in BADGE_FOR:
+        try:
+            from lib.bot.event_handlers import award_badge_notify
+            award_badge_notify(uid, BADGE_FOR[item])       # idempotent; DMs them and pays the badge's reward
+        except Exception:
+            log.warning("couldn't award the %s badge to %s", BADGE_FOR[item], uid, exc_info=True)
     return kit(uid)
 
 

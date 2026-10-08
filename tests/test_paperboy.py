@@ -135,3 +135,25 @@ def test_a_finished_run_is_multiplied_by_the_jobs_done_before_it(clock):
     assert s["kit"]["wearing"]["hair"] == "hair-chestnut"
     with pytest.raises(daily_score.Refuse):
         g.act(UID, DAY, "buy", {"item": "bike-gold"})
+
+
+def test_buying_the_birkin_earns_its_badge(clock, monkeypatch):
+    from database import DatabaseManager
+    from lib.activities import paperboy
+    import sys
+    import types
+    awarded = []
+    # the real one lives with the bot's event handlers (which need the whole bot to import); a stand-in records the call
+    monkeypatch.setitem(sys.modules, "lib.bot.event_handlers",
+                        types.SimpleNamespace(award_badge_notify=lambda uid, badge: awarded.append((uid, badge))))
+    DatabaseManager.execute(
+        "INSERT INTO paperboy_runs (user_id, date, started, ended, score, reported, game_time, papers, earned, trimmed) "
+        "VALUES (?, ?, 1, 2, 10, 10, 1.0, 50000, 0, 0)", (str(UID), DAY.isoformat()))
+    paperboy.buy(UID, "bike-green")                       # an ordinary item: no badge
+    assert awarded == []
+    k = paperboy.buy(UID, "bag-birkin")
+    assert "bag-birkin" in k["owned"] and awarded == [(UID, "paperboy_birkin")]
+    paperboy.buy(UID, "bag-birkin")                       # owned already: just worn, no second award
+    assert awarded == [(UID, "paperboy_birkin")]
+    row = DatabaseManager.fetch_one("SELECT name, rarity FROM badges WHERE id = 'paperboy_birkin'")
+    assert row == ("Arm Candy", "Silver")

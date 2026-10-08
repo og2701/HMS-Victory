@@ -1309,6 +1309,8 @@ def init_db():
             ('sky_master_of_all', 'Master of All', 'Take all six skills to 100', '🎓', 'Gold'),
             ('sky_hall_of_legends', 'Legend of Skyrim', 'Fill every seat in the Hall of Legends', '🕯️', 'Gold'),
             ('sky_no_stone_unturned', 'No Stone Unturned', 'Complete the Skyrim collection log', '📜', 'Gold'),
+            # Paperboy's wardrobe (lib/activities/paperboy.py BADGE_FOR)
+            ('paperboy_birkin', 'Arm Candy', 'Bought the Birkin for the paper round', '👜', 'Silver'),
             # (The cross-game secret badge is seeded from the encrypted blob below, not here.)
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:
