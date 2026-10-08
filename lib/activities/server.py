@@ -36,6 +36,7 @@ mapping's prefix isn't worth betting the launch on:
 """
 
 import asyncio
+import json
 import logging
 import time
 
@@ -439,15 +440,41 @@ async def score_board(request):
     return _json(b)
 
 
+# A replayed game's finish carries every move of the run, and the app's 16 KB cap is far too small for
+# that: a 32-minute Paperboy run of 84,992 went over it on 2026-10-08, the body was read as empty, and the
+# run was refused as "a different day's level" without a word in the log. An hour of moves is ~100 KB.
+SCORE_BODY_MAX = 1024 * 1024
+
+
+async def _score_body(request) -> dict:
+    """A score game's JSON body, read past the app-wide size cap (which only request.read() applies)."""
+    chunks, size = [], 0
+    async for chunk in request.content.iter_chunked(64 * 1024):
+        size += len(chunk)
+        if size > SCORE_BODY_MAX:
+            raise ScoreRefuse("That run was too big to send.")
+        chunks.append(chunk)
+    raw = b"".join(chunks)
+    if not raw.strip():
+        return {}
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        log.warning("%s: an unreadable body (%d bytes)", request.path, size)
+        raise ScoreRefuse("That run didn't arrive whole. Try again.")
+    return body if isinstance(body, dict) else {}
+
+
 async def score_run(request):
     who, game, err = _score_game(request)
     if err is not None:
         return err
     action = request.match_info["action"]
     try:
-        body = await request.json()
-    except Exception:
-        body = {}
+        body = await _score_body(request)
+    except ScoreRefuse as e:
+        log.info("%s %s refused for %s: %s", game.key, action, who["uid"], e)
+        return _error(str(e), 422)
     try:
         if action == "start":
             return _json(game.start(who["uid"], _today()))
@@ -462,6 +489,9 @@ async def score_run(request):
         if action in game.acts:
             return _json(game.act(who["uid"], _today(), action, body if isinstance(body, dict) else {}))
     except ScoreRefuse as e:
+        # every refused run is logged, so "it didn't count" can be answered
+        log.info("%s %s refused for %s: %s (score %s, %s moves)", game.key, action, who["uid"], e,
+                 body.get("score", body.get("height")), len(body.get("inputs") or []))
         return _error(str(e), 422)
     except Exception:
         log.error("%s %s failed", game.key, action, exc_info=True)

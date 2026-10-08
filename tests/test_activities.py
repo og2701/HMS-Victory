@@ -289,3 +289,46 @@ def test_the_crossword_command_opens_the_crossword(monkeypatch, tmp_path):
     first, again = _run(client, scenario)
     assert first["game"] == "crossword" and first["crossword"]["game"] == "crossword"
     assert again["game"] == "home"          # nothing asked for this time: Home
+
+
+# --- score games: a long run's moves get through ------------------------------------------
+def test_a_long_runs_finish_is_read_whole_past_the_16kb_cap(monkeypatch, tmp_path, caplog):
+    # 2026-10-08: a 32-minute Paperboy run's moves went over the app's 16 KB cap, the body was read as
+    # empty and the run was refused as "a different day's level", with nothing in the log
+    client, _ = _setup(monkeypatch, tmp_path)
+    game = server.SCORE_GAMES["paperboy"]
+    seen = {}
+
+    async def fake_finish(uid, date, body):
+        seen["body"] = body
+        return {"date": DAY.isoformat()}, {"newBest": False, "height": body["score"]}
+
+    monkeypatch.setattr(game, "finish_async", fake_finish)
+    monkeypatch.setattr(game, "enabled", lambda: True, raising=False)
+    moves = [[step * 97, step % 4] for step in range(4000)]          # ~40 KB of moves
+    body = {"score": 84992, "time": 1950.0, "count": 9000, "seed": "s", "run": "r", "inputs": moves}
+
+    async def scenario(http):
+        r = await http.post("/api/paperboy/finish", json=body, headers=_auth(42))
+        return r.status, await r.json()
+    status, out = _run(client, scenario)
+    assert status == 200, out
+    assert len(seen["body"]["inputs"]) == 4000 and seen["body"]["score"] == 84992
+
+
+def test_a_refused_finish_is_logged_with_its_reason(monkeypatch, tmp_path, caplog):
+    import logging
+    client, _ = _setup(monkeypatch, tmp_path)
+    game = server.SCORE_GAMES["paperboy"]
+
+    async def refuse(uid, date, body):
+        raise server.ScoreRefuse("That was a different day's level.")
+
+    monkeypatch.setattr(game, "finish_async", refuse)
+
+    async def scenario(http):
+        r = await http.post("/api/paperboy/finish", json={"score": 5, "inputs": [[1, 2]]}, headers=_auth(42))
+        return r.status
+    with caplog.at_level(logging.INFO, logger="lib.activities.server"):
+        assert _run(client, scenario) == 422
+    assert "paperboy finish refused for 42: That was a different day's level. (score 5, 1 moves)" in caplog.text
