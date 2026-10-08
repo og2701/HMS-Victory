@@ -47,7 +47,8 @@ SPLIT_BIG = [0.6, 0.3, 0.1]
 # (tests/test_kart.py checks it against tests/data/kart_tracks.json, made from the page's own code), and
 # each kart's top speed in m/s, which is what caps how fast the bot believes someone's going.
 TRACKS = {"village": {"length": 1247, "laps": 3}}
-CARS = {"cab": 26.0, "bus": 27.4, "float": 24.6, "robin": 25.0, "scooter": 24.0, "van": 27.0, "icecream": 26.2, "mini": 25.6}
+CARS = {"cab": 26.0, "bus": 27.4, "thomas": 27.2, "brum": 25.2, "mini": 25.6, "robin": 25.0, "wg": 26.0, "fryup": 25.6,
+        "roadman": 24.6, "scooter": 24.0}
 PACE = 1.12                  # how far over its top speed a kart may average (boosts, drafting)
 BURST = 70.0                 # metres of slack for a burst of boosts or a late update
 CPU_NAMES = ["Nan", "Gaz", "Big Sue", "Clive", "Bev", "Terry", "Shaz", "Keith", "Pauline", "Dougie", "Mags", "Barry"]

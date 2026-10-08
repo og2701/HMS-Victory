@@ -20,8 +20,9 @@ ROOT = Path(__file__).resolve().parents[2]
 KARTS = ROOT / "data" / "kart"
 COIN = ROOT / "data" / "ukpence-small.svg"
 FONTS = ROOT / "data" / "fonts"
-CAR_NAMES = {"cab": "Black Cab", "bus": "Routemaster", "float": "Milk Float", "robin": "Three-Wheeler",
-             "scooter": "Nan's Scooter", "van": "White Van", "icecream": "Ice Cream Van", "mini": "Mini"}
+CAR_NAMES = {"cab": "Black Cab", "bus": "Routemaster", "thomas": "Thomas", "brum": "Brum", "mini": "Mini",
+             "robin": "Three-Wheeler", "wg": "Wallace & Gromit", "fryup": "Full English", "roadman": "Roadman",
+             "scooter": "Nan's Scooter"}
 TRACK_NAMES = {"village": "Little Puddleton"}
 
 _HEAD = ("<!doctype html><html><head><meta charset='utf-8'><style>"

@@ -8,11 +8,13 @@
  "cars": {
   "cab": 26,
   "bus": 27.4,
-  "float": 24.6,
+  "thomas": 27.2,
+  "brum": 25.2,
+  "mini": 25.6,
   "robin": 25,
-  "scooter": 24,
-  "van": 27,
-  "icecream": 26.2,
-  "mini": 25.6
+  "wg": 26,
+  "fryup": 25.6,
+  "roadman": 24.6,
+  "scooter": 24
  }
 }
