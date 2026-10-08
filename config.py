@@ -431,6 +431,7 @@ SKYRIM_PROFILES_FILE = os.path.join(JSON_DATA_DIR, "skyrim_profiles.json")  # pe
 SKYRIM_DAILY_FILE = os.path.join(JSON_DATA_DIR, "skyrim_daily.json")  # today's shared-dungeon results board
 SKYRIM_GRAVEYARD_FILE = os.path.join(JSON_DATA_DIR, "skyrim_graveyard.json")  # fallen adventurers (corpses + obituary)
 SKYRIM_WORLDBOSS_FILE = os.path.join(JSON_DATA_DIR, "skyrim_worldboss.json")  # the week's shared hunt (pooled HP + strikes)
+ACTIVITY_PENNYFALLS_FILE = os.path.join(JSON_DATA_DIR, "activity_pennyfalls.json")  # Davy Jones' Locker boards (coins, golds, day net)
 
 # --- County Balls (BallsDex-style collectibles: county balls spawn in chat, first
 # correct guess catches; duplicates sell to the bank for UKPence) ---
