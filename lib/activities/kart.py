@@ -182,8 +182,9 @@ def _busy(uid: int) -> None:
         raise Refuse("You're already in a race.")
 
 
-def open_room(uid: int, stake, car=None, channel: int | None = None) -> dict:
-    """Open a room; ``channel`` is where the game was opened, where its post goes."""
+def open_room(uid: int, stake, car=None, channel: int | None = None, track=None) -> dict:
+    """Open a room; ``channel`` is where the game was opened, where its post goes. ``track`` is the host's pick,
+    or (not one of the tracks) a random one."""
     _load()
     try:
         stake = int(stake)
@@ -195,7 +196,8 @@ def open_room(uid: int, stake, car=None, channel: int | None = None) -> dict:
     _check_stake(uid, stake)
     now = time.time()
     r = {"id": secrets.token_hex(4), "host": uid, "players": [uid], "left": [], "cars": {str(uid): _car(car)},
-         "stake": stake, "state": "lobby", "track": _pick_track(), "created": now, "expires": now + LOBBY_SECONDS,
+         "stake": stake, "state": "lobby", "track": track if track in TRACKS else _pick_track(), "created": now,
+         "expires": now + LOBBY_SECONDS,
          "over": False, "ch": int(channel) if channel else None}
     _rooms[r["id"]] = r
     _save()

@@ -351,3 +351,10 @@ def test_a_race_under_way_has_a_watch_button(em):
     ids = [c.custom_id for row in kart_posts.view(K._rooms[rid], "start", None).children
            if hasattr(row, "children") for c in row.children if hasattr(c, "custom_id")]
     assert f"ukplace:kartwatch:{rid}" in ids and "ukplace:play:kart" in ids
+
+
+def test_the_host_can_pick_the_track(em, monkeypatch):
+    monkeypatch.setattr(K, "_pick_track", PICK_TRACK)
+    assert K.open_room(A, 0, "cab", track="silverstone")["track"] == "silverstone"
+    # anything else (none, or not a track) gets a random one
+    assert K.open_room(B, 0, "cab", track="the moon")["track"] in K.TRACKS
