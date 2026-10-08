@@ -27,6 +27,11 @@ RIDER_ART = ROOT / "data" / "games" / "paperboy-rider.webp"
 # rendered from the game with it
 RIDER_MASKS = ROOT / "data" / "games" / "paperboy-rider-masks.png"
 RIDER_PARTS = ("bike", "top", "hair", "bag")
+# the wardrobe's hats, drawn as the game draws them at the angle his head is at in RIDER_ART (ukplace-activities
+# scripts/paperboy-hats.html, yaw 45, pitch 10), and where each one's top left goes on the art to sit on his head
+HAT_ART = ROOT / "data" / "games" / "paperboy-hats"
+HAT_AT = {"bowler": (255, -32), "tophat": (256, -72), "bobby": (233, -129), "cavalier": (223, -86),
+          "bicorne": (245, -34), "crown": (272, -76)}
 UKP_ART = ROOT / "data" / "ukpence.svg"
 W = 800
 
@@ -133,8 +138,10 @@ SPITFIRE_CSS = f"""
 
 def _dressed(looks: dict[str, str]) -> str:
     """The rider art in a player's wardrobe colours, as an image URL: each part recoloured (as the game paints
-    it) so its average shade comes out the colour, darker and lighter round that as the light falls on it."""
-    if not any(looks.get(p, "").startswith("#") for p in RIDER_PARTS):
+    it) so its average shade comes out the colour, darker and lighter round that as the light falls on it, and
+    his hat on his head (the picture taller by however far it sticks up)."""
+    hat = looks.get("hat", "")
+    if not any(looks.get(p, "").startswith("#") for p in RIDER_PARTS) and hat not in HAT_AT:
         return f"file://{RIDER_ART}"
     from PIL import Image, ImageOps, ImageStat
     art = Image.open(RIDER_ART).convert("RGBA")
@@ -149,6 +156,12 @@ def _dressed(looks: dict[str, str]) -> str:
         paint = paint.convert("RGBA")
         paint.putalpha(alpha)
         art = Image.composite(paint, art, mask)
+    if hat in HAT_AT and (HAT_ART / f"{hat}.webp").exists():
+        x, y = HAT_AT[hat]
+        worn = Image.new("RGBA", (art.width, art.height - min(0, y)), (0, 0, 0, 0))
+        worn.alpha_composite(art, (0, -min(0, y)))
+        worn.alpha_composite(Image.open(HAT_ART / f"{hat}.webp").convert("RGBA"), (x, max(0, y)))
+        art = worn
     buf = io.BytesIO()
     art.save(buf, "WEBP", quality=90)
     return f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode()}"
@@ -173,7 +186,7 @@ ROUND_CSS = """
 .sun { position: absolute; right: 120px; top: 120px; width: 240px; height: 240px; border-radius: 50%;
        background: radial-gradient(circle, #FFE9B0 0%, #FFC27A 55%, rgba(255,194,122,0) 72%); }
 .roofs { position: absolute; left: 0; right: 0; top: 300px; width: 100%; height: 120px; }
-.rider { position: absolute; right: 16px; top: 22px; width: 228px; }
+.rider { position: absolute; right: 16px; top: 22px; height: 412px; }
 .word i { background: #2a2240; color: #FFC94A; }
 .badge.pay { background: #FFC94A; }
 .top h4 { color: #B8462E; }

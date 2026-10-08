@@ -351,3 +351,41 @@ def test_a_race_under_way_has_a_watch_button(em):
     ids = [c.custom_id for row in kart_posts.view(K._rooms[rid], "start", None).children
            if hasattr(row, "children") for c in row.children if hasattr(c, "custom_id")]
     assert f"ukplace:kartwatch:{rid}" in ids and "ukplace:play:kart" in ids
+
+
+def test_the_host_can_pick_the_track(em, monkeypatch):
+    monkeypatch.setattr(K, "_pick_track", PICK_TRACK)
+    assert K.open_room(A, 0, "cab", track="silverstone")["track"] == "silverstone"
+    # anything else (none, or not a track) gets a random one
+    assert K.open_room(B, 0, "cab", track="the moon")["track"] in K.TRACKS
+
+
+def test_a_called_off_races_post_goes_after_a_moment(em, monkeypatch):
+    import asyncio
+    from lib.activities import kart_posts, launcher
+    gone, slept = [], []
+
+    async def nap(s):
+        slept.append(s)
+
+    async def delete(ch, mid):
+        gone.append((ch, mid))
+
+    async def edit(*a, **kw):
+        pass
+
+    async def drawn(*a, **kw):
+        return None
+    monkeypatch.setattr(kart_posts.asyncio, "sleep", nap)
+    monkeypatch.setattr(launcher, "delete_message", delete)
+    monkeypatch.setattr(launcher, "edit_view", edit)
+    monkeypatch.setattr(kart_posts.kart_card, "png", drawn)
+    monkeypatch.setattr(kart_posts, "_name", lambda u: "Someone")
+    rid = K.open_room(A, 0, "cab")["id"]
+    post = kart_posts.Post(rid, 555, state=K._rooms[rid], event="closed", dirty=True, channel=42)
+    asyncio.run(kart_posts._flush(post))
+    assert gone == [(42, 555)] and kart_posts.GONE_AFTER in slept
+    # one that was never posted isn't posted just to be taken down
+    gone.clear()
+    asyncio.run(kart_posts._flush(kart_posts.Post(rid, None, state=K._rooms[rid], event="closed", dirty=True)))
+    assert gone == []

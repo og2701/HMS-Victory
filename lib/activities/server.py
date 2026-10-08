@@ -28,7 +28,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /countdown/open {stake}, /countdown/join|leave|start {id}
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
     GET  /kart                UKP Kart: your race room and the ones you could join
-    POST /kart/open {stake, car}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
+    POST /kart/open {stake, car, track?}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
     GET  /kart/room/<id>      a room (polled while waiting for the start)
     GET  /kart/watch/<id>     a race under way, to watch (anyone; the WebSocket's hello then says watch)
@@ -772,7 +772,7 @@ async def kart_action(request):
     uid, rid = who["uid"], str(body.get("id") or "")
     try:
         if action == "open":
-            kart.open_room(uid, body.get("stake"), body.get("car"), channel=who["ch"])
+            kart.open_room(uid, body.get("stake"), body.get("car"), channel=who["ch"], track=body.get("track"))
         elif action == "join":
             kart.join(uid, rid, body.get("car"))
         elif action == "car":
