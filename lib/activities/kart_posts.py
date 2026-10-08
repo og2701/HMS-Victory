@@ -80,14 +80,6 @@ def _and(uids) -> str:
     return who[0] if len(who) == 1 else ", ".join(who[:-1]) + f" and {who[-1]}"
 
 
-async def _faces(uids) -> dict:
-    from lib.activities import avatars
-    from lib.activities.casino import base
-    uids = [u for u in dict.fromkeys(uids) if u is not None]
-    got = await asyncio.gather(*(avatars.get(base.CLIENT, u) for u in uids))
-    return {u: data for u, data in zip(uids, got) if data}
-
-
 def headline(room: dict, event: str) -> str:
     stake = int(room.get("stake") or 0)
     for_what = f" · **{stake:,} UKP** each" if stake else " · for fun"
@@ -180,7 +172,7 @@ async def _flush(post: Post) -> None:
             places = [c for c in dict.fromkeys([places[0], _casino()]) if c]
         png = None
         if any(time.time() >= _no_files_until.get(c, 0) for c in places):
-            png = await kart_card.png(room, {u: _name(u) for u in room["players"]}, event, await _faces(room["players"]))
+            png = await kart_card.png(room, {u: _name(u) for u in room["players"]}, event)
         for i, ch in enumerate(places):
             try:
                 await _send(post, ch, room, event, png)
