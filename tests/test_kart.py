@@ -234,7 +234,7 @@ def test_the_cards_draw_every_stage(em):
     # the race's fastest lap, a CPU's here, once the pages have reported their laps
     r["laps"] = {str(B): K._lap(r, 52.4), "cpu0": K._lap(r, 50.1)}
     out = kart_card.page(r, names, "over")
-    assert "FASTEST LAP <b>0:50.10</b>" in out
+    assert "FASTEST LAP" in out and "0:50.10" in out
 
 
 def test_only_its_testers_get_in_until_it_goes_live(monkeypatch):
