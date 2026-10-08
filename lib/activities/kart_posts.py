@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 import discord
 
+import config
 from lib.activities import kart, kart_card
 
 log = logging.getLogger(__name__)
@@ -42,7 +43,9 @@ _no_files_until: dict[int, float] = {}
 
 
 def on_event(event: str, room: dict) -> None:
-    """A step in a room (kart.listeners)."""
+    """A step in a room (kart.listeners). Nothing's posted while UKP Kart is only open to its testers."""
+    if not getattr(config, "KART_LIVE", False):
+        return
     rid = room.get("id")
     if not rid:
         return

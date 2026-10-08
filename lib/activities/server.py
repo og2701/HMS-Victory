@@ -222,7 +222,7 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
         # opened from a room's Join in #casino: pick that room out
         return {"game": "countdown", "countdown": {**_countdown_lobby(client, uid), "focus": game[10:] or None}}
     if game == "kart" or game.startswith("kart:"):
-        if not _casino_open(channel):
+        if not _casino_open(channel) or not _kart_allowed(uid):
             return {"game": "home", "home": _home(client, uid, channel)}
         # opened from a race's Join button: pick that room out
         return {"game": "kart", "kart": {**_kart_lobby(client, uid), "focus": game[5:] or None}}
@@ -243,7 +243,7 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
     return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel),
-            "kart": bool(getattr(config, "KART_LIVE", False))}
+            "kart": _kart_allowed(uid)}
 
 
 def _skyrim_card(uid: int, channel) -> dict | None:
@@ -706,13 +706,26 @@ async def countdown_room(request):
 
 # ---- UKP Kart --------------------------------------------------------------------------------
 
+def _kart_allowed(uid) -> bool:
+    """Everyone once UKP Kart's live (config.KART_LIVE), until then only its testers."""
+    return bool(getattr(config, "KART_LIVE", False)) or int(uid or 0) in getattr(config, "KART_TESTERS", [])
+
+
+def _kart_request(request):
+    """Like _duel_request, and turns away anyone UKP Kart isn't open to yet."""
+    who, err = _duel_request(request, kart.GAME)
+    if err is None and not _kart_allowed(who["uid"]):
+        return None, _error("UKP Kart isn't open yet.", 403)
+    return who, err
+
+
 def _kart_lobby(client, uid: int) -> dict:
     from lib.economy.economy_manager import get_bb
     return kart.lobby(uid, lambda u: _name(client, u), get_bb(uid))
 
 
 async def kart_lobby(request):
-    who, err = _duel_request(request, kart.GAME)
+    who, err = _kart_request(request)
     if err is not None:
         return err
     return _json(_kart_lobby(request.app[CLIENT], who["uid"]))
@@ -720,7 +733,7 @@ async def kart_lobby(request):
 
 async def kart_action(request):
     """open / join / car / leave / start; answers with the lobby as it now stands."""
-    who, err = _duel_request(request, kart.GAME)
+    who, err = _kart_request(request)
     if err is not None:
         return err
     body, action = await _duel_body(request), request.match_info["action"]
@@ -747,7 +760,7 @@ async def kart_action(request):
 
 
 async def kart_room(request):
-    who, err = _duel_request(request, kart.GAME)
+    who, err = _kart_request(request)
     if err is not None:
         return err
     client = request.app[CLIENT]
@@ -759,7 +772,12 @@ async def kart_room(request):
 
 async def kart_ws(request):
     client = request.app[CLIENT]
-    return await kart.ws(request, auth.read_session, lambda u: _name(client, u))
+
+    def session(token: str):
+        who = auth.read_session(token)
+        return who if who and _kart_allowed(who["uid"]) else None
+
+    return await kart.ws(request, session, lambda u: _name(client, u))
 
 
 async def health(_request):

@@ -227,3 +227,14 @@ def test_the_cards_draw_every_stage(em):
     K.sweep()
     out = kart_card.page(r, names, "over")
     assert "BEN" in out and "+" in out
+
+
+def test_only_its_testers_get_in_until_it_goes_live(monkeypatch):
+    import config
+    from lib.activities import server
+    monkeypatch.setattr(config, "KART_LIVE", False)
+    monkeypatch.setattr(config, "KART_TESTERS", [1])
+    assert server._kart_allowed(1) and not server._kart_allowed(2)
+    assert not any(game == "kart" for game, _ in config.ACTIVITIES_LAUNCH_COMMANDS.values())
+    monkeypatch.setattr(config, "KART_LIVE", True)
+    assert server._kart_allowed(2)

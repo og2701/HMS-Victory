@@ -72,6 +72,8 @@ def main(port: int) -> None:
     if hasattr(config, "CROSSWORD_STATE_FILE"):
         config.CROSSWORD_STATE_FILE = os.path.join(tmp, "crossword.json")
     config.PERSISTENT_VIEWS_FILE = os.path.join(tmp, "persistent_views.json")
+    # the stand-in players all try UKP Kart while it's only open to its testers
+    config.KART_TESTERS = [*getattr(config, "KART_TESTERS", []), PLAYER, RIVAL, THIRD]
     # Skyrim's saves too, so playing it here never touches this checkout's data/json
     for name in ("PROFILES", "DAILY", "GRAVEYARD", "WORLDBOSS"):
         setattr(config, f"SKYRIM_{name}_FILE", os.path.join(tmp, f"skyrim_{name.lower()}.json"))
