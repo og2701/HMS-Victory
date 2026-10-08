@@ -27,6 +27,10 @@ mapping's prefix isn't worth betting the launch on:
     GET  /countdown           Countdown: your room and the rooms you could join
     POST /countdown/open {stake}, /countdown/join|leave|start {id}
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
+    GET  /kart                UKP Kart: your race room and the ones you could join
+    POST /kart/open {stake, car}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
+    GET  /kart/room/<id>      a room (polled while waiting for the start)
+    GET  /kart/ws             the race itself, a WebSocket (kart.ws)
     GET  /health
 """
 
@@ -37,7 +41,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, countdown, crossword_api, duel, wordle_api
+from lib.activities import auth, casino, countdown, crossword_api, duel, kart, wordle_api
 from lib.activities.daily_score import GAMES as SCORE_GAMES
 from lib.activities.daily_score import Refuse as ScoreRefuse
 
@@ -47,6 +51,7 @@ _runner: web.AppRunner | None = None
 _sweeper: asyncio.Task | None = None
 _duel_sweeper: asyncio.Task | None = None
 _countdown_sweeper: asyncio.Task | None = None
+_kart_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -146,7 +151,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked in ("home", "duel", "countdown", "skyrim") or asked.startswith(("duel:", "countdown:")):
+    if asked in _STATE or asked in ("home", "duel", "countdown", "skyrim", "kart") or asked.startswith(("duel:", "countdown:", "kart:")):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
@@ -185,6 +190,8 @@ def _gate_name(game: str) -> str:
         return duel.GAME
     if game == "countdown" or game.startswith("countdown:"):
         return countdown.GAME
+    if game == "kart" or game.startswith("kart:"):
+        return kart.GAME
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
         return a.command if a else "casino"
@@ -214,6 +221,11 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
             return {"game": "home", "home": _home(client, uid, channel)}
         # opened from a room's Join in #casino: pick that room out
         return {"game": "countdown", "countdown": {**_countdown_lobby(client, uid), "focus": game[10:] or None}}
+    if game == "kart" or game.startswith("kart:"):
+        if not _casino_open(channel) or not _kart_allowed(uid):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        # opened from a race's Join button: pick that room out
+        return {"game": "kart", "kart": {**_kart_lobby(client, uid), "focus": game[5:] or None}}
     if game == "skyrim":
         # the town (or the class pick), like GET /skyrim; it's the bot's own engine, so no gate beyond the usual
         from lib.activities.skyrim_web import common as sk_common, core as sk_core
@@ -230,7 +242,8 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
-    return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel)}
+    return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel),
+            "kart": _kart_allowed(uid)}
 
 
 def _skyrim_card(uid: int, channel) -> dict | None:
@@ -691,6 +704,82 @@ async def countdown_room(request):
         return _error("Something went wrong. Your stake is safe; try again.", 500)
 
 
+# ---- UKP Kart --------------------------------------------------------------------------------
+
+def _kart_allowed(uid) -> bool:
+    """Everyone once UKP Kart's live (config.KART_LIVE), until then only its testers."""
+    return bool(getattr(config, "KART_LIVE", False)) or int(uid or 0) in getattr(config, "KART_TESTERS", [])
+
+
+def _kart_request(request):
+    """Like _duel_request, and turns away anyone UKP Kart isn't open to yet."""
+    who, err = _duel_request(request, kart.GAME)
+    if err is None and not _kart_allowed(who["uid"]):
+        return None, _error("UKP Kart isn't open yet.", 403)
+    return who, err
+
+
+def _kart_lobby(client, uid: int) -> dict:
+    from lib.economy.economy_manager import get_bb
+    return kart.lobby(uid, lambda u: _name(client, u), get_bb(uid))
+
+
+async def kart_lobby(request):
+    who, err = _kart_request(request)
+    if err is not None:
+        return err
+    return _json(_kart_lobby(request.app[CLIENT], who["uid"]))
+
+
+async def kart_action(request):
+    """open / join / car / leave / start; answers with the lobby as it now stands."""
+    who, err = _kart_request(request)
+    if err is not None:
+        return err
+    body, action = await _duel_body(request), request.match_info["action"]
+    uid, rid = who["uid"], str(body.get("id") or "")
+    try:
+        if action == "open":
+            kart.open_room(uid, body.get("stake"), body.get("car"), channel=who["ch"])
+        elif action == "join":
+            kart.join(uid, rid, body.get("car"))
+        elif action == "car":
+            kart.pick_car(uid, rid, body.get("car"))
+        elif action == "leave":
+            kart.leave(uid, rid)
+        elif action == "start":
+            kart.start(uid, rid)
+        else:
+            return _error("That isn't a UKP Kart action.", 404)
+    except kart.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("kart %s failed", action, exc_info=True)
+        return _error("Something went wrong. Your stake is safe; try again.", 500)
+    return _json(_kart_lobby(request.app[CLIENT], uid))
+
+
+async def kart_room(request):
+    who, err = _kart_request(request)
+    if err is not None:
+        return err
+    client = request.app[CLIENT]
+    try:
+        return _json(kart.room(who["uid"], request.match_info["id"], lambda u: _name(client, u)))
+    except kart.Refuse as e:
+        return _error(str(e), 422)
+
+
+async def kart_ws(request):
+    client = request.app[CLIENT]
+
+    def session(token: str):
+        who = auth.read_session(token)
+        return who if who and _kart_allowed(who["uid"]) else None
+
+    return await kart.ws(request, session, lambda u: _name(client, u))
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -739,6 +828,10 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/countdown/room/{{id}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/{{action}}", countdown_action)
+        app.router.add_get(f"{prefix}/kart", kart_lobby)
+        app.router.add_get(f"{prefix}/kart/ws", kart_ws)
+        app.router.add_get(f"{prefix}/kart/room/{{id}}", kart_room)
+        app.router.add_post(f"{prefix}/kart/{{action}}", kart_action)
         from lib.activities.skyrim_web import routes as skyrim_routes
         skyrim_routes.register(app, prefix)
     return app
@@ -784,6 +877,10 @@ async def start(client) -> bool:
     countdown.CLIENT = client
     if countdown_posts.on_event not in countdown.listeners:
         countdown.listeners.append(countdown_posts.on_event)
+    kart.CLIENT = client
+    from lib.activities import kart_posts
+    if kart_posts.on_event not in kart.listeners:
+        kart.listeners.append(kart_posts.on_event)
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))
@@ -797,6 +894,8 @@ async def start(client) -> bool:
     global _duel_sweeper, _countdown_sweeper
     _duel_sweeper = asyncio.create_task(duel.run_sweeper())
     _countdown_sweeper = asyncio.create_task(countdown.run_sweeper())
+    global _kart_sweeper
+    _kart_sweeper = asyncio.create_task(kart.run_sweeper())
     return True
 
 
@@ -806,11 +905,11 @@ async def stop() -> None:
     if _sweeper is not None:
         _sweeper.cancel()
         _sweeper = None
-    global _duel_sweeper, _countdown_sweeper
-    for task in (_duel_sweeper, _countdown_sweeper):
+    global _duel_sweeper, _countdown_sweeper, _kart_sweeper
+    for task in (_duel_sweeper, _countdown_sweeper, _kart_sweeper):
         if task is not None:
             task.cancel()
-    _duel_sweeper = _countdown_sweeper = None
+    _duel_sweeper = _countdown_sweeper = _kart_sweeper = None
     try:
         await casino.sessions.close_all()
     except Exception:
