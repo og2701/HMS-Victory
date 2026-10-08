@@ -51,7 +51,27 @@ CARS = {"cab": 26.0, "bus": 27.4, "thomas": 27.2, "brum": 25.2, "mini": 25.6, "r
         "roadman": 24.6, "scooter": 24.0}
 PACE = 1.12                  # how far over its top speed a kart may average (boosts, drafting)
 BURST = 70.0                 # metres of slack for a burst of boosts or a late update
-CPU_NAMES = ["Nan", "Gaz", "Big Sue", "Clive", "Bev", "Terry", "Shaz", "Keith", "Pauline", "Dougie", "Mags", "Barry"]
+# The CPU drivers are British icons, seven picked at random for a race (the activity has the same list for practice,
+# ukplace-activities src/kart/cpu.ts)
+CPU_NAMES = [
+    # off the telly
+    "Gemma Collins", "Joey Essex", "Katie Price", "Kerry Katona", "Stacey Solomon", "Rylan Clark", "Danny Dyer",
+    "Holly Willoughby", "Ant", "Dec", "Simon Cowell", "Piers Morgan", "Davina McCall", "Lorraine Kelly", "Alan Carr",
+    "Paul Hollywood", "Mary Berry", "Prue Leith", "Gordon Ramsay", "Jamie Oliver", "Nigella Lawson", "Delia Smith",
+    "Jeremy Clarkson", "Richard Hammond", "James May", "David Attenborough", "Bear Grylls", "Lord Sugar",
+    "Bradley Walsh", "Richard Osman", "Stephen Fry", "Joanna Lumley", "Judi Dench", "Ricky Gervais", "Peter Kay",
+    "Michael McIntyre", "Romesh Ranganathan", "Big Narstie", "Chris Packham", "Monty Don", "Kirstie Allsopp",
+    "Phil Spencer", "Noel Edmonds", "Anne Robinson", "Gok Wan", "Sue Perkins",
+    # pop stars
+    "Rick Astley", "Elton John", "Tom Jones", "Adele", "Ed Sheeran", "Harry Styles", "Robbie Williams",
+    "Liam Gallagher", "Noel Gallagher", "Stormzy", "Dizzee Rascal", "Craig David", "Shirley Bassey", "Mick Jagger",
+    "Paul McCartney", "Posh Spice", "Scary Spice", "Sporty Spice", "Baby Spice", "Ginger Spice",
+    # sport
+    "David Beckham", "Wayne Rooney", "Peter Crouch", "Gary Lineker", "Andy Murray", "Tyson Fury", "Mo Farah",
+    "Lewis Hamilton", "Nigel Mansell", "Jill Scott", "Luke Littler", "Phil Taylor", "Ronnie O'Sullivan", "Tom Daley",
+    # and a few made up ones
+    "Del Boy", "Mr Bean", "Hyacinth Bucket", "Alan Partridge", "Phil Mitchell", "Dot Cotton",
+]
 
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_kart.json")
 _rooms: dict[str, dict] = {}
