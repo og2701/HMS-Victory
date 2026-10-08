@@ -1,7 +1,7 @@
 """UKP Kart's posts: one message per race room, in the channel the host opened the game in (#casino if the
 bot can't post there), posted when it opens and edited as people sit down. The result is posted afresh
-at the bottom of the channel and the first message shrinks to a line pointing to it; a room that closes
-or lapses unstarted is just edited.
+at the bottom of the channel and the first message shrinks to a line pointing to it; a room that's called off
+or lapses unstarted shows GAME OVER for a moment, then its post goes (the user's call).
 
 The picture says it all (kart_card); the line above it says who, with mentions that ping nobody. Each
 message has its own queue so edits land in order and no closer together than EDIT_GAP.
@@ -24,6 +24,7 @@ EDIT_GAP = 2.5
 IMAGE = "kart.png"
 NO_FILES_RETRY = 600
 ENDED = ("over", "closed", "lapsed")
+GONE_AFTER = 3.0              # seconds a called-off race's post stays up before it's taken down
 
 
 @dataclass
@@ -166,6 +167,8 @@ async def _flush(post: Post) -> None:
         places = [c for c in dict.fromkeys(places) if c]
         if not places:
             return
+        if event in ("closed", "lapsed") and post.message_id is None:
+            return                              # never posted: nothing to show GAME OVER on
         if event == "over" and post.message_id is not None:
             from lib.activities import launcher
             try:
@@ -189,5 +192,19 @@ async def _flush(post: Post) -> None:
             except Exception:
                 log.warning("couldn't post UKP Kart %s in %s", post.rid, ch, exc_info=True)
                 break
+        if event in ("closed", "lapsed") and post.message_id is not None:
+            await _take_down(post.channel or places[0], post.message_id)
     if post.event in ENDED and not post.dirty:
         _posts.pop(post.rid, None)
+
+
+async def _take_down(ch: int, message_id: int) -> None:
+    """A race that never ran: its GAME OVER up for a moment, then the post gone."""
+    from lib.activities import launcher
+    await asyncio.sleep(GONE_AFTER)
+    try:
+        await launcher.delete_message(ch, message_id)
+    except discord.NotFound:
+        pass
+    except Exception:
+        log.warning("couldn't take down the UKP Kart post %s", message_id, exc_info=True)

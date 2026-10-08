@@ -367,6 +367,13 @@ async def edit_view(channel_id: int, message_id: int, view: discord.ui.LayoutVie
         view=view, attachments=files or [], allowed_mentions=discord.AllowedMentions.none())
 
 
+async def delete_message(channel_id: int, message_id: int) -> None:
+    """Take down a message posted with post_view."""
+    if _client is None or not _client.is_ready():
+        return
+    await _client.get_partial_messageable(int(channel_id)).get_partial_message(int(message_id)).delete()
+
+
 async def start(session) -> None:
     global _client
     if _client is not None or not auth.configured():
