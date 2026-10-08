@@ -351,6 +351,17 @@ class TestDataSignals(unittest.TestCase):
         self.assertFalse(sig.data_query_requested())
 
 
+    def test_a_period_the_menu_cannot_express_goes_to_research(self):
+        # "how many people joined yesterday" came back first_seen/total with window today: the wrong window
+        answers = _with_data(_answers(server_records=0.9), metric="first_seen", metric_conf=0.67, shape="total", shape_conf=0.97,
+                             window=ms.OTHER_PERIOD)
+        sig = parse_signals(answers, {})
+        self.assertEqual(sig.data_window, ms.OTHER_PERIOD)
+        self.assertFalse(sig.data_query_requested())
+        self.assertTrue(sig.records_sure)
+        self.assertIn(ms.OTHER_PERIOD, QUESTIONS["data_window"]["criteria"])
+
+
 class TestJudgeNamedSubject(unittest.IsolatedAsyncioTestCase):
     async def test_no_candidates_or_key_means_nobody(self):
         session = _FakeSession([])

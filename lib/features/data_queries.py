@@ -580,8 +580,8 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        lambda since, game: _json_counts("WEEKEND_WARRIOR_COUNTS_FILE", nested=True)),
     # --- casino
     _m("casino_net", "casino profit and loss", "UKP",
-       "Net UKP won or lost against the house casino (blackjack, higher or lower, red dog, roulette, slots, video poker, three card poker, mines, chest, penalties, darts, glass bridge, blockade)",
-       ["who's lost the most at the casino", "biggest casino winner this week", "how's steven doing at blackjack", "casino profit"],
+       "Net UKP MEMBERS won or lost against the house casino (blackjack, higher or lower, red dog, roulette, slots, video poker, three card poker, mines, chest, penalties, darts, glass bridge, blockade, plinko, penny falls); positive means the member is up. Not the house's own takings",
+       ["who's lost the most at the casino", "biggest casino winner this week", "how's steven doing at blackjack", "who's up at the casino"],
        lambda since, game: _casino("COALESCE(SUM(net),0)", since, game),
        windowable=True, games="casino", signed=True),
     _m("casino_staked", "UKP wagered at the casino", "UKP",

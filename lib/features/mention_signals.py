@@ -77,6 +77,9 @@ RECORDS_SHAPE_CONFIDENCE = 0.3
 NAMED_SUBJECT_CONFIDENCE = 0.6
 
 MAX_GROUP_COUNT = 12
+# A period the records menu can't express ("yesterday", "in August"): the fixed tables would answer for the wrong
+# window, so the question goes to the records analyst instead.
+OTHER_PERIOD = "other_period"
 
 BOT_DESCRIPTION = (
     "HMS Victory, also called Vic: a Discord bot with a dry British persona. It replies in text and can "
@@ -248,6 +251,7 @@ QUESTIONS.update({
             "question": "If `message.text` asks for a figure from the server's own records, which metric is it about? Otherwise none.",
             "rules": [
                 "Records questions ask for a count, balance, amount, rank, ranking, leaderboard, 'who has the most/least', 'how much/many does X have', or a server total.",
+                "Pick a metric only when it measures EXACTLY what is asked. If the nearest one means something else (the house's own takings rather than members' profit and loss, people joining rather than first posting, a game's high score, how popular a shop item is), choose none: a researcher with the full records answers those.",
                 "The server runs its own casino and economy (see `server`): 'biggest casino win', 'richest', 'most xp' with no outside-world pointer are records questions about it.",
                 "A picture request, banter, an opinion or a question about the outside world is none, even if it mentions money or XP in passing.",
                 "If `message.text` corrects or refines a records answer the bot just gave (see `replied_to` and `recent_chat`: 'users, not holders', 'no, this month', 'make it 20', 'lowest', 'in ukp not xp'), it is the SAME records question with the correction applied: pick the corrected metric, not none.",
@@ -311,6 +315,7 @@ QUESTIONS.update({
             "today": "Today, the last 24 hours, tonight",
             "week": "This week, the last 7 days, recently",
             "month": "This month, the last 30 days",
+            OTHER_PERIOD: "A specific period none of the above covers: yesterday, last week or last month as a finished period, a named day, date or month, between two dates",
         },
     },
     "data_game": {
@@ -435,9 +440,10 @@ class MentionSignals:
     def data_query_requested(self) -> bool:
         """True when Jev clearly picked something the code can fetch: answer from the database, not a model.
 
-        Never for a picture: "draw the top 5 richest as pigs" wants the roster drawn, not a table.
+        Never for a picture: "draw the top 5 richest as pigs" wants the roster drawn, not a table. Never for a
+        period the menu can't express either: that table would be for the wrong window.
         """
-        if self.action != "reply":
+        if self.action != "reply" or self.data_window == OTHER_PERIOD:
             return False
         shape = self.effective_shape
         if shape == "list":
@@ -566,7 +572,7 @@ def parse_signals(answers: Dict[str, Any], usage: Optional[Dict[str, Any]] = Non
         data_limit = int(limit_pick)
     else:
         data_limit = None
-    data_window, _ = choice("data_window", set(WINDOWS), "all_time")
+    data_window, _ = choice("data_window", set(WINDOWS) | {OTHER_PERIOD}, "all_time")
     game_pick, _ = choice("data_game", set(_DATA_GAME_OPTIONS), "any")
     data_subject, _ = choice("data_subject", DATA_SUBJECTS, "not_applicable")
     data_list, list_conf = choice("data_list", set(QUESTIONS["data_list"]["criteria"]), "none")

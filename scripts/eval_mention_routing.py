@@ -62,6 +62,8 @@ CASES = [
     ("when did kim last post", {"last_seen", "research"}, None),
     ("how many lottery tickets have been sold", {"research", "lottery", "lottery_tickets"}, None),
     ("what's on the iceberg", {"iceberg", "research"}, None),
+    ("how much did steven earn yesterday", {"research"}, None),
+    ("what's the house edge on slots", {"research", "bank"}, None),
     # not the server's records
     ("biggest casino win ever in las vegas", "chat", None),
     ("what's the biggest lottery win in uk history", "chat", None),

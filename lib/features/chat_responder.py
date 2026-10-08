@@ -4980,7 +4980,7 @@ def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = Fals
     """
     import copy
     from lib.features import data_queries as dq
-    from lib.features.mention_signals import DATA_QUERY_CONFIDENCE
+    from lib.features.mention_signals import DATA_QUERY_CONFIDENCE, OTHER_PERIOD
     if signals is None or signals.action != "reply" or signals.says("delegation"):
         return None
     spec = copy.deepcopy(prev)
@@ -5006,7 +5006,7 @@ def corrected_records_spec(prev: Any, signals: Any, has_new_subject: bool = Fals
     if signals.data_limit and signals.data_limit != spec.limit:
         spec.limit = signals.data_limit
         changed = True
-    if signals.data_window != "all_time" and signals.data_window != spec.window:
+    if signals.data_window not in ("all_time", OTHER_PERIOD) and signals.data_window != spec.window:
         spec.window = signals.data_window
         changed = True
     if signals.says("data_lowest") and not spec.lowest:
