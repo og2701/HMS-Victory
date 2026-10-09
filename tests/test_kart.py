@@ -1,6 +1,7 @@
 """UKP Kart: rooms and seats, the grid with its CPU karts, the bot's own count of how far each person has got
 (capped at what their kart can do), finishes, and paying the podium."""
 
+import asyncio
 import json
 import os
 import sys
@@ -389,3 +390,49 @@ def test_a_called_off_races_post_goes_after_a_moment(em, monkeypatch):
     gone.clear()
     asyncio.run(kart_posts._flush(kart_posts.Post(rid, None, state=K._rooms[rid], event="closed", dirty=True)))
     assert gone == []
+
+
+def test_cpus_still_going_at_the_end_get_the_time_they_were_on_for(em, monkeypatch):
+    rid = race(em, (A, B), stake=100)
+    r = K._rooms[rid]
+    tick(em, K.LOAD_SECONDS + K.COUNTDOWN)
+    live = K._live[rid] = K.Live(r)
+    lap = K.race_length(r)
+    cpus = [g["id"] for g in r["grid"] if g["cpu"]]
+    for i, u in enumerate((A, B)):
+        drive(r, u, lap + 40, 150 + i * 5)
+        K.claim_finish(r, str(u), 150 + i * 5, r["green"] + 150 + i * 5, live.paces[u])
+    # where the pilot last had the CPUs: the first a long way on, the second just behind it, the rest never seen
+    r["prog"][cpus[0]] = lap * 0.9
+    r["prog"][cpus[1]] = lap * 0.89
+    for kid in cpus[2:]:
+        r["prog"].pop(kid, None)
+    tick(em, 160)
+    K.sweep()
+    fin = r["finish"]
+    assert r["over"] and r["guessed"] == cpus[:2]
+    assert fin[str(B)] < fin[cpus[0]] < fin[cpus[1]] < 200
+    assert all(kid not in fin for kid in cpus[2:])
+    assert K.order(r)[:4] == [str(A), str(B), *cpus[:2]] and r["winners"] == [str(A)]
+    # and the pages hear them, to show on their results
+    sent = []
+    live.everyone = lambda m: sent.append(m) or asyncio.sleep(0)
+    monkeypatch.setattr(K, "_later", lambda c: c.close())
+    live.over()
+    assert sent[0]["finish"][cpus[0]] == fin[cpus[0]]
+
+
+def test_a_cpu_behind_someone_still_racing_gets_no_time(em):
+    rid = race(em, (A, B), stake=0)
+    r = K._rooms[rid]
+    tick(em, K.LOAD_SECONDS + K.COUNTDOWN)
+    live = K._live[rid] = K.Live(r)
+    lap = K.race_length(r)
+    cpus = [g["id"] for g in r["grid"] if g["cpu"]]
+    drive(r, A, lap + 40, 150)
+    K.claim_finish(r, str(A), 150, r["green"] + 150, live.paces[A])
+    drive(r, B, lap * 0.8, 150)
+    r["prog"][cpus[0]], r["prog"][cpus[1]] = lap * 0.85, lap * 0.7
+    tick(em, 150 + K.AFTER_FIRST + 5)
+    K.sweep()
+    assert cpus[0] in r["finish"] and cpus[1] not in r["finish"] and str(B) not in r["finish"]

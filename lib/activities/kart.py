@@ -422,6 +422,27 @@ def _split(n: int) -> list[float]:
     return SPLITS.get(n, SPLIT_BIG if n >= 5 else [1.0])
 
 
+def _guess_cpus(room: dict, now: float) -> None:
+    """CPU karts still going when the race ends get the time they were on course for, from the pace they'd kept, so
+    the result has a time for everyone. They stay in the order they were running in, behind everyone who's home,
+    and a CPU behind someone still racing gets no time (it can't pass them on paper). No money rides on a CPU."""
+    fin = room.setdefault("finish", {})
+    prog, total = room.get("prog", {}), race_length(room)
+    elapsed = max(1.0, now - room["green"])
+    present = {str(u) for u in _present(room)}
+    still = [prog.get(u, 0) for u in present if u not in fin]
+    going = sorted((g["id"] for g in room.get("grid", []) if g["cpu"] and g["id"] not in fin
+                    and isinstance(prog.get(g["id"]), (int, float)) and prog[g["id"]] > max(still, default=-1)),
+                   key=lambda kid: -prog[kid])
+    last = max([elapsed, *fin.values()])
+    for kid in going:
+        done = max(1.0, float(prog[kid]))
+        pace = max(5.0, done / elapsed)
+        last = round(max(last + 0.05, elapsed + max(0.0, total - done) / pace), 3)
+        fin[kid] = last
+    room["guessed"] = going
+
+
 def _settle(room: dict, now: float) -> None:
     """End the race and pay the podium. Saved as paid before any money moves, so it can't pay twice."""
     if room.get("over"):
@@ -444,6 +465,8 @@ def _settle(room: dict, now: float) -> None:
             shares[str(w)] = int(won * part)
         shares[str(winners[0])] += won - sum(shares.values())
     how = "race" if home else "refund"
+    if how == "race":
+        _guess_cpus(room, now)
     room.update(over=True, ended=now, how=how, winners=[str(w) for w in winners], shares=shares, ranked=ranked, pot=pot, paid=True)
     _save()
     try:
@@ -730,7 +753,7 @@ class Live:
         if r is None:
             return
         out = {"t": "over", "order": order(r), "winners": r.get("winners", []), "shares": r.get("shares", {}),
-               "how": r.get("how"), "laps": r.get("laps", {})}
+               "how": r.get("how"), "laps": r.get("laps", {}), "finish": r.get("finish", {})}
         _later(self.everyone(out))
 
     async def tick(self) -> None:
