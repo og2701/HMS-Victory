@@ -23,7 +23,7 @@ CAR_NAMES = {"cab": "Black Cab", "bus": "Routemaster", "thomas": "Thomas", "brum
              "robin": "Three-Wheeler", "wg": "Wallace & Gromit", "fryup": "Full English", "roadman": "Roadman",
              "scooter": "Nan's Scooter"}
 TRACK_NAMES = {"village": "Little Puddleton", "silverstone": "Silverstone", "wobbling": "Much Wobbling",
-               "clanking": "Great Clanking"}
+               "clanking": "Great Clanking", "wallop": "Nether Wallop"}
 # each place in its own colour, as an arcade's high-score table has them: gold for the winner, red for last
 COLOURS = ["#FFD23F", "#3CF0FF", "#FF8A3D", "#7CFF6B", "#FF6BD6", "#FFFFFF", "#B58CFF", "#FF3B3B"]
 
