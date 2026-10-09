@@ -37,8 +37,12 @@ log = logging.getLogger(__name__)
 
 START_GAP = 1.0              # seconds between one player's runs
 GRACE = 2.0                  # seconds on top of the bot's clock, for the hop to and from the bot
-REPLAY_MAX = 60 * 60         # the longest run a replay plays out, seconds (good players go 25 minutes)
-RUN_MAX_AGE = 75 * 60        # a finish that arrives later than this after its start doesn't count
+# The longest run a replay plays out, seconds. It was an hour ("good players go 25 minutes") until a 64-minute
+# Paperboy run on 2026-10-09 was counted only to 60:00 (199,252 of 215,932). The rules replay three hours in ~6 s.
+REPLAY_MAX = 3 * 60 * 60
+# A finish that arrives later than this after its receipt doesn't count; the page fetches the receipt up to 20
+# minutes before the run begins, so this leaves room for the longest replayable run and a slow connection.
+RUN_MAX_AGE = REPLAY_MAX + 30 * 60
 SITTING = 30 * 60            # beat your best again within this long and the same post is updated
 BOARD = 100                  # rows on each leaderboard tab (the page scrolls them)
 

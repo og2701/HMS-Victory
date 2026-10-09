@@ -32,7 +32,7 @@ MAGNET = 1200
 DOUBLE = 1800
 SAFE = 90
 LEFT, RIGHT, UP, DOWN = 1, 2, 3, 4
-MAX_INPUTS = 20_000
+MAX_INPUTS = 100_000   # the moves a replay reads; a three-hour run at full tilt makes ~30,000
 
 # the day's theme, by the day of the week (Monday first, as Python counts)
 WEEK = ("drizzle", "bins", "works", "walkies", "payday", "stunts", "sunday")
@@ -58,6 +58,9 @@ OB = {
     "scaffold": (75, 200, "high"), "washing": (75, 200, "high"), "ladder": (75, 300, "high"),
     "van": (80, 2500, "block"), "bus": (78, 5000, "block"), "float": (82, 1800, "block"), "cab": (88, 1000, "block"),
 }
+
+
+RECENT_REACH = 25000   # how far behind a beat's start the road builder ever looks at an obstacle (20 m, plus room)
 
 
 def speed_at(step: int) -> int:
@@ -87,6 +90,13 @@ class Street:
         self.since_gap = [0, 0]
         self.ob_to = 36000
         self.next_id = 1
+        # (not in the page's copy, and no change to the result.) Building the road used to search everything
+        # built so far, so a long run got slower the longer it went. The road only moves forward, so each
+        # search below only looks at what could still matter: gap houses not yet behind the beat, houses by
+        # position, and obstacles within reach of where the road is being built.
+        self._gaps: list[dict] = []
+        self._house_at: dict[tuple[int, int], list[dict]] = {}
+        self._recent: list[dict] = []
 
     def ensure(self, d: int) -> None:
         self._houses_to(d + 10 * HOUSE)
@@ -105,38 +115,47 @@ class Street:
         roll = r()
         if self.since_gap[s] >= 9 and roll < 0.12:
             for k in range(2):
-                self.houses.append({"side": side, "index": index + k, "d": d + k * HOUSE, "kind": "gap", "tint": 0, "lamp": False})
+                self._put_house({"side": side, "index": index + k, "d": d + k * HOUSE, "kind": "gap", "tint": 0, "lamp": False})
             self.built_to[s] += 2 * HOUSE
             self.since_gap[s] = 0
             corner = "shop" if r() < 0.5 else "pub"
-            for h in self.houses:
-                if h["side"] == side and h["d"] == d - HOUSE:
-                    h["kind"] = corner
+            for h in self._house_at.get((side, d - HOUSE), ()):
+                h["kind"] = corner
             return
         kind = ("a", "b", "c", "d")[int(r() * 4)]
         tint = int(r() * 6)
         lamp = r() < 0.35
-        self.houses.append({"side": side, "index": index, "d": d, "kind": kind, "tint": tint, "lamp": lamp})
+        self._put_house({"side": side, "index": index, "d": d, "kind": kind, "tint": tint, "lamp": lamp})
         self.built_to[s] += HOUSE
         self.since_gap[s] += 1
 
+    def _put_house(self, h: dict) -> None:
+        self.houses.append(h)
+        self._house_at.setdefault((h["side"], h["d"]), []).append(h)
+        if h["kind"] == "gap":
+            self._gaps.append(h)
+
     def _gap_near(self, d0: int, d1: int) -> dict | None:
-        for h in self.houses:
-            if h["kind"] != "gap" or h["d"] < d0 or h["d"] >= d1:
+        # d0 is the beat's start, which only ever goes up: a gap already behind it is never wanted again
+        self._gaps = [h for h in self._gaps if h["d"] >= d0]
+        for h in self._gaps:
+            if h["kind"] != "gap" or h["d"] >= d1:
                 continue
-            if any(p["side"] == h["side"] and p["kind"] == "gap" and p["d"] == h["d"] - HOUSE for p in self.houses):
+            if any(p["kind"] == "gap" for p in self._house_at.get((h["side"], h["d"] - HOUSE), ())):
                 continue
-            if any(o["kind"] == "cab" and abs(o["d"] - (h["d"] + HOUSE)) < HOUSE * 2 for o in self.obs):
+            if any(o["kind"] == "cab" and abs(o["d"] - (h["d"] + HOUSE)) < HOUSE * 2 for o in self._recent):
                 continue
             return h
         return None
 
     def _add(self, kind: str, d: int, x: int, from_: int = 0, direction: int = 0) -> None:
         hw, hl, height = OB[kind]
-        if any(f["kind"] == "float" and abs(f["x"] - x) < f["hw"] + hw and abs(f["d"] - d) < f["hl"] + hl + 1200 for f in self.obs):
+        if any(f["kind"] == "float" and abs(f["x"] - x) < f["hw"] + hw and abs(f["d"] - d) < f["hl"] + hl + 1200 for f in self._recent):
             return
-        self.obs.append({"id": self.next_id, "kind": kind, "d": d, "x": x, "hw": hw, "hl": hl, "height": height,
-                         "trig": -1, "from_": from_, "dir": direction, "hit": False, "stop": 0, "cleared": False})
+        ob = {"id": self.next_id, "kind": kind, "d": d, "x": x, "hw": hw, "hl": hl, "height": height,
+              "trig": -1, "from_": from_, "dir": direction, "hit": False, "stop": 0, "cleared": False}
+        self.obs.append(ob)
+        self._recent.append(ob)
         self.next_id += 1
 
     def _ramp(self, d: int, x: int, golden: bool) -> None:
@@ -156,6 +175,9 @@ class Street:
 
     def _beat(self) -> None:
         r, d, t = self.ro, self.ob_to, self.rules
+        # every check against the obstacles below looks no further back than 20 m short of this beat (the
+        # furthest: a milk float "coming"), and beats only move forward, so older ones can be let go
+        self._recent = [o for o in self._recent if o["d"] > d - RECENT_REACH]
         self._houses_to(d + 40000)
         hard = min(1000, d // 800)
         pick = r()
@@ -165,7 +187,7 @@ class Street:
         clear_to = 0
         # the lane a milk float up the street is coming down (there's only ever one at a time); one setting off
         # a little short of here counts too, as at full speed it meets you only a few metres short of it
-        coming = [o["x"] for o in self.obs if o["kind"] == "float" and o["d"] > d - 20000]
+        coming = [o["x"] for o in self._recent if o["kind"] == "float" and o["d"] > d - 20000]
         if gap is not None and pick < 0.4:
             # a cab can be well up the street: the next beat starts 20 m past it, or it could back out
             # in front of the only way through
@@ -240,7 +262,7 @@ class Street:
         if extra == 0 and d > 120000 and r() < 0.16:
             roll, x, pd = r(), LANES[int(r() * 3)], d + 9500
             kind = "magnet" if roll < 0.4 else "double" if roll < 0.7 else "helmet"
-            if not any(o["from_"] == 0 and o["x"] == x and abs(o["d"] - pd) < o["hl"] + 1500 for o in self.obs):
+            if not any(o["from_"] == 0 and o["x"] == x and abs(o["d"] - pd) < o["hl"] + 1500 for o in self._recent):
                 self.powers.append({"id": self.next_id, "d": pd, "x": x, "kind": kind, "taken": False})
                 self.next_id += 1
         self.ob_to = max(clear_to, d + 14000 + int(r() * 8000) + min(14000, d // 40) - hard * 5 + extra)
@@ -272,6 +294,7 @@ class Run:
         self._near_ramps: list[dict] = []
         self._near_powers: list[dict] = []
         self._near_at = -HZ
+        self._seen = (0, 0, 0, 0)    # how much of each of the street's lists the refresh has already looked at
 
     @property
     def score(self) -> int:
@@ -329,10 +352,17 @@ class Run:
         self.street.ensure(self.dist + 200000)
         self.x += max(-STEER, min(STEER, LANES[self.lane] - self.x))
         if self.step - self._near_at >= HZ:
-            self._near = [o for o in self.street.obs if o["d"] >= self.dist - 40000]
-            self._near_papers = [p for p in self.street.papers if p["d"] >= self.dist - 40000 and not p["taken"]]
-            self._near_ramps = [rp for rp in self.street.ramps if rp["d"] >= self.dist - 40000]
-            self._near_powers = [pw for pw in self.street.powers if pw["d"] >= self.dist - 40000 and not pw["taken"]]
+            # the same lists as filtering the street's whole lists (and in the same order): something already
+            # behind the cut-off or taken never comes back, as the cut-off only moves forward
+            st, lim = self.street, self.dist - 40000
+            so, sp, sr, sw = self._seen
+            self._near = [o for o in self._near if o["d"] >= lim] + [o for o in st.obs[so:] if o["d"] >= lim]
+            self._near_papers = ([p for p in self._near_papers if p["d"] >= lim and not p["taken"]]
+                                 + [p for p in st.papers[sp:] if p["d"] >= lim and not p["taken"]])
+            self._near_ramps = [rp for rp in self._near_ramps if rp["d"] >= lim] + [rp for rp in st.ramps[sr:] if rp["d"] >= lim]
+            self._near_powers = ([pw for pw in self._near_powers if pw["d"] >= lim and not pw["taken"]]
+                                 + [pw for pw in st.powers[sw:] if pw["d"] >= lim and not pw["taken"]])
+            self._seen = (len(st.obs), len(st.papers), len(st.ramps), len(st.powers))
             self._near_at = self.step
         for o in self._near:
             if o["trig"] >= 0:

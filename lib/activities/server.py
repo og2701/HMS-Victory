@@ -443,8 +443,9 @@ async def score_board(request):
 
 # A replayed game's finish carries every move of the run, and the app's 16 KB cap is far too small for
 # that: a 32-minute Paperboy run of 84,992 went over it on 2026-10-08, the body was read as empty, and the
-# run was refused as "a different day's level" without a word in the log. An hour of moves is ~100 KB.
-SCORE_BODY_MAX = 1024 * 1024
+# run was refused as "a different day's level" without a word in the log. An hour of moves is ~100 KB, and a
+# replay can now run three hours.
+SCORE_BODY_MAX = 4 * 1024 * 1024
 
 
 async def _score_body(request) -> dict:

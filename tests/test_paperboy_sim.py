@@ -125,3 +125,45 @@ def test_a_milk_float_never_drives_into_the_only_way_through():
                     continue
                 ramp = [rp for rp in street.ramps if 0 < a["d"] - rp["d"] < 13000]
                 assert ramp and all(rp["x"] != f["x"] for rp in ramp), (theme, i, f["d"], a["d"])
+
+
+# ---- long runs: same results, linear time ---------------------------------------------------
+def _fingerprint(seed, theme, steps):
+    import hashlib, json, random
+    rnd = random.Random(seed)
+    moves = sorted([rnd.randrange(steps), rnd.choice([1, 2, 3, 4])] for _ in range(steps // 60))
+    run = S.Run(seed, theme)
+    run.safe_to = 10**12
+    i = 0
+    while run.step < steps:
+        while i < len(moves) and moves[i][0] <= run.step:
+            run.input(moves[i][1])
+            i += 1
+        run.tick()
+    st = run.street
+    blob = json.dumps([run.score, run.papers, run.dist, sorted(run.stats.items()), [(o["kind"], o["d"], o["x"]) for o in st.obs],
+                       [(p["d"], p["x"], p["taken"]) for p in st.papers], [(h["side"], h["d"], h["kind"]) for h in st.houses]])
+    return run.score, run.papers, hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def test_the_faster_road_builds_exactly_the_old_road():
+    # recorded with the rules as they were before the road builder and the nearby-things refresh stopped
+    # searching everything built so far (2026-10-09): 20 minutes each, moves at random, nothing crashes
+    assert _fingerprint("lock-a", "drizzle", 120 * 60 * 20) == (7205, 3790, "f684948474fdd6a0")
+    assert _fingerprint("lock-b", "works", 120 * 60 * 20) == (7442, 4027, "a73980609bb7a16d")
+    assert _fingerprint("lock-c", "payday", 120 * 60 * 20) == (7265, 3850, "9487fabf8a8dfdb5")
+
+
+def test_a_long_run_replays_in_time_and_inside_the_limits():
+    import time
+    from lib.activities import daily_score
+    # a 64-minute run was counted only to 60:00; three hours must replay, and a finish must still be in time
+    assert daily_score.REPLAY_MAX >= 3 * 3600
+    assert daily_score.RUN_MAX_AGE >= daily_score.REPLAY_MAX + 20 * 60
+    assert S.MAX_INPUTS >= 100_000
+    run = S.Run("timing")
+    run.safe_to = 10**12
+    t = time.perf_counter()
+    for _ in range(120 * 60 * 90):          # 90 minutes of riding
+        run.tick()
+    assert time.perf_counter() - t < 20      # ~3 s here; it was quadratic before and took far longer
