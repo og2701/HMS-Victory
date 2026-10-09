@@ -50,9 +50,9 @@ body{{width:820px;font-family:Pixel,monospace;-webkit-font-smoothing:none}}
 .nm{{flex:1;min-width:0;display:flex;align-items:center;gap:10px}}
 .nm b{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}}
 .nm small{{flex:none;font-size:10px;line-height:12px;color:#8A8A8A}} .nm small.host{{color:#7CFF6B}}
-.tm{{width:160px;flex:none;text-align:right;white-space:nowrap}} .row.first .tm,.row.first .uk{{font-size:22px}}
-.uk{{width:84px;flex:none;text-align:right;white-space:nowrap}} .nil{{color:#5A5A5A}}
-.out{{flex:none;text-align:right;white-space:nowrap;width:258px}}
+.tm{{width:160px;flex:none;text-align:right;white-space:nowrap}} .row.first .tm,.row.first .uk{{font-size:20px}}
+.uk{{width:108px;flex:none;text-align:right;white-space:nowrap}} .nil{{color:#5A5A5A}}
+.out{{flex:none;text-align:right;white-space:nowrap;width:282px}}
 .free .uk{{display:none}} .free .out{{width:160px}}
 .car{{width:210px;flex:none;text-align:right;font-size:12px;line-height:14px;color:#8A8A8A;white-space:nowrap}}
 .fill{{display:flex;align-items:center;gap:14px;height:58px;font-size:16px;line-height:18px;color:#8A8A8A}}
@@ -62,6 +62,7 @@ body{{width:820px;font-family:Pixel,monospace;-webkit-font-smoothing:none}}
 .fast{{display:flex;justify-content:center;margin-top:30px}}
 .fast div{{display:flex;align-items:center;gap:18px;padding:12px 20px;border:3px solid #B58CFF;font-size:16px;line-height:18px;max-width:100%}}
 .fast i{{font-style:normal;color:#B58CFF;flex:none}} .fast b{{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}}
+.fast em{{font-style:normal;flex:none}}
 .foot{{display:flex;align-items:flex-end;margin-top:24px}}
 .foot small{{flex:1;font-size:12px;line-height:14px;color:#8A8A8A;white-space:nowrap}} .foot small.r{{text-align:right}}
 .foot b{{flex:none;font-size:16px;line-height:18px;color:#FFD23F}}
@@ -187,7 +188,8 @@ def result_page(room: dict, names: dict) -> str:
         kid = min(laps, key=laps.get)
         g = grid.get(kid, {})
         who = (g.get("name") or "CPU") if kid.startswith("cpu") else names.get(int(kid), "Someone")
-        fast = f'<div class="fast"><div><i>FASTEST LAP</i><b>{_e(who.upper())} {_clock(laps[kid])}</b></div></div>'
+        # the time always shows; a long name is what gets cut short
+        fast = f'<div class="fast"><div><i>FASTEST LAP</i><b>{_e(who.upper())}</b><em>{_clock(laps[kid])}</em></div></div>'
     refund = room.get("how") == "refund"
     stamp = f'<div class="stamp">{"STAKES BACK" if stake else "NO FINISHERS"}</div>' if refund else ""
     pot = stake * len(room["players"])
