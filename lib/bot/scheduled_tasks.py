@@ -597,6 +597,14 @@ def _register_client_jobs(client, scheduler):
     # full interval later (the APScheduler default that broke the original 12h job).
     _add_process_job(scheduler, auto_restock_shop, IntervalTrigger(minutes=10), args=[client], id="auto_restock_shop_interval", name="Automated Shop Restock", next_run_time=discord.utils.utcnow() + timedelta(seconds=30))
 
+    # Halloween: a different server icon each day to the 31st, the usual one back on 1 November (and once soon after
+    # boot, so a restart over midnight doesn't miss a day; it only uploads when the icon's not the day's already)
+    from lib.features.server_icon import update_server_icon
+    _add_process_job(scheduler, update_server_icon, CronTrigger(hour=0, minute=0, second=30, timezone="Europe/London"), args=[client],
+                     id="server_icon_daily", name="Halloween server icons")
+    _add_process_job(scheduler, update_server_icon, args=[client], id="server_icon_boot", name="Halloween server icons (boot)",
+                     next_run_time=discord.utils.utcnow() + timedelta(seconds=60))
+
     _add_process_job(scheduler, apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
     _add_process_job(scheduler, apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")
