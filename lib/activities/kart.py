@@ -48,7 +48,7 @@ SPLIT_BIG = [0.6, 0.3, 0.1]
 # each kart's top speed in m/s, which is what caps how fast the bot believes someone's going.
 TRACKS = {"village": {"length": 1247, "laps": 3}, "silverstone": {"length": 1453, "laps": 3},
           "wobbling": {"length": 1315, "laps": 3}, "clanking": {"length": 1377, "laps": 3},
-          "wallop": {"length": 1376, "laps": 3}}
+          "wallop": {"length": 1376, "laps": 3}, "rainbow": {"length": 1507, "laps": 3}}
 _last_track: str | None = None
 
 
