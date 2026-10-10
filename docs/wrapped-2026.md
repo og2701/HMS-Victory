@@ -173,20 +173,45 @@ Last year's 16 stay. New for 2026:
 - "Guess who" reveals: the stat first, a beat, then the avatar.
 - A 2027 predictions slide.
 
-## Pipeline
+## Building it
 
-Reuse `scripts/bb_chronicle/`: an extract script writes JSON, a template page plays it as
-scenes, and `render_mp4.mjs` steps the page frame by frame in headless Chrome into ffmpeg, with
-music rendered offline on the same clock (and `voiceover.py` if it's narrated).
+Everything lives in `scripts/wrapped/`. Four steps, all run from a Mac, none of them heavy on the VM:
 
-- Crunch the numbers on a copy pulled to a Mac, never on the VM. A single count over
-  `chronicle.db` took about three minutes on the t3.small with the bot live. The nightly
-  `chronicle.db.snapshot` is already a consistent copy to pull.
-- Names come from the guild member list (one paginated API call); people who have left fall
-  back to their user record.
-- Filter bots everywhere. HMS Victory otherwise tops one-sided replies and every PvP rivalry,
-  because most PvP is Connect 4 against it.
-- Group by `local_day` and `local_hour`, never UTC.
+```bash
+HMS_VM=ubuntu@<host> HMS_VM_KEY=<key.pem> scripts/wrapped/pull.sh <data dir>
+python3 scripts/wrapped/extract.py --data <data dir> --out <data dir>/wrapped.json --since 2026-01-01 --until 2027-01-01
+python3 scripts/wrapped/build.py <data dir>/wrapped.json <out dir>/index.html
+PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/render.mjs <url of index.html> wrapped.mp4
+```
+
+1. **Pull.** `pull.sh` streams last night's `chronicle.db.snapshot` (already a consistent copy),
+   takes a SQLite backup of `database.db`, copies the JSON state files, and runs
+   `fetch_discord.py` on the box to read names, avatars, channels and emoji through the bot.
+   Keep the data dir out of the repo; it is every message the server has sent.
+2. **Extract.** `extract.py` turns it all into one `wrapped.json` (about 150 KB) in under a
+   minute. `--until` is exclusive and defaults to today. It writes `unresolved.txt` listing
+   anyone it shows who has left the server; run `pull.sh <data dir> $(cat unresolved.txt)` and
+   extract again to name them. Calendar captions for the busiest days are in `MOMENTS` at the
+   top: check each new spike against what people were saying before trusting a caption.
+3. **Build.** `build.py` bundles the player (`scripts/wrapped/player/`) and the JSON into one
+   self-contained page. Opened in a browser it plays; `#scene=skyline` or `#t=42` jumps.
+4. **Render.** `render.mjs` opens the page in headless Chrome with the GPU, steps every frame
+   through `window.WRAP.seek`, and encodes 1080x1920 at 25fps. `--stills <dir> skyline+3 ...`
+   renders single frames for checking a scene without a full render.
+
+How the player works: every frame is a pure function of time. Scenes build their DOM once, and
+`data-a` attributes, number rolls, pixel-reveal avatars, card flips and the three.js world are
+all computed from the scene clock, so any frame can be rendered on its own and the video is
+frame-exact. Scenes are listed in order in `scenes-a.js` and `scenes-b.js`; durations are on
+each scene, and a scene whose data is missing (no casino, no Big Brother) drops itself.
+
+Rules the extract already follows:
+
+- Bots are filtered from every chat stat. HMS Victory otherwise tops one-sided replies and
+  every PvP rivalry, because most PvP is Connect 4 against it.
+- Days and hours are UK time (`local_day`, `local_hour`), never UTC.
+- The longest message is shown by its size only, never its text.
+- Words of the month leave out the names of anyone with 300+ messages, since names spike too.
 
 ## Timeline
 
