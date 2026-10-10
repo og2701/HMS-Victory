@@ -11,7 +11,7 @@ function buildHud() {
   const hud = document.getElementById("hud");
   const segs = CHAPTERS.filter(c => c.key !== "intro").map(c => h("div.seg", { data: { ch: c.key } }, h("i")));
   hud.append(h("div.bar", segs),
-    h("div.meta", h("div.brand", h("b"), `UKPLACE WRAPPED ${String(YEAR).slice(2)}`), h("div.chap", "")));
+    h("div.meta", h("div.brand", ujIcon(44), `UKPLACE WRAPPED ${String(YEAR).slice(2)}`), h("div.chap", "")));
   SCENES.forEach((s, i) => {
     const span = CH_SPAN[s.ch] || (CH_SPAN[s.ch] = [T.starts[i], 0]);
     span[1] = T.starts[i] + s.dur;

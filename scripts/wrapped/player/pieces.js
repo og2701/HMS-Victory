@@ -2,7 +2,7 @@
 // scenes need for labels (where the skyline's tallest towers stand, where each node of the web is) is
 // kept on the globals below.
 
-const SKY = {}, CLK = {}, NET = {};
+const SKY = {}, CLK = {}, MOS = {};
 
 // ---------------------------------------------------------------- voxel Union Jack (title)
 piece("flag", g => {
@@ -152,69 +152,6 @@ piece("clock", g => {
   };
 });
 
-// ---------------------------------------------------------------- the reply constellation
-piece("network", g => {
-  const nodes = DATA.network.nodes, edges = DATA.network.edges;
-  const SC = 190;
-  const av = avatarInstances(nodes.map(n => n.user), { billboard: true, edge: "#ff4f9e", edgeW: 0.07, fogK: 0.0009 });
-  g.add(av.mesh);
-  const maxw = Math.max(...nodes.map(n => n.w));
-  const size = nodes.map(n => 13 + Math.sqrt(n.w / maxw) * 30);
-  nodes.forEach((n, i) => { av.glow[i] = i < 5 ? 1 : 0; });
-  av.geo.attributes.aGlow.needsUpdate = true;
-  const spread = nodes.map(n => {
-    const r = Math.hypot(...n.p) || 1, k = Math.pow(r, 0.45) / r;
-    return n.p.map(v => v * k);
-  });
-  const pos = (i, t) => {
-    const p = spread[i];
-    return [p[0] * SC + Math.sin(t * 0.7 + i) * 2.5, p[1] * SC + Math.cos(t * 0.6 + i * 1.3) * 2.5, p[2] * SC];
-  };
-  const sorted = edges.slice().sort((a, b) => b[2] - a[2]);
-  const maxe = sorted.length ? sorted[0][2] : 1;
-  const mkLines = (list, width, opacity, colour) => {
-    const geo = new LineSegmentsGeometry();
-    const posArr = new Float32Array(list.length * 6), colArr = new Float32Array(list.length * 6);
-    list.forEach(([a, b, n], k) => {
-      const c = _c.set(colour).multiplyScalar(0.35 + 0.65 * Math.sqrt(n / maxe));
-      colArr.set([c.r, c.g, c.b, c.r, c.g, c.b], k * 6);
-    });
-    geo.setPositions(posArr);
-    geo.setColors(colArr);
-    const mat = new LineMaterial({ linewidth: width, vertexColors: true, transparent: true, opacity, depthWrite: false,
-      blending: THREE.AdditiveBlending });
-    mat.resolution.set(W, H);
-    const line = new LineSegments2(geo, mat);
-    line.frustumCulled = false;
-    g.add(line);
-    return { geo, list, posArr };
-  };
-  const strong = mkLines(sorted.slice(0, 14), 6, 0.7, "#ffd1ea");
-  const weak = mkLines(sorted.slice(14), 2.4, 0.45, "#ff4f9e");
-  Object.assign(NET, { pos, size, nodes });
-  const fillLines = (L, t, start, span) => {
-    const n = L.list.length;
-    L.list.forEach(([a, b], k) => {
-      const pa = pos(a, t), pb = pos(b, t);
-      const p = E.outCubic(prog(t, start + (k / Math.max(n, 1)) * span, 0.5));
-      const ex = lerp(pa[0], pb[0], p), ey = lerp(pa[1], pb[1], p), ez = lerp(pa[2], pb[2], p);
-      L.posArr.set([pa[0], pa[1], pa[2], ex, ey, ez], k * 6);
-    });
-    L.geo.setPositions(L.posArr);
-  };
-  return t => {
-    nodes.forEach((n, i) => {
-      const p = E.outBack(prog(t, 0.25 + i * 0.035, 0.6));
-      const [x, y, z] = pos(i, t);
-      if (p <= 0) { hide(av.mesh, i); return; }
-      setInst(av.mesh, i, x, y, z, size[i] * p);
-    });
-    av.mesh.instanceMatrix.needsUpdate = true;
-    fillLines(strong, t, 1.0, 1.0);
-    fillLines(weak, t, 1.3, 2.2);
-  };
-});
-
 // ---------------------------------------------------------------- casino chip stacks
 piece("chips", g => {
   const c = DATA.casino;
@@ -286,29 +223,37 @@ piece("coins", g => {
 });
 
 // ---------------------------------------------------------------- the avatar flag (finale)
+// The most active members in the middle, spiralling out by rank, tinted into a Union Jack. The camera
+// starts on the face in the centre and pulls back until the whole flag fits the frame.
 piece("mosaic", g => {
   const ids = DATA.wall;
-  const COLS = 40, ROWS = Math.ceil(ids.length / COLS), S = 6.3, GAP = 6.75;
-  const av = avatarInstances(ids, { billboard: false, edgeW: 0.0, fogK: 0.0005 });
+  const COLS = 32, ROWS = 16, S = 6.3, GAP = 6.75, Y0 = 60;
+  const cells = [];
+  for (let cy = 0; cy < ROWS; cy++) for (let cx = 0; cx < COLS; cx++) {
+    const dx = (cx - (COLS - 1) / 2) / 2, dy = cy - (ROWS - 1) / 2;
+    cells.push({ cx, cy, d: Math.hypot(dx, dy), a: Math.atan2(dy, dx) });
+  }
+  cells.sort((p, q) => p.d - q.d || p.a - q.a);
+  const n = Math.min(ids.length, cells.length);
+  const av = avatarInstances(ids.slice(0, n), { billboard: false, edgeW: 0.0, fogK: 0.0005 });
   g.add(av.mesh);
-  const info = ids.map((uid, i) => {
-    const cx = i % COLS, cy = Math.floor(i / COLS);
+  const info = ids.slice(0, n).map((uid, i) => {
+    const { cx, cy } = cells[i];
     const u = (cx + 0.5) / COLS, v = (cy + 0.5) / ROWS;
     const col = _c.set(unionJack(u, v));
     av.tint.set([col.r, col.g, col.b], i * 3);
-    const d = Math.hypot(u - 0.5, (v - 0.5) * 0.5);
-    return { u, v, tx: (cx - COLS / 2 + 0.5) * GAP, ty: (ROWS / 2 - cy - 0.5) * GAP + 60,
-      sx: (hash(i * 1.3) - 0.5) * 900, sy: 60 + (hash(i * 2.9) - 0.5) * 900, sz: 300 + hash(i * 4.7) * 400,
-      at: 0.15 + d * 2.4 + hash(i * 6.1) * 0.35, spin: hash(i * 8.3) * 10 };
+    return { u, v, tx: (cx - COLS / 2 + 0.5) * GAP, ty: (ROWS / 2 - cy - 0.5) * GAP + Y0,
+      sx: (hash(i * 1.3) - 0.5) * 900, sy: Y0 + (hash(i * 2.9) - 0.5) * 900, sz: 300 + hash(i * 4.7) * 400,
+      at: i === 0 ? -2 : 0.1 + (i / n) * 3.0 + hash(i * 6.1) * 0.15, spin: hash(i * 8.3) * 10 };
   });
   av.geo.attributes.aTint.needsUpdate = true;
-  g.userData = { COLS, ROWS, GAP };
+  Object.assign(MOS, { first: info[0], width: COLS * GAP, Y0 });
   return t => {
-    const tintK = E.inOutCubic(prog(t, 3.6, 1.6)) * 0.62;
+    const tintK = E.inOutCubic(prog(t, 3.8, 1.6)) * 0.6;
     for (let i = 0; i < info.length; i++) {
       const v = info[i];
-      const p = E.outExpo(prog(t, v.at, 1.5));
-      const wave = Math.sin(v.u * 9 - t * 2.4) * 4 * v.u + Math.sin(v.v * 5 + t * 1.6) * 1.2;
+      const p = E.outExpo(prog(t, v.at, 1.4));
+      const wave = Math.sin(v.u * 9 - t * 2.4) * 3 * v.u + Math.sin(v.v * 5 + t * 1.6) * 1.0;
       setInst(av.mesh, i, lerp(v.sx, v.tx, p), lerp(v.sy, v.ty, p), lerp(v.sz, wave, p), S * lerp(0.6, 1, p), (1 - p) * v.spin, (1 - p) * v.spin * 0.7, 0);
       av.mix[i] = tintK;
     }

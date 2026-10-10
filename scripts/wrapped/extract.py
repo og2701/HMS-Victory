@@ -26,6 +26,10 @@ from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
 VOICE_NOTE = 1 << 13  # MessageFlags.is_voice_message
+REGULAR = 10_000  # messages needed for the "share of your messages" awards, so they go to people everyone knows
+LAUGH_REACTS = {"😂", "🤣", "😆", "💀", "😭", "😹"}
+HEARTS = {"❤️", "♥️", "🩷", "💖", "💗", "💕", "💞", "💓", "😍", "🥰", "🫶", "💘", "💝", "❣️", "🧡", "💛", "💚", "💙",
+          "💜", "🤍", "🖤", "🤎", "❤️‍🔥"}
 
 # Days worth a caption on the calendar, checked against what people were saying that day. Days inside
 # the Big Brother run are captioned with the day of the show automatically; anything else that isn't
@@ -33,6 +37,7 @@ VOICE_NOTE = 1 << 13  # MessageFlags.is_voice_message
 MOMENTS = {
     "2026-05-08": "Local election results",
     "2026-07-15": "England v Argentina",
+    "2026-08-14": "Everyone's phone got the emergency alert",
 }
 
 GAMES = {
@@ -97,8 +102,9 @@ def year_ago(d):
 
 
 class Extract:
-    def __init__(self, data, since, until):
+    def __init__(self, data, since, until, hof_picks=None):
         self.data = Path(data)
+        self.hof_picks = json.loads(Path(hof_picks).read_text()) if hof_picks else None
         self.since, self.until = since, until
         self.lo, self.hi = day_bounds(since, until)
         self.plo, self.phi = day_bounds(year_ago(since), year_ago(until))
@@ -108,6 +114,8 @@ class Extract:
         self.discord = json.loads((self.data / "discord.json").read_text())
         self.bots = {r[0] for r in self.ch.execute("SELECT DISTINCT user_id FROM messages WHERE is_bot = 1")}
         self.bots |= {int(k) for k, v in self.discord["people"].items() if v.get("bot")}
+        # Only people still in the server are named anywhere; their messages still count in the totals.
+        self.members = {int(k) for k, v in self.discord["people"].items() if v.get("member") and not v.get("bot")} - self.bots
         self.featured = set()
         self.out = {}
         self.bb_start, self.bb_end = self.big_brother_dates()
@@ -139,22 +147,34 @@ class Extract:
         return c["name"] if c else None
 
     # ------------------------------------------------------------------ chat, one pass
+    def shown(self, uid):
+        """People the video may name: current members of the server, never bots."""
+        return uid is not None and int(uid) in self.members
+
+    # ------------------------------------------------------------------ chat, one pass
     def scan_messages(self):
-        """One pass over the year's human messages for everything per-person and per-word."""
+        """One pass over the year's human messages for everything per-person, per-pair and per-word."""
         per = defaultdict(lambda: Counter())
         days_active = defaultdict(set)
-        channels_seen = defaultdict(set)
+        day_counts = defaultdict(Counter)
+        hours = defaultdict(lambda: [0] * 24)
+        channels_seen = defaultdict(Counter)
         pairs = Counter()
+        night_pairs = Counter()
         months = defaultdict(Counter)
         day_words = defaultdict(Counter)
         laughs = Counter()
+        chain, argument = {}, {}
+        replied_by = defaultdict(set)
+        weekday = {}
         first = []
         longest = None
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
-            "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to_user, ts "
+            "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers "
             "FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 ORDER BY ts", (self.lo, self.hi))
-        for (mid, uid, content, day, hour, chars, words, atts, flags, edited, chan, mtype, rto, ts) in rows:
+        for (mid, uid, content, day, hour, chars, words, atts, flags, edited, chan, mtype, rto_msg, rto, ts,
+             stickers) in rows:
             c = per[uid]
             text = content or ""
             low = text.lower()
@@ -163,6 +183,8 @@ class Extract:
             c["words"] += words
             if atts:
                 c["files"] += 1
+            if stickers and stickers not in ("[]", ""):
+                c["stickers"] += 1
             if "http" in low:
                 c["links"] += 1
             if flags & VOICE_NOTE:
@@ -177,35 +199,540 @@ class Extract:
             if SORRY.search(low):
                 c["sorry"] += 1
             if hour is not None:
+                hours[uid][hour] += 1
                 if 1 <= hour < 5:
                     c["night"] += 1
                 if 5 <= hour < 8:
                     c["early"] += 1
+                if 12 <= hour < 14:
+                    c["lunch"] += 1
+            if day not in weekday:
+                weekday[day] = date.fromisoformat(day).weekday()
+            if weekday[day] >= 5:
+                c["weekend"] += 1
             days_active[uid].add(day)
-            channels_seen[uid].add(chan)
+            day_counts[uid][day] += 1
+            channels_seen[uid][chan] += 1
             if rto is not None and rto != uid and (mtype == "reply" or mtype is None):
                 c["replies"] += 1
                 if int(rto) in self.bots:
                     c["bot_replies"] += 1
                 else:
                     pairs[(uid, rto)] += 1
+                    k = (min(uid, rto), max(uid, rto))
+                    if hour is not None and 1 <= hour < 5:
+                        night_pairs[k] += 1
+                    replied_by[rto_msg].add(uid)
+                    # an argument: a reply to a reply to a reply, the same two people taking turns
+                    prev = chain.get(rto_msg)
+                    run = prev[1] + 1 if prev and prev[0] == k and prev[2] == rto else 2
+                    chain[mid] = (k, run, uid)
+                    if run > argument.get(k, (0,))[0]:
+                        argument[k] = (run, day)
             for name, pat in LAUGHS.items():
                 if re.search(pat, low):
                     laughs[name] += 1
             clean = TOKEN_NOISE.sub(" ", URL.sub(" ", low))
             toks = [w.strip("'") for w in WORD.findall(clean)]
             toks = [w for w in toks if len(w) >= 3 and w not in STOP and not SLURS.match(w)]
-            month = day[:7]
-            months[month].update(toks)
+            months[day[:7]].update(toks)
             day_words[day].update(set(toks))
             c["british"] += sum(1 for w in toks if w in BRITISH)
-            if len(first) < 6 and text.strip():
+            if len(first) < 6 and text.strip() and self.shown(uid):
                 first.append({"user": uid, "text": text[:140], "ts": ts})
-            if longest is None or chars > longest[0]:
+            if self.shown(uid) and (longest is None or chars > longest[0]):
                 longest = (chars, uid, day, mid)
-        self.per, self.days_active, self.channels_seen = per, days_active, channels_seen
-        self.pairs, self.months_words, self.day_words, self.laughs = pairs, months, day_words, laughs
+        # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
+        # counted straight from the database and still include everyone.
+        keep = lambda u: self.shown(u)
+        self.per = {u: c for u, c in per.items() if keep(u)}
+        self.days_active = {u: v for u, v in days_active.items() if keep(u)}
+        self.day_counts = {u: v for u, v in day_counts.items() if keep(u)}
+        self.hours = {u: v for u, v in hours.items() if keep(u)}
+        self.channels_seen = {u: v for u, v in channels_seen.items() if keep(u)}
+        self.pairs = Counter({p: n for p, n in pairs.items() if keep(p[0]) and keep(p[1])})
+        self.night_pairs = Counter({p: n for p, n in night_pairs.items() if keep(p[0]) and keep(p[1])})
+        self.argument = {p: v for p, v in argument.items() if keep(p[0]) and keep(p[1])}
+        self.replied_by = replied_by
+        self.months_words, self.day_words, self.laughs = months, day_words, laughs
         self.first_msgs, self.longest = first, longest
+
+    # ------------------------------------------------------------------ sections
+    def numbers(self):
+        def totals(lo, hi):
+            r = self.q("SELECT COUNT(*), COUNT(DISTINCT user_id), COALESCE(SUM(word_count),0), "
+                       "COALESCE(SUM(n_attachments > 0),0), COALESCE(SUM((flags & ?) != 0),0) "
+                       "FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0", (VOICE_NOTE, lo, hi))[0]
+            return dict(zip(("messages", "people", "words", "files", "voice_notes"), r))
+
+        def reactions(lo, hi):
+            # Reactions people put on messages sent in the window, as they stand: every add the history
+            # holds, less any taken off since. Counted by the message's date for both years, so they
+            # compare like for like, and bots' reactions never count.
+            n = 0
+            for u, k in self.q("SELECT r.user_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r "
+                               "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? "
+                               "GROUP BY r.user_id", (lo, hi)):
+                if self.human(u):
+                    n += k
+            return n
+        now, prev = totals(self.lo, self.hi), totals(self.plo, self.phi)
+        now["reactions"], prev["reactions"] = reactions(self.lo, self.hi), reactions(self.plo, self.phi)
+        self.out["numbers"] = {"now": now, "prev": prev}
+
+    # ------------------------------------------------------------------ awards
+    def awards(self):
+        per = self.per
+        regulars = [u for u, c in per.items() if c["msgs"] >= REGULAR]
+
+        def best(key, pool=None, rate=False, minimum=1, reverse=True):
+            pool = pool if pool is not None else per.keys()
+            scored = []
+            for u in pool:
+                c = per[u]
+                v = c[key] / c["msgs"] if rate else c[key]
+                if c[key] >= minimum:
+                    scored.append((v, c[key], u))
+            scored.sort(reverse=reverse)
+            return scored[:3]
+
+        out = []
+
+        def award(key, title, line, ranked, fmt):
+            ranked = [r for r in ranked if self.shown(r[2])]
+            if not ranked:
+                return
+            v, raw, u = ranked[0]
+            out.append({"key": key, "title": title, "line": line if isinstance(line, str) else line(v, raw, u),
+                        "user": self.who(u), "value": fmt(v, raw, u), "runners": [self.who(r[2]) for r in ranked[1:3]]})
+
+        def counted(counter):
+            return [(v, v, u) for u, v in counter.most_common(12) if self.shown(u)][:3]
+
+        pct = lambda v, raw, u: f"{v * 100:.0f}%"
+        num = lambda v, raw, u: f"{int(raw):,}"
+
+        award("night_owl", "Night Owl", "of their messages sent between 1am and 5am", best("night", regulars, rate=True), pct)
+        award("early_bird", "Early Bird", "of their messages sent before 8am", best("early", regulars, rate=True), pct)
+        award("lunch", "Lunch Break", "of their messages sent between 12 and 2pm", best("lunch", regulars, rate=True), pct)
+        award("weekend", "Weekend Warrior", "of their messages sent on a Saturday or Sunday", best("weekend", regulars, rate=True), pct)
+        one_day = sorted(((max(d.values()), 0, u) for u, d in self.day_counts.items()), reverse=True)[:3]
+        top_day = lambda u: max(self.day_counts[u].items(), key=lambda kv: kv[1])[0]
+        award("one_day", "One-Day Wonder", lambda v, r, u: f"messages in a single day, on {self.long_day(top_day(u))}",
+              one_day, lambda v, r, u: f"{v:,}")
+        waffle = sorted(((per[u]["words"] / per[u]["msgs"], 0, u) for u in regulars), reverse=True)[:3]
+        award("waffler", "The Waffler", "words per message, on average", waffle, lambda v, r, u: f"{v:.1f}")
+        silent = sorted(((per[u]["chars"] / per[u]["msgs"], 0, u) for u in regulars))[:3]
+        award("silent", "Short and Sweet", "characters per message, on average", silent, lambda v, r, u: f"{v:.0f}")
+        award("shouter", "The Shouter", "of their messages in ALL CAPS", best("caps", regulars, rate=True), pct)
+        award("nosey", "Nosey Parker", "of their messages were questions", best("questions", regulars, rate=True), pct)
+        award("apologist", "The Apologist", "apologies", best("sorry"), num)
+        award("british", "Most British", "innits, mates, quids and cheers", best("british"), num)
+        award("perfectionist", "The Perfectionist", "of their messages edited after sending",
+              best("edited", regulars, rate=True), pct)
+        award("media", "Media Mogul", "messages with a file or picture", best("files"), num)
+        award("plug", "The Plug", "links shared", best("links"), num)
+        award("voice", "Voice Note Royalty", "voice notes", best("voice"), num)
+        award("sticker", "Sticker Fiend", "stickers sent", best("stickers"), num)
+        award("replier", "The Replier", "replies sent", best("replies"), num)
+        award("bot_friend", "The Bot's Best Friend", "replies to HMS Victory", best("bot_replies"), num)
+
+        tourist = sorted(((len(v), 0, u) for u, v in self.channels_seen.items()), reverse=True)[:3]
+        award("tourist", "The Tourist", "different channels posted in", tourist, lambda v, r, u: f"{v}")
+        committed = sorted(((len(v), 0, u) for u, v in self.days_active.items()), reverse=True)[:3]
+        n_days = (self.until - self.since).days
+        award("committed", "The Committed", f"of {n_days} days with a message", committed, lambda v, r, u: f"{v}")
+
+        partners = defaultdict(set)
+        for (a, b), n in self.pairs.items():
+            if n >= 3:
+                partners[a].add(b)
+                partners[b].add(a)
+        glue = sorted(((len(s), 0, u) for u, s in partners.items()), reverse=True)[:3]
+        award("glue", "The Glue", "different people they traded replies with", glue, lambda v, r, u: f"{v}")
+
+        # Reactions, from people, on messages sent this year.
+        given, got, laughs, hearts, memes = Counter(), Counter(), Counter(), Counter(), Counter()
+        for reactor, author, emoji, has_file, n in self.q(
+                "SELECT r.user_id, r.author_id, r.emoji, m.n_attachments > 0, COUNT(*) FROM reactions r "
+                "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' "
+                "GROUP BY 1, 2, 3, 4", (self.lo, self.hi)):
+            if not self.human(reactor) or author == reactor:
+                continue
+            given[reactor] += n
+            if self.human(author):
+                got[author] += n
+                if emoji in LAUGH_REACTS or any(s in emoji.lower() for s in ("kek", "laugh", "lmao", "lol")):
+                    laughs[author] += n
+                if emoji in HEARTS:
+                    hearts[author] += n
+                if has_file:
+                    memes[author] += n
+        award("hype", "Hype Machine", "reactions given", counted(given), num)
+        award("crowd", "Crowd Pleaser", "reactions received", counted(got), num)
+        award("comedian", "The Comedian", "laughing reactions on their messages", counted(laughs), num)
+        award("heartthrob", "Heartthrob", "hearts on their messages", counted(hearts), num)
+        award("meme", "Meme Lord", "reactions on the pictures and clips they posted", counted(memes), num)
+
+        sent_m, got_m, self.mention_pairs = Counter(), Counter(), Counter()
+        for author, target, n in self.q(
+                "SELECT user_id, target_id, COUNT(*) FROM mentions WHERE ts >= ? AND ts < ? AND kind = 'user' "
+                "GROUP BY user_id, target_id", (self.lo, self.hi)):
+            if self.human(author) and self.human(target) and author != target:
+                sent_m[author] += n
+                got_m[target] += n
+                if self.shown(author) and self.shown(target):
+                    self.mention_pairs[(min(author, target), max(author, target))] += n
+        award("celeb", "Local Celeb", "times @mentioned", counted(got_m), num)
+        award("gossip", "The Gossip", "@mentions of other people", counted(sent_m), num)
+        emo = Counter()
+        for u, n in self.q("SELECT user_id, SUM(n) FROM emoji_uses WHERE ts >= ? AND ts < ? GROUP BY user_id",
+                           (self.lo, self.hi)):
+            if self.human(u):
+                emo[u] = n
+        award("emoji", "Emoji Artist", "emoji used", counted(emo), num)
+
+        gaps = defaultdict(list)
+        for u, gap in self.q(
+                "SELECT m.user_id, m.ts - p.ts FROM messages m JOIN messages p ON p.message_id = m.reply_to "
+                "WHERE m.ts >= ? AND m.ts < ? AND m.is_bot = 0 AND (m.msg_type = 'reply' OR m.msg_type IS NULL) "
+                "AND p.user_id != m.user_id AND p.is_bot = 0", (self.lo, self.hi)):
+            if gap >= 0 and u in per:
+                gaps[u].append(gap)
+        fast = sorted((statistics.median(g), 0, u) for u, g in gaps.items() if len(g) >= 1000)[:3]
+        award("fastest", "Fastest Fingers", "seconds to reply, typically", fast, lambda v, r, u: f"{v:.0f}")
+
+        starters, killers = self.conversations()
+        award("starter", "Conversation Starter", "quiet channels they brought back to life", counted(starters), num)
+        kill_rate = sorted(((killers[u] / per[u]["msgs"] * 1000, killers[u], u) for u in regulars if killers[u]),
+                           reverse=True)[:3]
+        award("killer", "Conversation Killer", "last words before two hours of daytime silence", kill_rate,
+              lambda v, r, u: f"{int(r):,}")
+
+        hof = Counter()
+        for mid in self.hof_ids():
+            row = self.q("SELECT user_id, ts FROM messages WHERE message_id = ?", (mid,))
+            if row and self.lo <= row[0][1] < self.hi and self.shown(row[0][0]):
+                hof[row[0][0]] += 1
+        award("hall_of_famer", "Hall of Famer", "messages in the Hall of Fame", counted(hof), num)
+
+        def ledger(pattern):
+            c = Counter()
+            for u, n in self.q("SELECT user_id, COUNT(*) FROM user_transactions WHERE ts >= ? AND ts < ? AND reason LIKE ? "
+                               "GROUP BY user_id", (self.lo, self.hi, pattern), db=self.db):
+                c[int(u)] = n
+            return c
+        award("welcomer", "The Welcomer", "new members welcomed", counted(ledger("Welcomed a new member%")), num)
+        award("wordle", "Wordle Wizard", "HMS Wordles solved", counted(ledger("HMS Wordle solve%")), num)
+        award("bump", "Bump Champion", "server bumps on DISBOARD", counted(ledger("DISBOARD bump reward%")), num)
+        award("tree", "Tree Hugger", "times they watered the tree", counted(ledger("Tree watering reward%")), num)
+        award("oracle", "The Oracle", "predictions called right", counted(ledger("Prediction win:%")), num)
+        roasted = Counter({int(u): n for u, n in self.q("SELECT user_id, count FROM roast_targets", db=self.db)})
+        award("roasted", "Most Roasted", "times on the end of /roast", counted(roasted), num)
+
+        before = dict(self.q("SELECT user_id, COUNT(*) FROM messages WHERE ts < ? AND is_bot = 0 GROUP BY user_id",
+                             (self.lo,)))
+        prev_window = dict(self.q("SELECT user_id, COUNT(*) FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 "
+                                  "GROUP BY user_id", (self.plo, self.phi)))
+        rookies = sorted(((per[u]["msgs"], u) for u in per if u not in before), reverse=True)[:5]
+        glow = sorted(((per[u]["msgs"] - prev_window.get(u, 0), u) for u in per if prev_window.get(u, 0) >= 100),
+                      reverse=True)[:5]
+        award("rookie", "Rookie of the Year", "messages since their first ever", [(n, n, u) for n, u in rookies], num)
+        award("glowup", "Glow-up of the Year", "more messages than the same stretch last year",
+              [(n, n, u) for n, u in glow], lambda v, r, u: f"+{int(v):,}")
+
+        self.out["awards"] = out
+        self.out["rookies"] = [{"user": self.who(u), "n": n, "first": min(self.days_active[u])} for n, u in rookies[:3]]
+        self.out["glowups"] = [{"user": self.who(u), "n": per[u]["msgs"], "prev": prev_window.get(u, 0)}
+                               for _, u in glow[:3]]
+
+    def long_day(self, iso):
+        d = date.fromisoformat(iso)
+        return f"{d.day} {d.strftime('%B')}"
+
+    def conversations(self):
+        """One pass in channel order: who restarts quiet channels, who has the last word before they go quiet,
+        which two people post straight after each other the most, and the busiest ten minutes anywhere."""
+        starters, killers, self.tag_team = Counter(), Counter(), Counter()
+        best_crowd = (0, None, None)
+        rows = self.ch.execute(
+            "SELECT COALESCE(parent_id, channel_id), user_id, ts, local_hour FROM messages WHERE ts >= ? AND ts < ? "
+            "AND is_bot = 0 ORDER BY 1, ts", (self.lo, self.hi))
+        chan, seq = None, []
+
+        def flush(chan, seq):
+            nonlocal best_crowd
+            window, inside = Counter(), 0
+            for i, (u, ts, hour) in enumerate(seq):
+                gap_before = ts - seq[i - 1][1] if i else 10 ** 9
+                if gap_before >= 45 * 60:
+                    later = [s for s in seq[i + 1:i + 40] if s[1] - ts <= 15 * 60 and s[0] != u]
+                    if len(later) >= 6 and len({s[0] for s in later}) >= 2:
+                        starters[u] += 1
+                if i + 1 < len(seq) and seq[i + 1][1] - ts >= 2 * 3600 and hour is not None and 11 <= hour < 21:
+                    killers[u] += 1
+                if i and seq[i - 1][0] != u and gap_before <= 60:
+                    a, b = seq[i - 1][0], u
+                    self.tag_team[(min(a, b), max(a, b))] += 1
+                # ten-minute sliding window of different people talking
+                window[u] += 1
+                while seq[inside][1] < ts - 600:
+                    window[seq[inside][0]] -= 1
+                    if not window[seq[inside][0]]:
+                        del window[seq[inside][0]]
+                    inside += 1
+                if len(window) > best_crowd[0]:
+                    best_crowd = (len(window), chan, ts)
+        for c, u, ts, hour in rows:
+            if c != chan:
+                flush(chan, seq)
+                chan, seq = c, []
+            seq.append((u, ts, hour))
+        flush(chan, seq)
+        self.tag_team = Counter({p: n for p, n in self.tag_team.items() if self.shown(p[0]) and self.shown(p[1])})
+        self.busiest = best_crowd
+        return (Counter({u: n for u, n in starters.items() if self.shown(u)}),
+                Counter({u: n for u, n in killers.items() if self.shown(u)}))
+
+    # ------------------------------------------------------------------ people
+    def people_chapter(self):
+        pairs = self.pairs
+        got = Counter()
+        from_whom = defaultdict(set)
+        for (a, b), n in pairs.items():
+            got[b] += n
+            from_whom[b].add(a)
+        replied = [{"user": self.who(u), "n": n, "from": len(from_whom[u])} for u, n in got.most_common(5)]
+        both = Counter()
+        for (a, b), n in pairs.items():
+            both[(min(a, b), max(a, b))] += n
+        self.both = both
+        duos = [{"a": self.who(a), "b": self.who(b), "n": n, "ab": pairs[(a, b)], "ba": pairs[(b, a)]}
+                for (a, b), n in both.most_common(5)]
+        one_way = sorted(((n / (pairs.get((b, a), 0) + 1), a, b, n) for (a, b), n in pairs.items() if n >= 200),
+                         reverse=True)[:3]
+
+        fans = Counter()
+        emoji_dir = defaultdict(Counter)
+        for reactor, author, emoji, eid, n in self.q(
+                "SELECT r.user_id, r.author_id, r.emoji, r.emoji_id, COUNT(*) FROM reactions r JOIN messages m "
+                "ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' GROUP BY 1, 2, 3, 4",
+                (self.lo, self.hi)):
+            if reactor == author or not (self.shown(reactor) and self.shown(author)):
+                continue
+            fans[(reactor, author)] += n
+            emoji_dir[(emoji, eid)][(reactor, author)] += n
+        mates = sorted(((min(n, fans.get((b, a), 0)), a, b) for (a, b), n in fans.items() if a < b), reverse=True)[:3]
+
+        # Reaction duos: for each emoji, the two people who traded it most, counting only what went both
+        # ways (the smaller direction), so one person spamming another doesn't count as a duo.
+        rduos = []
+        for (emoji, eid), d in emoji_dir.items():
+            pick = max(((min(n, d.get((b, a), 0)), a, b) for (a, b), n in d.items() if a < b), default=None)
+            if pick and pick[0] >= 5:
+                k, a, b = pick
+                rduos.append((k, emoji, eid, a, b, d[(a, b)], d.get((b, a), 0)))
+        rduos.sort(reverse=True)
+
+        self.out["social"] = {
+            "replied": replied,
+            "duos": duos,
+            "one_way": [{"from": self.who(a), "to": self.who(b), "n": n, "back": pairs.get((b, a), 0)}
+                        for _, a, b, n in one_way],
+            "fans": [{"from": self.who(a), "to": self.who(b), "n": n} for (a, b), n in fans.most_common(3)],
+            "mates": [{"a": self.who(a), "b": self.who(b), "ab": fans[(a, b)], "ba": fans.get((b, a), 0)}
+                      for _, a, b in mates],
+            "reaction_duos": [{"e": e, "id": str(i) if i else None, "a": self.who(a), "b": self.who(b), "ab": ab, "ba": ba}
+                              for _, e, i, a, b, ab, ba in rduos[:18]],
+        }
+        self.out["duo_awards"] = self.duo_awards()
+        self.out["trio"] = self.trio()
+        self.out["squads"] = self.squads()
+        self.out["crowds"] = self.crowds()
+        self.out["network"] = self.network()
+
+    def duo_awards(self):
+        out = []
+
+        def duo(key, title, line, scores, fmt=lambda v: f"{v:,}", minimum=1):
+            ranked = sorted(((v, p) for p, v in scores.items() if v >= minimum), reverse=True)
+            if not ranked:
+                return
+            v, (a, b) = ranked[0]
+            out.append({"key": key, "title": title, "line": line if isinstance(line, str) else line(a, b),
+                        "a": self.who(a), "b": self.who(b), "value": fmt(v)})
+        arg = {p: v[0] for p, v in self.argument.items()}
+        duo("argument", "The Longest Argument",
+            lambda a, b: f"replies straight back and forth, on {self.long_day(self.argument[(a, b)][1])}", arg)
+        duo("tag_team", "Tag Team", "times one posted straight after the other", self.tag_team)
+        duo("night_shift", "Night Shift Partners", "replies to each other between 1am and 5am", self.night_pairs)
+        regs = [u for u, h in self.hours.items() if sum(h) >= 5000]
+
+        def corr(a, b):
+            x, y = self.hours[a], self.hours[b]
+            mx, my = sum(x) / 24, sum(y) / 24
+            num = sum((i - mx) * (j - my) for i, j in zip(x, y))
+            den = math.sqrt(sum((i - mx) ** 2 for i in x) * sum((j - my) ** 2 for j in y)) or 1
+            return num / den
+        same = {(min(a, b), max(a, b)): corr(a, b) for i, a in enumerate(regs) for b in regs[i + 1:]}
+        duo("same_schedule", "Same Schedule", "alike, hour by hour, across the whole year", same,
+            fmt=lambda v: f"{v * 100:.0f}%", minimum=0)
+        duo("ping_pong", "Ping Pong", "@mentions of each other", self.mention_pairs)
+        pay = Counter()
+        for a, b, n in self.q("SELECT payer_id, recipient_id, SUM(amount) FROM pay_transfers WHERE timestamp >= ? "
+                              "AND timestamp < ? GROUP BY 1, 2", (self.lo, self.hi), db=self.db):
+            a, b = int(a), int(b)
+            if self.shown(a) and self.shown(b):
+                pay[(min(a, b), max(a, b))] += n
+        duo("business", "Business Partners", "UKPence passed back and forth with /pay", pay)
+        pvp = Counter()
+        for w, l in self.q("SELECT winner_id, loser_id FROM pvp_results WHERE timestamp >= ? AND timestamp < ?",
+                           (self.lo, self.hi), db=self.db):
+            if w and l and self.shown(int(w)) and self.shown(int(l)):
+                pvp[(min(int(w), int(l)), max(int(w), int(l)))] += 1
+        duo("rivals", "Arch-Rivals", "head-to-head games against each other", pvp, minimum=10)
+        return out
+
+    def trio(self):
+        """The strongest triangle: three people who all reply to each other, scored by the weakest of the three."""
+        weight = Counter()
+        for (a, b), n in self.both.items():
+            weight[a] += n
+            weight[b] += n
+        top = [u for u, _ in weight.most_common(80)]
+        best = None
+        for i, a in enumerate(top):
+            for j in range(i + 1, len(top)):
+                b = top[j]
+                ab = self.both.get((min(a, b), max(a, b)), 0)
+                if ab < 300 or (best and ab <= best[0]):
+                    continue
+                for c in top[j + 1:]:
+                    w = min(ab, self.both.get((min(a, c), max(a, c)), 0), self.both.get((min(b, c), max(b, c)), 0))
+                    if not best or w > best[0]:
+                        best = (w, a, b, c)
+        if not best:
+            return None
+        w, a, b, c = best
+        k = lambda x, y: self.both.get((min(x, y), max(x, y)), 0)
+        return {"people": [self.who(a), self.who(b), self.who(c)], "min": w,
+                "pairs": [k(a, b), k(b, c), k(a, c)], "total": k(a, b) + k(b, c) + k(a, c)}
+
+    def squads(self):
+        """Friend groups: communities in the reply graph of the 150 busiest repliers, found by modularity, each
+        named after the channel its members use far more than everyone else does (or the night, if that's
+        what sets them apart)."""
+        weight = Counter()
+        for (a, b), n in self.both.items():
+            weight[a] += n
+            weight[b] += n
+        nodes = [u for u, _ in weight.most_common(150)]
+        idx = set(nodes)
+        adj = defaultdict(Counter)
+        for (a, b), n in self.both.items():
+            if a in idx and b in idx and n >= 20:
+                adj[a][b] += n
+                adj[b][a] += n
+        m2 = sum(sum(v.values()) for v in adj.values()) or 1
+        deg = {u: sum(adj[u].values()) for u in nodes}
+        comm = {u: u for u in nodes}
+        tot = Counter({u: deg[u] for u in nodes})
+        for _ in range(20):
+            moved = False
+            for u in sorted(nodes, key=lambda x: -deg[x]):
+                cu = comm[u]
+                links = Counter()
+                for v, w in adj[u].items():
+                    links[comm[v]] += w
+                tot[cu] -= deg[u]
+                best_c, best_gain = cu, links[cu] - tot[cu] * deg[u] / m2
+                for c, w in links.items():
+                    gain = w - tot[c] * deg[u] / m2
+                    if gain > best_gain + 1e-9:
+                        best_c, best_gain = c, gain
+                tot[best_c] += deg[u]
+                if best_c != cu:
+                    comm[u] = best_c
+                    moved = True
+            if not moved:
+                break
+        groups = defaultdict(list)
+        for u in nodes:
+            groups[comm[u]].append(u)
+        server_chan = Counter()
+        for u, chans in self.channels_seen.items():
+            server_chan.update(chans)
+        server_total = sum(server_chan.values()) or 1
+        night_all = sum(c["night"] for c in self.per.values()) / max(sum(c["msgs"] for c in self.per.values()), 1)
+        out = []
+        for members in sorted(groups.values(), key=lambda g: -sum(weight[u] for u in g)):
+            if len(members) < 4:
+                continue
+            chans = Counter()
+            for u in members:
+                chans.update(self.channels_seen.get(u, {}))
+            total = sum(chans.values()) or 1
+            lift = sorted(((chans[c] / total) / (server_chan[c] / server_total), c) for c in chans
+                          if chans[c] >= 300 and chans[c] / total >= 0.05)
+            night = sum(self.per[u]["night"] for u in members if u in self.per) / max(sum(self.per[u]["msgs"] for u in members if u in self.per), 1)
+            if night > night_all * 1.8:
+                label, why = "The Night Crew", "busiest after midnight"
+            elif lift and lift[-1][0] >= 1.5:
+                ch = (self.channel_name(lift[-1][1]) or "a channel").split("｜")[-1]
+                label, why = f"The #{ch} lot", f"live in #{ch}"
+            else:
+                label, why = "The #general lot", "keep #general going"
+            faces = sorted(members, key=lambda u: -weight[u])
+            out.append({"name": label, "why": why, "size": len(members), "people": [self.who(u) for u in faces[:6]]})
+            if len(out) == 4:
+                break
+        return out
+
+    def crowds(self):
+        """The message the most different people replied to, and the busiest ten minutes anywhere."""
+        best = None
+        for mid, users in sorted(self.replied_by.items(), key=lambda kv: -len(kv[1]))[:40]:
+            row = self.q("SELECT user_id, content, local_day, COALESCE(parent_id, channel_id) FROM messages WHERE message_id = ?", (mid,))
+            if not row or not self.shown(row[0][0]) or not row[0][1]:
+                continue
+            uid, content, day, chan = row[0]
+            if len(content) > 220 or URL.search(content):
+                continue
+            best = {"user": self.who(uid), "text": self.render_text(content), "day": day, "people": len(users),
+                    "channel": (self.channel_name(chan) or "").split("｜")[-1]}
+            break
+        n, chan, ts = self.busiest
+        busiest = None
+        if n:
+            when = datetime.fromtimestamp(ts - 600, UK)  # the ten minutes ending at ts
+            words = Counter()
+            for (content,) in self.q("SELECT content FROM messages WHERE COALESCE(parent_id, channel_id) = ? AND ts BETWEEN ? AND ? "
+                                     "AND is_bot = 0", (chan, ts - 600, ts)):
+                clean = TOKEN_NOISE.sub(" ", URL.sub(" ", (content or "").lower()))
+                words.update(w for w in WORD.findall(clean) if w not in STOP and not SLURS.match(w))
+            busiest = {"people": n, "channel": (self.channel_name(chan) or "").split("｜")[-1],
+                       "day": when.date().isoformat(), "time": when.strftime("%H:%M"),
+                       "caption": self.caption_for(when.date().isoformat()),
+                       "words": [w for w, _ in words.most_common(4)]}
+        return {"pile_on": best, "busiest": busiest}
+
+    def caption_for(self, d):
+        if d in MOMENTS:
+            return MOMENTS[d]
+        if self.bb_start and self.bb_start <= d <= (self.bb_end or d):
+            return f"Big Brother, day {(date.fromisoformat(d) - date.fromisoformat(self.bb_start)).days + 1}"
+        return None
+
+    def network(self, size=16):
+        """The ring of the busiest repliers and the replies between them; the player lays it out."""
+        weight = Counter()
+        for (a, b), n in self.both.items():
+            weight[a] += n
+            weight[b] += n
+        nodes = [u for u, _ in weight.most_common(size)]
+        idx = {u: i for i, u in enumerate(nodes)}
+        edges = [(idx[a], idx[b], n) for (a, b), n in self.both.most_common() if a in idx and b in idx and n >= 60][:40]
+        return {"nodes": [{"user": self.who(u), "w": weight[u]} for u in nodes], "edges": edges}
 
     def scan_last_year_words(self):
         prev = Counter()
@@ -225,20 +752,6 @@ class Extract:
         self.prev_words, self.prev_laughs, self.prev_n = prev, laughs, n_window
 
     # ------------------------------------------------------------------ sections
-    def numbers(self):
-        def totals(lo, hi):
-            r = self.q("SELECT COUNT(*), COUNT(DISTINCT user_id), COALESCE(SUM(word_count),0), "
-                       "COALESCE(SUM(n_attachments > 0),0), COALESCE(SUM((flags & ?) != 0),0) "
-                       "FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0", (VOICE_NOTE, lo, hi))[0]
-            return dict(zip(("messages", "people", "words", "files", "voice_notes"), r))
-        now, prev = totals(self.lo, self.hi), totals(self.plo, self.phi)
-        reactions = self.q("SELECT COUNT(*) FROM reactions WHERE ts >= ? AND ts < ? AND action = 'add'",
-                           (self.lo, self.hi))[0][0]
-        prev_reactions = self.q("SELECT COUNT(*) FROM reactions WHERE ts >= ? AND ts < ? AND action = 'add'",
-                                (self.plo, self.phi))[0][0]
-        now["reactions"], prev["reactions"] = reactions, prev_reactions
-        self.out["numbers"] = {"now": now, "prev": prev}
-
     def race(self):
         """Cumulative messages this year against last year, and the day this year passed last year's total."""
         def per_day(lo, hi):
@@ -314,246 +827,7 @@ class Extract:
                                 "born": [{"name": self.channel_name(c) or "deleted-channel", "n": n} for c, n in born]}
 
     # ------------------------------------------------------------------ awards
-    def awards(self):
-        per = self.per
-        regulars = [u for u, c in per.items() if c["msgs"] >= 2000]
-
-        def best(key, pool=None, rate=False, minimum=1, reverse=True):
-            pool = pool if pool is not None else per.keys()
-            scored = []
-            for u in pool:
-                c = per[u]
-                v = c[key] / c["msgs"] if rate else c[key]
-                if c[key] >= minimum:
-                    scored.append((v, c[key], u))
-            scored.sort(reverse=reverse)
-            return scored[:3]
-
-        out = []
-
-        def award(key, title, line, ranked, fmt):
-            if not ranked:
-                return
-            v, raw, u = ranked[0]
-            out.append({"key": key, "title": title, "line": line, "user": self.who(u), "value": fmt(v, raw, u),
-                        "runners": [self.who(r[2]) for r in ranked[1:3]]})
-
-        pct = lambda v, raw, u: f"{v * 100:.0f}%"
-        num = lambda v, raw, u: f"{int(raw):,}"
-
-        award("night_owl", "Night Owl", "of their messages sent between 1am and 5am",
-              best("night", regulars, rate=True), pct)
-        award("early_bird", "Early Bird", "of their messages sent before 8am",
-              best("early", regulars, rate=True), pct)
-        waffle = sorted(((per[u]["words"] / per[u]["msgs"], 0, u) for u in regulars), reverse=True)[:3]
-        award("waffler", "The Waffler", "words per message, on average", waffle, lambda v, r, u: f"{v:.1f}")
-        silent = sorted(((per[u]["chars"] / per[u]["msgs"], 0, u) for u in regulars))[:3]
-        award("silent", "Short and Sweet", "characters per message, on average", silent, lambda v, r, u: f"{v:.0f}")
-        award("shouter", "The Shouter", "of their messages in ALL CAPS", best("caps", regulars, rate=True), pct)
-        award("nosey", "Nosey Parker", "of their messages were questions", best("questions", regulars, rate=True), pct)
-        award("apologist", "The Apologist", "apologies", best("sorry"), num)
-        award("british", "Most British", "innits, mates, quids and cheers", best("british"), num)
-        award("perfectionist", "The Perfectionist", "of their messages edited after sending",
-              best("edited", regulars, rate=True), pct)
-        award("media", "Media Mogul", "messages with a file or picture", best("files"), num)
-        award("plug", "The Plug", "links shared", best("links"), num)
-        award("voice", "Voice Note Royalty", "voice notes", best("voice"), num)
-        award("replier", "The Replier", "replies sent", best("replies"), num)
-        award("bot_friend", "The Bot's Best Friend", "replies to HMS Victory", best("bot_replies"), num)
-
-        tourist = sorted(((len(self.channels_seen[u]), 0, u) for u in per), reverse=True)[:3]
-        award("tourist", "The Tourist", "different channels posted in", tourist, lambda v, r, u: f"{v}")
-        committed = sorted(((len(self.days_active[u]), 0, u) for u in per), reverse=True)[:3]
-        n_days = (self.until - self.since).days
-        award("committed", "The Committed", f"of {n_days} days with a message", committed, lambda v, r, u: f"{v}")
-
-        # The glue: the most different people talked to, either direction.
-        partners = defaultdict(set)
-        for (a, b), n in self.pairs.items():
-            if n >= 3:
-                partners[a].add(b)
-                partners[b].add(a)
-        glue = sorted(((len(s), 0, u) for u, s in partners.items()), reverse=True)[:3]
-        award("glue", "The Glue", "different people they traded replies with", glue, lambda v, r, u: f"{v}")
-
-        # Reactions and mentions, people only.
-        given, got = Counter(), Counter()
-        for reactor, author, n in self.q(
-                "SELECT user_id, author_id, COUNT(*) FROM reactions WHERE ts >= ? AND ts < ? AND action = 'add' "
-                "GROUP BY user_id, author_id", (self.lo, self.hi)):
-            if self.human(reactor) and author != reactor:
-                given[reactor] += n
-                if self.human(author):
-                    got[author] += n
-        self.reaction_got = got
-        award("hype", "Hype Machine", "reactions given", [(v, v, u) for u, v in given.most_common(3)], num)
-        award("crowd", "Crowd Pleaser", "reactions received", [(v, v, u) for u, v in got.most_common(3)], num)
-        sent_m, got_m = Counter(), Counter()
-        for author, target, n in self.q(
-                "SELECT user_id, target_id, COUNT(*) FROM mentions WHERE ts >= ? AND ts < ? AND kind = 'user' "
-                "GROUP BY user_id, target_id", (self.lo, self.hi)):
-            if self.human(author) and self.human(target) and author != target:
-                sent_m[author] += n
-                got_m[target] += n
-        award("celeb", "Local Celeb", "times @mentioned", [(v, v, u) for u, v in got_m.most_common(3)], num)
-        award("gossip", "The Gossip", "@mentions of other people", [(v, v, u) for u, v in sent_m.most_common(3)], num)
-        emo = Counter()
-        for u, n in self.q("SELECT user_id, SUM(n) FROM emoji_uses WHERE ts >= ? AND ts < ? GROUP BY user_id",
-                           (self.lo, self.hi)):
-            if self.human(u):
-                emo[u] = n
-        award("emoji", "Emoji Artist", "emoji used", [(v, v, u) for u, v in emo.most_common(3)], num)
-
-        # Fastest fingers: the typical gap between a message and someone's reply to it.
-        gaps = defaultdict(list)
-        for u, gap in self.q(
-                "SELECT m.user_id, m.ts - p.ts FROM messages m JOIN messages p ON p.message_id = m.reply_to "
-                "WHERE m.ts >= ? AND m.ts < ? AND m.is_bot = 0 AND (m.msg_type = 'reply' OR m.msg_type IS NULL) "
-                "AND p.user_id != m.user_id AND p.is_bot = 0", (self.lo, self.hi)):
-            if gap >= 0:
-                gaps[u].append(gap)
-        fast = sorted((statistics.median(g), 0, u) for u, g in gaps.items() if len(g) >= 1000)[:3]
-        award("fastest", "Fastest Fingers", "seconds to reply, typically", fast, lambda v, r, u: f"{v:.0f}")
-
-        starters, killers = self.conversations()
-        award("starter", "Conversation Starter", "quiet channels they brought back to life",
-              [(v, v, u) for u, v in starters.most_common(3)], num)
-        kill_rate = sorted(((killers[u] / per[u]["msgs"] * 1000, killers[u], u) for u in regulars if killers[u]),
-                           reverse=True)[:3]
-        award("killer", "Conversation Killer", "last words before two hours of daytime silence", kill_rate,
-              lambda v, r, u: f"{int(r):,}")
-
-        # Rookies and glow-ups need everyone's history before this window.
-        before = dict(self.q("SELECT user_id, COUNT(*) FROM messages WHERE ts < ? AND is_bot = 0 GROUP BY user_id",
-                             (self.lo,)))
-        prev_window = dict(self.q("SELECT user_id, COUNT(*) FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 "
-                                  "GROUP BY user_id", (self.plo, self.phi)))
-        rookies = sorted(((per[u]["msgs"], u) for u in per if u not in before), reverse=True)[:5]
-        glow = sorted(((per[u]["msgs"] - prev_window.get(u, 0), u) for u in per if prev_window.get(u, 0) >= 100),
-                      reverse=True)[:5]
-        award("rookie", "Rookie of the Year", "messages since their first ever",
-              [(n, n, u) for n, u in rookies], num)
-        award("glowup", "Glow-up of the Year", "more messages than the same stretch last year",
-              [(n, n, u) for n, u in glow], lambda v, r, u: f"+{int(v):,}")
-
-        self.out["awards"] = out
-        self.out["rookies"] = [{"user": self.who(u), "n": n,
-                                "first": min(self.days_active[u])} for n, u in rookies[:3]]
-        self.out["glowups"] = [{"user": self.who(u), "n": per[u]["msgs"], "prev": prev_window.get(u, 0)}
-                               for _, u in glow[:3]]
-
-    def conversations(self):
-        """Who restarts quiet channels, and who has the last word before they go quiet."""
-        starters, killers = Counter(), Counter()
-        rows = self.ch.execute(
-            "SELECT channel_id, user_id, ts, local_hour FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 "
-            "ORDER BY channel_id, ts", (self.lo, self.hi))
-        chan, seq = None, []
-
-        def flush(seq):
-            for i, (u, ts, hour) in enumerate(seq):
-                gap_before = ts - seq[i - 1][1] if i else 10 ** 9
-                if gap_before >= 45 * 60:
-                    window = [s for s in seq[i + 1:i + 40] if s[1] - ts <= 15 * 60 and s[0] != u]
-                    if len(window) >= 6 and len({s[0] for s in window}) >= 2:
-                        starters[u] += 1
-                if i + 1 < len(seq) and seq[i + 1][1] - ts >= 2 * 3600 and hour is not None and 11 <= hour < 21:
-                    killers[u] += 1
-        for c, u, ts, hour in rows:
-            if c != chan:
-                flush(seq)
-                chan, seq = c, []
-            seq.append((u, ts, hour))
-        flush(seq)
-        return starters, killers
-
     # ------------------------------------------------------------------ people
-    def people_chapter(self):
-        pairs = self.pairs
-        got = Counter()
-        from_whom = defaultdict(set)
-        for (a, b), n in pairs.items():
-            got[b] += n
-            from_whom[b].add(a)
-        replied = [{"user": self.who(u), "n": n, "from": len(from_whom[u])} for u, n in got.most_common(5)]
-
-        both = Counter()
-        split = {}
-        for (a, b), n in pairs.items():
-            k = (min(a, b), max(a, b))
-            both[k] += n
-        duos = []
-        for (a, b), n in both.most_common(5):
-            duos.append({"a": self.who(a), "b": self.who(b), "n": n, "ab": pairs[(a, b)], "ba": pairs[(b, a)]})
-        one_way = sorted(((n / (pairs.get((b, a), 0) + 1), a, b, n) for (a, b), n in pairs.items() if n >= 200),
-                         reverse=True)[:3]
-
-        fans = Counter()
-        for reactor, author, n in self.q(
-                "SELECT user_id, author_id, COUNT(*) FROM reactions WHERE ts >= ? AND ts < ? AND action = 'add' "
-                "GROUP BY user_id, author_id HAVING COUNT(*) >= 50", (self.lo, self.hi)):
-            if self.human(reactor) and self.human(author) and reactor != author:
-                fans[(reactor, author)] = n
-        mates = sorted(((min(n, fans.get((b, a), 0)), a, b) for (a, b), n in fans.items() if a < b), reverse=True)[:3]
-
-        self.out["social"] = {
-            "replied": replied,
-            "duos": duos,
-            "one_way": [{"from": self.who(a), "to": self.who(b), "n": n, "back": pairs.get((b, a), 0)}
-                        for _, a, b, n in one_way],
-            "fans": [{"from": self.who(a), "to": self.who(b), "n": n} for (a, b), n in fans.most_common(3)],
-            "mates": [{"a": self.who(a), "b": self.who(b), "ab": fans[(a, b)], "ba": fans.get((b, a), 0)}
-                      for _, a, b in mates],
-        }
-        self.out["network"] = self.network()
-
-    def network(self, size=44):
-        """The reply graph's busiest people, laid out in 3D with a seeded force layout."""
-        weight = Counter()
-        for (a, b), n in self.pairs.items():
-            weight[a] += n
-            weight[b] += n
-        nodes = [u for u, _ in weight.most_common(size)]
-        idx = {u: i for i, u in enumerate(nodes)}
-        both = Counter()
-        for (a, b), n in self.pairs.items():
-            if a in idx and b in idx:
-                both[(min(a, b), max(a, b))] += n
-        edges = [(a, b, n) for (a, b), n in both.most_common(160) if n >= 120]
-        rng = random.Random(2026)
-        pos = [[rng.uniform(-1, 1) for _ in range(3)] for _ in nodes]
-        k = 0.55
-        maxw = max((n for _, _, n in edges), default=1)
-        for it in range(500):
-            disp = [[0.0, 0.0, 0.0] for _ in nodes]
-            for i in range(len(nodes)):
-                for j in range(i + 1, len(nodes)):
-                    d = [pos[i][x] - pos[j][x] for x in range(3)]
-                    dist = math.sqrt(sum(v * v for v in d)) + 1e-3
-                    f = k * k / dist
-                    for x in range(3):
-                        disp[i][x] += d[x] / dist * f
-                        disp[j][x] -= d[x] / dist * f
-            for a, b, n in edges:
-                i, j = idx[a], idx[b]
-                d = [pos[i][x] - pos[j][x] for x in range(3)]
-                dist = math.sqrt(sum(v * v for v in d)) + 1e-3
-                f = dist * dist / k * (0.4 + n / maxw)
-                for x in range(3):
-                    disp[i][x] -= d[x] / dist * f
-                    disp[j][x] += d[x] / dist * f
-            temp = 0.12 * (1 - it / 500) + 0.002
-            for i in range(len(nodes)):
-                for x in range(3):
-                    disp[i][x] -= pos[i][x] * 0.05  # gentle pull to the middle
-                dl = math.sqrt(sum(v * v for v in disp[i])) + 1e-9
-                for x in range(3):
-                    pos[i][x] += disp[i][x] / dl * min(dl, temp)
-        span = max(max(abs(v) for v in p) for p in pos) or 1
-        return {"nodes": [{"user": self.who(u), "w": weight[u], "p": [round(v / span, 4) for v in pos[i]]}
-                          for i, u in enumerate(nodes)],
-                "edges": [[idx[a], idx[b], n] for a, b, n in edges]}
-
     # ------------------------------------------------------------------ hall of fame and words
     def render_text(self, text):
         """Mentions and channel links to names; custom emoji kept as tokens the player draws."""
@@ -566,31 +840,62 @@ class Extract:
         text = re.sub(r"<@&\d+>", "@role", text)
         return text
 
-    def hall_of_fame(self):
+    def hof_ids(self):
         try:
-            ids = [int(x) for x in json.loads((self.data / "hall_of_fame.json").read_text())]
+            return [int(x) for x in json.loads((self.data / "hall_of_fame.json").read_text())]
         except FileNotFoundError:
-            ids = []
-        picks = []
-        for mid in ids:
-            row = self.q("SELECT user_id, content, ts, local_day, n_attachments FROM messages WHERE message_id = ?", (mid,))
-            if not row:
-                continue
-            uid, content, ts, day, atts = row[0]
-            if not (self.lo <= ts < self.hi) or not content or not self.human(uid):
-                continue
-            if len(content) > 200 or URL.search(content):
-                continue
-            reacts = self.q("SELECT emoji, emoji_id, count FROM reaction_counts WHERE message_id = ? ORDER BY count DESC",
-                            (mid,))
-            total = sum(r[2] for r in reacts)
-            picks.append({"user": uid, "text": self.render_text(content), "day": day, "total": total,
-                          "reactions": [{"e": e, "id": str(i) if i else None, "n": n} for e, i, n in reacts[:5]]})
-        picks.sort(key=lambda p: -p["total"])
-        chosen = picks[:6]
-        for p in chosen:
-            p["user"] = self.who(p["user"])
-        self.out["hall_of_fame"] = sorted(chosen, key=lambda p: p["day"])
+            return []
+
+    def hof_message(self, mid):
+        row = self.q("SELECT user_id, content, ts, local_day FROM messages WHERE message_id = ?", (mid,))
+        if not row:
+            return None
+        uid, content, ts, day = row[0]
+        if not (self.lo <= ts < self.hi) or not content or not self.shown(uid) or URL.search(content) or len(content) > 220:
+            return None
+        reacts = Counter()
+        for e, eid, u, act in self.q("SELECT emoji, emoji_id, user_id, action FROM reactions WHERE message_id = ?", (mid,)):
+            if self.human(u):
+                reacts[(e, eid)] += 1 if act == "add" else -1
+        laughs = sum(n for (e, _), n in reacts.items() if n > 0 and (e in LAUGH_REACTS or "kek" in e.lower() or "laugh" in e.lower()))
+        return {"id": str(mid), "user": uid, "text": self.render_text(content), "day": day,
+                "total": sum(n for n in reacts.values() if n > 0), "laughs": laughs,
+                "reactions": [{"e": e, "id": str(i) if i else None, "n": n} for (e, i), n in reacts.most_common(5) if n > 0]}
+
+    def hall_of_fame(self):
+        """The Hall of Fame slides. With --hof-picks (a JSON list of message ids, in order) those are shown;
+        without, the most-reacted short Hall of Fame messages. Either way hof_candidates.json is written to the
+        data dir: the Hall of Fame plus the year's most-laughed-at short messages, best first, to pick from."""
+        cands = {}
+        for mid in self.hof_ids():
+            m = self.hof_message(mid)
+            if m:
+                cands[mid] = {**m, "source": "hall of fame"}
+        marks = ",".join("?" * len(LAUGH_REACTS))
+        for mid, _ in self.q(f"SELECT r.message_id, COUNT(*) n FROM reactions r JOIN messages m ON m.message_id = r.message_id "
+                             f"WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' AND r.emoji IN ({marks}) "
+                             f"GROUP BY 1 ORDER BY n DESC LIMIT 400", (self.lo, self.hi, *LAUGH_REACTS)):
+            if mid not in cands:
+                m = self.hof_message(mid)
+                if m:
+                    cands[mid] = {**m, "source": "laughs"}
+        ranked = sorted(cands.values(), key=lambda m: -(m["laughs"] * 2 + m["total"]))
+        names = self.discord["people"]
+        (self.data / "hof_candidates.json").write_text(json.dumps(
+            [{**m, "name": names.get(str(m["user"]), {}).get("name")} for m in ranked], ensure_ascii=False, indent=1))
+        # Picks are slides: [{"title": "...", "ids": [...]}, ...]. Without them, the top Hall of Fame posts.
+        if self.hof_picks:
+            slides = [{"title": g.get("title") or "HALL OF FAME",
+                       "messages": [m for m in (cands.get(int(i)) or self.hof_message(int(i)) for i in g["ids"]) if m]}
+                      for g in self.hof_picks]
+        else:
+            top = sorted((m for m in cands.values() if m["source"] == "hall of fame"), key=lambda m: -m["total"])[:6]
+            top.sort(key=lambda m: m["day"])
+            slides = [{"title": "YOUR FAVOURITES", "messages": top[:3]}, {"title": "AND THESE", "messages": top[3:6]}]
+        for slide in slides:
+            for m in slide["messages"]:
+                m["user"] = self.who(m["user"])
+        self.out["hall_of_fame"] = [s for s in slides if s["messages"]]
 
     def regular_names(self):
         names = set()
@@ -629,14 +934,19 @@ class Extract:
         n_now = self.out["numbers"]["now"]["messages"] or 1
         laugh = [{"k": k, "now": round(self.laughs[k] / n_now * 10000, 1),
                   "prev": round(self.prev_laughs[k] / max(self.prev_n, 1) * 10000, 1)} for k in LAUGHS]
-        emoji = []
-        for e, eid, n in self.q("SELECT emoji, emoji_id, SUM(n) t FROM emoji_uses WHERE ts >= ? AND ts < ? "
-                                "GROUP BY emoji, emoji_id ORDER BY t DESC LIMIT 10", (self.lo, self.hi)):
-            emoji.append({"e": e, "id": str(eid) if eid else None, "n": n})
-        reacts = []
-        for e, eid, n in self.q("SELECT emoji, emoji_id, COUNT(*) t FROM reactions WHERE ts >= ? AND ts < ? "
-                                "AND action = 'add' GROUP BY emoji, emoji_id ORDER BY t DESC LIMIT 10", (self.lo, self.hi)):
-            reacts.append({"e": e, "id": str(eid) if eid else None, "n": n})
+        emo = Counter()
+        for u, e, eid, n in self.q("SELECT user_id, emoji, emoji_id, SUM(n) FROM emoji_uses WHERE ts >= ? AND ts < ? "
+                                   "GROUP BY 1, 2, 3", (self.lo, self.hi)):
+            if self.human(u):
+                emo[(e, eid)] += n
+        emoji = [{"e": e, "id": str(i) if i else None, "n": n} for (e, i), n in emo.most_common(10)]
+        rc = Counter()
+        for u, e, eid, act, n in self.q("SELECT r.user_id, r.emoji, r.emoji_id, r.action, COUNT(*) FROM reactions r "
+                                        "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? "
+                                        "GROUP BY 1, 2, 3, 4", (self.lo, self.hi)):
+            if self.human(u):
+                rc[(e, eid)] += n if act == "add" else -n
+        reacts = [{"e": e, "id": str(i) if i else None, "n": n} for (e, i), n in rc.most_common(10)]
         chars, uid, day, mid = self.longest
         content = self.q("SELECT content FROM messages WHERE message_id = ?", (mid,))[0][0] or ""
         self.out["words"] = {
@@ -667,6 +977,8 @@ class Extract:
             gm[1] += staked
             gm[2] -= net
             gm[3].add(u)
+            if not self.shown(u):
+                continue
             p = per[u]
             p[0] += 1
             p[1] += staked
@@ -674,8 +986,9 @@ class Extract:
             d = datetime.fromtimestamp(ts, UK)
             days[(u, d.date().isoformat())] += net
             hours[d.hour] += staked
-        wins = sorted(rows, key=lambda r: -r[4])[:3]
-        losses = sorted(rows, key=lambda r: r[4])[:3]
+        named = [r for r in rows if self.shown(r[0])]
+        wins = sorted(named, key=lambda r: -r[4])[:3]
+        losses = sorted(named, key=lambda r: r[4])[:3]
         game_rows = sorted(({"game": GAMES.get(g, g.title()), "bets": v[0], "staked": v[1], "house": v[2],
                              "players": len(v[3])} for g, v in games.items()), key=lambda r: -r["staked"])
         by_staked = sorted(per.items(), key=lambda kv: -kv[1][1])
@@ -688,7 +1001,7 @@ class Extract:
                     "net": r[4], "day": datetime.fromtimestamp(r[5], UK).date().isoformat()}
         self.out["casino"] = {
             "since": datetime.fromtimestamp(min(r[5] for r in rows), UK).date().isoformat(),
-            "bets": len(rows), "players": len(per), "staked": sum(r[2] for r in rows),
+            "bets": len(rows), "players": len({r[0] for r in rows}), "staked": sum(r[2] for r in rows),
             "house": -sum(r[4] for r in rows), "games": game_rows,
             "biggest_wins": [bet(r) for r in wins], "biggest_losses": [bet(r) for r in losses],
             "high_rollers": [{"user": self.who(u), "staked": v[1], "bets": v[0], "net": v[2]} for u, v in by_staked[:3]],
@@ -723,7 +1036,7 @@ class Extract:
         chat = flow("Chatting activity%")
         pays = self.q("SELECT payer_id, recipient_id, amount, timestamp FROM pay_transfers WHERE timestamp >= ? "
                       "AND timestamp < ?", (lo, hi), db=self.db)
-        pays = [p for p in pays if p[0] not in bots and p[1] not in bots]
+        pays = [p for p in pays if self.shown(p[0]) and self.shown(p[1])]
         biggest = max(pays, key=lambda p: p[2]) if pays else None
         returned = biggest and any(p[0] == biggest[1] and p[1] == biggest[0] and p[2] == biggest[2]
                                    and abs(p[3] - biggest[3]) < 86400 for p in pays)
@@ -736,14 +1049,15 @@ class Extract:
             pair[(a, b)] += n
         everyone = self.q("SELECT user_id, balance FROM ukpence", db=self.db)
         bank = sum(int(b) for u, b in everyone if u in bots)  # the bot's balance is the Server Bank
-        balances = [(int(b), u) for u, b in everyone if u not in bots]
-        balances.sort(reverse=True)
+        balances = sorted(((int(b), u) for u, b in everyone if u not in bots), reverse=True)
         total_h = sum(b for b, _ in balances) or 1
+        named = [(b, u) for b, u in balances if self.shown(u)]
         rags = self.rags_to_riches()
         shop = self.q("SELECT item_id, SUM(quantity), SUM(price_paid) FROM shop_purchases WHERE purchase_time >= ? "
                       "AND purchase_time < ? GROUP BY item_id ORDER BY 3 DESC", (lo, hi), db=self.db)
-        spender = self.q("SELECT user_id, SUM(price_paid) s FROM shop_purchases WHERE purchase_time >= ? "
-                         "AND purchase_time < ? GROUP BY user_id ORDER BY s DESC LIMIT 1", (lo, hi), db=self.db)
+        spender = [r for r in self.q("SELECT user_id, SUM(price_paid) s FROM shop_purchases WHERE purchase_time >= ? "
+                                     "AND purchase_time < ? GROUP BY user_id ORDER BY s DESC LIMIT 20", (lo, hi), db=self.db)
+                   if self.shown(r[0])][:1]
         lottery = self.q("SELECT winner_id, prize, pot, drawn_at FROM lottery_rounds WHERE drawn_at >= ? AND drawn_at < ? "
                          "AND winner_id IS NOT NULL ORDER BY prize DESC", (lo, hi), db=self.db)
         self.out["money"] = {
@@ -756,14 +1070,14 @@ class Extract:
                                         "returned": bool(returned)},
             "givers": [{"user": self.who(u), "n": n, "people": len(receivers[u])} for u, n in givers.most_common(3)],
             "pair": [{"from": self.who(a), "to": self.who(b), "n": n} for (a, b), n in pair.most_common(2)],
-            "richest": [{"user": self.who(u), "n": b} for b, u in balances[:5]],
+            "richest": [{"user": self.who(u), "n": b} for b, u in named[:5]],
             "top10_share": sum(b for b, _ in balances[:10]) / total_h,
             "top100": [b for b, _ in balances[:100]],
             "holders": sum(1 for b, _ in balances if b > 0),
             "rags": rags,
             "shop": [{"item": SHOP.get(i, i.replace("_", " ").title()), "n": q, "spent": s} for i, q, s in shop[:5]],
             "spender": spender and {"user": self.who(spender[0][0]), "n": spender[0][1]},
-            "lottery": [{"user": self.who(w), "prize": p, "pot": pot} for w, p, pot, _ in lottery[:3]],
+            "lottery": [{"user": self.who(w), "prize": p, "pot": pot} for w, p, pot, _ in lottery if self.shown(w)][:3],
         }
 
     def rags_to_riches(self):
@@ -772,7 +1086,7 @@ class Extract:
         bots = {str(b) for b in self.bots}
         for u, ts, bal in self.db.execute("SELECT user_id, ts, balance_after FROM user_transactions WHERE ts >= ? "
                                           "AND ts < ? ORDER BY user_id, ts", (self.lo, self.hi)):
-            if u in bots:
+            if not self.shown(u):
                 continue
             if u != cur:
                 cur, low, low_ts = u, bal, ts
@@ -800,7 +1114,7 @@ class Extract:
             races = set()
             for race, u, place, lap, track, mode in kart:
                 races.add(race)
-                if not u or u in bots:
+                if not u or not self.shown(u):
                     continue
                 if mode == "race" and place == 1:
                     wins[u] += 1
@@ -814,9 +1128,9 @@ class Extract:
                      (lo, hi), db=self.db)
         rival = Counter()
         for w, l, g in pvp:
-            if w and l and w not in bots and l not in bots:
+            if w and l and self.shown(w) and self.shown(l):
                 rival[(min(w, l), max(w, l))] += 1
-        if rival:
+        if rival and rival.most_common(1)[0][1] >= 10:
             (a, b), n = rival.most_common(1)[0]
             a_wins = sum(1 for w, l, _ in pvp if w == a and l == b)
             out["rival"] = {"a": self.who(a), "b": self.who(b), "n": n, "a_wins": a_wins, "b_wins": n - a_wins}
@@ -825,10 +1139,9 @@ class Extract:
         def daily(table, col, label):
             r = self.q(f"SELECT COUNT(*), COUNT(DISTINCT user_id), COALESCE(SUM({col}),0), MIN(date) FROM {table} "
                        f"WHERE started >= ? AND started < ?", (lo, hi), db=self.db)[0]
-            top = self.q(f"SELECT user_id, MAX(score) s FROM {table} WHERE started >= ? AND started < ? "
-                         f"GROUP BY user_id ORDER BY s DESC LIMIT 1", (lo, hi), db=self.db) if col != "height" else \
-                self.q("SELECT user_id, MAX(height) s FROM climb_runs WHERE started >= ? AND started < ? "
-                       "GROUP BY user_id ORDER BY s DESC LIMIT 1", (lo, hi), db=self.db)
+            score = "height" if col == "height" else "score"
+            top = [t for t in self.q(f"SELECT user_id, MAX({score}) s FROM {table} WHERE started >= ? AND started < ? "
+                                     f"GROUP BY user_id ORDER BY s DESC LIMIT 20", (lo, hi), db=self.db) if self.shown(t[0])][:1]
             if not r[0]:
                 return None
             return {"label": label, "runs": r[0], "players": r[1], "total": r[2], "since": r[3],
@@ -852,8 +1165,9 @@ class Extract:
                 s = p.get("stats", {})
                 for k in ("delves", "clears", "deaths", "kills", "dragons", "sweetrolls"):
                     stats[k] += s.get(k, 0)
-                deaths[uid] = s.get("deaths", 0)
-                dragons[uid] = s.get("dragons", 0)
+                if self.shown(uid):
+                    deaths[uid] = s.get("deaths", 0)
+                    dragons[uid] = s.get("dragons", 0)
             out["skyrim"] = {"players": len(profiles), **stats,
                              "since": min((p.get("created") for p in profiles.values() if p.get("created")), default=None),
                              "most_dead": {"user": self.who(deaths.most_common(1)[0][0]), "n": deaths.most_common(1)[0][1]},
@@ -862,7 +1176,7 @@ class Extract:
                         "WHERE ub.awarded_at >= ? AND ub.awarded_at < ?", (lo, hi), db=self.db)
         badges = [b for b in badges if b[0] not in bots]
         if badges:
-            hunters = Counter(u for u, _ in badges)
+            hunters = Counter(u for u, _ in badges if self.shown(u))
             out["badges"] = {"n": len(badges), "people": len(hunters),
                              "rarity": dict(Counter(r for _, r in badges)),
                              "hunter": {"user": self.who(hunters.most_common(1)[0][0]), "n": hunters.most_common(1)[0][1]}}
@@ -878,7 +1192,7 @@ class Extract:
         winner = next((u for u, s in housemates if s == "winner"), None)
         count = lambda t: self.q(f"SELECT COUNT(*) FROM {t}", db=self.db)[0][0]
         self.out["big_brother"] = {
-            "housemates": len(housemates), "winner": winner and self.who(winner),
+            "housemates": len(housemates), "winner": winner and self.shown(winner) and self.who(winner),
             "messages": count("bb_messages"), "votes": count("bb_votes"), "diary": count("bb_diary"),
             "rounds": count("bb_rounds"), "challenges": count("bb_challenges"),
             "started": self.bb_start, "ended": self.bb_end,
@@ -899,11 +1213,10 @@ class Extract:
                               "days_covered": len(rows), "first_day": min((r[0] for r in rows), default=None),
                               "members": members}
 
-    def wall(self, n=560):
+    def wall(self, n=512):
         rows = self.q("SELECT user_id, COUNT(*) k FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 "
                       "GROUP BY user_id ORDER BY k DESC LIMIT ?", (self.lo, self.hi, n * 2))
-        people = self.discord["people"]
-        ids = [str(u) for u, _ in rows if str(u) in people][:n]
+        ids = [str(u) for u, _ in rows if self.shown(u)][:n]
         self.out["wall"] = ids
         self.featured.update(int(i) for i in ids)
 
@@ -956,8 +1269,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--since", default=f"{date.today().year}-01-01")
     ap.add_argument("--until", default=date.today().isoformat())
+    ap.add_argument("--hof-picks", help="JSON list of message ids for the Hall of Fame, in order")
     a = ap.parse_args()
-    result = Extract(a.data, date.fromisoformat(a.since), date.fromisoformat(a.until)).run()
+    result = Extract(a.data, date.fromisoformat(a.since), date.fromisoformat(a.until), a.hof_picks).run()
     Path(a.out).write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     print(f"wrote {a.out}: {len(result['people'])} people, {result['unresolved']} unresolved")
 

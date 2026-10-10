@@ -105,7 +105,7 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 #hud .seg i { position: absolute; inset: 0; transform-origin: left; background: var(--white); }
 #hud .meta { position: absolute; left: 56px; right: 56px; top: 86px; display: flex; justify-content: space-between; align-items: center; }
 #hud .brand { font-family: "Pixel"; font-size: 20px; letter-spacing: .06em; color: var(--white); display: flex; gap: 14px; align-items: center; }
-#hud .brand b { width: 16px; height: 16px; background: var(--red); box-shadow: 16px 0 0 var(--white), 32px 0 0 var(--blue); margin-right: 32px; }
+
 #hud .chap { font-family: "Pixel"; font-size: 20px; letter-spacing: .06em; color: var(--acc); }
 
 /* ---- award cards */
@@ -134,7 +134,8 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 
 /* ---- rows and bars */
 .lrow { display: flex; align-items: center; gap: 22px; }
-.rank { font-family: "Pixel"; font-size: 26px; color: var(--dim); width: 64px; flex: none; }
+.rank { font-family: "Pixel"; font-size: 26px; color: #fff; width: 74px; height: 56px; flex: none; display: grid; place-items: center;
+  background: rgba(4, 5, 10, .9); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--acc) 70%, transparent); }
 .pxbar { height: 100%; background-image: linear-gradient(90deg, var(--acc) 0 calc(100% - 4px), transparent 0);
   background-size: 24px 100%; transform-origin: left; }
 .chip { font-family: "Pixel"; font-size: 20px; padding: 10px 14px; background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--acc); white-space: nowrap; }
@@ -186,9 +187,35 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
   background: rgba(20, 16, 50, .92); box-shadow: inset 0 0 0 4px var(--acc), 0 0 30px color-mix(in srgb, var(--acc) 40%, transparent); }
 .orbitwrap > div:last-child { position: relative; z-index: 2; }
 .brandmark { margin-top: 60px; font-family: "Pixel"; font-size: 34px; display: inline-flex; gap: 18px; align-items: center; }
-.brandmark b { width: 26px; height: 26px; background: var(--red); box-shadow: 26px 0 0 #fff, 52px 0 0 var(--blue); margin-right: 52px; }
+
 .daytag { font-family: "Pixel"; font-size: 26px; width: 58px; height: 58px; display: grid; place-items: center; flex: none;
   background: var(--red); color: #fff; box-shadow: 0 0 30px rgba(255, 46, 77, .6); }
 /* flex and grid children may shrink below their content, so long text overflows where fit() can see it */
 .row > *, .lrow > *, .col > * { min-width: 0; }
 .tile > *, .in > * { max-width: 100%; }
+
+/* ---- lists sit on a dark panel so the board never washes them out */
+.listpanel { background: rgba(4, 5, 10, .8); padding: 20px 24px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .06); }
+/* ---- compact award cards: six to a page */
+.cardslot.compact .ctop { padding: 20px 22px 0; min-height: 72px; gap: 14px; }
+.cardslot.compact .ctitle { font-size: 38px; }
+.cardslot.compact .cav { margin-top: 14px; }
+.cardslot.compact .cname { font-size: 31px; margin-top: 12px; }
+.cardslot.compact .cval { font-size: 82px; margin-top: 4px; }
+.cardslot.compact .cline { font-size: 23px; margin-top: 4px; }
+.cardslot.compact .crun { bottom: 14px; font-size: 13px; }
+.cav.duo { gap: 14px; }
+.cname.two { white-space: normal; line-height: 1.1; font-size: 28px; max-height: 2.3em; overflow: hidden; }
+.cardslot.compact .cname.two { font-size: 25px; }
+/* ---- number tiles' pixel art */
+.tileart { display: flex; gap: 18px; align-items: flex-end; justify-content: center; margin-top: 34px; height: 130px; }
+.bob > span { display: block; }
+/* ---- the ring, the trio, squads, reaction duos, the crowd */
+.ringname { width: 180px; text-align: center; font-family: "Archivo"; font-weight: 800; font-size: 25px; line-height: 1.3; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 6px #000; }
+.ringcap { position: absolute; left: 0; right: 0; top: 0; text-align: center; background: rgba(4, 5, 10, .82); padding: 18px 24px; }
+.trilabel { width: 180px; text-align: center; background: rgba(4, 5, 10, .85); padding: 10px 12px; box-shadow: inset 0 0 0 3px var(--acc); }
+.faces > .av { margin-right: -14px; box-shadow: 0 0 0 4px #04050a; }
+.rdemo { width: 96px; height: 96px; flex: none; display: grid; place-items: center; background: rgba(255, 255, 255, .06); }
+.crowdgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px 6px; justify-items: center; }
+.crowdgrid svg { width: 52px; height: auto; }

@@ -106,22 +106,42 @@ function paintBoard(ctx, N) {
     for (let j = 0; j < hgt; j++) for (let i = 0; i < w; i++) c(x + i, y + j, 1, 1, unionJack(i / w, j / hgt), 0.9);
   };
   flag(N / 2 - 20, N / 2 - 10, 40, 20);
-  const tricolours = [["#002395", "#ffffff", "#ed2939"], ["#000000", "#dd0000", "#ffce00"], ["#169b62", "#ffffff", "#ff883e"],
-    ["#0055a4", "#ffffff", "#ef4135"], ["#21468b", "#ffffff", "#ae1c28"], ["#ffffff", "#d52b1e", "#ffffff"]];
+  // Only British things on the board: the four flags, and a few pixel crowns, phone boxes, buses and cuppas.
+  const england = (x, y, w, hh) => { c(x, y, w, hh, "#ffffff", 0.85); c(x + Math.floor(w / 2) - 1, y, 2, hh, "#ce1124", 0.95); c(x, y + Math.floor(hh / 2) - 1, w, 2, "#ce1124", 0.95); };
+  const scotland = (x, y, w, hh) => {
+    c(x, y, w, hh, "#005eb8", 0.85);
+    for (let i = 0; i < w; i++) { const j = Math.round((i / (w - 1)) * (hh - 1)); c(x + i, y + j, 1, 1, "#ffffff", 0.95); c(x + i, y + hh - 1 - j, 1, 1, "#ffffff", 0.95); }
+  };
+  const wales = (x, y, w, hh) => {
+    c(x, y, w, Math.ceil(hh / 2), "#ffffff", 0.85); c(x, y + Math.ceil(hh / 2), w, Math.floor(hh / 2), "#00a650", 0.85);
+    const dragon = ["..rr....", ".rrrr..r", "rrrrrrrr", "..rrrrr.", "..r..r.."];
+    dragon.forEach((row, j) => [...row].forEach((b, i) => b === "r" && c(x + Math.floor(w / 2) - 4 + i, y + Math.floor(hh / 2) - 2 + j, 1, 1, "#d30731", 0.95)));
+  };
+  const sprites = {
+    crown: [["y.y.y.y", "yyyyyyy", "yrybyry", "yyyyyyy"], { y: "#ffc23d", r: "#e0102e", b: "#2d5bff" }],
+    phonebox: [["rrrrr", "rwwwr", "rrrrr", "rbrbr", "rrrrr", "rbrbr", "rrrrr", "rrrrr"], { r: "#d00f2a", w: "#ffffff", b: "#1a1d33" }],
+    bus: [["rrrrrrrrrr", "rwbwbwbwbr", "rrrrrrrrrr", "rwbwbwbwbr", "rrrrrrrrrr", ".k......k."], { r: "#d00f2a", w: "#ffffff", b: "#6fb6ff", k: "#111111" }],
+    tea: [["w.w.....", ".w.w....", "wwwwwww.", "wnnnnnww", "wnnnnnww", ".wwwww..", "ssssssss"], { w: "#f4f6ff", n: "#9a5a2a", s: "#a3abd0" }],
+  };
+  const stamp = (x, y, [rows, pal]) => rows.forEach((row, j) => [...row].forEach((ch, i) => pal[ch] && c(x + i, y + j, 1, 1, pal[ch], 0.95)));
   const heart = ["01100110", "11111111", "11111111", "11111111", "01111110", "00111100", "00011000"];
-  for (let k = 0; k < 150; k++) {
+  const kinds = [england, scotland, wales];
+  for (let k = 0; k < 170; k++) {
     const x = Math.floor(rnd() * N), y = Math.floor(rnd() * N);
     if (Math.abs(x - N / 2) < 30 && Math.abs(y - N / 2) < 18) continue;
     const kind = rnd();
-    if (kind < 0.18) {
-      const t = tricolours[Math.floor(rnd() * tricolours.length)], w = 9 + Math.floor(rnd() * 12), hh = Math.round(w * 0.6);
-      for (let i = 0; i < 3; i++) c(x + Math.floor((w * i) / 3), y, Math.ceil(w / 3), hh, t[i], 0.85);
-    } else if (kind < 0.3) {
+    if (kind < 0.24) {
+      const w = 12 + Math.floor(rnd() * 12);
+      kinds[Math.floor(rnd() * 3)](x, y, w, Math.round(w * 0.6));
+    } else if (kind < 0.36) {
       flag(x, y, 16 + Math.floor(rnd() * 10), 8 + Math.floor(rnd() * 5));
-    } else if (kind < 0.42) {
-      const col = PLACE[Math.floor(rnd() * PLACE.length)];
+    } else if (kind < 0.56) {
+      const keys = Object.keys(sprites);
+      stamp(x, y, sprites[keys[Math.floor(rnd() * keys.length)]]);
+    } else if (kind < 0.66) {
+      const col = ["#e0102e", "#ffffff", "#2d5bff"][Math.floor(rnd() * 3)];
       heart.forEach((row, j) => [...row].forEach((b, i) => b === "1" && c(x + i, y + j, 1, 1, col, 0.9)));
-    } else if (kind < 0.75) {
+    } else if (kind < 0.88) {
       const w = 4 + Math.floor(rnd() * 22), hh = 4 + Math.floor(rnd() * 16);
       c(x, y, w, hh, PLACE[Math.floor(rnd() * PLACE.length)], 0.5 + rnd() * 0.4);
       if (rnd() < 0.5) c(x + 1, y + 1, w - 2, hh - 2, PLACE[Math.floor(rnd() * PLACE.length)], 0.7);

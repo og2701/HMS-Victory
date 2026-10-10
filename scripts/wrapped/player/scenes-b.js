@@ -308,7 +308,7 @@ scene({
     const medal = ["#ffc23d", "#d4d7e8", "#c98a4b"];
     r.append(h("div.scrim-top", { style: { height: "1000px" } }), h("div.scrim-bot", { style: { height: "380px" } }),
       block(230, {}, kicker("THE RICH LIST"), words("THE RICHEST", "title", 0.2), line("The biggest UKPence balances right now", 0.5, "small")),
-      block(500, {}, h("div.col", { style: { gap: "20px" } }, MN.richest.slice(0, 3).map((x, k) =>
+      block(500, {}, h("div.col.listpanel", { style: { gap: "20px" } }, MN.richest.slice(0, 3).map((x, k) =>
         an(h("div.lrow", h("div.rank", { style: { color: medal[k] } }, `#${k + 1}`), avatar(x.user, 104, 0.6 + k * 0.15, 0.6),
           h("div.h2", { style: { flex: 1 } }, name(x.user)), h("div.h2", { style: { color: medal[k] } }, roll(x.n, 0.7 + k * 0.15, 1.4))), "left", 0.5 + k * 0.15, 0.6)))),
       block(1640, {}, html(`The 10 richest hold ${ba(Math.round(MN.top10_share * 100) + "%")} of all UKPence.`, 2.6, "h3")));
@@ -357,7 +357,7 @@ scene({
         h("div.row", { style: { gap: "26px", alignItems: "baseline", marginTop: "30px" } },
           an(h("div.big", { style: { color: "var(--dim)" } }, fmt(rg.low)), "fade", 0.9, 0.4), an(h("div.big.acc", "→"), "left", 1.1, 0.5),
           h("div.mega.acc.glow", { style: { fontSize: "200px" } }, roll(rg.high, 1.2, 1.8)))) : null,
-      block(1130, {}, kicker("THE SHOP", 2.6), h("div.col", { style: { gap: "16px", marginTop: "26px" } }, MN.shop.slice(0, 4).map((s, k) =>
+      block(1130, {}, kicker("THE SHOP", 2.6), h("div.col.listpanel", { style: { gap: "16px", marginTop: "26px" } }, MN.shop.slice(0, 4).map((s, k) =>
         an(h("div.lrow", { style: { height: "86px" } }, h("div.rank", `#${k + 1}`), h("div.h3", { style: { flex: 1 } }, s.item),
           h("div.small.white", `${fmt(s.n)} sold`), h("div.h3.acc", { style: { width: "220px", textAlign: "right" } }, short(s.spent))), "left", 2.9 + k * 0.12, 0.6)))));
   },
@@ -391,7 +391,7 @@ if (GM.kart) {
         champ ? block(560, {}, an(h("div.row", { style: { gap: "30px" } }, avatar(champ.user, 190, 0.8, 0.8, "ring"),
           h("div", h("div.kick", "CHAMPION"), h("div.h2", { style: { marginTop: "12px" } }, name(champ.user)),
             h("div.big.acc", { style: { fontSize: "110px" } }, roll(champ.wins, 1.1, 1), " WINS"))), "left", 0.7, 0.7)) : null,
-        block(1010, {}, kicker("LAP RECORDS", 2.0), h("div.col", { style: { gap: "12px", marginTop: "22px" } }, K.laps.map((l, k) =>
+        block(1010, {}, kicker("LAP RECORDS", 2.0), h("div.col.listpanel", { style: { gap: "12px", marginTop: "22px" } }, K.laps.map((l, k) =>
           an(h("div.lrow", { style: { height: "84px" } }, h("div.h3", { style: { width: "380px" } }, l.track), avatar(l.user, 60, 2.4 + k * 0.1, 0.5),
             h("div.small.white", { style: { flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, name(l.user)),
             h("div.h3.acc", `${l.lap.toFixed(2)}s`)), "left", 2.2 + k * 0.1, 0.5)))));
@@ -520,21 +520,22 @@ scene({
 scene({
   id: "finale", ch: "outro", dur: 10.0, gl: "mosaic", bloom: 0.35, boardGlow: 0.7, pin: "radial", pout: "radial",
   cam: t => {
-    const k = E.inOutCubic(prog(t, 0.2, 5.4));
-    const a = lookCam([0, 64, 46], [0, 62, 0], 40), bcam = lookCam([0, 58, 720], [0, 50, 0], 42);
-    const c = mixCam(a, bcam, k);
-    c.p[0] += Math.sin(t * 0.35) * 14 * k;
-    return c;
+    // From the face at the centre of the flag out to the whole flag, fitted to the frame's width.
+    const f = MOS.first || { tx: 0, ty: 60 };
+    const fit = (MOS.width + 24) / (2 * Math.tan((42 * Math.PI) / 360) * (W / H));
+    const k = E.inOutCubic(prog(t, 0.6, 5.0));
+    const a = lookCam([f.tx, f.ty, 26], [f.tx, f.ty, 0], 40), bcam = lookCam([0, MOS.Y0 + 16, fit], [0, MOS.Y0 + 16, 0], 42);
+    return mixCam(a, bcam, k);
   },
   build(r) {
     r.append(h("div.scrim-top", { style: { height: "760px" } }), h("div.scrim-bot", { style: { height: "720px" } }),
       block(250, { textAlign: "center" },
         h("div.mega", { style: { fontSize: "260px" } }, split("THANK YOU", "slam", 5.2, 0.05, 0.5)),
-        html(`${b(fmt(NOW.messages))} messages. ${b(fmt(NOW.people))} of you.`, 6.0, "h3")),
+        html(`${b(fmt(NOW.messages))} messages. ${b(fmt(SV.members))} of you.`, 6.0, "h3")),
       block(1440, { textAlign: "center" },
         an(h("div.kick", { style: { justifyContent: "center", color: "var(--white)", fontSize: "30px" } },
           FULL ? `SEE YOU IN ${YEAR + 1}` : "THE YEAR ISN'T OVER YET"), "up", 7.0, 0.7),
-        an(h("div.brandmark", h("b"), "UKPLACE"), "fade", 7.8, 0.8)));
+        an(h("div.brandmark", ujIcon(72), "UKPLACE"), "fade", 7.8, 0.8)));
   },
   update(t, r) {
     const [sx, sy] = shake(t, 5.3, 10);

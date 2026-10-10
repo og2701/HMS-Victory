@@ -124,9 +124,120 @@ const ICONS = {
     "....rrrrrrrr....", "..rrwwwwwwwwrr..", ".rwwwwrrrrwwwwr.", "rwwwwrrkkrrwwwwr", "rwwwwrkkkkrwwwwr",
     "rwwwwrrkkrrwwwwr", ".rwwwwrrrrwwwwr.", "..rrwwwwwwwwrr..", "....rrrrrrrr....",
   ],
+  lunch: [
+    "............", "............", "...nnnnnn...", "..nnnnnnnn..", ".gggggggggg.", ".rrrrrrrrrr.",
+    ".yyyyyyyyyy.", ".nnnnnnnnnn.", "..nnnnnnnn..", "............", "............", "............",
+  ],
+  weekend: [
+    "............", "............", "..vvvvvvvv..", "..vvvvvvvv..", ".vvvvvvvvvv.", "vvppppppppvv",
+    "vvppppppppvv", "vvvvvvvvvvvv", ".vv......vv.", ".s........s.", "............", "............",
+  ],
+  one_day: [
+    "....ssss....", ".....ww.....", "...wwwwww...", "..ww....ww..", ".w...r....w.", ".w...r....w.",
+    ".w...rrr..w.", ".w........w.", "..ww....ww..", "...wwwwww...", "............", "............",
+  ],
+  sticker: [
+    "............", ".yyyyyyyy...", ".yyyyyyyyy..", ".yykyykyyyy.", ".yyyyyyyyyy.", ".yykyyyykyy.",
+    ".yyykkkkyyw.", ".yyyyyyyyww.", ".yyyyyyywww.", "..yyyyyywww.", "............", "............",
+  ],
+  comedian: [
+    "............", "...yyyyyy...", "..yyyyyyyy..", ".ykkyyyykky.", ".yyyyyyyyyy.", "cykkkkkkkkyc",
+    "cykwwwwwwkyc", ".yykrrrrkyy.", "..yyykkyyy..", "...yyyyyy...", "............", "............",
+  ],
+  heartthrob: [
+    "............", "..rrr..rrr..", ".rrrrrrrrrr.", ".rwrrrrrrrr.", ".rrrrrrrrrr.", ".rrrrrrrrrr.",
+    "..rrrrrrrr..", "...rrrrrr...", "....rrrr....", ".....rr.....", "............", "............",
+  ],
+  meme: [
+    "............", "wwwwwwwwwwww", "w..........w", "w.y........w", "w......g...w", "w.....ggg..w",
+    "w..g.ggggg.w", "w.gggggggggw", "wwwwwwwwwwww", "............", "............", "............",
+  ],
+  hall_of_famer: [
+    ".yyyyyyyyyy.", ".y........y.", ".y...ww...y.", ".y..wwww..y.", ".y.wwwwww.y.", ".y..wwww..y.",
+    ".y..w..w..y.", ".y........y.", ".yyyyyyyyyy.", "....yyyy....", "...oooooo...", "............",
+  ],
+  welcomer: [
+    "............", ".....y......", "..y..y.y....", "..y.yy.y....", "..yyyyyy.y..", "..yyyyyyyy..",
+    "..yyyyyyy...", "..yyyyyyy...", "...yyyyy....", "....yyy.....", "............", "............",
+  ],
+  wordle: [
+    "............", ".ggg.yyy.sss", ".ggg.yyy.sss", ".ggg.yyy.sss", "............", ".ggg.ggg.yyy",
+    ".ggg.ggg.yyy", ".ggg.ggg.yyy", "............", ".ggg.ggg.ggg", ".ggg.ggg.ggg", ".ggg.ggg.ggg",
+  ],
+  bump: [
+    "............", ".....gg.....", "....gggg....", "...gggggg...", "..gggggggg..", ".gggggggggg.",
+    "....gggg....", "....gggg....", "....gggg....", "....gggg....", "............", "............",
+  ],
+  tree: [
+    ".....gg.....", "....gggg....", "...gggggg...", "..gggggggg..", "...gggggg...", "..gggggggg..",
+    ".gggggggggg.", ".....nn.....", ".....nn.....", "...nnnnnn...", "............", "............",
+  ],
+  oracle: [
+    "............", "....vvvv....", "..vvcvvvvv..", ".vvcwvvvvvv.", ".vvvvvvvvvv.", ".vvvvvvvpvv.",
+    ".vvvvvvpvvv.", "..vvvvvvvv..", "....vvvv....", "..nnnnnnnn..", ".nnnnnnnnnn.", "............",
+  ],
+  roasted: [
+    "............", ".......www..", "......wwww..", ".....nnww...", "...nnnnn....", "..nnonnnn...",
+    ".nnnnnonn...", ".nnonnnnn...", ".nnnnnnn....", "..nnnnn.....", "............", "............",
+  ],
+  argument: [
+    "............", "wwwwwww.....", "wrrrrrw.....", "wwwwwww.....", ".w..........", "............",
+    ".....ccccccc", ".....cbbbbbc", ".....ccccccc", "..........c.", "............", "............",
+  ],
+  tag_team: [
+    "............", "..rr....cc..", ".rrrr..cccc.", "rrrrrrcccccc", "..rr....cc..", "..rr....cc..",
+    "..rr....cc..", "..rr....cc..", "............", "............", "............", "............",
+  ],
+  same_schedule: [
+    "............", "...wwwwww...", "..w......w..", ".w...c....w.", ".w...c....w.", ".w...cccc.w.",
+    ".w........w.", "..w......w..", "...wwwwww...", "............", "............", "............",
+  ],
+  ping_pong: [
+    "............", ".rrrr.......", "rrrrrr......", "rrrrrr...ww.", "rrrrrr...ww.", ".rrrr.......",
+    "...nn.......", "....nn......", ".....nn.....", "............", "............", "............",
+  ],
+  rivals: [
+    "s..........s", ".s........s.", "..s......s..", "...s....s...", "....s..s....", ".....ss.....",
+    ".....ss.....", "....s..s....", "...n....n...", "..n......n..", "............", "............",
+  ],
+  book: [
+    "............", "............", ".wwwww.wwwww", ".wsssw.wsssw", ".wwwww.wwwww", ".wsssw.wsssw",
+    ".wwwww.wwwww", ".wsssw.wsssw", ".wwwww.wwwww", ".bbbbbbbbbbb", "............", "............",
+  ],
+  thumbs: [
+    "............", "....yy......", "...yyy......", "...yyy......", "..yyyy......", "yyyyyyyyyy..",
+    "yyyyyyyyyy..", "y.yyyyyyyy..", "yyyyyyyyyy..", "y.yyyyyyyy..", "yyyyyyyyy...", "............",
+  ],
+  crying: [
+    "............", "...yyyyyy...", "..yyyyyyyy..", ".yykkyykkyy.", ".yccyyyyccy.", ".ycyyyyyycy.",
+    ".ycykkkkycy.", ".ycykrrkycy.", "..cyyyyyyc..", "...yyyyyy...", "............", "............",
+  ],
   coin: [
     "............", "...yyyyyy...", "..yoooooyy..", ".yoyyyyyoyy.", ".yoyyoyyoyy.", ".yoyoooyoyy.",
     ".yoyyoyyoyy.", ".yoyyyyyoyy.", "..yoooooyy..", "...yyyyyy...", "............", "............",
   ],
 };
 const icon = (key, size) => pixelIcon(ICONS[key] || ICONS.celeb, ICON_PAL, size);
+
+// A little crowd for the "people who posted" tile: one sprite, five outfits.
+const PERSON = ["..hhhh..", "..hhhh..", "..ffff..", "..ffff..", "...ff...", ".cccccc.", "cccccccc", "c.cccc.c",
+  "c.cccc.c", "..c..c..", "..c..c..", "..k..k.."];
+const OUTFITS = [["#3a2a1a", "#f2c9a0", "#2d5bff"], ["#ffd23f", "#e8b48a", "#ff2e4d"], ["#111111", "#8d5a3b", "#1fe08f"],
+  ["#c2410c", "#f6d2b8", "#a86bff"], ["#6b4a2b", "#d9a07a", "#f4f6ff"]];
+function crowdArt() {
+  return OUTFITS.map(([hair, face, cloth]) => pixelIcon(PERSON, { h: hair, f: face, c: cloth, k: "#2b3050" }, 52));
+}
+
+// The brand mark: a tiny pixel Union Jack (three coloured squares read as the French flag).
+function ujIcon(size) {
+  const rows = [];
+  for (let j = 0; j < 12; j++) {
+    let row = "";
+    for (let i = 0; i < 24; i++) {
+      const c = unionJack((i + 0.5) / 24, (j + 0.5) / 12);
+      row += c === UJ.blue ? "b" : c === UJ.white ? "w" : "r";
+    }
+    rows.push(row);
+  }
+  return pixelIcon(rows, { b: "#1d3a9e", w: "#f4f6ff", r: "#e0102e" }, size);
+}

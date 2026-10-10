@@ -179,7 +179,8 @@ Everything lives in `scripts/wrapped/`. Four steps, all run from a Mac, none of 
 
 ```bash
 HMS_VM=ubuntu@<host> HMS_VM_KEY=<key.pem> scripts/wrapped/pull.sh <data dir>
-python3 scripts/wrapped/extract.py --data <data dir> --out <data dir>/wrapped.json --since 2026-01-01 --until 2027-01-01
+python3 scripts/wrapped/extract.py --data <data dir> --out <data dir>/wrapped.json --since 2026-01-01 --until 2027-01-01 \
+    --hof-picks scratch/wrapped-2026/hof_picks.json
 python3 scripts/wrapped/build.py <data dir>/wrapped.json <out dir>/index.html
 PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/render.mjs <url of index.html> wrapped.mp4
 ```
@@ -193,6 +194,10 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    anyone it shows who has left the server; run `pull.sh <data dir> $(cat unresolved.txt)` and
    extract again to name them. Calendar captions for the busiest days are in `MOMENTS` at the
    top: check each new spike against what people were saying before trusting a caption.
+   It also writes `hof_candidates.json`: the Hall of Fame plus the year's most-laughed-at short
+   messages. Read it and pick the Hall of Fame slides into `hof_picks.json` (slides of three, each
+   with a title; it lives in the ignored scratch folder). Without picks, the top Hall of Fame posts
+   are used.
 3. **Build.** `build.py` bundles the player (`scripts/wrapped/player/`) and the JSON into one
    self-contained page. Opened in a browser it plays; `#scene=skyline` or `#t=42` jumps.
 4. **Render.** `render.mjs` opens the page in headless Chrome with the GPU, steps every frame
@@ -200,7 +205,8 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    renders single frames for checking a scene without a full render, and `--qa` checks every
    scene at the moment it's fully revealed for text running off the screen, cut off by its panel,
    or sitting on other text, and prints each scene's length. Run it after any change to copy or
-   layout. For Discord, re-encode the master with `-crf 27 -preset slow` to get under 100 MB.
+   layout. For Discord, re-encode the master with `-crf 28 -preset slow` to get under 100 MB at
+   about eight minutes.
 
 How the player works: every frame is a pure function of time. Scenes build their DOM once, and
 `data-a` attributes, number rolls, pixel-reveal avatars, card flips and the three.js world are
@@ -213,12 +219,21 @@ reading time for the words on it (about four a second, capped at 5.4s), plus the
 The `dur` on a scene is only its minimum, for camera moves that need longer; `fixed: true` pins
 it (chapter cards, the title). Big numbers and titles shrink themselves to fit their panel, so a
 longer name or a seven-digit count in December won't run off the edge. The first cut came out at
-4:37 and was too quick to read; with reading time it's 6:30.
+4:37 and was too quick to read; with reading time and the extra awards, duos, squads and Hall of
+Fame it's about 7:50.
 
 Rules the extract already follows:
 
-- Bots are filtered from every chat stat. HMS Victory otherwise tops one-sided replies and
-  every PvP rivalry, because most PvP is Connect 4 against it.
+- Only current members are ever named or shown: awards and runners-up, duos, the web, squads,
+  the Hall of Fame, the casino and money lists, the avatar flag. People who have left still count
+  in every total.
+- Bots never count, anywhere: their messages, emoji and reactions are out of every stat, so the
+  bot's own Wordle squares and medals don't top the emoji chart and its ticks don't top reactions.
+- Reactions are counted the same way for both years: reactions on messages sent in the window,
+  as they stand now (adds less removals), from people. Discord's per-message totals stop when
+  the reaction history was filled in, so they're not used for totals.
+- "Share of your messages" awards (Night Owl, Shouter and so on) need 10,000+ messages, so
+  they go to people everyone knows.
 - Days and hours are UK time (`local_day`, `local_hour`), never UTC.
 - The longest message is shown by its size only, never its text.
 - Words of the month leave out the names of anyone with 300+ messages, since names spike too.

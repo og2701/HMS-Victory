@@ -63,8 +63,9 @@ if (args[1] === "--qa") {
         if (el.closest(skip) && !el.classList.contains("rollw")) continue;
         const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) || el.classList.contains("rollw");
         if (!own) continue;
-        const st = getComputedStyle(el);
-        if (+st.opacity === 0) continue;
+        let seen = 1;
+        for (let e = el; e && e !== root; e = e.parentElement) seen *= +getComputedStyle(e).opacity;
+        if (seen < 0.05) continue;
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) continue;
         const label = (el.className || el.tagName) + ": " + el.textContent.trim().slice(0, 40);

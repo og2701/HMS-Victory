@@ -40,24 +40,30 @@ function valueEl(v, at) {
 }
 
 function awardCard(a, at, opts = {}) {
+  const pic = a.b
+    ? h("div.cav.duo", avatar(a.a, opts.av || 132, at + 0.5, 0.9), avatar(a.b, opts.av || 132, at + 0.6, 0.9))
+    : h("div.cav", a.user ? avatar(a.user, opts.av || 228, at + 0.5, 0.9) : icon(a.icon || a.key, 200));
+  const who = a.b ? `${name(a.a)} & ${name(a.b)}` : a.user ? name(a.user) : a.who || "";
   const front = h("div.face",
     h("div.cardf.px", h("div.in.px",
       h("div.sheen"),
-      h("div.ctop", icon(a.icon || a.key, 78), h("div.ctitle", a.title)),
-      h("div.cav", a.user ? avatar(a.user, opts.av || 228, at + 0.5, 0.9) : icon(a.icon || a.key, 200)),
-      h("div.cname", a.user ? name(a.user) : a.who || ""),
+      h("div.ctop", icon(a.icon || a.key, opts.compact ? 58 : 78), h("div.ctitle", a.title)),
+      pic,
+      h("div.cname" + (a.b ? ".two" : ""), who),
       h("div.cval", valueEl(a.value, at + 0.55)),
       h("div.cline", a.line),
       a.runners && a.runners.length ? h("div.crun", "then " + a.runners.map(name).join(" · ")) : null)));
   const back = h("div.face.back", h("div.cardf.px", h("div.in.px", h("div.cardback", icon("crowd", 150)))));
   const card = h("div.card3d.flipme", front, back);
   card._flip = { at, dur: 1.0 };
-  return h("div.cardslot", { style: { width: (opts.w || 470) + "px", height: (opts.h || 720) + "px" } }, card);
+  return h("div.cardslot" + (opts.compact ? ".compact" : ""), { style: { width: (opts.w || 470) + "px", height: (opts.h || 720) + "px" } }, card);
 }
 function runFlips(root, t) {
   for (const c of root.querySelectorAll(".flipme")) {
     const p = prog(t, c._flip.at, c._flip.dur);
-    c.style.opacity = clamp(p * 6);
+    // Fade the slot, not the card: opacity below 1 on the card itself flattens its 3D, and the front
+    // face would show through mirrored while it's still turned away.
+    c.parentElement.style.opacity = clamp(p * 6);
     c.style.transform = `translateY(${(1 - E.outExpo(p)) * 160}px) rotateY(${lerp(180, 0, E.outBack(p))}deg) rotateX(${(1 - E.outCubic(p)) * 18}deg)`;
     const sh = c.querySelector(".sheen");
     if (sh) {
@@ -140,10 +146,6 @@ scene({
           `Sent within ${Math.max(...first.map(m => +m.time.slice(-2))) || 1} seconds of midnight`), "left", 2.0, 0.6) : null),
       h("div.abs", { style: { left: "56px", right: "56px", top: "860px", display: "flex", flexDirection: "column", gap: "26px" } },
         first.map((m, k) => message({ user: m.user, text: m.text, when: `${jan1 ? "1 Jan" : dmy(M.since)} at ${m.time}` }, 2.4 + k * 0.95))));
-    if (first[1] && /christmas/i.test(first[1].text)) {
-      r.append(h("div.abs", { style: { right: "34px", top: "1190px", transform: "rotate(-7deg)" } },
-        an(h("div.stamp", "WRONG HOLIDAY"), "slam", 3.7, 0.45)));
-    }
   },
   update(t, r) {
     const seq = ["23:59:57", "23:59:58", "23:59:59", "00:00:00", "00:00:01"];
@@ -202,7 +204,7 @@ scene({
         kicker("MESSAGES SENT", 0.1),
         h("div.mega.glow", { style: { fontSize: "236px", marginTop: "28px" } }, roll(NOW.messages, 0.25, 3.5, { ease: "outQuart" })),
         h("div.row", { style: { gap: "22px", marginTop: "34px" } }, pctChip(NOW.messages, PREV.messages, 3.4),
-          line(`${fmt(PREV.messages)} by this point in ${YEAR - 1}`, 3.5, "small")),
+          DATA.race.passed_on ? html(`Passed the whole of ${YEAR - 1} on ${b(dmyLong(DATA.race.passed_on))}`, 3.5, "small") : null),
         html(`That's one every ${b(every + " seconds")}, day and night, for ${b(DAYS_IN + " days")}.`, 4.1, "h3",
           "up")));
   },
@@ -213,10 +215,10 @@ scene({
   build(r) {
     const bibles = NOW.words / 783137;
     const tiles = [
-      { k: "WORDS", v: NOW.words, sub: `About ${Math.round(bibles)} King James Bibles' worth`, p: PREV.words },
-      { k: "PEOPLE WHO POSTED", v: NOW.people, sub: `Up from ${fmt(PREV.people)}`, p: PREV.people },
-      { k: "REACTIONS", v: NOW.reactions, sub: "Thumbs, skulls, crying faces", p: PREV.reactions },
-      { k: "FILES AND PICTURES", v: NOW.files, sub: `Plus ${fmt(NOW.voice_notes)} voice notes`, p: PREV.files },
+      { k: "WORDS", v: NOW.words, sub: `About ${Math.round(bibles)} King James Bibles' worth`, p: PREV.words, art: ["waffler", "book"] },
+      { k: "PEOPLE WHO POSTED", v: NOW.people, sub: `Up from ${fmt(PREV.people)}`, p: PREV.people, art: "crowd" },
+      { k: "REACTIONS", v: NOW.reactions, sub: "Thumbs, skulls, crying faces", p: PREV.reactions, art: ["thumbs", "killer", "crying"] },
+      { k: "FILES AND PICTURES", v: NOW.files, sub: `Plus ${fmt(NOW.voice_notes)} voice notes`, p: PREV.files, art: ["media", "voice"] },
     ];
     r.append(h("div.scrim-mid"),
       block(230, {}, kicker("THE YEAR IN NUMBERS"), words("IT ALL ADDS UP", "title", 0.2)),
@@ -224,9 +226,14 @@ scene({
         tiles.map((x, k) => an(h("div.frame.acc.px", { style: { height: "560px" } },
           h("div.in.px.tile",
             h("div.tk", x.k),
+            h("div.tileart", (x.art === "crowd" ? crowdArt() : x.art.map(key => icon(key, 92)))
+              .map((el, j) => an(h("div.bob", { data: { k: j + k * 3 } }, el), "pop", 0.7 + k * 0.15 + j * 0.1, 0.6))),
             h("div.big", { style: { fontSize: x.v >= 1e6 ? "112px" : "150px", marginTop: "auto" } }, roll(x.v, 0.5 + k * 0.18, 2.2)),
             h("div.small", { style: { marginTop: "18px" } }, x.sub),
             h("div", { style: { marginTop: "22px" } }, pctChip(x.v, x.p, 2.4 + k * 0.15)))), "up", 0.35 + k * 0.15, 0.8))));
+  },
+  update(t, r) {
+    r.querySelectorAll(".bob").forEach(el => { el.firstChild.style.transform = `translateY(${Math.round(Math.sin(t * 2.2 + +el.dataset.k) * 2) * 4}px)`; });
   },
 });
 
@@ -240,9 +247,9 @@ scene({
         html(`Messages so far, added up day by day. ${ba("Blue")} is ${YEAR}, <span class="red"><b>red</b></span> is ${YEAR - 1}.`, 0.5, "small")),
       h("div.abs.racelabel", { style: { left: "80px", top: "0px" } }, h("div.kick.plain.rl1", ""), h("div.h2.rl2", "")),
       block(1560, {},
-        rc.passed_on ? html(`On ${b(dmyLong(rc.passed_on))}, ${YEAR} passed every message sent in the whole of ${YEAR - 1}.`, 5.0, "h3") :
+        rc.passed_on ? html(`Already ${ba(Math.round((rc.this_total / rc.last_total - 1) * 100) + "%")} more than the whole of ${YEAR - 1}.`, 5.0, "h3") :
           html(`${Math.round((rc.this_total / rc.last_total) * 100)}% of the way to all of ${YEAR - 1}.`, 5.0, "h3"),
-        !FULL && rc.passed_on ? line(`With ${Math.round((new Date(YEAR + "-12-31") - new Date(M.until)) / 864e5)} days still to go.`, 5.6, "body") : null));
+        !FULL ? line(`With ${Math.round((new Date(YEAR + "-12-31") - new Date(M.until)) / 864e5)} days still to go.`, 5.6, "body") : null));
   },
   update(t, r) {
     const rc = DATA.race, ctx = r._cv.getContext("2d");
@@ -416,7 +423,7 @@ scene({
         an(h("div.frame.acc.px", h("div.in.px", { style: { padding: "34px 38px" } },
           h("div.row", { style: { justifyContent: "space-between" } }, h("div.h2", clean(head.name)), h("div.h2.acc", roll(head.n, 0.6, 1.6))),
           h("div.small", { style: { marginTop: "10px" } }, `${Math.round((head.n / total) * 100)}% of every message sent. Everywhere else shares the rest.`))), "up", 0.4, 0.8),
-        h("div.col", { style: { gap: "18px", marginTop: "36px" } },
+        h("div.col.listpanel", { style: { gap: "18px", marginTop: "36px" } },
           rest.map((c, k) => an(h("div.lrow", { style: { height: "96px" } },
             h("div.rank", `#${c.rank}`),
             h("div", { style: { flex: 1, minWidth: 0 } },
@@ -433,27 +440,32 @@ scene({
 // ---------------------------------------------------------------- the awards
 chapterScene("awards", 2, "THE AWARDS", "No speeches.");
 
-const AWARD_GROUPS = [
-  ["AROUND THE CLOCK", ["night_owl", "early_bird", "committed", "starter"]],
-  ["HOW YOU TALK", ["waffler", "silent", "shouter", "nosey"]],
-  ["HOW YOU ARE", ["british", "apologist", "perfectionist", "fastest"]],
-  ["WHAT YOU SHARE", ["media", "plug", "voice", "emoji"]],
-  ["THE SOCIAL ONES", ["hype", "crowd", "celeb", "gossip"]],
-  ["THE ONE-OFFS", ["tourist", "glue", "bot_friend", "killer"]],
+// Six awards to a page: two across, three down. A page with four or fewer uses the bigger cards.
+const AWARD_PAGES = [
+  ["AROUND THE CLOCK", ["night_owl", "early_bird", "lunch", "weekend", "committed", "one_day"]],
+  ["HOW YOU TALK", ["waffler", "silent", "shouter", "nosey", "apologist", "british"]],
+  ["WHAT YOU SHARE", ["media", "plug", "voice", "sticker", "emoji", "meme"]],
+  ["THE CROWD PLEASERS", ["hype", "crowd", "comedian", "heartthrob", "celeb", "hall_of_famer"]],
+  ["THE REGULARS", ["gossip", "tourist", "glue", "starter", "killer", "bot_friend"]],
+  ["AROUND THE SERVER", ["welcomer", "wordle", "bump", "tree", "oracle", "roasted"]],
+  ["TWO MORE", ["perfectionist", "fastest"]],
 ];
 const AWARDS = Object.fromEntries(DATA.awards.map(a => [a.key, a]));
 const SHOWN = [];
-AWARD_GROUPS.forEach(([title, keys], g) => {
+function cardGrid(list, at0 = 0.15) {
+  const compact = list.length > 4;
+  return h("div.abs", { style: { left: "56px", right: "56px", top: compact ? "270px" : "290px", display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: compact ? "24px 28px" : "36px 28px", justifyItems: "center" } },
+    list.map((a, k) => awardCard(a, at0 + k * (compact ? 0.16 : 0.22), compact ? { compact: true, h: 512, av: a.b ? 118 : 150 } : {})));
+}
+AWARD_PAGES.forEach(([title, keys], g) => {
   const list = keys.map(k => AWARDS[k]).filter(Boolean);
   if (!list.length) return;
   SHOWN.push(...list);
   scene({
     id: "awards-" + g, ch: "awards", dur: 5.2, boardGlow: 1.2, bloom: 0.9, pin: g % 2 ? "cols" : "diag",
     build(r) {
-      r.append(h("div.scrim-mid"),
-        block(196, {}, kicker(title, 0.05)),
-        h("div.abs", { style: { left: "56px", right: "56px", top: "290px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "36px 28px", justifyItems: "center" } },
-          list.map((a, k) => awardCard(a, 0.15 + k * 0.22))));
+      r.append(h("div.scrim-mid"), block(190, {}, kicker(title, 0.05)), cardGrid(list));
     },
   });
 });
@@ -506,7 +518,7 @@ scene({
         an(h("div", r._hero = avatar(top.user, 330, 0.5, 1, "ring")), "pop", 0.4, 0.8),
         an(h("div.big", { style: { marginTop: "30px", fontSize: "130px" } }, name(top.user)), "up", 1.0, 0.7),
         html(`${b(fmt(top.n))} replies from ${b(fmt(top.from))} different people`, 1.4, "h3")),
-      block(1330, {}, h("div.col", { style: { gap: "16px" } }, rest.slice(0, 4).map((x, k) =>
+      block(1300, {}, h("div.col.listpanel", { style: { gap: "16px" } }, rest.slice(0, 4).map((x, k) =>
         an(h("div.lrow", h("div.rank", `#${k + 2}`), avatar(x.user, 76, 2.0 + k * 0.1, 0.6), h("div.h3", { style: { flex: 1 } }, name(x.user)),
           h("div.h3.acc", fmt(x.n))), "left", 1.9 + k * 0.1, 0.6)))));
   },
@@ -540,7 +552,7 @@ scene({
           an(h("div", { style: { flex: d.ba, height: "100%", background: "#ffd1ea", transformOrigin: "right" } }), "growx", 2.2, 0.9)),
         h("div.row", { style: { justifyContent: "space-between", marginTop: "14px" } },
           line(`${fmt(d.ab)} one way`, 2.6, "small"), line(`${fmt(d.ba)} the other`, 2.6, "small"))),
-      block(1520, {}, h("div.col", { style: { gap: "14px" } }, more.slice(0, 2).map((x, k) =>
+      block(1500, {}, h("div.col.listpanel", { style: { gap: "14px" } }, more.slice(0, 2).map((x, k) =>
         an(h("div.lrow", h("div.rank", `#${k + 2}`), avatar(x.a, 64, 3.1 + k * 0.1, 0.5), avatar(x.b, 64, 3.15 + k * 0.1, 0.5),
           h("div.small.white", { style: { flex: 1 } }, `${name(x.a)} & ${name(x.b)}`), h("div.h3.acc", fmt(x.n))), "left", 3.0 + k * 0.12, 0.6)))));
   },
@@ -561,22 +573,22 @@ scene({
     const ow = SOC.one_way[0], fan = SOC.fans[0], mate = SOC.mates[0];
     r._cv = canvasLayer();
     r._pairs = [];
-    const panel = (top, at, kick, a, bUser, text) => {
-      const pa = avatar(a, 150, at + 0.2, 0.7, "ring"), pb = avatar(bUser, 150, at + 0.3, 0.7, "ring");
+    const panel = (at, kick, a, bUser, text) => {
+      const pa = avatar(a, 140, at + 0.2, 0.7, "ring"), pb = avatar(bUser, 140, at + 0.3, 0.7, "ring");
       r._pairs.push([pa, pb]);
-      return h("div.abs", { style: { left: "56px", right: "56px", top: top + "px", height: "430px" } },
-      an(h("div.frame.px", { style: { height: "100%" } }, h("div.in.px", { style: { padding: "34px 40px" } },
+      return an(h("div.frame.px", h("div.in.px", { style: { padding: "28px 36px" } },
         h("div.kick", kick),
-        h("div.row", { style: { justifyContent: "space-between", marginTop: "30px" } }, pa, pb),
-        h("div.h3", { style: { marginTop: "26px" }, html: text }))), "up", at, 0.7));
+        h("div.row", { style: { justifyContent: "space-between", marginTop: "22px" } }, pa, pb),
+        h("div.h3", { style: { marginTop: "20px", fontSize: "44px" }, html: text }))), "up", at, 0.7);
     };
     r.append(h("div.scrim-mid"),
-      ow ? panel(220, 0.2, "ONE-WAY TRAFFIC", ow.from, ow.to,
-        `${b(name(ow.from))} replied to ${b(name(ow.to))} ${ba(fmt(ow.n))} times. ${fmt(ow.back)} came back.`) : null,
-      fan ? panel(690, 1.2, "BIGGEST FAN", fan.from, fan.to,
-        `${b(name(fan.from))} reacted to ${b(name(fan.to))}'s messages ${ba(fmt(fan.n))} times.`) : null,
-      mate ? panel(1160, 2.2, "PROPER MATES", mate.a, mate.b,
-        `${b(name(mate.a))} and ${b(name(mate.b))}: ${ba(fmt(mate.ab))} reactions one way, ${ba(fmt(mate.ba))} the other.`) : null,
+      h("div.abs.col", { style: { left: "56px", right: "56px", top: "200px", gap: "26px" } },
+        ow ? panel(0.2, "ONE-WAY TRAFFIC", ow.from, ow.to,
+          `${b(name(ow.from))} replied to ${b(name(ow.to))} ${ba(fmt(ow.n))} times. ${fmt(ow.back)} came back.`) : null,
+        fan ? panel(1.2, "BIGGEST FAN", fan.from, fan.to,
+          `${b(name(fan.from))} reacted to ${b(name(fan.to))}'s messages ${ba(fmt(fan.n))} times.`) : null,
+        mate ? panel(2.2, "PROPER MATES", mate.a, mate.b,
+          `${b(name(mate.a))} and ${b(name(mate.b))}: ${ba(fmt(mate.ab))} reactions one way, ${ba(fmt(mate.ba))} the other.`) : null),
       r._cv);
   },
   update(t, r) {
@@ -597,24 +609,179 @@ scene({
   },
 });
 
+// Duo awards: the pairs, on the same cards as the awards.
+const DUO_ICON = { argument: "argument", tag_team: "tag_team", night_shift: "night_owl", same_schedule: "same_schedule",
+  ping_pong: "ping_pong", business: "coin", rivals: "rivals" };
+if ((DATA.duo_awards || []).length) {
+  scene({
+    id: "duo-awards", ch: "people", dur: 5.2, boardGlow: 1.2, bloom: 0.9, pin: "diag",
+    build(r) {
+      const list = DATA.duo_awards.map(d => Object.assign({}, d, { icon: DUO_ICON[d.key] || "glue" }));
+      r.append(h("div.scrim-mid"), block(190, {}, kicker("THE DUOS", 0.05)), cardGrid(list));
+    },
+  });
+}
+
+// The three people who all reply to each other most, as a triangle.
+const TRIO = DATA.trio;
+if (TRIO) {
+  scene({
+    id: "trio", ch: "people", dur: 6, boardGlow: 0.9, bloom: 1, pin: "radial",
+    build(r) {
+      r._cv = canvasLayer();
+      r._spots = [[540, 760], [250, 1290], [830, 1290]];
+      r._av = TRIO.people.map((u, k) => avatar(u, 230, 0.5 + k * 0.2, 0.8, "ring"));
+      r.append(h("div.scrim-mid"), r._cv,
+        block(230, {}, kicker("THE THREE MUSKETEERS"), words("ONE FOR ALL", "title", 0.2),
+          line("The three people who all reply to each other the most", 0.5, "small")),
+        ...TRIO.people.map((u, k) => {
+          const [x, y] = r._spots[k];
+          return an(h("div.abs.center", { style: { left: x - 160 + "px", top: y - 120 + "px", width: "320px" } },
+            r._av[k], h("div.h3", { style: { marginTop: "16px" } }, name(u))), "pop", 0.4 + k * 0.2, 0.7);
+        }),
+        ...[[0, 1], [1, 2], [0, 2]].map(([a, bb], k) => {
+          const [x1, y1] = r._spots[a], [x2, y2] = r._spots[bb];
+          return an(h("div.abs.trilabel", { style: { left: (x1 + x2) / 2 - 90 + "px", top: (y1 + y2) / 2 - 40 + "px" } },
+            h("div.h3.acc", fmt(TRIO.pairs[k])), h("div.tiny.white", "REPLIES")), "pop", 1.8 + k * 0.25, 0.6);
+        }));
+    },
+    update(t, r) {
+      const ctx = r._cv.getContext("2d");
+      ctx.clearRect(0, 0, W, H);
+      const pts = r._spots.map(([x, y]) => [x, y]);
+      [[0, 1], [1, 2], [0, 2]].forEach(([a, bb], k) => {
+        const p = E.outCubic(prog(t, 1.2 + k * 0.25, 0.8));
+        if (p <= 0) return;
+        const [x1, y1] = pts[a], [x2, y2] = pts[bb];
+        ctx.save();
+        ctx.strokeStyle = "#ff4f9e"; ctx.lineWidth = 12; ctx.shadowColor = "#ff4f9e"; ctx.shadowBlur = 30;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(lerp(x1, x2, p), lerp(y1, y2, p)); ctx.stroke();
+        ctx.restore();
+        flow(ctx, t, pts[a], pts[bb], 10, { start: 2.0, speed: 0.6, curve: 0, spread: 18, size: 10, color: "#ffd1ea", seed: 20 + k });
+      });
+    },
+  });
+}
+
+// The web, as a ring: the busiest repliers round the edge, and a chord for every pair who talk a lot,
+// thicker the more they do. Then the three strongest pairs light up one at a time.
 scene({
-  id: "network", ch: "people", dur: 8.4, revealEnd: 3.8, gl: "network", bloom: 0.6, boardGlow: 0.5, pin: "radial",
-  cam: t => orbit(0, 0, 0, 720 - t * 16, 0.4 + t * 0.2, 40 + Math.sin(t * 0.4) * 60, 0),
+  id: "network", ch: "people", dur: 9, revealEnd: 7.4, boardGlow: 0.5, bloom: 0.8, pin: "radial",
   build(r) {
-    r.append(h("div.scrim-top", { style: { height: "560px" } }), h("div.scrim-bot", { style: { height: "460px" } }),
+    const N = DATA.network.nodes, maxw = Math.max(...N.map(n => n.w));
+    const cx = 540, cy = 1080, R = 330;
+    r._cv = canvasLayer();
+    r._pos = N.map((n, i) => {
+      const a = -Math.PI / 2 + (i / N.length) * Math.PI * 2;
+      return [cx + Math.cos(a) * R, cy + Math.sin(a) * R, a];
+    });
+    const nodes = N.map((n, i) => {
+      const [x, y, a] = r._pos[i], size = Math.round(78 + 48 * Math.sqrt(n.w / maxw));
+      const lx = cx + Math.cos(a) * (R + size / 2 + 50), ly = cy + Math.sin(a) * (R + size / 2 + 36);
+      return [
+        an(h("div.abs", { style: { left: x - size / 2 + "px", top: y - size / 2 + "px" } }, avatar(n.user, size, 0.3 + i * 0.05, 0.6, "ring")), "pop", 0.25 + i * 0.05, 0.6),
+        an(h("div.abs.ringname", { style: { left: clamp(lx - 90, 24, W - 204) + "px", top: ly - 14 + "px" } }, name(n.user)), "fade", 0.6 + i * 0.05, 0.5),
+      ];
+    }).flat();
+    r.append(h("div.scrim-mid"), r._cv, ...nodes,
       block(230, {}, kicker("THE WEB"), words("WHO TALKS TO WHO", "title", 0.2),
-        line(`The ${DATA.network.nodes.length} people who reply the most. A line joins two of them who swapped 120+ replies.`, 0.5, "small")));
-    r._labels = DATA.network.nodes.slice(0, 5).map((n, i) => { const el = h("div.label3d.netlab", name(n.user)); r.append(el); return { el, i }; });
+        line(`The ${N.length} people who reply the most. The thicker the line, the more two of them reply to each other.`, 0.5, "small")),
+      r._cap = h("div.abs.center", { style: { left: "56px", right: "56px", top: "1580px", height: "150px" } }));
+    r._edges = DATA.network.edges;
+    r._caps = r._edges.slice(0, 3).map(([a, bb, n]) => h("div.ringcap", h("div.h2", `${name(N[a].user)} & ${name(N[bb].user)}`),
+      h("div.h3.acc", `${fmt(n)} replies`)));
+    r._caps.forEach(c => r._cap.append(c));
   },
   update(t, r) {
-    r._labels.forEach(({ el, i }) => {
-      const [x, y, z] = NET.pos(i, t);
-      const [sx, sy, sz] = toScreen(x, y + NET.size[i] * 0.75, z);
-      el.style.left = sx + "px"; el.style.top = sy + "px";
-      el.style.opacity = sz < 1 ? clamp((t - 2.2 - i * 0.15) * 3) : 0;
+    const ctx = r._cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const E2 = r._edges, maxe = E2.length ? E2[0][2] : 1, cx = 540, cy = 1080;
+    const focus = [0, 1, 2].findIndex(j => t >= 3.4 + j * 1.35 && t < 3.4 + (j + 1) * 1.35);
+    E2.forEach(([a, bb, n], k) => {
+      const p = E.outCubic(prog(t, 1.0 + k * 0.045, 0.6));
+      if (p <= 0) return;
+      const [x1, y1] = r._pos[a], [x2, y2] = r._pos[bb];
+      const mx = lerp((x1 + x2) / 2, cx, 0.45), my = lerp((y1 + y2) / 2, cy, 0.45);
+      const hot = k === focus;
+      ctx.save();
+      ctx.globalAlpha = (focus >= 0 && !hot ? 0.18 : 0.75) * p;
+      ctx.strokeStyle = hot ? "#ffffff" : "#ff4f9e";
+      ctx.lineWidth = 2 + 13 * Math.sqrt(n / maxe) + (hot ? 4 : 0);
+      if (hot) { ctx.shadowColor = "#ff4f9e"; ctx.shadowBlur = 40; }
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      const ex = lerp(x1, x2, p), ey = lerp(y1, y2, p);
+      ctx.quadraticCurveTo(lerp(x1, mx, p), lerp(y1, my, p), ex, ey);
+      ctx.stroke();
+      ctx.restore();
+    });
+    r._caps.forEach((c, j) => {
+      const on = pulse(t, 3.4 + j * 1.35, 3.4 + (j + 1) * 1.35 - 0.25, 0.25) || (j === 2 && t >= 3.4 + 2 * 1.35 ? prog(t, 3.4 + 2 * 1.35, 0.25) : 0);
+      c.style.opacity = on;
+      c.style.transform = `translateY(${(1 - on) * 30}px)`;
     });
   },
 });
+
+// Friend groups, found in the reply network and named after what sets them apart.
+if ((DATA.squads || []).length) {
+  scene({
+    id: "squads", ch: "people", dur: 6, boardGlow: 0.9, pin: "rows",
+    build(r) {
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE SQUADS"), words("FRIEND GROUPS", "title", 0.2),
+          line("Groups who mostly reply to each other, found in the web and named after what sets them apart", 0.5, "small")),
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: "520px", gap: "20px" } },
+          DATA.squads.map((sq, k) => an(h("div.frame.px", h("div.in.px", { style: { padding: "22px 28px" } },
+            h("div.row", { style: { justifyContent: "space-between", alignItems: "baseline", gap: "20px" } },
+              h("div.h3.acc", sq.name), h("div.tiny.white", { style: { whiteSpace: "nowrap" } }, `${sq.size} PEOPLE`)),
+            h("div.small", { style: { marginTop: "2px" } }, `They ${sq.why}`),
+            h("div.row.faces", { style: { marginTop: "14px" } }, sq.people.map((u, j) => avatar(u, 86, 0.7 + k * 0.3 + j * 0.05, 0.5, "ring"))))),
+            "left", 0.5 + k * 0.3, 0.7))));
+    },
+  });
+}
+
+// Reaction duos: for each reaction, the pair who traded it most, counting only what went both ways.
+const RD = (SOC.reaction_duos || []);
+[RD.slice(0, 9), RD.slice(9, 18)].forEach((list, g) => {
+  if (!list.length) return;
+  scene({
+    id: "reaction-duos-" + g, ch: "people", dur: 6, boardGlow: 0.9, pin: g ? "rain" : "cols",
+    build(r) {
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("REACTION DUOS"), words(g ? "AND THE REST" : "EMOJI BUDDIES", "title", 0.2),
+          line("For each reaction, the two people who traded it most. It only counts if it went both ways.", 0.5, "small")),
+        h("div.abs.col.listpanel", { style: { left: "56px", right: "56px", top: "560px", gap: "10px" } },
+          list.map((d, k) => an(h("div.lrow", { style: { height: "118px" } },
+            h("div.rdemo", emojiEl(d.e, d.id, 76)),
+            avatar(d.a, 76, 0.8 + k * 0.08, 0.5), avatar(d.b, 76, 0.85 + k * 0.08, 0.5),
+            h("div.small.white", { style: { flex: 1, lineHeight: "1.15" } }, `${name(d.a)} & ${name(d.b)}`),
+            h("div.h3.acc", { style: { whiteSpace: "nowrap" } }, `${fmt(d.ab)} & ${fmt(d.ba)}`)), "left", 0.6 + k * 0.08, 0.5))));
+    },
+  });
+});
+
+// The busiest ten minutes of the year in any one channel.
+const BUSY = DATA.crowds && DATA.crowds.busiest;
+if (BUSY) {
+  scene({
+    id: "busiest", ch: "people", dur: 6, boardGlow: 1, bloom: 1, pin: "radial",
+    build(r) {
+      const hr = +BUSY.time.slice(0, 2), mins = BUSY.time.slice(3);
+      const when = `${dmyLong(BUSY.day)}, ${hr % 12 || 12}${mins === "00" ? "" : ":" + mins}${hr < 12 ? "am" : "pm"}`;
+      r._crowd = h("div.crowdgrid", Array.from({ length: BUSY.people }, (_, k) =>
+        an(h("div", crowdArt()[k % 5]), "pop", 0.9 + hash(k) * 1.2, 0.4)));
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE BUSIEST TEN MINUTES"),
+          h("div.mega.acc.glow", { style: { fontSize: "300px", marginTop: "20px" } }, roll(BUSY.people, 0.3, 1.6)),
+          line(`different people talking in #${BUSY.channel} at once`, 0.8, "h3")),
+        h("div.abs", { style: { left: "56px", right: "56px", top: "820px" } }, r._crowd),
+        block(1420, {}, BUSY.caption ? an(h("div.h2", BUSY.caption), "up", 2.4, 0.7) : null,
+          line(when, 2.7, "body")));
+    },
+  });
+}
 
 scene({
   id: "rookies", ch: "people", dur: 6.6, boardGlow: 0.9,
@@ -636,17 +803,16 @@ scene({
   },
 });
 
-const HOF = DATA.hall_of_fame || [];
-[HOF.slice(0, 3), HOF.slice(3, 6)].forEach((list, g) => {
-  if (!list.length) return;
+// Hall of Fame: slides of three, each with its own title (the picks file sets them).
+(DATA.hall_of_fame || []).forEach((slide, g) => {
+  if (!slide.messages || !slide.messages.length) return;
   scene({
-    id: "hof-" + g, ch: "people", dur: 6.2, boardGlow: 1.1, pin: g ? "rain" : "diag",
+    id: "hof-" + g, ch: "people", dur: 6.2, boardGlow: 1.1, pin: ["diag", "rain", "cols", "rows"][g % 4],
     build(r) {
       r.append(h("div.scrim-mid"),
-        block(230, {}, kicker("HALL OF FAME"), words(g ? "AND THESE" : "YOUR FAVOURITES", "title", 0.2),
-          line("Messages that made it into the Hall of Fame", 0.5, "small")),
+        block(230, {}, kicker("HALL OF FAME"), words(slide.title, "title", 0.2)),
         h("div.abs.col", { style: { left: "56px", right: "56px", top: "520px", gap: "30px" } },
-          list.map((m, k) => message({ user: m.user, text: m.text, when: dmyLong(m.day), reactions: m.reactions }, 0.4 + k * 0.6))));
+          slide.messages.map((m, k) => message({ user: m.user, text: m.text, when: dmyLong(m.day), reactions: m.reactions }, 0.4 + k * 0.6))));
     },
   });
 });
