@@ -524,7 +524,7 @@ scene({
     const f = MOS.first || { tx: 0, ty: 60 };
     const fit = (MOS.width + 24) / (2 * Math.tan((42 * Math.PI) / 360) * (W / H));
     const k = E.inOutCubic(prog(t, 0.6, 5.0));
-    const a = lookCam([f.tx, f.ty, 26], [f.tx, f.ty, 0], 40), bcam = lookCam([0, MOS.Y0 + 16, fit], [0, MOS.Y0 + 16, 0], 42);
+    const a = lookCam([f.tx, f.ty, 64], [f.tx, f.ty, 0], 40), bcam = lookCam([0, MOS.Y0 + 16, fit], [0, MOS.Y0 + 16, 0], 42);
     return mixCam(a, bcam, k);
   },
   build(r) {
@@ -541,4 +541,22 @@ scene({
     const [sx, sy] = shake(t, 5.3, 10);
     r.style.transform = `translate(${sx}px, ${sy}px)`;
   },
+});
+
+// ---------------------------------------------------------------- interludes
+// Single funny messages, each dropped in straight after the scene it's picked to follow.
+(DATA.interludes || []).forEach((it, k) => {
+  const at = SCENES.findIndex(s => s.id === it.after);
+  if (at < 0) return;
+  scene({
+    id: "meanwhile-" + k, ch: SCENES[at].ch, dur: 4.6, boardGlow: 1.4, bloom: 0.9, pin: "radial", pout: "radial",
+    build(r) {
+      const m = it.message;
+      r.append(h("div.scrim-mid"),
+        h("div.abs.center", { style: { left: 0, right: 0, top: "640px" } }, an(h("div.kick", { style: { justifyContent: "center" } }, "MEANWHILE..."), "type", 0.1, 0.5)),
+        h("div.abs", { style: { left: "56px", right: "56px", top: "740px" } },
+          h("div.bigmsg", message({ user: m.user, text: m.text, when: dmyLong(m.day), reactions: m.reactions }, 0.35, { fx: "pop" }))));
+    },
+  });
+  SCENES.splice(at + 1, 0, SCENES.pop());
 });

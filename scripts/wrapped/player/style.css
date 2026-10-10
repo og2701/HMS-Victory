@@ -219,3 +219,5 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .rdemo { width: 96px; height: 96px; flex: none; display: grid; place-items: center; background: rgba(255, 255, 255, .06); }
 .crowdgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px 6px; justify-items: center; }
 .crowdgrid svg { width: 52px; height: auto; }
+.bigmsg .msg .text { font-size: 50px; }
+.bigmsg .msg .name { font-size: 42px; }

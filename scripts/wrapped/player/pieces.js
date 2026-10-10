@@ -233,7 +233,11 @@ piece("mosaic", g => {
     const dx = (cx - (COLS - 1) / 2) / 2, dy = cy - (ROWS - 1) / 2;
     cells.push({ cx, cy, d: Math.hypot(dx, dy), a: Math.atan2(dy, dx) });
   }
-  cells.sort((p, q) => p.d - q.d || p.a - q.a);
+  // The nine most active fill the 3x3 block in the middle (#1 at its centre), then the rest spiral out.
+  const mid = cells.find(c => c.cx === COLS / 2 && c.cy === ROWS / 2);
+  const ring = c => Math.max(Math.abs(c.cx - mid.cx), Math.abs(c.cy - mid.cy));
+  const inner = c => ring(c) <= 1;
+  cells.sort((p, q) => inner(q) - inner(p) || (inner(p) ? ring(p) - ring(q) : 0) || p.d - q.d || p.a - q.a);
   const n = Math.min(ids.length, cells.length);
   const av = avatarInstances(ids.slice(0, n), { billboard: false, edgeW: 0.0, fogK: 0.0005 });
   g.add(av.mesh);
@@ -244,10 +248,10 @@ piece("mosaic", g => {
     av.tint.set([col.r, col.g, col.b], i * 3);
     return { u, v, tx: (cx - COLS / 2 + 0.5) * GAP, ty: (ROWS / 2 - cy - 0.5) * GAP + Y0,
       sx: (hash(i * 1.3) - 0.5) * 900, sy: Y0 + (hash(i * 2.9) - 0.5) * 900, sz: 300 + hash(i * 4.7) * 400,
-      at: i === 0 ? -2 : 0.1 + (i / n) * 3.0 + hash(i * 6.1) * 0.15, spin: hash(i * 8.3) * 10 };
+      at: i < 9 ? -2 : 0.1 + (i / n) * 3.0 + hash(i * 6.1) * 0.15, spin: hash(i * 8.3) * 10 };
   });
   av.geo.attributes.aTint.needsUpdate = true;
-  Object.assign(MOS, { first: info[0], width: COLS * GAP, Y0 });
+  Object.assign(MOS, { first: info[0], width: COLS * GAP, Y0 });  // info[0] is #1, in the centre of the 3x3
   return t => {
     const tintK = E.inOutCubic(prog(t, 3.8, 1.6)) * 0.6;
     for (let i = 0; i < info.length; i++) {

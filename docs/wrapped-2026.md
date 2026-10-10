@@ -196,8 +196,9 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    top: check each new spike against what people were saying before trusting a caption.
    It also writes `hof_candidates.json`: the Hall of Fame plus the year's most-laughed-at short
    messages. Read it and pick the Hall of Fame slides into `hof_picks.json` (slides of three, each
-   with a title; it lives in the ignored scratch folder). Without picks, the top Hall of Fame posts
-   are used.
+   with a title; it lives in the ignored scratch folder), plus the "Meanwhile..." interludes: single
+   funny messages, each with the id of the scene it follows. Without picks, the top Hall of Fame
+   posts are used and there are no interludes.
 3. **Build.** `build.py` bundles the player (`scripts/wrapped/player/`) and the JSON into one
    self-contained page. Opened in a browser it plays; `#scene=skyline` or `#t=42` jumps.
 4. **Render.** `render.mjs` opens the page in headless Chrome with the GPU, steps every frame
@@ -205,8 +206,8 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    renders single frames for checking a scene without a full render, and `--qa` checks every
    scene at the moment it's fully revealed for text running off the screen, cut off by its panel,
    or sitting on other text, and prints each scene's length. Run it after any change to copy or
-   layout. For Discord, re-encode the master with `-crf 28 -preset slow` to get under 100 MB at
-   about eight minutes.
+   layout. For Discord, re-encode the master with `-crf 29 -preset slow` to get under 100 MB at
+   about nine minutes.
 
 How the player works: every frame is a pure function of time. Scenes build their DOM once, and
 `data-a` attributes, number rolls, pixel-reveal avatars, card flips and the three.js world are
@@ -220,7 +221,7 @@ The `dur` on a scene is only its minimum, for camera moves that need longer; `fi
 it (chapter cards, the title). Big numbers and titles shrink themselves to fit their panel, so a
 longer name or a seven-digit count in December won't run off the edge. The first cut came out at
 4:37 and was too quick to read; with reading time and the extra awards, duos, squads and Hall of
-Fame it's about 7:50.
+Fame, the Shut page and the interludes it's about 9 minutes.
 
 Rules the extract already follows:
 

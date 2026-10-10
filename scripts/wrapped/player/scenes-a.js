@@ -762,6 +762,33 @@ const RD = (SOC.reaction_duos || []);
   });
 });
 
+// Shut: the reaction that times its author out.
+const SH = DATA.shut;
+if (SH && SH.total) {
+  scene({
+    id: "shut", ch: "people", dur: 6, boardGlow: 1, bloom: 1, pin: "radial",
+    build(r) {
+      const ms = SH.most_shut[0], top = SH.shutters[0], rv = SH.rivals;
+      const card = (at, kick, uid, big, line2) => an(h("div.frame.px", h("div.in.px", { style: { padding: "24px 30px" } },
+        h("div.kick", kick), h("div.lrow", { style: { marginTop: "16px" } }, avatar(uid, 110, at + 0.2, 0.6, "ring"),
+          h("div", { style: { flex: 1, paddingRight: "190px" } }, h("div.h3", name(uid)), h("div.small", { html: line2 }))),
+        h("div.big.acc", { style: { position: "absolute", right: "30px", top: "24px", fontSize: "84px" } }, big))), "left", at, 0.7);
+      r.append(h("div.scrim-mid"),
+        block(230, {}, h("div.row", { style: { gap: "26px" } }, an(h("div", emojiEl("Shut", SH.emoji_id, 120)), "spin", 0.1, 0.7),
+          h("div", kicker("SHUT", 0.2), h("div.title", roll(SH.total, 0.3, 1.4), " SHUTS"))),
+          line("Every :Shut: reaction this year. Each one times the author out.", 0.6, "small")),
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: "640px", gap: "22px" } },
+          ms ? card(0.9, "MOST SHUT", ms.user, fmt(ms.n), `shut ${b(fmt(ms.n))} times this year, and timed out ${b(fmt(ms.timeouts))} times all told`) : null,
+          top ? card(1.5, "TRIGGER HAPPY", top.user, fmt(top.n), `handed out ${b(fmt(top.n))} shuts`) : null,
+          rv ? an(h("div.frame.px", h("div.in.px", { style: { padding: "24px 30px" } }, h("div.kick", "SHUT RIVALS"),
+            h("div.lrow", { style: { marginTop: "16px" } }, avatar(rv.a, 96, 2.3, 0.6, "ring"), avatar(rv.b, 96, 2.4, 0.6, "ring"),
+              h("div.small.white", { style: { flex: 1 } }, `${name(rv.a)} & ${name(rv.b)}`),
+              h("div.h3.acc", { style: { whiteSpace: "nowrap" } }, `${rv.ab} & ${rv.ba}`)))), "left", 2.1, 0.7) : null),
+        SH.coins ? block(1660, {}, html(`${b(fmt(SH.coins))} shutcoins bought from the shop, to shut people without a role`, 2.8, "small")) : null);
+    },
+  });
+}
+
 // The busiest ten minutes of the year in any one channel.
 const BUSY = DATA.crowds && DATA.crowds.busiest;
 if (BUSY) {

@@ -104,7 +104,10 @@ def year_ago(d):
 class Extract:
     def __init__(self, data, since, until, hof_picks=None):
         self.data = Path(data)
-        self.hof_picks = json.loads(Path(hof_picks).read_text()) if hof_picks else None
+        picks = json.loads(Path(hof_picks).read_text()) if hof_picks else None
+        # The picks file is either a list of slides, or {"slides": [...], "interludes": [{"after", "id"}]}.
+        self.hof_picks = picks.get("slides") if isinstance(picks, dict) else picks
+        self.interlude_picks = picks.get("interludes", []) if isinstance(picks, dict) else []
         self.since, self.until = since, until
         self.lo, self.hi = day_bounds(since, until)
         self.plo, self.phi = day_bounds(year_ago(since), year_ago(until))
@@ -549,6 +552,7 @@ class Extract:
         self.out["trio"] = self.trio()
         self.out["squads"] = self.squads()
         self.out["crowds"] = self.crowds()
+        self.out["shut"] = self.shut()
         self.out["network"] = self.network()
 
     def duo_awards(self):
@@ -715,6 +719,44 @@ class Extract:
                        "caption": self.caption_for(when.date().isoformat()),
                        "words": [w for w, _ in words.most_common(4)]}
         return {"pile_on": best, "busiest": busiest}
+
+    def shut(self):
+        """The :Shut: reaction times its author out. Who got shut, who did the shutting, and the two who shut
+        each other most, from this year's reactions; plus each person's all-time timeout count and the
+        shutcoins bought."""
+        top = self.q("SELECT emoji_id, COUNT(*) n FROM reactions WHERE lower(emoji) = 'shut' AND emoji_id IS NOT NULL "
+                     "GROUP BY 1 ORDER BY n DESC LIMIT 1")
+        if not top:
+            return None
+        eid = top[0][0]
+        got, gave, pair = Counter(), Counter(), Counter()
+        total = 0
+        for reactor, author, n in self.q(
+                "SELECT r.user_id, r.author_id, COUNT(*) FROM reactions r JOIN messages m ON m.message_id = r.message_id "
+                "WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' AND r.emoji_id = ? GROUP BY 1, 2", (self.lo, self.hi, eid)):
+            if not self.human(reactor) or reactor == author:
+                continue
+            total += n
+            if self.shown(author):
+                got[author] += n
+            if self.shown(reactor):
+                gave[reactor] += n
+            if self.shown(author) and self.shown(reactor):
+                pair[(reactor, author)] += n
+        mutual = sorted(((min(n, pair.get((b, a), 0)), a, b) for (a, b), n in pair.items() if a < b), reverse=True)
+        timeouts = {int(u): n for u, n in self.q("SELECT user_id, count FROM shut_counts", db=self.db)}
+        coins = self.q("SELECT COALESCE(SUM(quantity), 0) FROM shop_purchases WHERE item_id = 'shutcoin' AND purchase_time >= ? "
+                       "AND purchase_time < ?", (self.lo, self.hi), db=self.db)[0][0]
+        rivals = None
+        if mutual and mutual[0][0] >= 3:
+            _, a, b = mutual[0]
+            rivals = {"a": self.who(a), "b": self.who(b), "ab": pair[(a, b)], "ba": pair.get((b, a), 0)}
+        return {
+            "emoji_id": str(eid), "total": total, "coins": coins,
+            "most_shut": [{"user": self.who(u), "n": n, "timeouts": timeouts.get(u, 0)} for u, n in got.most_common(3)],
+            "shutters": [{"user": self.who(u), "n": n} for u, n in gave.most_common(3)],
+            "rivals": rivals,
+        }
 
     def caption_for(self, d):
         if d in MOMENTS:
@@ -896,6 +938,14 @@ class Extract:
             for m in slide["messages"]:
                 m["user"] = self.who(m["user"])
         self.out["hall_of_fame"] = [s for s in slides if s["messages"]]
+        # Interludes: single funny messages dropped between scenes ("after" is the scene id they follow).
+        interludes = []
+        for pick in self.interlude_picks:
+            m = cands.get(int(pick["id"])) or self.hof_message(int(pick["id"]))
+            if m:
+                m["user"] = self.who(m["user"])
+                interludes.append({"after": pick["after"], "message": m})
+        self.out["interludes"] = interludes
 
     def regular_names(self):
         names = set()
