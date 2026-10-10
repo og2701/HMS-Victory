@@ -197,13 +197,23 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    self-contained page. Opened in a browser it plays; `#scene=skyline` or `#t=42` jumps.
 4. **Render.** `render.mjs` opens the page in headless Chrome with the GPU, steps every frame
    through `window.WRAP.seek`, and encodes 1080x1920 at 25fps. `--stills <dir> skyline+3 ...`
-   renders single frames for checking a scene without a full render.
+   renders single frames for checking a scene without a full render, and `--qa` checks every
+   scene at the moment it's fully revealed for text running off the screen, cut off by its panel,
+   or sitting on other text, and prints each scene's length. Run it after any change to copy or
+   layout. For Discord, re-encode the master with `-crf 27 -preset slow` to get under 100 MB.
 
 How the player works: every frame is a pure function of time. Scenes build their DOM once, and
 `data-a` attributes, number rolls, pixel-reveal avatars, card flips and the three.js world are
 all computed from the scene clock, so any frame can be rendered on its own and the video is
-frame-exact. Scenes are listed in order in `scenes-a.js` and `scenes-b.js`; durations are on
-each scene, and a scene whose data is missing (no casino, no Big Brother) drops itself.
+frame-exact. Scenes are listed in order in `scenes-a.js` and `scenes-b.js`, and a scene whose data
+is missing (no casino, no Big Brother) drops itself.
+
+Scene lengths are worked out, not set: a scene stays up until everything in it has arrived, plus
+reading time for the words on it (about four a second, capped at 5.4s), plus the transition out.
+The `dur` on a scene is only its minimum, for camera moves that need longer; `fixed: true` pins
+it (chapter cards, the title). Big numbers and titles shrink themselves to fit their panel, so a
+longer name or a seven-digit count in December won't run off the edge. The first cut came out at
+4:37 and was too quick to read; with reading time it's 6:30.
 
 Rules the extract already follows:
 

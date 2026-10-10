@@ -50,6 +50,50 @@ function run(cmd, argv) {
 const probe = await openPage();
 const info = await probe.evaluate(() => ({ total: window.WRAP.total, fps: window.WRAP.fps, scenes: window.WRAP.scenes }));
 
+if (args[1] === "--qa") {
+  // Every scene, at the moment it's fully revealed: text running off the screen, text cut off by its
+  // panel, and text sitting on top of other text. Prints the scene timings too.
+  for (const s of info.scenes) {
+    await probe.evaluate(x => window.WRAP.seek(x), s.start + s.dur - 0.45);
+    const found = await probe.evaluate(() => {
+      const root = document.querySelector(".scene.on"), out = [];
+      const skip = ".label3d, .doclines, .dstrip, .stamp, .flash";
+      const boxes = [];
+      for (const el of root.querySelectorAll("*")) {
+        if (el.closest(skip) && !el.classList.contains("rollw")) continue;
+        const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) || el.classList.contains("rollw");
+        if (!own) continue;
+        const st = getComputedStyle(el);
+        if (+st.opacity === 0) continue;
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        const label = (el.className || el.tagName) + ": " + el.textContent.trim().slice(0, 40);
+        if (r.right > 1080 - 16 || r.left < 16 || r.bottom > 1920 - 8 || r.top < 0) out.push("off screen  " + label);
+        const panel = el.closest(".in");
+        if (panel) {
+          const p = panel.getBoundingClientRect();
+          if (r.right > p.right + 1 || r.bottom > p.bottom + 1) out.push("cut off     " + label);
+        }
+        if (!el.closest(".rollw") || el.classList.contains("rollw")) boxes.push({ el, r, label });
+      }
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const hh = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (w > 6 && hh > 6 && w * hh > 0.25 * Math.min(a.r.width * a.r.height, b.r.width * b.r.height)) out.push(`overlap     ${a.label}  <>  ${b.label}`);
+      }
+      return out;
+    });
+    const tm = s.timing || {};
+    console.log(`${s.id.padEnd(18)} ${s.dur.toFixed(1).padStart(5)}s  arrives ${String(tm.end).padStart(5)}  words ${String(tm.words).padStart(3)}  read ${tm.read}s`);
+    for (const f of found) console.log("    " + f);
+  }
+  console.log(`total ${Math.floor(info.total / 60)}:${String(Math.floor(info.total % 60)).padStart(2, "0")}`);
+  await browser.close();
+  process.exit(0);
+}
+
 if (args[1] === "--stills") {
   const dir = args[2];
   fs.mkdirSync(dir, { recursive: true });

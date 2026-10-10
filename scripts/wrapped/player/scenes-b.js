@@ -9,7 +9,8 @@ scene({
   build(r) {
     const rows = WD.by_month.filter(m => m.words.length);
     r.append(h("div.scrim-mid"),
-      block(230, {}, kicker("WHAT WE TALKED ABOUT"), words("THE YEAR IN WORDS", "title", 0.2)),
+      block(230, {}, kicker("WHAT WE TALKED ABOUT"), words("THE YEAR IN WORDS", "title", 0.2),
+        line("The words that jumped out each month, compared with the rest of the year", 0.5, "small")),
       h("div.abs.col", { style: { left: "56px", right: "56px", top: "480px", gap: "8px" } },
         rows.map((m, k) => {
           const at = 0.5 + k * 0.38;
@@ -18,7 +19,7 @@ scene({
             h("div.mwords", m.words.slice(0, 3).map((w, j) =>
               an(h("span.mw" + (j ? "" : ".first"), w.w), "type", at + 0.12 + j * 0.16, 0.35)))), "left", at, 0.6);
         })),
-      block(1800, {}, line("The words that spiked each month, against the rest of the year.", 4.6, "tiny")));
+    );
   },
 });
 
@@ -103,7 +104,7 @@ if (CS) {
   chapterScene("casino", 5, "THE CASINO", `Open since ${dmyLong(CS.since)}`);
 
   scene({
-    id: "casino-totals", ch: "casino", dur: 6.4, gl: "chips", bloom: 0.95,
+    id: "casino-totals", ch: "casino", dur: 6.4, revealEnd: 4.4, gl: "chips", bloom: 0.95,
     cam: t => orbit(0, 0, 0, 150, 0.6 + t * 0.16, 105 - t * 3, 40),
     build(r) {
       r.append(h("div.scrim-top", { style: { height: "1000px" } }), h("div.scrim-bot", { style: { height: "520px" } }),
@@ -123,7 +124,7 @@ if (CS) {
       const games = CS.games.slice(0, 7);
       const losers = CS.games.filter(g => g.house < 0 && g.bets >= 500).map(g => g.game);
       r.append(h("div.scrim-mid"), r._cv,
-        block(230, {}, kicker("WHERE IT WENT"), words("THE GAMES", "title", 0.2)),
+        block(230, {}, kicker("WHERE IT WENT"), words("THE GAMES", "title", 0.2), line("Every UKPence staked, split by game", 0.5, "small")),
         h("div.abs.center", { style: { left: 0, right: 0, top: "690px", height: "0" } },
           an(h("div.center", h("div.tiny", "BIGGEST GAME"), h("div.h2", games[0].game.toUpperCase()), h("div.big.acc", { style: { fontSize: "110px" } }, `${Math.round(games[0].staked / CS.staked * 100)}%`)), "pop", 1.6, 0.6)),
         h("div.abs.col", { style: { left: "56px", right: "56px", top: "1060px", gap: "12px" } },
@@ -165,7 +166,7 @@ if (CS) {
   });
 
   scene({
-    id: "casino-moments", ch: "casino", dur: 7.4, boardGlow: 0.8,
+    id: "casino-moments", ch: "casino", dur: 7.4, revealEnd: 5.6, boardGlow: 0.8,
     build(r) {
       const win = CS.biggest_wins[0], wd = CS.worst_day, bd = CS.best_day;
       const coaster = wd.user === bd.user && Math.abs(new Date(wd.day) - new Date(bd.day)) <= 3 * 864e5;
@@ -231,7 +232,7 @@ if (CS) {
         { key: "coin", title: "House's Best Friend", user: CS.losers[0].user, value: signed(CS.losers[0].net), line: `across ${fmt(CS.losers[0].bets)} bets` },
       ];
       r.append(h("div.scrim-mid"), block(196, {}, kicker("CASINO AWARDS", 0.05)),
-        h("div.abs", { style: { left: "56px", right: "56px", top: "290px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "36px 28px", justifyItems: "center" } },
+        h("div.abs", { style: { left: "56px", right: "56px", top: "290px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "36px 28px", justifyItems: "center" } },
           cards.map((a, k) => awardCard(a, 0.15 + k * 0.22))));
     },
   });
@@ -251,7 +252,7 @@ while (lockAt > 0 && Math.abs(SUP[lockAt - 1][1] - SUP_END) / SUP_END < 0.005) l
 const LOCKED = SUP.length > 1 && lockAt > 0 && (new Date(SUP[SUP.length - 1][0]) - new Date(SUP[lockAt][0])) / 864e5 >= 30;
 const LOCK_DAY = LOCKED ? SUP[lockAt][0] : null;
 scene({
-  id: "supply", ch: "money", dur: 7.2, boardGlow: 0.8,
+  id: "supply", ch: "money", dur: 7.2, revealEnd: 3.2, boardGlow: 0.8,
   build(r) {
     r._cv = canvasLayer();
     const last = SUP.length ? SUP[SUP.length - 1][1] : 0;
@@ -306,7 +307,7 @@ scene({
   build(r) {
     const medal = ["#ffc23d", "#d4d7e8", "#c98a4b"];
     r.append(h("div.scrim-top", { style: { height: "1000px" } }), h("div.scrim-bot", { style: { height: "380px" } }),
-      block(230, {}, kicker("THE RICH LIST"), words("THE RICHEST", "title", 0.2)),
+      block(230, {}, kicker("THE RICH LIST"), words("THE RICHEST", "title", 0.2), line("The biggest UKPence balances right now", 0.5, "small")),
       block(500, {}, h("div.col", { style: { gap: "20px" } }, MN.richest.slice(0, 3).map((x, k) =>
         an(h("div.lrow", h("div.rank", { style: { color: medal[k] } }, `#${k + 1}`), avatar(x.user, 104, 0.6 + k * 0.15, 0.6),
           h("div.h2", { style: { flex: 1 } }, name(x.user)), h("div.h2", { style: { color: medal[k] } }, roll(x.n, 0.7 + k * 0.15, 1.4))), "left", 0.5 + k * 0.15, 0.6)))),
@@ -315,7 +316,7 @@ scene({
 });
 
 scene({
-  id: "pay", ch: "money", dur: 7.0, boardGlow: 0.8,
+  id: "pay", ch: "money", dur: 7.0, revealEnd: 5.2, boardGlow: 0.8,
   build(r) {
     const bp = MN.biggest_pay, gv = MN.givers[0];
     r._cv = canvasLayer();
@@ -350,7 +351,8 @@ scene({
     const rg = MN.rags;
     r._cv = canvasLayer();
     r.append(h("div.scrim-mid"), r._cv,
-      rg ? block(230, {}, kicker("RAGS TO RICHES"), h("div.row", { style: { gap: "30px", marginTop: "30px" } }, avatar(rg.user, 170, 0.4, 0.8, "ring"),
+      rg ? block(230, {}, kicker("RAGS TO RICHES"), line("The biggest climb of the year, from someone's lowest balance to their highest", 0.3, "small"),
+        h("div.row", { style: { gap: "30px", marginTop: "30px" } }, avatar(rg.user, 170, 0.4, 0.8, "ring"),
         h("div", h("div.h2", name(rg.user)), h("div.small", `${dmyLong(rg.from)} to ${dmyLong(rg.to)}`))),
         h("div.row", { style: { gap: "26px", alignItems: "baseline", marginTop: "30px" } },
           an(h("div.big", { style: { color: "var(--dim)" } }, fmt(rg.low)), "fade", 0.9, 0.4), an(h("div.big.acc", "→"), "left", 1.1, 0.5),
@@ -450,7 +452,7 @@ if (BB) {
         h("div.abs.center", { style: { left: 0, right: 0, top: "200px" } }, h("div.eye", icon("eye_open", 280))),
         block(560, { textAlign: "center" }, an(h("div.kick", { style: { justifyContent: "center", color: "var(--red)" } }, "BIG BROTHER"), "fade", 0.6, 0.4),
           h("div.title", { style: { marginTop: "18px" } }, split(`${days} DAYS. ${BB.housemates} HOUSEMATES.`, "up", 0.8, 0.03, 0.6))),
-        h("div.abs", { style: { left: "56px", right: "56px", top: "860px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "22px" } },
+        h("div.abs", { style: { left: "56px", right: "56px", top: "860px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
           [["MESSAGES IN THE HOUSE", BB.messages], ["VOTES CAST", BB.votes], ["DIARY ROOM ENTRIES", BB.diary], ["CHALLENGES", BB.challenges]].map(([k, v], i) =>
             an(h("div.frame.px", h("div.in.px", { style: { padding: "26px 30px" } }, h("div.big", { style: { fontSize: "100px" } }, roll(v, 1.4 + i * 0.1, 1.3)), h("div.tiny", k))), "up", 1.3 + i * 0.1, 0.6))),
         BB.winner ? block(1330, { textAlign: "center" }, an(h("div.center", h("div.kick", { style: { justifyContent: "center" } }, "THE WINNER"),
@@ -464,7 +466,8 @@ if (BB) {
   });
 }
 
-if (GM.rival || (MN.lottery && MN.lottery.length) || GM.badges) {
+// Rivals, the lottery and badges: worth a slide once there's enough of them (by December, probably).
+if ((GM.rival && GM.rival.n >= 20) || (MN.lottery && MN.lottery.length >= 5)) {
   scene({
     id: "extras", ch: "games", dur: 6.0, boardGlow: 0.9,
     build(r) {
@@ -491,13 +494,13 @@ if (GM.rival || (MN.lottery && MN.lottery.length) || GM.badges) {
 // ---------------------------------------------------------------- outro
 const SV = DATA.server;
 scene({
-  id: "door", ch: "outro", dur: 6.0, boardGlow: 1, pin: "diag",
+  id: "door", ch: "outro", dur: 6.0, revealEnd: 3.0, boardGlow: 1, pin: "diag",
   build(r) {
     r._cv = canvasLayer();
     r.append(h("div.scrim-mid"), r._cv,
       block(230, {}, kicker("THE DOOR"), words("COMINGS AND GOINGS", "title", 0.2),
         line(`Since ${dmyLong(SV.first_day)}`, 0.6, "small")),
-      h("div.abs", { style: { left: "56px", right: "56px", top: "1040px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "22px" } },
+      h("div.abs", { style: { left: "56px", right: "56px", top: "1040px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
         [["JOINED", SV.joined, "acc"], ["LEFT", SV.left, "red"], ["BANNED", SV.banned, "red"], ["HERE NOW", SV.members, "white"]].map(([k, v, c], i) =>
           an(h("div.frame.px", h("div.in.px", { style: { padding: "26px 30px" } }, h("div.big." + c, { style: { fontSize: "104px" } }, roll(v, 1.0 + i * 0.15, 1.4)), h("div.tiny", k))), "up", 0.9 + i * 0.12, 0.6))));
   },

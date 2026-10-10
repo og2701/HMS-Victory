@@ -61,7 +61,7 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .big { font-stretch: 70%; font-weight: 900; font-size: 168px; line-height: .84; text-transform: uppercase; letter-spacing: -.005em; }
 .title { font-stretch: 78%; font-weight: 880; font-size: 104px; line-height: .9; text-transform: uppercase; }
 .h2 { font-stretch: 88%; font-weight: 820; font-size: 66px; line-height: .98; }
-.h3 { font-stretch: 92%; font-weight: 760; font-size: 50px; line-height: 1.05; }
+.h3 { font-stretch: 92%; font-weight: 760; font-size: 50px; line-height: 1.14; }
 .body { font-weight: 520; font-size: 44px; line-height: 1.22; color: var(--mute); }
 .small { font-weight: 560; font-size: 34px; line-height: 1.25; color: var(--mute); }
 .tiny { font-family: "Pixel"; font-size: 20px; line-height: 1.6; letter-spacing: .05em; color: var(--dim); text-transform: uppercase; }
@@ -163,7 +163,7 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .cav .av { padding: 6px; background: linear-gradient(150deg, #fff, var(--acc) 40%, #6b3dff); }
 .cname { text-align: center; font-weight: 800; font-size: 40px; margin-top: 20px; padding: 0 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cval { text-align: center; font-stretch: 64%; font-weight: 900; font-size: 116px; line-height: 1; margin-top: 8px; color: var(--acc);
-  text-shadow: 0 0 40px color-mix(in srgb, var(--acc) 50%, transparent); display: flex; justify-content: center; }
+  filter: drop-shadow(0 0 22px color-mix(in srgb, var(--acc) 50%, transparent)); display: flex; justify-content: center; }
 .cline { text-align: center; font-size: 28px; line-height: 1.2; color: var(--mute); padding: 0 26px; margin-top: 10px; font-weight: 560; }
 .crun { position: absolute; left: 0; right: 0; bottom: 22px; text-align: center; font-family: "Pixel"; font-size: 15px; color: var(--dim);
   padding: 0 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -189,3 +189,6 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .brandmark b { width: 26px; height: 26px; background: var(--red); box-shadow: 26px 0 0 #fff, 52px 0 0 var(--blue); margin-right: 52px; }
 .daytag { font-family: "Pixel"; font-size: 26px; width: 58px; height: 58px; display: grid; place-items: center; flex: none;
   background: var(--red); color: #fff; box-shadow: 0 0 30px rgba(255, 46, 77, .6); }
+/* flex and grid children may shrink below their content, so long text overflows where fit() can see it */
+.row > *, .lrow > *, .col > * { min-width: 0; }
+.tile > *, .in > * { max-width: 100%; }

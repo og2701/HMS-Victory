@@ -112,7 +112,7 @@ function posOf(el) {
 
 function chapterScene(key, num, title, sub, extra = {}) {
   scene(Object.assign({
-    id: "ch-" + key, ch: key, dur: 2.5, boardGlow: 2.6, bloom: 1.05, pin: "diag", pout: "radial",
+    id: "ch-" + key, ch: key, dur: 3.0, fixed: true, boardGlow: 2.6, bloom: 1.05, pin: "diag", pout: "radial",
     build(r) {
       r.append(h("div.scrim-mid"),
         h("div.abs.center", { style: { left: 0, right: 0, top: "520px" } },
@@ -134,11 +134,15 @@ scene({
         an(h("div.kick.plain", { style: { color: "var(--white)", fontSize: "30px" } },
           jan1 ? `1 JANUARY ${YEAR}` : dmyLong(M.since).toUpperCase()), "type", 0.15, 0.6),
         an(h("div.clock.mega", { style: { fontSize: "250px", marginTop: "40px", letterSpacing: ".02em" } }, "23:59:57"), "fade", 0.1, 0.3)),
-      h("div.abs", { style: { left: "56px", right: "56px", top: "820px", display: "flex", flexDirection: "column", gap: "26px" } },
-        first.map((m, k) => message({ user: m.user, text: m.text, when: `${jan1 ? "1 Jan" : dmy(M.since)} at ${m.time}` }, 2.15 + k * 0.95))));
+      h("div.abs", { style: { left: "56px", right: "56px", top: "700px" } },
+        an(h("div.kick", `THE FIRST MESSAGES OF ${YEAR}`), "left", 1.9, 0.6),
+        jan1 && first.length ? an(h("div.small", { style: { marginTop: "12px" } },
+          `Sent within ${Math.max(...first.map(m => +m.time.slice(-2))) || 1} seconds of midnight`), "left", 2.0, 0.6) : null),
+      h("div.abs", { style: { left: "56px", right: "56px", top: "860px", display: "flex", flexDirection: "column", gap: "26px" } },
+        first.map((m, k) => message({ user: m.user, text: m.text, when: `${jan1 ? "1 Jan" : dmy(M.since)} at ${m.time}` }, 2.4 + k * 0.95))));
     if (first[1] && /christmas/i.test(first[1].text)) {
-      r.append(h("div.abs", { style: { right: "34px", top: "1150px", transform: "rotate(-7deg)" } },
-        an(h("div.stamp", "WRONG HOLIDAY"), "slam", 3.45, 0.45)));
+      r.append(h("div.abs", { style: { right: "34px", top: "1190px", transform: "rotate(-7deg)" } },
+        an(h("div.stamp", "WRONG HOLIDAY"), "slam", 3.7, 0.45)));
     }
   },
   update(t, r) {
@@ -156,7 +160,7 @@ scene({
 
 // ---------------------------------------------------------------- title
 scene({
-  id: "title", ch: "intro", dur: 6.8, gl: "flag", bloom: 0.75, pin: "radial", pout: "diag",
+  id: "title", ch: "intro", dur: 7.4, fixed: true, gl: "flag", bloom: 0.75, pin: "radial", pout: "diag",
   cam: t => {
     const k = E.inOutCubic(prog(t, 0.0, 3.8));
     const a = lookCam([30, 60, 90], [0, 72, -40], 50), bcam = lookCam([0, 84, 600], [0, 74, 0], 42);
@@ -216,7 +220,7 @@ scene({
     ];
     r.append(h("div.scrim-mid"),
       block(230, {}, kicker("THE YEAR IN NUMBERS"), words("IT ALL ADDS UP", "title", 0.2)),
-      h("div.abs", { style: { left: "56px", right: "56px", top: "560px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px" } },
+      h("div.abs", { style: { left: "56px", right: "56px", top: "560px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "28px" } },
         tiles.map((x, k) => an(h("div.frame.acc.px", { style: { height: "560px" } },
           h("div.in.px.tile",
             h("div.tk", x.k),
@@ -227,12 +231,13 @@ scene({
 });
 
 scene({
-  id: "race", ch: "numbers", dur: 7.0, boardGlow: 0.6, pin: "cols",
+  id: "race", ch: "numbers", dur: 7.0, revealEnd: 5.4, boardGlow: 0.6, pin: "cols",
   build(r) {
     const rc = DATA.race;
     r._cv = canvasLayer();
     r.append(h("div.scrim-mid"), r._cv,
-      block(230, {}, kicker("THE RACE"), words(`${YEAR} VS ${YEAR - 1}`, "title", 0.2)),
+      block(230, {}, kicker("THE RACE"), words(`${YEAR} VS ${YEAR - 1}`, "title", 0.2),
+        html(`Messages so far, added up day by day. ${ba("Blue")} is ${YEAR}, <span class="red"><b>red</b></span> is ${YEAR - 1}.`, 0.5, "small")),
       h("div.abs.racelabel", { style: { left: "80px", top: "0px" } }, h("div.kick.plain.rl1", ""), h("div.h2.rl2", "")),
       block(1560, {},
         rc.passed_on ? html(`On ${b(dmyLong(rc.passed_on))}, ${YEAR} passed every message sent in the whole of ${YEAR - 1}.`, 5.0, "h3") :
@@ -364,7 +369,7 @@ scene({
 });
 
 scene({
-  id: "clock", ch: "numbers", dur: 6.6, gl: "clock", bloom: 0.95, pin: "radial",
+  id: "clock", ch: "numbers", dur: 6.6, revealEnd: 3.4, gl: "clock", bloom: 0.95, pin: "radial",
   cam: t => orbit(0, 0, 0, 190 + t * 3, 0.15 + t * 0.07, 400 - t * 6, 18),
   build(r) {
     const hrs = DATA.calendar.hours, peak = hrs.indexOf(Math.max(...hrs));
@@ -374,6 +379,7 @@ scene({
     r.append(h("div.scrim-top", { style: { height: "700px" } }), h("div.scrim-bot", { style: { height: "560px" } }),
       block(230, {}, kicker("WHEN WE TALK"),
         h("div.title", split("PEAK HOUR:", "up", 0.2, 0.03, 0.6), " ", an(h("span.acc", hour12(peak)), "slam", 2.9, 0.5)),
+        line("Every message of the year, by the hour it was sent. Each column is one hour.", 0.5, "small"),
         html(`${b(fmt(hrs[peak]))} messages at ${hour12(peak).toLowerCase()}. The quietest: ${hour12(quiet).toLowerCase()}, with ${fmt(hrs[quiet])}.`, 3.3, "small")),
       block(1500, {},
         h("div.row", { style: { gap: "12px", alignItems: "flex-end", height: "170px" } },
@@ -446,7 +452,7 @@ AWARD_GROUPS.forEach(([title, keys], g) => {
     build(r) {
       r.append(h("div.scrim-mid"),
         block(196, {}, kicker(title, 0.05)),
-        h("div.abs", { style: { left: "56px", right: "56px", top: "290px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "36px 28px", justifyItems: "center" } },
+        h("div.abs", { style: { left: "56px", right: "56px", top: "290px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "36px 28px", justifyItems: "center" } },
           list.map((a, k) => awardCard(a, 0.15 + k * 0.22))));
     },
   });
@@ -521,7 +527,8 @@ scene({
     const [d, ...more] = SOC.duos;
     r._cv = canvasLayer();
     r.append(h("div.scrim-mid"), r._cv,
-      block(230, {}, kicker("DUO OF THE YEAR"), words("INSEPARABLE", "title", 0.2)),
+      block(230, {}, kicker("DUO OF THE YEAR"), words("INSEPARABLE", "title", 0.2),
+        line("The two people who replied to each other the most", 0.5, "small")),
       h("div.abs.row", { style: { left: "70px", right: "70px", top: "560px", justifyContent: "space-between" } },
         an(h("div.center", r._a = avatar(d.a, 290, 0.4, 0.9, "ring"), h("div.h3", { style: { marginTop: "22px", maxWidth: "330px" } }, name(d.a))), "left", 0.3, 0.8),
         an(h("div.center", r._b = avatar(d.b, 290, 0.55, 0.9, "ring"), h("div.h3", { style: { marginTop: "22px", maxWidth: "330px" } }, name(d.b))), "right", 0.45, 0.8)),
@@ -591,12 +598,12 @@ scene({
 });
 
 scene({
-  id: "network", ch: "people", dur: 8.4, gl: "network", bloom: 0.6, boardGlow: 0.5, pin: "radial",
+  id: "network", ch: "people", dur: 8.4, revealEnd: 3.8, gl: "network", bloom: 0.6, boardGlow: 0.5, pin: "radial",
   cam: t => orbit(0, 0, 0, 720 - t * 16, 0.4 + t * 0.2, 40 + Math.sin(t * 0.4) * 60, 0),
   build(r) {
     r.append(h("div.scrim-top", { style: { height: "560px" } }), h("div.scrim-bot", { style: { height: "460px" } }),
-      block(230, {}, kicker("THE WEB"), words("WHO TALKS TO WHO", "title", 0.2)),
-      block(1600, {}, line(`The ${DATA.network.nodes.length} busiest repliers. Every line is two people who swapped 120+ replies.`, 1.6, "small")));
+      block(230, {}, kicker("THE WEB"), words("WHO TALKS TO WHO", "title", 0.2),
+        line(`The ${DATA.network.nodes.length} people who reply the most. A line joins two of them who swapped 120+ replies.`, 0.5, "small")));
     r._labels = DATA.network.nodes.slice(0, 5).map((n, i) => { const el = h("div.label3d.netlab", name(n.user)); r.append(el); return { el, i }; });
   },
   update(t, r) {
@@ -636,7 +643,8 @@ const HOF = DATA.hall_of_fame || [];
     id: "hof-" + g, ch: "people", dur: 6.2, boardGlow: 1.1, pin: g ? "rain" : "diag",
     build(r) {
       r.append(h("div.scrim-mid"),
-        block(230, {}, kicker("HALL OF FAME"), words(g ? "AND THESE" : "YOUR FAVOURITES", "title", 0.2)),
+        block(230, {}, kicker("HALL OF FAME"), words(g ? "AND THESE" : "YOUR FAVOURITES", "title", 0.2),
+          line("Messages that made it into the Hall of Fame", 0.5, "small")),
         h("div.abs.col", { style: { left: "56px", right: "56px", top: "520px", gap: "30px" } },
           list.map((m, k) => message({ user: m.user, text: m.text, when: dmyLong(m.day), reactions: m.reactions }, 0.4 + k * 0.6))));
     },

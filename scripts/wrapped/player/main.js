@@ -54,6 +54,48 @@ function seek(time) {
   if (out > 0) drawTransition(fctx, E.inCubic(out), s.pout, ch.accent);
 }
 
+// Big type is set by eye, but names and numbers vary from year to year: shrink anything that would
+// run past its panel or the screen edge until it fits.
+const FIT = ".mega, .big, .title, .h2, .h3, .cval, .cname, .llab, .chnum";
+function fitAll(root) {
+  root.classList.add("on");
+  for (const el of root.querySelectorAll(FIT)) {
+    const box = el.parentElement.closest(".in, .pad, .abs, .cardslot, .tile") || root;
+    const over = () => {
+      const r = el.getBoundingClientRect(), b = box.getBoundingClientRect(), cs = getComputedStyle(box);
+      const left = b.left + (parseFloat(cs.paddingLeft) || 0), right = b.right - (parseFloat(cs.paddingRight) || 0);
+      return el.scrollWidth > el.clientWidth + 1 || r.right > right + 1 || r.left < left - 1 || r.right > W - 24;
+    };
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    for (let n = 0; n < 40 && over(); n++) { size *= 0.94; el.style.fontSize = size + "px"; }
+  }
+  root.classList.remove("on");
+}
+
+// How long a scene stays up: until everything in it has arrived, plus time to read it (about 4 words a
+// second, big type being quick to take in, between 2.6 and 5.4 seconds), plus the transition out. A scene's own dur is the minimum, for the
+// ones whose camera move needs longer; scenes with timed effects in update() say when those end.
+const SKIP_WORDS = ".tiny, .crun, .label3d, .doclines, .dstrip, .dsep, .clock, .netlab";
+function autoDur(s) {
+  let end = s.revealEnd || 0;
+  for (const a of s.anims) end = Math.max(end, a.s + a.d);
+  for (const el of s.root.querySelectorAll(".rollme")) {
+    const r = el._roll;
+    end = Math.max(end, r.start + r.dur + (r.cols.length ? r.cols[r.cols.length - 1].delay : 0));
+  }
+  for (const c of s.root.querySelectorAll(".flipme")) end = Math.max(end, c._flip.at + c._flip.dur);
+  for (const el of s.root.querySelectorAll(".pixav")) end = Math.max(end, el._av.start + el._av.dur);
+  let words = s.root.querySelectorAll(".rollw").length;
+  const walk = document.createTreeWalker(s.root, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (n.parentElement.closest(SKIP_WORDS)) continue;
+    words += n.textContent.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+  }
+  const read = clamp(words / 4, 2.6, 5.4);
+  s.timing = { end: +end.toFixed(2), words, read: +read.toFixed(1) };
+  s.dur = +Math.max(s.dur, end + read + s.tout).toFixed(2);
+}
+
 async function boot() {
   const ui = document.getElementById("ui");
   await Promise.all([document.fonts.load("900 100px Archivo"), document.fonts.load("20px Pixel")]);
@@ -62,7 +104,6 @@ async function boot() {
   initWorld();
   buildAtlas([...new Set([...DATA.network.nodes.map(n => n.user), ...DATA.wall])]);
   buildPieces();
-  layoutTimeline();
   for (const s of SCENES) {
     const r = h("section.scene", { data: { id: s.id } });
     // Scenes pass optional parts as null; Element.append would print those as the text "null".
@@ -71,8 +112,11 @@ async function boot() {
     s.root = r;
     ui.append(r);
     s.build(r);
+    fitAll(r);
     s.anims = collectAnims(r);
+    if (!s.fixed) autoDur(s);
   }
+  layoutTimeline();
   buildHud();
   await Promise.all([...ui.querySelectorAll("img")].map(img => (img.complete ? null : new Promise(ok => { img.onload = img.onerror = ok; }))));
   // Compile every piece's shaders once so the first frame of each scene isn't the slow one.
@@ -80,7 +124,7 @@ async function boot() {
   WORLD.r.compile(WORLD.scene, WORLD.cam);
   seek(0);
   window.WRAP = { ready: true, total: T.total, fps: FPS, seek,
-    scenes: SCENES.map((s, i) => ({ id: s.id, ch: s.ch, start: T.starts[i], dur: s.dur })) };
+    scenes: SCENES.map((s, i) => ({ id: s.id, ch: s.ch, start: T.starts[i], dur: s.dur, timing: s.timing })) };
   if (!navigator.webdriver || /play/.test(location.hash)) preview();
 }
 
