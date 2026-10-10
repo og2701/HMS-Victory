@@ -68,9 +68,7 @@ the emoji slides and the avatar wall ending.
 3. **Sold county balls are deleted**, so "caught this year" undercounts. Soft-delete instead.
 4. **Skyrim keeps lifetime totals only.** Fine this year since it's new, but snapshot it on
    31 December so 2027 can be diffed.
-5. **Invites aren't tracked.** A "Recruiter of the year" needs invite-use snapshots diffed on
-   each join. Starting now gives October to December.
-6. **Voice, slash commands and joins via the gateway** only start on 22 September. Nothing to
+5. **Voice, slash commands and joins via the gateway** only start on 22 September. Nothing to
    do but keep recording; those slides say "since September" or get cut.
 
 ## Chapters (draft)
