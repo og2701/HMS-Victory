@@ -50,6 +50,14 @@ function run(cmd, argv) {
 const probe = await openPage();
 const info = await probe.evaluate(() => ({ total: window.WRAP.total, fps: window.WRAP.fps, scenes: window.WRAP.scenes }));
 
+if (args[1] === "--timeline") {
+  // Scene ids and times, for the soundtrack mixer.
+  fs.writeFileSync(args[2], JSON.stringify({ total: info.total, scenes: info.scenes.map(({ id, ch, start, dur }) => ({ id, ch, start, dur })) }));
+  console.log(`wrote ${args[2]}: ${info.scenes.length} scenes, ${info.total.toFixed(1)}s`);
+  await browser.close();
+  process.exit(0);
+}
+
 if (args[1] === "--qa") {
   // Every scene, at the moment it's fully revealed: text running off the screen, text cut off by its
   // panel, and text sitting on top of other text. Prints the scene timings too.

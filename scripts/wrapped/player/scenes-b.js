@@ -518,7 +518,7 @@ scene({
 });
 
 scene({
-  id: "finale", ch: "outro", dur: 10.0, gl: "mosaic", bloom: 0.35, boardGlow: 0.7, pin: "radial", pout: "radial",
+  id: "finale", ch: "outro", dur: 28, fixed: true, gl: "mosaic", bloom: 0.35, boardGlow: 0.7, pin: "radial", pout: "radial",
   cam: t => {
     // From the face at the centre of the flag out to the whole flag, fitted to the frame's width.
     const f = MOS.first || { tx: 0, ty: 60 };
@@ -535,7 +535,7 @@ scene({
       block(1440, { textAlign: "center" },
         an(h("div.kick", { style: { justifyContent: "center", color: "var(--white)", fontSize: "30px" } },
           FULL ? `SEE YOU IN ${YEAR + 1}` : "THE YEAR ISN'T OVER YET"), "up", 7.0, 0.7),
-        an(h("div.brandmark", ujIcon(72), "UKPLACE"), "fade", 7.8, 0.8)));
+        an(h("div.brandmark", ujIcon(72), "UKPLACE"), "fade", 21.6, 1.2)));
   },
   update(t, r) {
     const [sx, sy] = shake(t, 5.3, 10);

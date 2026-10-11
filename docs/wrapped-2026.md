@@ -260,9 +260,27 @@ mute or claim it.
 | `big-brother-theme` | Big Brother UK TV Theme - Elementfour | Big Brother |
 | `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | The finale; the avatar flag stretches to about 30s so the chorus lands as the flag fills the frame |
 
-Sound effects (sourced freely or made in the page, never bought): Big Ben chimes under the midnight
-countdown, the real emergency-alert tone on the busiest ten minutes, slot-machine ticks on the number
-rolls, whooshes on card flips.
+Sound effects are synthesised by the mixer, so nothing has to be fetched: a Big Ben strike at midnight
+in the cold open, and a two-tone phone alert on the busiest ten minutes. The Hall of Fame theme is the
+Only Fools and Horses theme (Yakety Sax was American), which also gives each "Meanwhile" its sting.
+
+Building it, after the silent render:
+
+```bash
+~/.venv/bin/python scripts/wrapped/soundtrack.py analyze scratch/wrapped-2026/music
+node scripts/wrapped/render.mjs <page url> --timeline timeline.json
+~/.venv/bin/python scripts/wrapped/soundtrack.py mix scratch/wrapped-2026/music timeline.json silent.mp4 wrapped.mp4
+```
+
+`analyze` finds each song's beat grid and lines up time-synced lyrics (lrclib, in `music/lyrics/`)
+against the actual file, which matters because music-video audio can carry an intro the album doesn't
+(Parklife's runs 17 seconds; the Bitter Sweet Symphony video edit drops 51 seconds of the album's). It
+writes `<song>.analysis.json` with every lyric line at its real time. `cues.json` then says which song
+plays over which scenes and syncs a moment of the song to a moment of a scene, e.g. Gold's first
+"Gold!" (47.4s) to the biggest-win reveal, or Oasis's "And so Sally can wait" (70.7s) to the THANK
+YOU slam; songs dip under any "Meanwhile" they span. Because cues name scenes, they keep working when
+scene lengths change. Every song is levelled to the same loudness over the stretch it plays, and a
+limiter keeps the mix at -2dB.
 
 ## Timeline
 
