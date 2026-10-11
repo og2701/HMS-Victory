@@ -239,6 +239,31 @@ Rules the extract already follows:
 - The longest message is shown by its size only, never its text.
 - Words of the month leave out the names of anyone with 300+ messages, since names spike too.
 
+## Soundtrack
+
+Real songs, nearly all British, one per section. The files are bought by hand (never ripped) and kept
+in `scratch/wrapped-2026/music/` under these names; the render step will cut each to its section from
+the audio itself, with crossfades, and time the big moments to the beat. Song positions below are
+approximate until the files are in. Real songs make this a Discord-only cut: YouTube and TikTok would
+mute or claim it.
+
+| File | Song | Plays over |
+| --- | --- | --- |
+| `parklife` | Parklife - Blur | Title and The Numbers |
+| `dont-stop-me-now` | Don't Stop Me Now - Queen | The Awards, from where the band kicks in |
+| `bitter-sweet-symphony` | Bitter Sweet Symphony - The Verve | The People, from the strings |
+| `shut-up` | Shut Up - Stormzy | The Shut page |
+| `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame, plus a short sting under each "Meanwhile" |
+| `common-people` | Common People - Pulp | The Words, chorus under the words of the month |
+| `gold` | Gold - Spandau Ballet | Casino and Money, "Gold!" on the biggest win |
+| `vindaloo` | Vindaloo - Fat Les | The Games |
+| `big-brother-theme` | Big Brother UK TV Theme - Elementfour | Big Brother |
+| `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | The finale; the avatar flag stretches to about 30s so the chorus lands as the flag fills the frame |
+
+Sound effects (sourced freely or made in the page, never bought): Big Ben chimes under the midnight
+countdown, the real emergency-alert tone on the busiest ten minutes, slot-machine ticks on the number
+rolls, whooshes on card flips.
+
 ## Timeline
 
 - **October:** the gap fixes above.
