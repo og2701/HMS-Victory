@@ -544,7 +544,8 @@ scene({
 });
 
 // ---------------------------------------------------------------- interludes
-// Single funny messages, each dropped in straight after the scene it's picked to follow.
+// Single funny messages, each a punchline to the scene it follows. The picks file places them; they
+// never sit between a chapter card and its first scene.
 (DATA.interludes || []).forEach((it, k) => {
   const at = SCENES.findIndex(s => s.id === it.after);
   if (at < 0) return;
@@ -553,7 +554,7 @@ scene({
     build(r) {
       const m = it.message;
       r.append(h("div.scrim-mid"),
-        h("div.abs.center", { style: { left: 0, right: 0, top: "640px" } }, an(h("div.kick", { style: { justifyContent: "center" } }, "MEANWHILE..."), "type", 0.1, 0.5)),
+        h("div.abs.center", { style: { left: 0, right: 0, top: "640px" } }, an(h("div.kick", { style: { justifyContent: "center" } }, it.kicker || "MEANWHILE..."), "type", 0.1, 0.5)),
         h("div.abs", { style: { left: "56px", right: "56px", top: "740px" } },
           h("div.bigmsg", message({ user: m.user, text: m.text, when: dmyLong(m.day), reactions: m.reactions }, 0.35, { fx: "pop" }))));
     },

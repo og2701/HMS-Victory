@@ -944,7 +944,7 @@ class Extract:
             m = cands.get(int(pick["id"])) or self.hof_message(int(pick["id"]))
             if m:
                 m["user"] = self.who(m["user"])
-                interludes.append({"after": pick["after"], "message": m})
+                interludes.append({"after": pick["after"], "kicker": pick.get("kicker"), "message": m})
         self.out["interludes"] = interludes
 
     def regular_names(self):

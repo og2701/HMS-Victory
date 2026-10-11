@@ -172,7 +172,7 @@ def mix(music_dir, timeline_path, video, out):
     inputs, chains = [], []
     AUDIO = (".mp3", ".m4a", ".wav", ".flac", ".aac", ".ogg", ".opus")
 
-    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=()):
+    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=(), duck_db=-15.0):
         k = len(chains)  # one input per chain, so the chain number is the input number
         inputs.extend(src_args)
         f = [f"atrim=0:{length:.3f}", "asetpts=PTS-STARTPTS", "aresample=44100", "aformat=channel_layouts=stereo"]
@@ -184,8 +184,9 @@ def mix(music_dir, timeline_path, video, out):
         ms = int(round(start * 1000))
         f.append(f"adelay={ms}|{ms}")
         if duck:
-            # dip to about -15dB inside each ducked scene, ramping over a third of a second each side
-            terms = "*".join(f"(1-0.82*clip((t-{a:.3f})/0.3,0,1)*clip(({b:.3f}-t)/0.3,0,1))" for a, b in duck)
+            # dip by duck_db inside each ducked scene, ramping over a third of a second each side
+            depth = 1 - 10 ** (duck_db / 20)
+            terms = "*".join(f"(1-{depth:.3f}*clip((t-{a:.3f})/0.3,0,1)*clip(({b:.3f}-t)/0.3,0,1))" for a, b in duck)
             f.append(f"volume='{terms}':eval=frame")
         chains.append(f"[{k}:a]" + ",".join(f) + f"[c{k}]")
 
@@ -205,6 +206,12 @@ def mix(music_dir, timeline_path, video, out):
             continue
         start = times[cue["from"]][0] - cue.get("lead", 0)
         end = times[cue["to"]][1] + cue.get("tail", 0)
+        # a Meanwhile straight after the cue's last scene is part of it: the music carries on under it
+        order = [sc["id"] for sc in timeline["scenes"]]
+        i = order.index(cue["to"]) + 1
+        while i < len(order) and order[i].startswith("meanwhile-"):
+            end = times[order[i]][1]
+            i += 1
         song_t, scene, into = cue["sync"]
         offset = song_t - (times[scene][0] + into - start)
         if offset < 0:  # the song can't start before its own beginning: start the cue later instead
@@ -214,7 +221,7 @@ def mix(music_dir, timeline_path, video, out):
         gain = TARGET_DB - level(path, offset, end - start) + cue.get("gain", 0)
         print(f"  {cue['song']:26} {start:7.2f}s +{end - start:6.2f}s from {offset:7.2f}s  gain {gain:+.1f}dB")
         add(["-ss", f"{offset:.3f}", "-i", str(path)], start, end - start, cue.get("fade_in", 0.4),
-            cue.get("fade_out", 1.2), gain, duck)
+            cue.get("fade_out", 1.2), gain, duck, cue.get("duck_db", -15.0))
 
     n = len(chains)
     graph = ";".join(chains) + ";" + "".join(f"[c{k}]" for k in range(n)) + \
