@@ -261,9 +261,10 @@ mute or claim it.
 | `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | The finale; the avatar flag stretches to about 30s so the chorus lands as the flag fills the frame |
 
 Sound effects are synthesised by the mixer, so nothing has to be fetched: a Big Ben strike at midnight
-in the cold open, a two-tone phone alert on the busiest ten minutes, and a soft message chime as each
-"Meanwhile" message pops up. The Hall of Fame theme is the Only Fools and Horses theme (Yakety Sax was
-American).
+in the cold open, the UK Emergency Alert (both tones at once, a long blast and two short) as the
+busiest ten minutes says everyone's phone went off, with the music dipping under it, and a soft
+message chime as each "Meanwhile" message pops up. The Hall of Fame theme is the Only Fools and Horses
+theme (Yakety Sax was American).
 
 Building it, after the silent render:
 

@@ -130,13 +130,15 @@ def analyze(music_dir):
 
 # ---------------------------------------------------------------- mixing
 # Sound effects made from scratch, so nothing has to be fetched: a Big Ben strike (bell partials on E,
-# each dying away at its own rate) and a two-tone phone alert with a buzz under it.
+# each dying away at its own rate) and the UK Emergency Alert: both tones at once (853 and 960 Hz), on
+# for a long blast and two short ones, with the phone's vibration buzzing under it.
 SFX = {
     "bigben": ("aevalsrc='0.9*exp(-0.55*t)*(0.55*sin(2*PI*82.4*t)+0.9*sin(2*PI*164.8*t)+0.55*sin(2*PI*197.8*t)"
                "+0.4*sin(2*PI*247.2*t)+0.6*exp(-0.9*t)*sin(2*PI*329.6*t)+0.25*exp(-2.2*t)*sin(2*PI*415.3*t)"
                "+0.15*exp(-4*t)*sin(2*PI*659.3*t))':s=44100:d=8"),
-    "alert": ("aevalsrc='0.55*sin(2*PI*if(lt(mod(t,0.5),0.25),853,960)*t)*lt(t,2.6)"
-              "+0.25*sin(2*PI*150*t)*gt(sin(2*PI*8*t),0)*lt(t,2.6)':s=44100:d=2.8"),
+    "alert": ("aevalsrc='(0.33*sin(2*PI*853*t)+0.33*sin(2*PI*960*t))"
+              "*(clip(min(t,1.6-t)/0.006,0,1)+clip(min(t-1.85,2.35-t)/0.006,0,1)+clip(min(t-2.6,3.1-t)/0.006,0,1))"
+              "+0.2*sin(2*PI*150*t)*gt(sin(2*PI*7*t),0)*lt(t,3.1)':s=44100:d=3.2"),
     # a soft two-note message chime, C6 then G6, each note with a quieter octave on top
     "ping": ("aevalsrc='lt(t,0.09)*exp(-14*t)*(0.5*sin(2*PI*1046.5*t)+0.12*sin(2*PI*2093*t))"
              "+gte(t,0.09)*exp(-9*(t-0.09))*(0.5*sin(2*PI*1568*t)+0.1*sin(2*PI*3136*t))"
@@ -225,13 +227,13 @@ def mix(music_dir, timeline_path, video, out):
         ms = int(round(start * 1000))
         f.append(f"adelay={ms}|{ms}")
         if duck:
-            # dip by duck_db inside each ducked scene, ramping over a third of a second each side
-            depth = 1 - 10 ** (duck_db / 20)
-            terms = "*".join(f"(1-{depth:.3f}*clip((t-{a:.3f})/0.3,0,1)*clip(({b:.3f}-t)/0.3,0,1))" for a, b in duck)
+            # dip inside each ducked span (by its own dB, or duck_db), ramping over a third of a second each side
+            terms = "*".join(f"(1-{1 - 10 ** ((d[2] if len(d) > 2 else duck_db) / 20):.3f}"
+                             f"*clip((t-{d[0]:.3f})/0.3,0,1)*clip(({d[1]:.3f}-t)/0.3,0,1))" for d in duck)
             f.append(f"volume='{terms}':eval=frame")
         chains.append(f"[{k}:a]" + ",".join(f) + f"[c{k}]")
 
-    muffle, songs = None, []
+    muffle, songs, sfx_ducks = None, [], []
     for cue in cues:
         if "muffle" in cue:
             muffle = cue
@@ -241,6 +243,9 @@ def mix(music_dir, timeline_path, video, out):
             spans = matching(times, cue["each"]) if "each" in cue else [times[cue["scene"]]]
             for a, _ in spans:
                 add(["-f", "lavfi", "-i", SFX[cue["sfx"]]], a + cue.get("at", 0), 8, 0, 0.4, cue.get("gain", 0))
+                if "duck" in cue:  # the songs dip under this one while it plays
+                    at = a + cue.get("at", 0)
+                    sfx_ducks.append((at, at + float(re.search(r":d=([\d.]+)", SFX[cue["sfx"]]).group(1)), cue["duck"]))
             continue
         path = next(p for p in music_dir.glob(cue["song"] + ".*") if p.suffix.lower() in AUDIO)
         if "each" in cue:
@@ -323,6 +328,7 @@ def mix(music_dir, timeline_path, video, out):
         if sweep:
             fade_at, fade_out = sweep[0] - start, sweep[1] - sweep[0]
         duck = [v for pat in cue.get("duck", []) for v in matching(times, pat) if v[0] < end and v[1] > start]
+        duck += [d for d in sfx_ducks if d[0] < end and d[1] > start]
         add(["-ss", f"{s['offset']:.3f}", "-i", str(s["path"])], start, end - start, s["fade_in"], fade_out, s["gain"],
             duck, cue.get("duck_db", -15.0), cutoff if (mine or sweep) else None, fade_at)
 
