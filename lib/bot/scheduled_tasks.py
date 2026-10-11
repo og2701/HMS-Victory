@@ -501,6 +501,18 @@ async def _purge_message_archive(client):
         logger.error("Message archive purge failed", exc_info=True)
 
 
+async def _snapshot_xp(client):
+    """Keep XP's history (xp is overwritten in place): hourly, each member's XP goes against the UK
+    day, where it changed. The run just after midnight lands on the day that's ending, so a day's
+    row ends up holding where that member finished it."""
+    try:
+        from database import snapshot_xp
+        day = (datetime.now(pytz.timezone("Europe/London")) - timedelta(minutes=1)).date().isoformat()
+        snapshot_xp(day)
+    except Exception:
+        logger.error("XP snapshot failed", exc_info=True)
+
+
 def schedule_client_jobs(client, scheduler):
     """Register/start process jobs once across repeated gateway ready events."""
     if not getattr(client, "_scheduler_jobs_registered", False):
@@ -535,6 +547,7 @@ def _register_client_jobs(client, scheduler):
 
     _add_process_job(scheduler, _bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
     _add_process_job(scheduler, _purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
+    _add_process_job(scheduler, _snapshot_xp, CronTrigger(minute=0, timezone="Europe/London"), args=[client], id="snapshot_xp_job", name="Snapshot XP history")
     _add_process_job(scheduler, award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")
     _add_process_job(scheduler, daily_summary, CronTrigger(hour=0, minute=1, timezone="Europe/London"), args=[client], id="daily_summary_job", name="Daily Summary, Chat Rewards & Economy Metrics")
     _add_process_job(scheduler, post_daily_economy_stats, CronTrigger(hour=0, minute=5, timezone="Europe/London"), args=[client], id="post_daily_economy_stats_job", name="Post Daily UKPence Economy Stats")

@@ -302,6 +302,18 @@ def init_db():
                 last_xp_time INTEGER NOT NULL DEFAULT 0
             )
         ''')
+        # xp is overwritten in place, so this keeps its history: a row for each UK day a member's
+        # XP changed, holding where it ended that day (snapshot_xp, run hourly). XP on any day is
+        # the member's latest row on or before it, so a year's gains and level-ups can be worked out.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS xp_daily (
+                day TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                xp INTEGER NOT NULL,
+                PRIMARY KEY (day, user_id)
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_xp_daily_user ON xp_daily(user_id, day)")
         c.execute('''
             CREATE TABLE IF NOT EXISTS county_instances (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -636,6 +648,38 @@ def init_db():
                 progress TEXT NOT NULL,
                 done INTEGER NOT NULL,
                 PRIMARY KEY (user_id, date)
+            )
+        ''')
+        # Wordle and the crossword keep only today's games (their JSON state resets each day), so
+        # every game is also written here as it's played, one row per player per UK day.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS wordle_results (
+                day TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                word TEXT NOT NULL,
+                guesses TEXT NOT NULL,
+                solved INTEGER NOT NULL DEFAULT 0,
+                done INTEGER NOT NULL DEFAULT 0,
+                opened_at INTEGER,
+                finished_at INTEGER,
+                paid INTEGER,
+                PRIMARY KEY (day, user_id)
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS crossword_results (
+                day TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                puzzle_id TEXT,
+                entries INTEGER NOT NULL,
+                solved INTEGER NOT NULL DEFAULT 0,
+                hints INTEGER NOT NULL DEFAULT 0,
+                wrong INTEGER NOT NULL DEFAULT 0,
+                done INTEGER NOT NULL DEFAULT 0,
+                opened_at INTEGER,
+                finished_at INTEGER,
+                paid INTEGER,
+                PRIMARY KEY (day, user_id)
             )
         ''')
         # and their wardrobe: what they own and wear (JSON), papers spent, and papers won from jobs
@@ -1409,6 +1453,16 @@ def init_db():
 
 if __name__ == '__main__':
     init_db()
+
+def snapshot_xp(day: str) -> int:
+    """Record each member's XP against a UK day (YYYY-MM-DD), only where it changed since their last
+    row. Safe to run as often as you like: later runs on the same day move that day's row up to
+    the latest value. Returns how many rows were written."""
+    return DatabaseManager.execute(
+        """INSERT OR REPLACE INTO xp_daily (day, user_id, xp)
+           SELECT ?, x.user_id, x.xp FROM xp x
+           WHERE x.xp IS NOT (SELECT d.xp FROM xp_daily d WHERE d.user_id = x.user_id ORDER BY d.day DESC LIMIT 1)""",
+        (day,))
 
 def award_badge(user_id: str, badge_id: str):
     import time

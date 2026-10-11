@@ -82,6 +82,23 @@ def _load_state():
     return load_json_file(config.WORDLE_STATE_FILE) or {}
 
 
+def _log_result(uid, date_str, p) -> None:
+    """Copy one player's game into wordle_results. The JSON state only ever holds today, so this
+    is the only lasting record of who played, how many guesses it took and what it paid."""
+    try:
+        import json
+        from database import DatabaseManager
+        word = _todays_word(datetime.date.fromisoformat(date_str))
+        times = p.get("guess_times") or []
+        DatabaseManager.execute(
+            "INSERT OR REPLACE INTO wordle_results (day, user_id, word, guesses, solved, done, opened_at, finished_at, paid) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (date_str, str(uid), word, json.dumps(p.get("guesses", [])), int(bool(p.get("solved"))), int(bool(p.get("done"))),
+             p.get("opened_at"), times[-1] if p.get("done") and times else None, p.get("paid")))
+    except Exception:
+        log.warning("Couldn't log a Wordle result", exc_info=True)
+
+
 def _day_players(state, date_str):
     if state.get("date") != date_str:
         state["date"] = date_str
@@ -101,6 +118,7 @@ def _note_opened(uid, date_str) -> None:
     if not p.get("opened_at"):
         p["opened_at"] = int(time.time())
         save_json_file(config.WORDLE_STATE_FILE, state)
+        _log_result(uid, date_str, p)
 
 
 def _player(date_str, uid):
@@ -132,6 +150,7 @@ def _submit_guess(uid, date_str, word, guess):
     elif len(p["guesses"]) >= 6:
         p["done"] = True
     save_json_file(config.WORDLE_STATE_FILE, state)
+    _log_result(uid, date_str, p)
     return "ok", None, p
 
 
@@ -143,6 +162,7 @@ def _mark_rewarded(uid, date_str, paid=None):
         if paid is not None:
             players[str(uid)]["paid"] = int(paid)
         save_json_file(config.WORDLE_STATE_FILE, state)
+        _log_result(uid, date_str, players[str(uid)])
 
 
 def _get_consecutive_first_try(uid: int) -> int:

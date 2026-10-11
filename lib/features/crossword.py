@@ -151,6 +151,22 @@ def _save_player(date_str, uid, p):
     state = _load_state()
     _day_players(state, d_str, d)[str(uid)] = p
     save_json_file(config.CROSSWORD_STATE_FILE, state)
+    _log_result(d, uid, p)
+
+
+def _log_result(d, uid, p) -> None:
+    """Copy one player's grid into crossword_results. The JSON state only ever holds today, so
+    this is the only lasting record of who played, how cleanly they solved it and what it paid."""
+    try:
+        from database import DatabaseManager
+        DatabaseManager.execute(
+            "INSERT OR REPLACE INTO crossword_results (day, user_id, puzzle_id, entries, solved, hints, wrong, done, "
+            "opened_at, finished_at, paid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (d.isoformat(), str(uid), _puzzle_id(d), len(_todays_puzzle(d)["entries"]), len(set(p.get("solved", []))),
+             len(p.get("revealed", [])), int(p.get("wrong", 0)), int(bool(p.get("done"))), p.get("opened_at"),
+             p.get("finished_at"), p.get("paid")))
+    except Exception:
+        log.warning("Couldn't log a crossword result", exc_info=True)
 
 
 def _cascade(puzzle, p) -> list:
