@@ -11,8 +11,9 @@ cues can be written against lines ("start at 'And so Sally can wait'") and land 
 
 mix: reads cues.json from the music dir and the scene timeline render.mjs writes, and builds the audio:
 each cue plays a song from a point in it, over a span of scenes, with fades, dipping under any scene
-listed in its "duck"; stings and sound effects drop in at a scene's start. Cues name scenes, not
-seconds, so the soundtrack follows the video when scene lengths change.
+listed in its "duck"; stings and sound effects drop in at a scene's start (or every matching scene's,
+with "each"); a "muffle" cue low-passes the songs inside matching scenes, as if heard from the next
+room. Cues name scenes, not seconds, so the soundtrack follows the video when scene lengths change.
 
 Needs numpy and scipy (the analysis), and ffmpeg.
 """
@@ -136,6 +137,10 @@ SFX = {
                "+0.15*exp(-4*t)*sin(2*PI*659.3*t))':s=44100:d=8"),
     "alert": ("aevalsrc='0.55*sin(2*PI*if(lt(mod(t,0.5),0.25),853,960)*t)*lt(t,2.6)"
               "+0.25*sin(2*PI*150*t)*gt(sin(2*PI*8*t),0)*lt(t,2.6)':s=44100:d=2.8"),
+    # a soft two-note message chime, C6 then G6, each note with a quieter octave on top
+    "ping": ("aevalsrc='lt(t,0.09)*exp(-14*t)*(0.5*sin(2*PI*1046.5*t)+0.12*sin(2*PI*2093*t))"
+             "+gte(t,0.09)*exp(-9*(t-0.09))*(0.5*sin(2*PI*1568*t)+0.1*sin(2*PI*3136*t))"
+             "*min((t-0.09)/0.004,1)':s=44100:d=0.8"),
 }
 
 
@@ -169,11 +174,13 @@ def mix(music_dir, timeline_path, video, out):
     timeline = json.loads(Path(timeline_path).read_text())
     times = scene_times(timeline)
     total = timeline["total"]
-    inputs, chains = [], []
+    inputs, chains, music = [], [], []
     AUDIO = (".mp3", ".m4a", ".wav", ".flac", ".aac", ".ogg", ".opus")
 
-    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=(), duck_db=-15.0):
+    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=(), duck_db=-15.0, song=False):
         k = len(chains)  # one input per chain, so the chain number is the input number
+        if song:
+            music.append(k)
         inputs.extend(src_args)
         f = [f"atrim=0:{length:.3f}", "asetpts=PTS-STARTPTS", "aresample=44100", "aformat=channel_layouts=stereo"]
         if fade_in:
@@ -190,10 +197,16 @@ def mix(music_dir, timeline_path, video, out):
             f.append(f"volume='{terms}':eval=frame")
         chains.append(f"[{k}:a]" + ",".join(f) + f"[c{k}]")
 
+    muffle = None
     for cue in cues:
+        if "muffle" in cue:
+            muffle = cue
+            continue
         if "sfx" in cue:
-            at = times[cue["scene"]][0] + cue.get("at", 0)
-            add(["-f", "lavfi", "-i", SFX[cue["sfx"]]], at, 8, 0, 0.4, cue.get("gain", 0))
+            # at one scene, or at every scene matching "each"
+            spans = matching(times, cue["each"]) if "each" in cue else [times[cue["scene"]]]
+            for a, _ in spans:
+                add(["-f", "lavfi", "-i", SFX[cue["sfx"]]], a + cue.get("at", 0), 8, 0, 0.4, cue.get("gain", 0))
             continue
         path = next(p for p in music_dir.glob(cue["song"] + ".*") if p.suffix.lower() in AUDIO)
         if "each" in cue:
@@ -221,11 +234,27 @@ def mix(music_dir, timeline_path, video, out):
         gain = TARGET_DB - level(path, offset, end - start) + cue.get("gain", 0)
         print(f"  {cue['song']:26} {start:7.2f}s +{end - start:6.2f}s from {offset:7.2f}s  gain {gain:+.1f}dB")
         add(["-ss", f"{offset:.3f}", "-i", str(path)], start, end - start, cue.get("fade_in", 0.4),
-            cue.get("fade_out", 1.2), gain, duck, cue.get("duck_db", -15.0))
+            cue.get("fade_out", 1.2), gain, duck, cue.get("duck_db", -15.0), song=True)
 
     n = len(chains)
-    graph = ";".join(chains) + ";" + "".join(f"[c{k}]" for k in range(n)) + \
-        f"amix=inputs={n}:normalize=0:dropout_transition=0,alimiter=limit=0.8:level=false:attack=5:release=80,atrim=0:{total:.3f}[a]"
+    others = [k for k in range(n) if k not in music]
+    graph = ";".join(chains) + ";" + "".join(f"[c{k}]" for k in music) + \
+        f"amix=inputs={len(music)}:normalize=0:dropout_transition=0[songs]"
+    if muffle:
+        # The songs as if from the next room inside the muffled scenes: a steep low-pass faded in and out
+        # against the dry mix over a third of a second, so the song keeps its place and comes back clear.
+        spans = matching(times, muffle["muffle"])
+        wet = "+".join(f"clip((t-{a:.3f})/0.3,0,1)*clip(({b:.3f}-t)/0.3,0,1)" for a, b in spans)
+        hz = muffle.get("cutoff", 500)
+        graph += (f";[songs]asplit[dry][wet];[dry]volume='1-({wet})':eval=frame[d];"
+                  f"[wet]lowpass=f={hz},lowpass=f={hz},volume='{wet}':eval=frame[w];"
+                  f"[d][w]amix=inputs=2:normalize=0[songs2]")
+        songs = "[songs2]"
+    else:
+        songs = "[songs]"
+    graph += ";" + songs + "".join(f"[c{k}]" for k in others) + \
+        f"amix=inputs={1 + len(others)}:normalize=0:dropout_transition=0," \
+        f"alimiter=limit=0.8:level=false:attack=5:release=80,atrim=0:{total:.3f}[a]"
     audio = Path(out).with_suffix(".m4a")
     subprocess.run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[a]", "-c:a", "aac",
                     "-b:a", "192k", str(audio)], check=True)

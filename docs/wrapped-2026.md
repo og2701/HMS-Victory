@@ -253,7 +253,7 @@ mute or claim it.
 | `dont-stop-me-now` | Don't Stop Me Now - Queen | The Awards, from where the band kicks in |
 | `bitter-sweet-symphony` | Bitter Sweet Symphony - The Verve | The People, from the strings |
 | `shut-up` | Shut Up - Stormzy | The Shut page |
-| `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame, plus a short sting under each "Meanwhile" |
+| `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame |
 | `common-people` | Common People - Pulp | The Words, chorus under the words of the month |
 | `gold` | Gold - Spandau Ballet | Casino and Money, "Gold!" on the biggest win |
 | `vindaloo` | Vindaloo - Fat Les | The Games |
@@ -261,8 +261,9 @@ mute or claim it.
 | `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | The finale; the avatar flag stretches to about 30s so the chorus lands as the flag fills the frame |
 
 Sound effects are synthesised by the mixer, so nothing has to be fetched: a Big Ben strike at midnight
-in the cold open, and a two-tone phone alert on the busiest ten minutes. The Hall of Fame theme is the
-Only Fools and Horses theme (Yakety Sax was American), which also gives each "Meanwhile" its sting.
+in the cold open, a two-tone phone alert on the busiest ten minutes, and a soft message chime as each
+"Meanwhile" message pops up. The Hall of Fame theme is the Only Fools and Horses theme (Yakety Sax was
+American).
 
 Building it, after the silent render:
 
@@ -278,7 +279,9 @@ against the actual file, which matters because music-video audio can carry an in
 writes `<song>.analysis.json` with every lyric line at its real time. `cues.json` then says which song
 plays over which scenes and syncs a moment of the song to a moment of a scene, e.g. Gold's first
 "Gold!" (47.4s) to the biggest-win reveal, or Oasis's "And so Sally can wait" (70.7s) to the THANK
-YOU slam; songs dip under any "Meanwhile" they span. Because cues name scenes, they keep working when
+YOU slam. A "Meanwhile" doesn't change the song: the song before it carries on, muffled as if from
+the next room (a steep low-pass faded in and out against the dry mix), and comes back clear for the
+next scene. Because cues name scenes, they keep working when
 scene lengths change. Every song is levelled to the same loudness over the stretch it plays, and a
 limiter keeps the mix at -2dB.
 
