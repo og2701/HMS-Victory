@@ -168,25 +168,59 @@ def matching(times, pattern):
     return sorted((v for k, v in times.items() if rx.match(k)), key=lambda v: v[0])
 
 
+OPEN_HZ = 20000.0   # the low-pass when a song plays clear
+SWEEP_TO = 150.0    # where a song's low-pass ends up as it hands over to the next one
+RAMP = 0.35         # seconds to sweep into and out of a muffle
+ONSET_LAG = 2048 / SR  # the onset curve peaks this long before the hit itself (a full STFT window)
+
+
+def low_hits(path, cache={}):
+    """Onsets in the bass (kick drums, bass notes), one value per hop: the big ones are downbeats."""
+    import numpy as np
+    from scipy.signal import stft
+    if path not in cache:
+        f, t, Z = stft(decode(path), fs=SR, nperseg=2048, noverlap=2048 - HOP, boundary=None)
+        flux = np.maximum(np.diff(np.log1p(np.abs(Z) * 100), axis=1), 0)[f < 200].sum(axis=0)
+        cache[path] = np.convolve(flux, np.ones(3) / 3, mode="same")
+    return cache[path]
+
+
+def strongest_hit(path, lo, hi):
+    """Song time of the biggest bass hit between lo and hi (song seconds)."""
+    import numpy as np
+    curve = low_hits(path)
+    a, b = max(int((lo - ONSET_LAG) * SR / HOP), 0), max(int((hi - ONSET_LAG) * SR / HOP), 1)
+    return (a + int(np.argmax(curve[a:b]))) * HOP / SR + ONSET_LAG
+
+
 def mix(music_dir, timeline_path, video, out):
+    import math
+    import tempfile
     music_dir = Path(music_dir)
     cues = json.loads((music_dir / "cues.json").read_text())
     timeline = json.loads(Path(timeline_path).read_text())
     times = scene_times(timeline)
+    order = [sc["id"] for sc in timeline["scenes"]]
     total = timeline["total"]
-    inputs, chains, music = [], [], []
+    inputs, chains = [], []
+    tmp = tempfile.TemporaryDirectory()
     AUDIO = (".mp3", ".m4a", ".wav", ".flac", ".aac", ".ogg", ".opus")
 
-    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=(), duck_db=-15.0, song=False):
+    def add(src_args, start, length, fade_in, fade_out, gain_db, duck=(), duck_db=-15.0, cutoff=None, fade_at=None):
         k = len(chains)  # one input per chain, so the chain number is the input number
-        if song:
-            music.append(k)
         inputs.extend(src_args)
         f = [f"atrim=0:{length:.3f}", "asetpts=PTS-STARTPTS", "aresample=44100", "aformat=channel_layouts=stereo"]
+        if cutoff:
+            # a two-stage low-pass whose frequency follows the schedule; small frames so it moves smoothly
+            cmds = Path(tmp.name) / f"cutoff{k}.txt"
+            cmds.write_text("".join(f"{t:.3f} lowpass@a{k} f {hz:.0f}, lowpass@b{k} f {hz:.0f};\n" for t, hz in cutoff))
+            f += ["asetnsamples=n=256", f"asendcmd=f={cmds}",
+                  f"lowpass@a{k}=f={OPEN_HZ:.0f}:transform=zdf", f"lowpass@b{k}=f={OPEN_HZ:.0f}:transform=zdf"]
         if fade_in:
             f.append(f"afade=t=in:st=0:d={fade_in}")
         if fade_out:
-            f.append(f"afade=t=out:st={max(length - fade_out, 0):.3f}:d={fade_out}")
+            st = fade_at if fade_at is not None else max(length - fade_out, 0)
+            f.append(f"afade=t=out:st={st:.3f}:d={fade_out:.3f}")
         f.append(f"volume={10 ** (gain_db / 20):.4f}")
         ms = int(round(start * 1000))
         f.append(f"adelay={ms}|{ms}")
@@ -197,7 +231,7 @@ def mix(music_dir, timeline_path, video, out):
             f.append(f"volume='{terms}':eval=frame")
         chains.append(f"[{k}:a]" + ",".join(f) + f"[c{k}]")
 
-    muffle = None
+    muffle, songs = None, []
     for cue in cues:
         if "muffle" in cue:
             muffle = cue
@@ -220,7 +254,6 @@ def mix(music_dir, timeline_path, video, out):
         start = times[cue["from"]][0] - cue.get("lead", 0)
         end = times[cue["to"]][1] + cue.get("tail", 0)
         # a Meanwhile straight after the cue's last scene is part of it: the music carries on under it
-        order = [sc["id"] for sc in timeline["scenes"]]
         i = order.index(cue["to"]) + 1
         while i < len(order) and order[i].startswith("meanwhile-"):
             end = times[order[i]][1]
@@ -230,37 +263,79 @@ def mix(music_dir, timeline_path, video, out):
         if offset < 0:  # the song can't start before its own beginning: start the cue later instead
             start -= offset
             offset = 0
+        songs.append({"cue": cue, "path": path, "start": start, "end": end, "offset": offset,
+                      "fade_in": cue.get("fade_in", 0.4), "fade_out": cue.get("fade_out", 1.2), "sweep": None,
+                      "gain": TARGET_DB - level(path, offset, end - start) + cue.get("gain", 0)})
+
+    # Handovers: where one song ends as the next begins, unless the next is meant to cut in. The old song
+    # plays to its last big bass hit before the cut, then sweeps down a low-pass and fades, out from under
+    # the new one, which comes in on a hit of its own as the scene lands (a chapter card's number slams
+    # in a quarter of a second in). Neither song moves in time, so every synced moment stays put.
+    songs.sort(key=lambda s: s["start"])
+    for p, q in zip(songs, songs[1:]):
+        if abs(q["start"] - p["end"]) > 0.05 or q["cue"].get("cut"):
+            continue
+        cut = p["end"]
+        landing = next((sid for sid in order if abs(times[sid][0] - cut) < 0.05), "")
+        land = cut + (0.25 if landing.startswith("ch-") else 0)
+        if q["offset"] > 0.5:  # mid-song: come in on the biggest hit near the landing
+            at = q["offset"] + (land - q["start"])
+            hit = strongest_hit(q["path"], at - 0.25, at + 0.45) - 0.03
+            q["offset"], q["start"] = hit, q["start"] + (hit - q["offset"])
+            q["fade_in"] = 0.02
+        sp = lambda t: p["offset"] + (t - p["start"])
+        last = strongest_hit(p["path"], sp(cut - 2.2), sp(cut - 0.5)) + p["start"] - p["offset"]
+        sweep_from = last + 0.12
+        p["end"] = max(q["start"] + 0.7, sweep_from + 1.5)
+        p["sweep"] = (sweep_from, p["end"])
+        print(f"  handover {p['cue']['song']} > {q['cue']['song']}: last hit {last:.2f}s, "
+              f"sweeps out by {p['end']:.2f}s, next in at {q['start']:.2f}s ({q['start'] - cut:+.2f}s)")
+
+    spans = matching(times, muffle["muffle"]) if muffle else []
+    for s in songs:
+        cue, start, end = s["cue"], s["start"], s["end"]
+        # The low-pass schedule: clear, swept down to the muffle inside a muffled scene and back up after
+        # it (held, if the song ends or hands over before it would open again), then the handover sweep.
+        lo_open, lo_muf, lo_end = math.log(OPEN_HZ), math.log(muffle.get("cutoff", 500) if muffle else OPEN_HZ), math.log(SWEEP_TO)
+        mine = [(a, b) for a, b in spans if a < end and b > start]
+        sweep = s["sweep"]
+
+        def logf(t):
+            w = 0.0
+            for a, b in mine:
+                held = b >= end - 0.05 or (sweep and b >= sweep[0] - 0.01)  # the song ends muffled
+                w = max(w, min(max((t - a) / RAMP, 0), 1) * (1 if held else min(max((b - t) / RAMP, 0), 1)))
+            return lo_open + w * (lo_muf - lo_open)
+
+        cutoff, prev = [], None
+        steps = int((end - start) / 0.01) + 1
+        for n in range(steps):
+            t = start + n * 0.01
+            v = logf(t)
+            if sweep and t >= sweep[0]:
+                x = min((t - sweep[0]) / (sweep[1] - sweep[0]), 1)
+                v = logf(sweep[0]) + (1 - (1 - x) ** 2) * (lo_end - logf(sweep[0]))
+            if prev is None or abs(v - prev) > 0.004:
+                cutoff.append((n * 0.01, math.exp(v)))
+                prev = v
+        print(f"  {cue['song']:26} {start:7.2f}s +{end - start:6.2f}s from {s['offset']:7.2f}s  gain {s['gain']:+.1f}dB")
+        fade_out, fade_at = s["fade_out"], None
+        if sweep:
+            fade_at, fade_out = sweep[0] - start, sweep[1] - sweep[0]
         duck = [v for pat in cue.get("duck", []) for v in matching(times, pat) if v[0] < end and v[1] > start]
-        gain = TARGET_DB - level(path, offset, end - start) + cue.get("gain", 0)
-        print(f"  {cue['song']:26} {start:7.2f}s +{end - start:6.2f}s from {offset:7.2f}s  gain {gain:+.1f}dB")
-        add(["-ss", f"{offset:.3f}", "-i", str(path)], start, end - start, cue.get("fade_in", 0.4),
-            cue.get("fade_out", 1.2), gain, duck, cue.get("duck_db", -15.0), song=True)
+        add(["-ss", f"{s['offset']:.3f}", "-i", str(s["path"])], start, end - start, s["fade_in"], fade_out, s["gain"],
+            duck, cue.get("duck_db", -15.0), cutoff if (mine or sweep) else None, fade_at)
 
     n = len(chains)
-    others = [k for k in range(n) if k not in music]
-    graph = ";".join(chains) + ";" + "".join(f"[c{k}]" for k in music) + \
-        f"amix=inputs={len(music)}:normalize=0:dropout_transition=0[songs]"
-    if muffle:
-        # The songs as if from the next room inside the muffled scenes: a steep low-pass faded in and out
-        # against the dry mix over a third of a second, so the song keeps its place and comes back clear.
-        spans = matching(times, muffle["muffle"])
-        wet = "+".join(f"clip((t-{a:.3f})/0.3,0,1)*clip(({b:.3f}-t)/0.3,0,1)" for a, b in spans)
-        hz = muffle.get("cutoff", 500)
-        graph += (f";[songs]asplit[dry][wet];[dry]volume='1-({wet})':eval=frame[d];"
-                  f"[wet]lowpass=f={hz},lowpass=f={hz},volume='{wet}':eval=frame[w];"
-                  f"[d][w]amix=inputs=2:normalize=0[songs2]")
-        songs = "[songs2]"
-    else:
-        songs = "[songs]"
-    graph += ";" + songs + "".join(f"[c{k}]" for k in others) + \
-        f"amix=inputs={1 + len(others)}:normalize=0:dropout_transition=0," \
-        f"alimiter=limit=0.8:level=false:attack=5:release=80,atrim=0:{total:.3f}[a]"
+    graph = ";".join(chains) + ";" + "".join(f"[c{k}]" for k in range(n)) + \
+        f"amix=inputs={n}:normalize=0:dropout_transition=0,alimiter=limit=0.8:level=false:attack=5:release=80,atrim=0:{total:.3f}[a]"
     audio = Path(out).with_suffix(".m4a")
     subprocess.run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[a]", "-c:a", "aac",
                     "-b:a", "192k", str(audio)], check=True)
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-i", str(audio), "-map", "0:v", "-map", "1:a",
                     "-c:v", "copy", "-c:a", "copy", "-shortest", "-movflags", "+faststart", str(out)], check=True)
     audio.unlink()
+    tmp.cleanup()
     print(f"wrote {out}: {n} audio cues over {total:.1f}s")
 
 

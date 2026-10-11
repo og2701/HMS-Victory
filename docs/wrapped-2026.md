@@ -281,7 +281,10 @@ plays over which scenes and syncs a moment of the song to a moment of a scene, e
 "Gold!" (47.4s) to the biggest-win reveal, or Oasis's "And so Sally can wait" (70.7s) to the THANK
 YOU slam. A "Meanwhile" doesn't change the song: the song before it carries on, muffled as if from
 the next room (a steep low-pass faded in and out against the dry mix), and comes back clear for the
-next scene. Because cues name scenes, they keep working when
+next scene. Where one song ends as the next begins, the old one plays to its last big bass hit, then
+sweeps down a low-pass and fades out from under the new one, which comes in on a hit of its own as the
+chapter card's number slams in; a cue marked `"cut": true` cuts in instead (Shut Up, the Big Brother
+theme), because there the jolt is the joke. Because cues name scenes, they keep working when
 scene lengths change. Every song is levelled to the same loudness over the stretch it plays, and a
 limiter keeps the mix at -2dB.
 
