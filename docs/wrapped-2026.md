@@ -61,15 +61,18 @@ the emoji slides and the avatar wall ending.
 
 ## Gaps to fix before December
 
-1. **XP has no history.** `xp` is overwritten. Snapshot it daily from now so October to
-   December gains and level-ups can be shown.
-2. **Wordle and crossword wipe each day.** Log each day's results to a table. Rewarded solves
-   in `user_transactions` give partial history before that.
-3. **Sold county balls are deleted**, so "caught this year" undercounts. Soft-delete instead.
-4. **Skyrim keeps lifetime totals only.** Fine this year since it's new, but snapshot it on
+1. **XP has no history.** Fixed: `xp_daily` keeps a row for each day a member's XP changed
+   (hourly `snapshot_xp`), so a year's gains and level-ups can be worked out. It started in
+   October 2026, too late for this year's video, so it's for 2027.
+2. **Wordle and crossword wipe each day.** Fixed: every game is written to `wordle_results` and
+   `crossword_results` as it's played (guesses, solved, hints, wrong answers, payout). Also
+   from October 2026, so also for 2027.
+3. **Skyrim keeps lifetime totals only.** Fine this year since it's new, but snapshot it on
    31 December so 2027 can be diffed.
-5. **Voice, slash commands and joins via the gateway** only start on 22 September. Nothing to
+4. **Voice, slash commands and joins via the gateway** only start on 22 September. Nothing to
    do but keep recording; those slides say "since September" or get cut.
+
+County balls are left out of the Wrapped altogether.
 
 ## Chapters (draft)
 
@@ -86,7 +89,7 @@ the emoji slides and the avatar wall ending.
 8. **Words and emoji:** top emoji and reactions, words of each month, the laugh index.
 9. **Casino.**
 10. **UKPence.**
-11. **Games:** Kart, the daily games, Skyrim, county balls.
+11. **Games:** Kart, the daily games, Skyrim.
 12. **Big Brother**, pointing at the full replay.
 13. **Badges:** the haul by tier and the rewards paid, a medal table (golds first, like the
     Olympics), the rarest, the ones nobody has yet, and the secret ones, counted but never named
@@ -119,7 +122,6 @@ Last year's 16 stay. New for 2026:
 | Kart Champion | most wins, plus fastest lap per track | `kart_results` |
 | Rival of the Year | most PvP games against one person (bots excluded) | `pvp_results` |
 | Most Dead | most Skyrim deaths | `skyrim_profiles.json` |
-| The Collector | most county balls | `county_instances` |
 | Badge Hunter | most badges earned in 2026 | `user_badges` |
 | Paper Round | most newspapers delivered | `paperboy_runs` |
 | Big Spender | most spent in the shop | `shop_purchases` |
