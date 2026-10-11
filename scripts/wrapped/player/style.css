@@ -221,3 +221,29 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .crowdgrid svg { width: 52px; height: auto; }
 .bigmsg .msg .text { font-size: 50px; }
 .bigmsg .msg .name { font-size: 42px; }
+
+/* ---- badges */
+.tiers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+.tier { display: flex; align-items: center; gap: 26px; padding: 26px 30px; }
+.tier .big { font-size: 96px; }
+.t-gold { color: #ffc23d; } .t-silver { color: #d4d9e2; } .t-bronze { color: #d99a5c; }
+.t-secret { color: #ff8fc4; }  /* cycled through the rainbow by the scene */
+.frame.f-gold { background: linear-gradient(160deg, #ffc23d, #6b4708); }
+.frame.f-silver { background: linear-gradient(160deg, #d4d9e2, #4a5266); }
+.frame.f-bronze { background: linear-gradient(160deg, #d99a5c, #5a3214); }
+.medalrow { display: flex; align-items: center; gap: 18px; height: 96px; padding: 0 22px; background: rgba(4, 5, 10, .82);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .06); }
+.medalrow.first { box-shadow: inset 0 0 0 4px var(--acc), 0 0 40px color-mix(in srgb, var(--acc) 40%, transparent); }
+.medalrow .who { flex: 1; min-width: 0; font-size: 36px; line-height: 1.05; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mcol { width: 92px; flex: none; text-align: center; font-stretch: 80%; font-weight: 900; font-size: 50px; }
+.mhead { display: flex; justify-content: flex-end; gap: 18px; padding: 0 22px 12px; }
+.mhead > span { width: 92px; display: flex; justify-content: center; }
+.btile { display: grid; place-items: center; width: 150px; height: 150px; flex: none; background: rgba(4, 5, 10, .9); }
+.bgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.bslot .in { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  height: 200px; padding: 14px 10px; text-align: center; }
+.bslot .tiny { color: var(--mute); font-size: 17px; line-height: 1.35; }
+.locked { filter: grayscale(1) brightness(.75); opacity: .75; }
+.sgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.sgrid .in { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 10px 16px; }

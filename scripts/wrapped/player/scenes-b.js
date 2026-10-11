@@ -466,12 +466,12 @@ if (BB) {
   });
 }
 
-// Rivals, the lottery and badges: worth a slide once there's enough of them (by December, probably).
+// Rivals and the lottery: worth a slide once there's enough of them (by December, probably).
 if ((GM.rival && GM.rival.n >= 20) || (MN.lottery && MN.lottery.length >= 5)) {
   scene({
     id: "extras", ch: "games", dur: 6.0, boardGlow: 0.9,
     build(r) {
-      const rv = GM.rival, lt = MN.lottery && MN.lottery[0], bd = GM.badges;
+      const rv = GM.rival, lt = MN.lottery && MN.lottery[0];
       const lotWins = lt ? MN.lottery.filter(x => x.user === lt.user).length : 0;
       r.append(h("div.scrim-mid"), block(230, {}, kicker("AND THE REST"), words("ODDS AND ENDS", "title", 0.2)),
         h("div.abs.col", { style: { left: "56px", right: "56px", top: "500px", gap: "26px" } },
@@ -483,11 +483,117 @@ if ((GM.rival && GM.rival.n >= 20) || (MN.lottery && MN.lottery.length >= 5)) {
             h("div.small", { style: { marginTop: "14px", textAlign: "center" } }, `${rv.n} head-to-heads`))), "up", 0.5, 0.7) : null,
           lt ? an(h("div.frame.px", h("div.in.px", { style: { padding: "30px 36px" } }, h("div.kick", "THE LOTTERY"),
             h("div.lrow", { style: { marginTop: "22px" } }, avatar(lt.user, 110, 1.5, 0.6, "ring"),
-              h("div", h("div.h2", name(lt.user)), h("div.small", lotWins > 1 ? `won it ${lotWins} times, ${fmt(MN.lottery.filter(x => x.user === lt.user).reduce((s, x) => s + x.prize, 0))} UKPence in all` : `won ${fmt(lt.prize)} UKPence`))))), "up", 1.3, 0.7) : null,
-          bd ? an(h("div.frame.px", h("div.in.px", { style: { padding: "30px 36px" } }, h("div.kick", "BADGES"),
-            h("div.row", { style: { alignItems: "baseline", gap: "20px", marginTop: "18px" } }, h("div.big", roll(bd.n, 2.2, 1.3)), h("div.small", `earned by ${fmt(bd.people)} people`)),
-            h("div.lrow", { style: { marginTop: "14px" } }, avatar(bd.hunter.user, 80, 2.6, 0.6), h("div.small.white", `${name(bd.hunter.user)} collected the most: ${bd.hunter.n}`)))), "up", 2.1, 0.7) : null));
+              h("div", h("div.h2", name(lt.user)), h("div.small", lotWins > 1 ? `won it ${lotWins} times, ${fmt(MN.lottery.filter(x => x.user === lt.user).reduce((s, x) => s + x.prize, 0))} UKPence in all` : `won ${fmt(lt.prize)} UKPence`))))), "up", 1.3, 0.7) : null));
     },
+  });
+}
+
+// ---------------------------------------------------------------- the badges
+// Bronze, silver, gold and the secret ones. The secret ones are only ever counted, never named or shown.
+const BD = DATA.badges;
+if (BD) {
+  const TIERS = ["Bronze", "Silver", "Gold", "Secret"];
+  const tcls = t => "t-" + t.toLowerCase();
+  const rainbow = (r, t) => {
+    for (const el of r.querySelectorAll(".f-secret"))
+      el.style.background = `conic-gradient(from ${t * 90}deg, ${RAINBOW.join(", ")}, ${RAINBOW[0]})`;
+    r.querySelectorAll(".t-secret").forEach((el, i) => { el.style.color = `hsl(${(t * 140 + i * 40) % 360} 95% 68%)`; });
+  };
+  chapterScene("badges", 8, "THE BADGES", "Bronze, silver, gold and the secret ones");
+
+  scene({
+    id: "badge-haul", ch: "badges", dur: 6.6, boardGlow: 0.9,
+    build(r) {
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker(`SINCE ${dmyLong(BD.since).toUpperCase()}`),
+          h("div.title", roll(BD.n, 0.3, 1.6), " BADGES"),
+          line(`earned by ${fmt(BD.people)} of you`, 0.7, "h3")),
+        h("div.abs.tiers", { style: { left: "56px", right: "56px", top: "640px" } }, TIERS.map((t, i) =>
+          an(h("div.frame.px.f-" + t.toLowerCase(), h("div.in.px.tier", medalIcon(t, 110),
+            h("div", h("div.big." + tcls(t), roll(BD.tiers[t] || 0, 1.0 + i * 0.2, 1.3)),
+              h("div.tiny.white", { style: { marginTop: "8px" } }, t.toUpperCase()),
+              h("div.tiny", `OUT OF ${BD.catalogue[t]}`)))), "up", 0.8 + i * 0.15, 0.6))),
+        BD.paid ? block(1330, {}, kicker("PAID OUT", 2.2),
+          h("div.big.acc", { style: { fontSize: "150px", marginTop: "20px" } }, roll(BD.paid, 2.4, 1.4)),
+          line("UKPence in badge rewards", 2.6, "h3")) : null);
+    },
+    update(t, r) { rainbow(r, t); },
+  });
+
+  scene({
+    id: "medal-table", ch: "badges", dur: 7.4, boardGlow: 0.8,
+    build(r) {
+      const cols = ["Gold", "Silver", "Bronze", "Secret"];
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE MEDAL TABLE"), words("GOLDS FIRST", "title", 0.2),
+          line("Ranked like the Olympics: golds, then silvers, then bronzes", 0.5, "small")),
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: "590px", gap: "12px" } },
+          an(h("div.mhead", cols.map(c => h("span", medalIcon(c, 44)))), "fade", 0.6, 0.5),
+          BD.table.map((x, k) => an(h("div.medalrow.px" + (k ? "" : ".first"),
+            h("div.rank", String(k + 1)), avatar(x.user, 64, 0.7 + (7 - k) * 0.16, 0.5),
+            h("div.who.h3", name(x.user)),
+            cols.map(c => h("div.mcol." + tcls(c), String(x[c.toLowerCase()] || 0)))),
+          k ? "left" : "pop", 0.7 + (BD.table.length - 1 - k) * 0.16, k ? 0.6 : 0.7))));
+    },
+    update(t, r) { rainbow(r, t); },
+  });
+
+  scene({
+    id: "badge-rarest", ch: "badges", dur: 7.4, boardGlow: 0.8,
+    build(r) {
+      const c = BD.common;
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE RAREST"), words("HARDLY ANYONE", "title", 0.2)),
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: "470px", gap: "22px" } }, BD.rarest.map((x, k) =>
+          an(h("div.frame.px.f-" + x.tier.toLowerCase(), h("div.in.px", { style: { display: "flex", alignItems: "center", gap: "26px", padding: "22px 26px" } },
+            h("div.btile.px", emojiEl(x.icon, null, 92)),
+            h("div", { style: { flex: 1, minWidth: 0 } },
+              h("div.h3", x.name), h("div.small", { style: { fontSize: "28px" } }, x.desc),
+              h("div.lrow", { style: { gap: "14px", marginTop: "14px" } }, x.holders.map((u, i) => avatar(u, 54, 1.0 + k * 0.3 + i * 0.08, 0.5)),
+                h("div.small.white", { style: { fontSize: "28px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
+                  x.holders.map(name).join(" & ")))),
+            h("div.center", { style: { width: "120px", flex: "none" } },
+              h("div.big." + tcls(x.tier), { style: { fontSize: "120px" } }, roll(x.n, 0.9 + k * 0.3, 0.8)),
+              h("div.tiny", x.n === 1 ? "HOLDER" : "HOLDERS")))), "left", 0.5 + k * 0.3, 0.7))),
+        c ? block(1430, {}, kicker("THE MOST COMMON", 2.0), an(h("div.lrow", { style: { marginTop: "20px" } },
+          h("div.btile.px", { style: { width: "110px", height: "110px" } }, emojiEl(c.icon, null, 70)),
+          h("div", { style: { minWidth: 0 } }, h("div.h3", c.name), h("div.small", `${fmt(c.n)} of you have it`))), "left", 2.2, 0.7)) : null);
+    },
+  });
+
+  if (BD.unclaimed.length) {
+    scene({
+      id: "badge-unclaimed", ch: "badges", dur: 6.6, boardGlow: 0.7,
+      build(r) {
+        const n = BD.unclaimed.length;
+        r.append(h("div.scrim-mid"),
+          block(230, {}, kicker("STILL UP FOR GRABS"), words("UNCLAIMED", "title", 0.2),
+            line(FULL ? `${n} badges nobody earned. Next year, maybe.` : `${n} badges nobody has earned. There's still time.`, 0.6, "small")),
+          h("div.abs.bgrid", { style: { left: "56px", right: "56px", top: "640px" } }, BD.unclaimed.slice(0, 16).map((x, k) =>
+            an(h("div.frame.px.bslot.f-" + x.tier.toLowerCase(), h("div.in.px", h("div.locked", emojiEl(x.icon, null, 72)), h("div.tiny", x.name))),
+              "pop", 0.9 + k * 0.07, 0.5))));
+      },
+    });
+  }
+
+  const SC = BD.secrets;
+  scene({
+    id: "badge-secrets", ch: "badges", dur: 7.4, boardGlow: 1.1,
+    build(r) {
+      const n = SC.found_by.length;
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE SECRET ONES"), words(`${n} SECRETS`, "title", 0.2),
+          line("We're not saying what they are.", 0.6, "small")),
+        h("div.abs.sgrid", { style: { left: "56px", right: "56px", top: "560px" } }, SC.found_by.map((c, k) =>
+          an(h("div.frame.px.f-secret", h("div.in.px", medalIcon("Secret", 76),
+            h("div.big" + (c ? ".t-secret" : ".red"), { style: { fontSize: "68px" } }, c ? roll(c, 1.1 + k * 0.08, 1) : "0"),
+            h("div.tiny", c ? "FOUND IT" : "NOBODY YET"))), "pop", 0.8 + k * 0.08, 0.5))),
+        SC.hunter ? block(1490, {}, kicker("TOP SECRET HUNTER", 2.3), an(h("div.lrow", { style: { marginTop: "20px" } },
+          avatar(SC.hunter.user, 120, 2.6, 0.7, "ring"),
+          h("div", { style: { minWidth: 0 } }, h("div.h2", name(SC.hunter.user)),
+            h("div.small", `found ${SC.hunter.n} of the ${n}. ${fmt(SC.finders)} of you have found at least one.`))), "left", 2.5, 0.7)) : null);
+    },
+    update(t, r) { rainbow(r, t); },
   });
 }
 

@@ -86,10 +86,13 @@ the emoji slides and the avatar wall ending.
 8. **Words and emoji:** top emoji and reactions, words of each month, the laugh index.
 9. **Casino.**
 10. **UKPence.**
-11. **Games:** Kart, the daily games, Skyrim, county balls, badges.
+11. **Games:** Kart, the daily games, Skyrim, county balls.
 12. **Big Brother**, pointing at the full replay.
-13. **Server life:** members in and out, boosts, new emoji, the Halloween icons.
-14. **Thank you** over the avatar wall.
+13. **Badges:** the haul by tier and the rewards paid, a medal table (golds first, like the
+    Olympics), the rarest, the ones nobody has yet, and the secret ones, counted but never named
+    or shown.
+14. **Server life:** members in and out, boosts, new emoji, the Halloween icons.
+15. **Thank you** over the avatar wall.
 
 ## Award catalogue
 
@@ -230,6 +233,10 @@ Rules the extract already follows:
   in every total.
 - Bots never count, anywhere: their messages, emoji and reactions are out of every stat, so the
   bot's own Wordle squares and medals don't top the emoji chart and its ticks don't top reactions.
+  The developer's test account is treated the same (`TEST_ACCOUNTS` in `extract.py`), as the bot's
+  own leaderboards do: it holds test badges no one could have earned yet.
+- Secret badges are counted (how many people found each one) but their names and icons never
+  appear, so the video doesn't give them away.
 - Reactions are counted the same way for both years: reactions on messages sent in the window,
   as they stand now (adds less removals), from people. Discord's per-message totals stop when
   the reaction history was filled in, so they're not used for totals.
@@ -258,7 +265,7 @@ mute or claim it.
 | `gold` | Gold - Spandau Ballet | Casino and Money, "Gold!" on the biggest win |
 | `vindaloo` | Vindaloo - Fat Les | The Games |
 | `big-brother-theme` | Big Brother UK TV Theme - Elementfour | Big Brother |
-| `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | The finale; the avatar flag stretches to about 30s so the chorus lands as the flag fills the frame |
+| `dont-look-back-in-anger` | Don't Look Back in Anger - Oasis | From the Badges on: the verse under the badges, and the chorus as the avatar flag fills the frame |
 
 Sound effects are synthesised by the mixer, so nothing has to be fetched: a Big Ben strike at midnight
 in the cold open, the UK Emergency Alert (both tones at once, a long blast and two short) as the

@@ -241,3 +241,30 @@ function ujIcon(size) {
   }
   return pixelIcon(rows, { b: "#1d3a9e", w: "#f4f6ff", r: "#e0102e" }, size);
 }
+
+// Badge medals, one per tier, on a red-and-blue ribbon. The secret one is dark with a question mark and
+// a rim that runs through the rainbow, like the secret badge ring on the rank cards.
+const MEDAL = [
+  "bbb......rrr", ".bbb....rrr.", "..bbb..rrr..", "...bbbrrr...", "...dddddd...", "..dmmmmmmd..",
+  ".dmlmmwmmmd.", "dmlmmmwmmmmd", "dmmwwwwwwwmd", "dmmmwwwwwmmd", "dmmmmwwwmmmd", "dmmmwwmwwmmd",
+  ".dmmwmmmwmd.", "..dmmmmmmd..", "...dddddd...",
+];
+const MEDAL_PAL = {
+  Gold: { m: "#ffc23d", d: "#a8700c", l: "#fff1b0", w: "#fff7d6" },
+  Silver: { m: "#c0c6cf", d: "#69728a", l: "#f4f6ff", w: "#ffffff" },
+  Bronze: { m: "#c98b4e", d: "#74441d", l: "#f0c08f", w: "#ffd9b0" },
+};
+const QMARK = [[6, 5], [6, 6], [6, 7], [7, 4], [7, 8], [8, 8], [9, 7], [10, 6], [12, 6]];
+const RAINBOW = ["#ff2e4d", "#ff7a2e", "#ffc23d", "#1fe08f", "#38d9ff", "#a86bff"];
+function medalIcon(tier, size) {
+  const ribbon = { b: "#2d5bff", r: "#e0102e" };
+  if (tier !== "Secret") return pixelIcon(MEDAL, { ...MEDAL_PAL[tier] || MEDAL_PAL.Bronze, ...ribbon }, size);
+  const rows = MEDAL.map((row, y) => [...row].map((c, x) => {
+    if (c === "d") return String(Math.floor(((Math.atan2(y - 9, x - 5.5) / Math.PI + 1) / 2) * 6) % 6);
+    if (c === "m" || c === "l" || c === "w") return QMARK.some(([qy, qx]) => qy === y && qx === x) ? "w" : "m";
+    return c;
+  }).join(""));
+  const pal = { ...ribbon, m: "#1a1f3d", w: "#f4f6ff" };
+  RAINBOW.forEach((c, i) => { pal[i] = c; });
+  return pixelIcon(rows, pal, size);
+}

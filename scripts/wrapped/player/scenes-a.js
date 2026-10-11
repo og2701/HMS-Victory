@@ -10,6 +10,7 @@ chapter("words", "THE WORDS", "#c6ff3d");
 chapter("casino", "THE CASINO", "#1fe08f");
 chapter("money", "THE MONEY", "#ffc23d");
 chapter("games", "THE GAMES", "#ff7a2e");
+chapter("badges", "THE BADGES", "#6f8bff");
 chapter("outro", "THANK YOU", "#ff2e4d");
 
 const M = DATA.meta;

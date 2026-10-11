@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
 VOICE_NOTE = 1 << 13  # MessageFlags.is_voice_message
+TEST_ACCOUNTS = {818885214189256714}  # the developer's test account, kept off the bot's own leaderboards too
 REGULAR = 10_000  # messages needed for the "share of your messages" awards, so they go to people everyone knows
 LAUGH_REACTS = {"😂", "🤣", "😆", "💀", "😭", "😹"}
 HEARTS = {"❤️", "♥️", "🩷", "💖", "💗", "💕", "💞", "💓", "😍", "🥰", "🫶", "💘", "💝", "❣️", "🧡", "💛", "💚", "💙",
@@ -117,6 +118,7 @@ class Extract:
         self.discord = json.loads((self.data / "discord.json").read_text())
         self.bots = {r[0] for r in self.ch.execute("SELECT DISTINCT user_id FROM messages WHERE is_bot = 1")}
         self.bots |= {int(k) for k, v in self.discord["people"].items() if v.get("bot")}
+        self.bots |= TEST_ACCOUNTS  # counted like a bot: never shown, never in a total
         # Only people still in the server are named anywhere; their messages still count in the totals.
         self.members = {int(k) for k, v in self.discord["people"].items() if v.get("member") and not v.get("bot")} - self.bots
         self.featured = set()
@@ -1222,15 +1224,62 @@ class Extract:
                              "since": min((p.get("created") for p in profiles.values() if p.get("created")), default=None),
                              "most_dead": {"user": self.who(deaths.most_common(1)[0][0]), "n": deaths.most_common(1)[0][1]},
                              "dragonborn": {"user": self.who(dragons.most_common(1)[0][0]), "n": dragons.most_common(1)[0][1]}}
-        badges = self.q("SELECT ub.user_id, b.rarity FROM user_badges ub JOIN badges b ON b.id = ub.badge_id "
-                        "WHERE ub.awarded_at >= ? AND ub.awarded_at < ?", (lo, hi), db=self.db)
-        badges = [b for b in badges if b[0] not in bots]
-        if badges:
-            hunters = Counter(u for u, _ in badges if self.shown(u))
-            out["badges"] = {"n": len(badges), "people": len(hunters),
-                             "rarity": dict(Counter(r for _, r in badges)),
-                             "hunter": {"user": self.who(hunters.most_common(1)[0][0]), "n": hunters.most_common(1)[0][1]}}
         self.out["games"] = out
+
+    def badges(self):
+        """Bronze, silver, gold and secret badges earned by members: the haul, the medal table (golds first,
+        like the Olympics), the rarest, the ones nobody has yet, and the secret ones, which are counted
+        but never named or shown, because finding out what they are is the point of them."""
+        try:
+            cat = {r[0]: {"name": r[1], "desc": r[2], "icon": r[3], "tier": r[4]}
+                   for r in self.q("SELECT id, name, description, icon_path, rarity FROM badges", db=self.db)}
+            rows = self.q("SELECT user_id, badge_id, awarded_at FROM user_badges WHERE awarded_at >= ? AND awarded_at < ?",
+                          (self.lo, self.hi), db=self.db)
+        except sqlite3.OperationalError:
+            return
+        rows = [(int(u), b, t) for u, b, t in rows if b in cat and self.shown(u)]
+        if not rows:
+            return
+        tier = lambda b: cat[b]["tier"]
+        holders, per = defaultdict(set), defaultdict(Counter)
+        for u, b, _ in rows:
+            holders[b].add(u)
+            per[u][tier(b)] += 1
+        order = {"Gold": 0, "Silver": 1, "Bronze": 2, "Secret": 3}
+        public = sorted((b for b in cat if tier(b) != "Secret"), key=lambda b: order.get(tier(b), 9))
+        secret = [b for b in cat if tier(b) == "Secret"]
+        shown = lambda b: {k: cat[b][k] for k in ("name", "desc", "icon", "tier")}
+        table = sorted(per.items(), key=lambda kv: tuple(-kv[1][t] for t in ("Gold", "Silver", "Bronze", "Secret")))[:8]
+        # The rarest three, spread around: a badge only one person already featured holds is skipped.
+        rarest, seen = [], set()
+        for b in sorted((b for b in public if holders[b]), key=lambda b: (len(holders[b]), order.get(tier(b), 9))):
+            if not holders[b] <= seen and len(rarest) < 3:
+                rarest.append(b)
+                seen |= holders[b]
+        common = max(public, key=lambda b: len(holders[b]))
+        # The top secret hunter: most found, and of those, whoever got to that many first.
+        got = defaultdict(list)
+        for u, b, t in rows:
+            if tier(b) == "Secret":
+                got[u].append(t)
+        hunter = min(got.items(), key=lambda kv: (-len(kv[1]), max(kv[1]))) if got else None
+        try:
+            paid = sum(a for u, a in self.q("SELECT user_id, amount FROM badge_rewards WHERE paid_at >= ? AND paid_at < ?",
+                                            (self.lo, self.hi), db=self.db) if self.shown(u))
+        except sqlite3.OperationalError:
+            paid = None
+        self.out["badges"] = {
+            "since": datetime.fromtimestamp(min(t for _, _, t in rows), UK).date().isoformat(),
+            "n": len(rows), "people": len(per), "paid": paid,
+            "tiers": {t: sum(1 for _, b, _ in rows if tier(b) == t) for t in order},
+            "catalogue": {t: sum(1 for b in cat if tier(b) == t) for t in order},
+            "table": [{"user": self.who(u), **{t.lower(): c[t] for t in order}, "n": sum(c.values())} for u, c in table],
+            "rarest": [{**shown(b), "n": len(holders[b]), "holders": [self.who(u) for u in sorted(holders[b])[:3]]} for b in rarest],
+            "common": {**shown(common), "n": len(holders[common])},
+            "unclaimed": [shown(b) for b in public if not holders[b]],
+            "secrets": {"found_by": sorted((len(holders[b]) for b in secret), reverse=True), "finders": len(got),
+                        "hunter": hunter and {"user": self.who(hunter[0]), "n": len(hunter[1])}},
+        }
 
     def big_brother(self):
         try:
@@ -1286,6 +1335,7 @@ class Extract:
         self.money()
         self.games()
         self.big_brother()
+        self.badges()
         self.server()
         self.wall()
         people, unresolved = {}, []
