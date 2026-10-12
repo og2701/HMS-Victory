@@ -231,6 +231,36 @@ const ICONS = {
     "........gg..", ".......gggg.", "......gggggg", "........gg..", "........gg..", "..ss....gg..",
     "..ss....gg..", "..ss....gg..", "..ss....gg..", "..ss....gg..", "wwwwwwwwwwww", "............",
   ],
+  // crossed swords
+  frenemies: [
+    "s..........s", ".s........s.", "..s......s..", "...s....s...", "....s..s....", ".....ss.....",
+    ".....ss.....", "....n..n....", "...n....n...", "..nn....nn..", ".nn......nn.", "............",
+  ],
+  // a heart and the smaller heart it's chasing
+  simp: [
+    "............", ".rr..rr.....", "rrrrrrrr....", "rrrrrrrr....", ".rrrrrr.....", "..rrrr..p.p.",
+    "...rr..ppppp", ".......ppppp", "........ppp.", ".........p..", "............", "............",
+  ],
+  // a megaphone and nothing coming back
+  void: [
+    "............", "..........w.", "......ss..w.", "....ssss....", "wwssssss..w.", "wwssssss....",
+    "wwssssss..w.", "....ssss....", "......ss..w.", "..........w.", "............", "............",
+  ],
+  // a dove with an olive branch
+  peacemaker: [
+    "............", "...ww.......", "..wwwww.....", ".wkwwwwww...", "oowwwwwwwww.", "...wwwwwwwww",
+    "....wwwwww..", ".....ww.ww..", "......g.....", ".....gg.....", "............", "............",
+  ],
+  // a robot saying no
+  automod: [
+    ".....c......", ".....c......", "..ssssssss..", "..skssssks..", "..ssssssss..", "..skkkkkks..",
+    "..ssssssss..", "......r...r.", ".......r.r..", "........r...", ".......r.r..", "......r...r.",
+  ],
+  // a name tag
+  identity: [
+    "............", "rrrrrrrrrrrr", "rrwrwrwwrwrr", "rrrrrrrrrrrr", "wwwwwwwwwwww", "wkkkwkkkkkww",
+    "wwwwwwwwwwww", "wwkkkkwkkkww", "wwwwwwwwwwww", "rrrrrrrrrrrr", "............", "............",
+  ],
   // the ban hammer
   hardest: [
     "............", "..ssssssss..", "..swwwwwws..", "..ssssssss..", ".....nn.....", ".....nn.....",

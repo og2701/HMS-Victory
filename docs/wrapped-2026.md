@@ -128,6 +128,12 @@ Last year's 16 stay. New for 2026:
 | The Fake Goodnight | said goodnight, still posting half an hour later | `messages` |
 | Own Biggest Fan | most reactions on their own messages | `reactions` |
 | Ratio King | most replies with more reactions than the message they answered (five at least) | `reactions` |
+| Frenemies | the pair trading the most "shut up"/"idiot"/"clown" replies (three each way at least) | `messages` |
+| Biggest Simp | most hearts from one person to one other | `reactions` |
+| Shouting into the Void | share of a regular's messages with no reply and no reaction | `messages`, `reactions` |
+| The Peacemaker | most "calm down", "chill out", "guys stop" | `messages` |
+| AutoMod's Favourite | most messages blocked by AutoMod (audit log, from 17 August) | `audit_log` |
+| Identity Crisis | most nickname changes (from 22 September) | `member_events` |
 | Hardest Worker | most Wick mod cases plus tickets worked | `mod_logs.json` |
 | Low-key Hardest Worker | most cases and tickets per message sent (50 jobs at least) | `mod_logs.json`, `messages` |
 | Ticket Hero | most tickets worked (spoke in, and didn't open) | `mod_logs.json` |

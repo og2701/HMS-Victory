@@ -63,6 +63,9 @@ BRITISH = {"innit", "mate", "proper", "cheers", "bruv", "bloody", "quid", "cuppa
            "minging", "naff", "peckish", "bants", "wanker", "arse", "dodgy", "faff", "gobsmacked", "rubbish"}
 SORRY = re.compile(r"\b(sorry|soz|apologies|my bad)\b")
 DRY = re.compile(r"^(ok|okay|k|kk|ye|yea|yeah|ya|yep|yh|sure|fair|true|mhm|cool|nice)[.!]*$")
+JAB = re.compile(r"\b(shut up|stfu|shush|idiot|clown|loser|bozo|cope|seethe|ratio|dumbass|muppet|melt|nonce|div|pillock|"
+                 r"you'?re wrong|ur wrong|nobody cares|no one cares)\b")
+PEACE = re.compile(r"\b(calm down|chill out|calm it|cool it|guys stop|stop arguing|stop fighting|be nice|relax guys|everyone calm)\b")
 LAUGH_ONLY = re.compile(r"^(lol+|lmao+|lmfao+|haha+|ha(ha)+|xd+|😭+|💀+|😂+|🤣+)$")
 GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|night all|night guys|night everyone|nini)\b"
                        r"|\b(off to bed|going to bed|going to sleep|off to sleep)\b")
@@ -186,6 +189,7 @@ class Extract:
         # checked against reactions for ratios
         goodnights, sent_at = defaultdict(list), defaultdict(list)
         human_replies = []
+        jabs = Counter()
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
             "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers "
@@ -220,6 +224,8 @@ class Extract:
                 c["dry"] += 1
             if LAUGH_ONLY.match(bare):
                 c["laugh_only"] += 1
+            if PEACE.search(low):
+                c["peace"] += 1
             if len(bare) <= 40 and GOODNIGHT.search(bare):
                 goodnights[uid].append(ts)
             sent_at[uid].append(ts)
@@ -244,6 +250,8 @@ class Extract:
                     c["bot_replies"] += 1
                 else:
                     human_replies.append((mid, uid, rto_msg))
+                    if JAB.search(low):
+                        jabs[(uid, rto)] += 1
                     pairs[(uid, rto)] += 1
                     k = (min(uid, rto), max(uid, rto))
                     if hour is not None and 1 <= hour < 5:
@@ -276,6 +284,7 @@ class Extract:
                 if i < len(later) and later[i] < t + 4 * 3600:
                     per[uid]["fake_gn"] += 1
         self.human_replies = human_replies
+        self.jabs = jabs
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
         keep = lambda u: self.shown(u)
@@ -493,11 +502,59 @@ class Extract:
         award("glowup", "Glow-up of the Year", "more messages than the same stretch last year",
               [(n, n, u) for n, u in glow], lambda v, r, u: f"+{int(v):,}")
 
+        self.drama(award, counted, num, out)
         self.staff(award, counted, num)
         self.out["awards"] = out
         self.out["rookies"] = [{"user": self.who(u), "n": n, "first": min(self.days_active[u])} for n, u in rookies[:3]]
         self.out["glowups"] = [{"user": self.who(u), "n": per[u]["msgs"], "prev": prev_window.get(u, 0)}
                                for _, u in glow[:3]]
+
+    def drama(self, award, counted, num, out):
+        """The drama page: two people who argue all the time and talk all the time, the biggest simp, the regular
+        nobody answers, the peacemaker, AutoMod's favourite and the nickname changer."""
+        name = lambda u: self.discord["people"].get(str(u), {}).get("name", "someone")
+        # Frenemies: insults traded both ways (three at least each way), among people who never stop talking.
+        jab = self.jabs
+        duos = sorted(((jab[(a, b)] + jab[(b, a)], a, b) for (a, b) in {tuple(sorted(k)) for k in jab}
+                       if min(jab[(a, b)], jab[(b, a)]) >= 3 and self.shown(a) and self.shown(b)), reverse=True)
+        if duos:
+            n, a, b = duos[0]
+            talk = self.pairs[(a, b)] + self.pairs[(b, a)]
+            out.append({"key": "frenemies", "title": "Frenemies", "a": self.who(a), "b": self.who(b), "value": f"{n:,}",
+                        "line": f"of their {talk:,} replies to each other were \"shut up\", \"idiot\" or \"clown\"",
+                        "runners": []})
+        hearts = Counter()
+        for reactor, author, n in self.q(
+                "SELECT r.user_id, r.author_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r JOIN messages m "
+                "ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? AND r.emoji IN (%s) GROUP BY 1, 2"
+                % ",".join("?" * len(HEARTS)), (self.lo, self.hi, *HEARTS)):
+            if n > 0 and reactor != author and self.shown(reactor) and self.shown(author):
+                hearts[(reactor, author)] = n
+        simps = [(n, n, a) for (a, b), n in hearts.most_common(3)]
+        target = {a: b for (a, b), _ in hearts.most_common(3)}
+        award("simp", "Biggest Simp", lambda v, r, u: f"hearts on {name(target[u])}'s messages", simps, num)
+        # Shouting into the void: the regular whose messages most often got no reply and no reaction.
+        reacted = {m for (m,) in self.q(
+            "SELECT r.message_id FROM reactions r JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? "
+            "AND r.user_id != r.author_id GROUP BY 1 HAVING SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) > 0",
+            (self.lo, self.hi))}
+        regulars = {u for u, c in self.per.items() if c["msgs"] >= REGULAR}
+        unheard = Counter()
+        for mid, u in self.q("SELECT message_id, user_id FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0", (self.lo, self.hi)):
+            if u in regulars and mid not in self.replied_by and mid not in reacted:
+                unheard[u] += 1
+        void = sorted(((unheard[u] / self.per[u]["msgs"], unheard[u], u) for u in regulars), reverse=True)[:3]
+        award("void", "Shouting into the Void", "of their messages got no reply and no reaction", void,
+              lambda v, r, u: f"{v * 100:.0f}%")
+        award("peacemaker", "The Peacemaker", "times they said \"calm down\", \"chill out\" or \"guys stop\"",
+              [(c["peace"], c["peace"], u) for u, c in sorted(self.per.items(), key=lambda kv: -kv[1]["peace"])[:3]
+               if c["peace"]], num)
+        blocked = Counter(u for (u,) in self.q("SELECT user_id FROM audit_log WHERE action = 'automod_block_message' "
+                                                "AND ts >= ? AND ts < ?", (self.lo, self.hi)))
+        award("automod", "AutoMod's Favourite", "messages blocked by AutoMod", counted(blocked), num)
+        nicks = Counter(u for (u,) in self.q("SELECT user_id FROM member_events WHERE action = 'nick' AND ts >= ? AND ts < ?",
+                                             (self.lo, self.hi)))
+        award("identity", "Identity Crisis", "nickname changes", counted(nicks), num)
 
     def staff(self, award, counted, num):
         """The staff page. Mod cases and tickets come from Wick's and Ticket Tool's logs (mod_logs.json, the

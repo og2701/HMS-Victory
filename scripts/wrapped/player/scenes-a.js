@@ -450,6 +450,7 @@ const AWARD_PAGES = [
   ["THE REGULARS", ["gossip", "tourist", "glue", "starter", "killer", "bot_friend"]],
   ["AROUND THE SERVER", ["welcomer", "wordle", "bump", "tree", "oracle", "roasted"]],
   ["BAD HABITS", ["perfectionist", "dry", "laugh_only", "fake_gn", "own_fan", "ratio"]],
+  ["THE DRAMA", ["frenemies", "simp", "void", "peacemaker", "automod", "identity"]],
   ["ON DUTY", ["hardest", "lowkey", "ticket_hero", "night_shift", "shipwright", "architect"]],
 ];
 const AWARDS = Object.fromEntries(DATA.awards.map(a => [a.key, a]));
