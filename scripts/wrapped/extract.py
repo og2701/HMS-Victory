@@ -173,6 +173,10 @@ class Extract:
     def q(self, sql, params=(), db=None):
         return (db or self.ch).execute(sql, params).fetchall()
 
+    def announcing(self, cid):
+        """An announcement channel (announcements, directives, voting): posts there are news, not chat."""
+        return (self.discord["channels"].get(str(cid)) or {}).get("type") == 5
+
     def channel_name(self, cid):
         c = self.discord["channels"].get(str(cid))
         return c["name"] if c else None
@@ -259,7 +263,7 @@ class Extract:
             if len(bare) <= 40 and GOODNIGHT.search(bare):
                 goodnights[uid].append(ts)
             sent_at[uid].append(ts)
-            if uid not in first_text and text.strip() and not URL.search(text) and len(text) <= 220:
+            if uid not in first_text and text.strip() and not URL.search(text) and len(text) <= 220 and not self.announcing(chan):
                 first_text[uid] = (text, day)
             if hour is not None:
                 hours[uid][hour] += 1
@@ -773,7 +777,7 @@ class Extract:
                               "streak": streaks.get(u, 0)}.get(k, per[u][k])
         board = {k: sorted((value(u, k) for u in streaks), reverse=True) for k, _, _ in boasts}
 
-        # Your biggest hits: your three most-reacted messages with words in them (no links, not too long), as the reactions
+        # Your biggest hits: your three most-reacted messages with words in them, outside announcement channels (no links, not too long), as the reactions
         # stand, from people other than you.
         msg_reacts, msg_total, msg_author = defaultdict(Counter), Counter(), {}
         for mid, reactor, author, e, eid, n in self.q(
@@ -791,8 +795,9 @@ class Extract:
         def hits(u):
             out = []
             for n, mid in sorted(by_author.get(u, []), reverse=True)[:20]:
-                row = self.q("SELECT content, local_day FROM messages WHERE message_id = ?", (mid,))
-                if row and row[0][0] and row[0][0].strip() and not URL.search(row[0][0]) and len(row[0][0]) <= 160:
+                row = self.q("SELECT content, local_day, COALESCE(parent_id, channel_id) FROM messages WHERE message_id = ?", (mid,))
+                if (row and row[0][0] and row[0][0].strip() and not URL.search(row[0][0]) and len(row[0][0]) <= 160
+                        and not self.announcing(row[0][2])):
                     out.append({"text": row[0][0], "day": row[0][1], "n": n,
                                 "reactions": [{"e": e, "id": str(i) if i else None, "n": k} for (e, i), k in msg_reacts[mid].most_common(4)]})
                     if len(out) == 3:
