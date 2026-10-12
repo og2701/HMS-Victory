@@ -13,6 +13,7 @@ wasn't given their id) is listed in DIR/unresolved.txt for a second pull.
 Pure stdlib, read-only, and nothing here talks to Discord.
 """
 import argparse
+import bisect
 import json
 import math
 import random
@@ -58,6 +59,9 @@ BRITISH = {"innit", "mate", "proper", "cheers", "bruv", "bloody", "quid", "cuppa
            "chuffed", "blimey", "cheeky", "bollocks", "brew", "lad", "lads", "init", "fortnight", "skint",
            "minging", "naff", "peckish", "bants", "wanker", "arse", "dodgy", "faff", "gobsmacked", "rubbish"}
 SORRY = re.compile(r"\b(sorry|soz|apologies|my bad)\b")
+TYPO_FIX = re.compile(r"^\*[a-z'][a-z' ]{1,24}$")  # "*their": a correction, not an *action*
+GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|night all|night guys|night everyone|nini)\b"
+                       r"|\b(off to bed|going to bed|going to sleep|off to sleep)\b")
 LAUGHS = {"lol": r"\blol\b", "lmao": r"\blmao\b", "lmfao": r"\blmfao\b", "haha": r"\bha(ha)+h?\b",
           "💀": "💀", "😭": "😭", "😂": "😂"}
 
@@ -147,6 +151,13 @@ class Extract:
     def q(self, sql, params=(), db=None):
         return (db or self.ch).execute(sql, params).fetchall()
 
+    def chat_channel(self, cid):
+        """A text channel people talk in: not a voice channel's chat, where the other side of the
+        conversation is out loud, and not a spam or bot channel."""
+        c = self.discord["channels"].get(str(cid)) or {}
+        name = c.get("name", "").lower()
+        return c.get("type") not in (2, 13) and not any(w in name for w in ("spam", "bot", "count"))
+
     def channel_name(self, cid):
         c = self.discord["channels"].get(str(cid))
         return c["name"] if c else None
@@ -174,6 +185,15 @@ class Extract:
         weekday = {}
         first = []
         longest = None
+        # runs of messages in one channel with nobody else in between (a gap of 10 minutes ends one too),
+        # and goodnights, checked at the end against each person's later messages
+        solo, monologue = {}, {}
+        goodnights, sent_at = defaultdict(list), defaultdict(list)
+
+        def close_solo(chan):
+            r = solo.get(chan)
+            if r and r[1] > monologue.get(r[0], (0,))[0] and self.chat_channel(chan):
+                monologue[r[0]] = (r[1], chan, r[3])
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
             "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers "
@@ -203,6 +223,17 @@ class Extract:
                 c["questions"] += 1
             if SORRY.search(low):
                 c["sorry"] += 1
+            if TYPO_FIX.match(low.strip()):
+                c["typo"] += 1
+            if len(low) <= 40 and GOODNIGHT.search(low.strip()):
+                goodnights[uid].append(ts)
+            sent_at[uid].append(ts)
+            r = solo.get(chan)
+            if r and r[0] == uid and ts - r[2] <= 600:
+                solo[chan] = (uid, r[1] + 1, ts, r[3])
+            else:
+                close_solo(chan)
+                solo[chan] = (uid, 1, ts, day)
             if hour is not None:
                 hours[uid][hour] += 1
                 if 1 <= hour < 5:
@@ -247,6 +278,16 @@ class Extract:
                 first.append({"user": uid, "text": text[:140], "ts": ts})
             if self.shown(uid) and (longest is None or chars > longest[0]):
                 longest = (chars, uid, day, mid)
+        for chan in list(solo):
+            close_solo(chan)
+        # A fake goodnight: still posting half an hour later, the same night (within four hours).
+        for uid, times in goodnights.items():
+            later = sent_at[uid]
+            for t in times:
+                i = bisect.bisect_left(later, t + 1800)
+                if i < len(later) and later[i] < t + 4 * 3600:
+                    per[uid]["fake_gn"] += 1
+        self.monologue = monologue
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
         keep = lambda u: self.shown(u)
@@ -357,12 +398,15 @@ class Extract:
         award("glue", "The Glue", "different people they traded replies with", glue, lambda v, r, u: f"{v}")
 
         # Reactions, from people, on messages sent this year.
-        given, got, laughs, hearts, memes = Counter(), Counter(), Counter(), Counter(), Counter()
+        given, got, laughs, hearts, memes, own = Counter(), Counter(), Counter(), Counter(), Counter(), Counter()
         for reactor, author, emoji, has_file, n in self.q(
                 "SELECT r.user_id, r.author_id, r.emoji, m.n_attachments > 0, COUNT(*) FROM reactions r "
                 "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' "
                 "GROUP BY 1, 2, 3, 4", (self.lo, self.hi)):
-            if not self.human(reactor) or author == reactor:
+            if not self.human(reactor):
+                continue
+            if author == reactor:
+                own[reactor] += n
                 continue
             given[reactor] += n
             if self.human(author):
@@ -378,6 +422,12 @@ class Extract:
         award("comedian", "The Comedian", "laughing reactions on their messages", counted(laughs), num)
         award("heartthrob", "Heartthrob", "hearts on their messages", counted(hearts), num)
         award("meme", "Meme Lord", "reactions on the pictures and clips they posted", counted(memes), num)
+        award("own_fan", "Own Biggest Fan", "reactions on their own messages", counted(own), num)
+        award("typo", "The Typo Fixer", "*corrections, like this", best("typo"), num)
+        award("fake_gn", "The Fake Goodnight", "goodnights, then still typing half an hour later", best("fake_gn"), num)
+        mono = sorted(((n, n, u) for u, (n, _, _) in self.monologue.items() if self.shown(u)), reverse=True)[:3]
+        award("monologue", "The Monologue", lambda v, r, u: f"messages in a row in #{(self.channel_name(self.monologue[u][1]) or 'a channel').split('｜')[-1]}, "
+              f"nobody else getting a word in", mono, num)
 
         sent_m, got_m, self.mention_pairs = Counter(), Counter(), Counter()
         for author, target, n in self.q(

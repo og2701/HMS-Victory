@@ -449,7 +449,7 @@ const AWARD_PAGES = [
   ["THE CROWD PLEASERS", ["hype", "crowd", "comedian", "heartthrob", "celeb", "hall_of_famer"]],
   ["THE REGULARS", ["gossip", "tourist", "glue", "starter", "killer", "bot_friend"]],
   ["AROUND THE SERVER", ["welcomer", "wordle", "bump", "tree", "oracle", "roasted"]],
-  ["TWO MORE", ["perfectionist", "fastest"]],
+  ["BAD HABITS", ["perfectionist", "fastest", "typo", "monologue", "fake_gn", "own_fan"]],
 ];
 const AWARDS = Object.fromEntries(DATA.awards.map(a => [a.key, a]));
 const SHOWN = [];

@@ -216,6 +216,26 @@ const ICONS = {
     "............", "...yyyyyy...", "..yoooooyy..", ".yoyyyyyoyy.", ".yoyyoyyoyy.", ".yoyoooyoyy.",
     ".yoyyoyyoyy.", ".yoyyyyyoyy.", "..yoooooyy..", "...yyyyyy...", "............", "............",
   ],
+  // the asterisk that comes straight after a typo
+  typo: [
+    "............", ".....yy.....", ".y...yy...y.", "..yy.yy.yy..", "...yyyyyy...", "....yyyy....",
+    "...yyyyyy...", "..yy.yy.yy..", ".y...yy...y.", ".....yy.....", "............", "............",
+  ],
+  // three messages stacked up from the same side, no reply in between
+  monologue: [
+    "cccccccc....", "cwwwwwwc....", "cccccccc....", ".c..........", "cccccccccc..", "cwwwwwwwwc..",
+    "cccccccccc..", ".c..........", "ccccccccccc.", "cwwwwwwwwwc.", "ccccccccccc.", ".c..........",
+  ],
+  // a phone still lit up under "zz"
+  fake_gn: [
+    "........ww..", ".........w..", "........ww..", "..sssssss...", "..scccccs...", "..scwwwcs...",
+    "..scccccs...", "..scwwccs...", "..scccccs...", "..scccccs...", "..sssssss...", "....sss.....",
+  ],
+  // a hand mirror with a heart in it
+  own_fan: [
+    "...ssssss...", "..s......s..", ".s..r..r..s.", ".s.rrrrrr.s.", ".s.rrrrrr.s.", ".s..rrrr..s.",
+    ".s...rr...s.", "..s......s..", "...ssssss...", ".....nn.....", ".....nn.....", ".....nn.....",
+  ],
 };
 const icon = (key, size) => pixelIcon(ICONS[key] || ICONS.celeb, ICON_PAL, size);
 
