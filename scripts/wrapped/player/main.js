@@ -98,7 +98,7 @@ function autoDur(s) {
 
 async function boot() {
   const ui = document.getElementById("ui");
-  await Promise.all([document.fonts.load("900 100px Archivo"), document.fonts.load("20px Pixel")]);
+  await Promise.all([document.fonts.load("900 100px Archivo"), document.fonts.load("20px Pixel"), document.fonts.load("14px Fluff")]);
   await document.fonts.ready;
   await Promise.all(Object.keys(PEOPLE).map(uid => loadImage(avatarUrl(uid))));
   initWorld();

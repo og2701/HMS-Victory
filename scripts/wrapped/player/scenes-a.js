@@ -846,3 +846,96 @@ scene({
     },
   });
 });
+
+// The /iceberg: the whole picture fills in level by level, then the window opens out and the camera
+// dives from the top down, stopping on each entry that has a story, with the story underneath.
+if (DATA.iceberg && DATA.iceberg.entries.length) {
+  const IB = DATA.iceberg, ICE_W = 500, ICE_H = 532;
+  const ENT = Object.fromEntries(IB.entries.map(e => [e.id, e]));
+  const INTRO = 5.6, STORY = 5.6, ZOOM = 3.1;
+  const R0 = { x: 56, y: 470, w: 968, h: 1030 }, R1 = { x: 0, y: 150, w: W, h: 1000 };
+  const starts = IB.stories.map((_, k) => INTRO + 0.6 + k * STORY);
+  const full = r => ({ cx: ICE_W / 2, cy: ICE_H / 2, z: r.w / ICE_W });
+  scene({
+    id: "iceberg", ch: "people", fixed: true, dur: INTRO + 0.6 + IB.stories.length * STORY + 0.3,
+    boardGlow: 0.6, bloom: 0.9, pin: "rows",
+    build(r) {
+      // the highlight sits under the lettering, so the entry in focus stays bright on top of it
+      const box = h("div.icebox");
+      const layer = h("div.ice", box);
+      const ents = {};
+      for (const e of IB.entries) {
+        const inner = an(h("span", e.text), "pop", 0.9 + (e.level - 1) * 0.34 + hash(e.id) * 0.25, 0.5);
+        ents[e.id] = h("div.ent", { style: { left: e.x + "px", top: e.y + "px", color: e.color, transform: `rotate(${-e.rot}deg)` } }, inner);
+        layer.append(ents[e.id]);
+      }
+      const win = an(h("div.icewin", layer), "zoom", 0.2, 0.9);
+      const intro = h("div.fill",
+        block(230, {}, kicker("/ICEBERG"), words("SERVER LORE", "title", 0.2)),
+        block(1560, {}, html(`${b(fmt(IB.entries.length))} pieces of lore made the iceberg this year. ${b(fmt(IB.denied))} more were turned down.`, 3.2)));
+      const cards = IB.stories.map((s, k) => {
+        const e = ENT[s.entry], at = starts[k];
+        return h("div.abs", { style: { left: "56px", right: "56px", top: "1200px" } },
+          an(h("div.chip", { style: { display: "inline-block" } }, `LEVEL ${e.level} OF 6`), "left", at + 0.15, 0.6),
+          an(h("div.iceent", { style: { color: e.color, marginTop: "20px" } }, e.text), "up", at + 0.25, 0.7),
+          an(h("div.body", { style: { marginTop: "16px", color: "var(--white)" } }, s.story), "up", at + 0.4, 0.7),
+          s.quote ? h("div", { style: { marginTop: "26px" } },
+            message({ user: s.quote.user, text: s.quote.text, when: dmyLong(s.quote.day) }, at + 0.8)) : null);
+      });
+      r.append(h("div.scrim-bot", { style: { height: "900px" } }), win, intro, cards);
+      r._ice = { layer, box, win, intro, cards, ents, sizes: null };
+    },
+    update(t, r) {
+      const S = r._ice;
+      if (!S.sizes) {
+        S.sizes = {};
+        for (const [id, el] of Object.entries(S.ents)) {
+          // an entry in focus grows from its own edge when it sits against the picture's edge, so it never runs off
+          const e = ENT[id], w = el.offsetWidth;
+          S.sizes[id] = { w, h: el.offsetHeight, origin: e.x < 40 ? "0% 50%" : e.x + w > 380 ? "100% 50%" : "50% 50%" };
+          el.firstChild.style.transformOrigin = S.sizes[id].origin;
+        }
+      }
+      // the window: the framed picture for the intro, then opening out to the full width for the dive
+      const o = E.inOutCubic(prog(t, INTRO - 0.6, 1.0));
+      const rect = { x: lerp(R0.x, R1.x, o), y: lerp(R0.y, R1.y, o), w: lerp(R0.w, R1.w, o), h: lerp(R0.h, R1.h, o) };
+      Object.assign(S.win.style, { left: rect.x + "px", top: rect.y + "px", width: rect.w + "px", height: rect.h + "px" });
+      S.intro.style.opacity = 1 - prog(t, INTRO - 0.8, 0.5);
+      // the camera: on the whole picture, then from each story's entry down to the next
+      const focus = (k, rc) => {
+        const e = ENT[IB.stories[k].entry], sz = S.sizes[e.id];
+        const vw = rc.w / (2 * ZOOM), vh = rc.h / (2 * ZOOM);
+        return { cx: clamp(e.x + sz.w / 2, vw, ICE_W - vw), cy: clamp(e.y + sz.h / 2, vh, ICE_H - vh), z: ZOOM };
+      };
+      let cam = full(rect);
+      for (let k = 0; k < starts.length; k++) {
+        const m = E.inOutCubic(prog(t, starts[k] - 0.7, 1.1));
+        if (m <= 0) break;
+        const a = k ? focus(k - 1, rect) : full(rect), c = focus(k, rect);
+        cam = { cx: lerp(a.cx, c.cx, m), cy: lerp(a.cy, c.cy, m), z: lerp(a.z, c.z, m) };
+      }
+      S.layer.style.transform = `translate(${rect.w / 2 - cam.cx * cam.z}px, ${rect.h / 2 - cam.cy * cam.z}px) scale(${cam.z})`;
+      // the entry in focus stands out, the rest of the iceberg dims behind it
+      let dim = 0, hl = null;
+      IB.stories.forEach((s, k) => {
+        const f = pulse(t, starts[k] - 0.3, starts[k] + STORY - 0.6, 0.4);
+        if (f > dim) { dim = f; hl = { id: s.entry, f }; }
+        const card = S.cards[k];
+        const vis = t >= starts[k] && t < starts[k] + STORY;
+        card.style.display = vis ? "" : "none";
+        if (vis) card.style.opacity = 1 - prog(t, starts[k] + STORY - 0.5, 0.35);
+      });
+      if (t < INTRO - 1) return;
+      for (const [id, el] of Object.entries(S.ents)) {
+        const f = hl && +id === hl.id ? hl.f : 0;
+        el.style.opacity = lerp(1, 0.3, dim * (1 - f));
+        el.firstChild.style.transform = `scale(${1 + 0.3 * f})`;
+      }
+      if (hl) {
+        const e = ENT[hl.id], sz = S.sizes[e.id];
+        Object.assign(S.box.style, { left: e.x - 4 + "px", top: e.y - 3 + "px", width: sz.w + 8 + "px", height: sz.h + 6 + "px",
+          opacity: hl.f, transformOrigin: sz.origin, transform: `rotate(${-e.rot}deg) scale(${1 + 0.3 * hl.f})` });
+      } else S.box.style.opacity = 0;
+    },
+  });
+}

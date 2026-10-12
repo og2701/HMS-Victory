@@ -21,6 +21,7 @@ import re
 import sqlite3
 import statistics
 import subprocess
+import sys
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -135,6 +136,8 @@ class Extract:
         # The picks file is either a list of slides, or {"slides": [...], "interludes": [{"after", "id"}]}.
         self.hof_picks = picks.get("slides") if isinstance(picks, dict) else picks
         self.interlude_picks = picks.get("interludes", []) if isinstance(picks, dict) else []
+        # ... and "iceberg": the stories behind some /iceberg entries, [{"entry", "story", "quote", "count"}].
+        self.iceberg_picks = picks.get("iceberg", []) if isinstance(picks, dict) else []
         self.since, self.until = since, until
         self.lo, self.hi = day_bounds(since, until)
         self.plo, self.phi = day_bounds(year_ago(since), year_ago(until))
@@ -1452,6 +1455,47 @@ class Extract:
                 interludes.append({"after": pick["after"], "kicker": pick.get("kicker"), "message": m})
         self.out["interludes"] = interludes
 
+    def iceberg(self):
+        """The /iceberg: every entry where the bot draws it on the picture, how many submissions staff turned
+        down, and the stories behind some entries. A story comes from the picks file: the entry's text, a line
+        or two of context (where "{n}" is filled from "count": how many of one person's messages this year
+        match a regex, "bot" meaning HMS Victory), and optionally a quote, a message id with an optional
+        shortened "text". Quotes are only kept from current members and the bot itself."""
+        try:
+            rows = self.q("SELECT id, text, level, x, y, color, rotation FROM iceberg WHERE x IS NOT NULL", db=self.db)
+            subs = dict(self.q("SELECT status, COUNT(*) FROM pending_iceberg_submissions GROUP BY 1", db=self.db))
+        except sqlite3.OperationalError:
+            return
+        if not rows:
+            return
+        entries = [{"id": i, "text": t, "level": l, "x": x, "y": y, "color": c, "rot": r or 0} for i, t, l, x, y, c, r in rows]
+        by_text = {e["text"].strip().lower(): e for e in entries}
+        stories = []
+        for pick in self.iceberg_picks:
+            e = by_text.get(pick["entry"].strip().lower())
+            if not e:
+                print(f"iceberg: no entry {pick['entry']!r}", file=sys.stderr)
+                continue
+            text = pick["story"]
+            if "count" in pick:
+                c = pick["count"]
+                uid = HMS_VICTORY if c["user"] == "bot" else int(c["user"])
+                lo = max(self.lo, day_bounds(date.fromisoformat(c["after"]), self.until)[0]) if c.get("after") else self.lo
+                rx = re.compile(c["regex"], re.I)
+                n = sum(1 for (m,) in self.q("SELECT content FROM messages WHERE user_id = ? AND ts >= ? AND ts < ? AND content IS NOT NULL",
+                                             (uid, lo, self.hi)) if rx.search(m))
+                text = text.replace("{n}", fmt_n(n))
+            story = {"entry": e["id"], "story": text}
+            q = pick.get("quote")
+            row = self.q("SELECT user_id, content, local_day FROM messages WHERE message_id = ?", (int(q["id"]),)) if q else None
+            if row and (row[0][0] == HMS_VICTORY or self.shown(row[0][0])):
+                uid, content, day = row[0]
+                story["quote"] = {"user": self.who(uid), "text": q.get("text") or self.render_text(content), "day": day}
+            stories.append(story)
+        place = {e["id"]: (e["level"], e["y"]) for e in entries}
+        stories.sort(key=lambda s: place[s["entry"]])
+        self.out["iceberg"] = {"entries": entries, "denied": subs.get("denied", 0), "stories": stories}
+
     def regular_names(self):
         names = set()
         for uid, c in self.per.items():
@@ -1865,6 +1909,7 @@ class Extract:
         self.awards()
         self.people_chapter()
         self.hall_of_fame()
+        self.iceberg()
         self.words()
         self.casino()
         self.money()

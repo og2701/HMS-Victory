@@ -1,5 +1,6 @@
 @font-face { font-family: "Archivo"; src: url("__FONT_ARCHIVO__") format("truetype"); font-weight: 100 900; font-stretch: 62% 125%; }
 @font-face { font-family: "Pixel"; src: url("__FONT_PIXEL__") format("truetype"); }
+@font-face { font-family: "Fluff"; src: url("__FONT_FLUFF__") format("truetype"); }
 
 :root {
   --ink: #04050a;
@@ -269,3 +270,14 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .pmsgs .msg { padding: 24px 28px; gap: 22px; }
 .pmsgs .msg .text { font-size: 36px; }
 .pmsgs .msg .name { font-size: 32px; }
+
+/* ---- the iceberg: the bot's own picture and lettering at 500 x 532, scaled up inside a window */
+.icewin { position: absolute; overflow: hidden; outline: 4px solid var(--line); background: #0b2a55; }
+.ice { position: absolute; left: 0; top: 0; width: 500px; height: 532px; transform-origin: 0 0;
+  background: url("__ICEBERG__") 0 0 / 100% 100%; }
+.ice .ent { position: absolute; font-family: "Fluff"; font-size: 14px; line-height: 1; white-space: nowrap;
+  text-shadow: 1.5px 1.5px 0 #000; transform-origin: 50% 50%; }
+.ice .ent > span { display: inline-block; transform-origin: 50% 50%; }
+.ice .icebox { position: absolute; transform-origin: 50% 50%; opacity: 0;
+  box-shadow: 0 0 0 1.4px var(--acc), 0 0 9px 1px var(--acc); background: rgba(4, 5, 10, .45); }
+.iceent { font-family: "Fluff"; font-weight: 400; font-size: 70px; line-height: 1.05; text-shadow: 4px 4px 0 #000; }

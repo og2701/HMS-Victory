@@ -13,20 +13,28 @@ import sys
 from pathlib import Path
 
 PLAYER = Path(__file__).parent / "player"
-FONTS = Path(__file__).resolve().parents[2] / "data" / "fonts"
+DATA = Path(__file__).resolve().parents[2] / "data"
+FONTS = DATA / "fonts"
 ORDER = ["core.js", "icons.js", "world.js", "pieces.js", "scenes-a.js", "scenes-b.js", "main.js"]
 PERSONAL = ["core.js", "icons.js", "world.js", "personal.js", "main.js"]
 
 
+def inline(path, mime):
+    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
+
+
 def font(name):
-    return "data:font/ttf;base64," + base64.b64encode((FONTS / name).read_bytes()).decode()
+    return inline(FONTS / name, "font/ttf")
 
 
 def main():
     data_path, out_path = Path(sys.argv[1]), Path(sys.argv[2])
     css = ((PLAYER / "style.css").read_text()
            .replace("__FONT_ARCHIVO__", font("Archivo.ttf"))
-           .replace("__FONT_PIXEL__", font("PressStart2P.ttf")))
+           .replace("__FONT_PIXEL__", font("PressStart2P.ttf"))
+           # the /iceberg's own picture and lettering, so the video's copy looks like the bot's
+           .replace("__FONT_FLUFF__", inline(DATA / "fluff.ttf", "font/ttf"))
+           .replace("__ICEBERG__", inline(DATA / "image.png", "image/png")))
     personal = "--personal" in sys.argv
     js = "\n".join(f"// ==== {name}\n{(PLAYER / name).read_text()}" for name in (PERSONAL if personal else ORDER))
     data = data_path.read_text()

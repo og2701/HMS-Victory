@@ -90,7 +90,9 @@ County balls are left out of the Wrapped altogether.
 5. **Community Awards:** last year's 16 plus the new ones below.
 6. **People:** most replied-to, iconic duos, one-way traffic, biggest fans, rivals, and a
    friend-group map drawn from the reply graph.
-7. **Hall of Fame:** five or six short ones.
+7. **Hall of Fame:** five or six short ones. Then **the iceberg**: the /iceberg picture fills in level by
+   level, then the camera dives down it, stopping on the entries with a story (where it came from, and
+   the message that started it).
 8. **Words and emoji:** top emoji and reactions, words of each month, the laugh index, the swear
    jar (swears per message against last year, the top words with one vowel starred and who said
    each most, the potty mouth and the cleanest regular; "damn" isn't a swear) and the poo index (poo by month, against last year,
@@ -227,7 +229,15 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    messages. Read it and pick the Hall of Fame slides into `hof_picks.json` (slides of three, each
    with a title; it lives in the ignored scratch folder), plus the "Meanwhile..." interludes: single
    funny messages, each with the id of the scene it follows. Without picks, the top Hall of Fame
-   posts are used and there are no interludes.
+   posts are used and there are no interludes. The picks file also holds the **iceberg** stories:
+   `"iceberg": [{"entry", "story", "quote", "count"}]`, where `entry` is an /iceberg entry's text,
+   `story` a line or two on where it came from (dated, found by searching the chronicle for the
+   phrase), `quote` an optional `{"id", "text"}` (a message id, with an optional shortened text;
+   quotes from people who have left are dropped), and `count` an optional
+   `{"user": "bot" | id, "regex", "after"}` that fills `{n}` in the story with how many of that
+   person's messages this year match. The iceberg scene draws every entry from the `iceberg`
+   table over the bot's own picture (`data/image.png`, lettering in `data/fluff.ttf`), so new
+   entries appear on their own; at year end, look for new entries worth a story.
 3. **Build.** `build.py` bundles the player (`scripts/wrapped/player/`) and the JSON into one
    self-contained page. Opened in a browser it plays; `#scene=skyline` or `#t=42` jumps.
 4. **Render.** `render.mjs` opens the page in headless Chrome with the GPU, steps every frame
@@ -288,7 +298,7 @@ mute or claim it.
 | `dont-stop-me-now` | Don't Stop Me Now - Queen | The Awards, from where the band kicks in |
 | `bitter-sweet-symphony` | Bitter Sweet Symphony - The Verve | The People, from the strings |
 | `shut-up` | Shut Up - Stormzy | The Shut page |
-| `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame |
+| `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame and the iceberg |
 | `push-the-button` | Push the Button - Sugababes | The Words, straight through (a skip to get the opening hook in as well sounded wrong): "the early conversation piece" over the words of the month, and the chorus's "push the button" as the Poo Index lands |
 | `gold` | Gold - Spandau Ballet | Casino and Money, "Gold!" on the biggest win |
 | `vindaloo` | Vindaloo - Fat Les | The Games |
@@ -375,7 +385,7 @@ committed. This is a copy as of October 2026; if the folder is lost, paste it ba
  {"song": "shut-up", "from": "shut", "to": "shut", "sync": [32.0, "shut", 1.0], "fade_in": 0.1, "fade_out": 0.6, "cut": true},
  {"sfx": "alert", "scene": "busiest", "at": 2.4, "gain": -8, "duck": -12},
  {"song": "bitter-sweet-symphony", "from": "busiest", "to": "rookies", "sync": [84.0, "busiest", 0.0], "fade_in": 0.4},
- {"song": "only-fools-and-horses", "from": "hof-0", "to": "hof-3", "sync": [0.0, "hof-0", 0.0], "fade_in": 0.1},
+ {"song": "only-fools-and-horses", "from": "hof-0", "to": "iceberg", "sync": [0.0, "hof-0", 0.0], "fade_in": 0.1},
  {"song": "push-the-button", "from": "ch-words", "to": "longest", "sync": [64.8, "poo", 0.4]},
  {"song": "gold", "from": "ch-casino", "to": "rags", "sync": [47.4, "casino-moments", 0.9]},
  {"song": "vindaloo", "from": "ch-games", "to": "daily", "sync": [137.8, "kart", 0.3]},
