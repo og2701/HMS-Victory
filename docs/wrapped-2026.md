@@ -324,6 +324,32 @@ theme), because there the jolt is the joke. Because cues name scenes, they keep 
 scene lengths change. Every song is levelled to the same loudness over the stretch it plays, and a
 limiter keeps the mix at -2dB.
 
+## Cue sheet (backup)
+
+The mixer reads `scratch/wrapped-2026/music/cues.json`, which sits beside the song files and isn't
+committed. This is a copy as of October 2026; if the folder is lost, paste it back as that file.
+`sync` is [song seconds, scene, seconds into the scene]; `cut` cuts in instead of handing over.
+
+```json
+[
+ {"muffle": "meanwhile-*", "cutoff": 500},
+ {"sfx": "bigben", "scene": "cold", "at": 1.47, "gain": -12},
+ {"song": "parklife", "from": "title", "to": "channels", "sync": [17.0, "title", 0.4], "fade_in": 0.2},
+ {"song": "dont-stop-me-now", "from": "ch-awards", "to": "main-character", "sync": [29.0, "ch-awards", 1.0]},
+ {"song": "bitter-sweet-symphony", "from": "ch-people", "to": "reaction-duos-1", "sync": [0.0, "ch-people", 0.0], "fade_in": 0.1},
+ {"song": "shut-up", "from": "shut", "to": "shut", "sync": [32.0, "shut", 1.0], "fade_in": 0.1, "fade_out": 0.6, "cut": true},
+ {"sfx": "alert", "scene": "busiest", "at": 2.4, "gain": -8, "duck": -12},
+ {"song": "bitter-sweet-symphony", "from": "busiest", "to": "rookies", "sync": [84.0, "busiest", 0.0], "fade_in": 0.4},
+ {"song": "only-fools-and-horses", "from": "hof-0", "to": "hof-3", "sync": [0.0, "hof-0", 0.0], "fade_in": 0.1},
+ {"song": "push-the-button", "from": "ch-words", "to": "longest", "sync": [64.8, "poo", 0.4]},
+ {"song": "gold", "from": "ch-casino", "to": "rags", "sync": [47.4, "casino-moments", 0.9]},
+ {"song": "vindaloo", "from": "ch-games", "to": "daily", "sync": [137.8, "kart", 0.3]},
+ {"song": "big-brother-theme", "from": "big-brother", "to": "big-brother", "sync": [0.0, "big-brother", 0.0], "fade_in": 0.05, "fade_out": 0.8, "cut": true},
+ {"song": "dont-look-back-in-anger", "from": "ch-badges", "to": "finale", "sync": [70.7, "finale", 5.2], "fade_out": 3.0},
+ {"sfx": "ping", "each": "meanwhile-*", "at": 0.4, "gain": -9}
+]
+```
+
 ## Timeline
 
 - **October:** the gap fixes above.
