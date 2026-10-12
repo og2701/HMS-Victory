@@ -17,7 +17,7 @@ chapter("p-where", "YOUR CHANNELS", "#c6ff3d");
 chapter("p-people", "YOUR PEOPLE", "#ff4f9e");
 chapter("p-vibe", "YOUR VIBE", "#1fe08f");
 chapter("p-you", "THIS WAS YOU", "#ffc23d");
-chapter("p-hit", "YOUR BIGGEST HIT", "#38d9ff");
+chapter("p-hit", "YOUR BIGGEST HITS", "#38d9ff");
 chapter("p-trophies", "YOUR TROPHIES", "#ff7a2e");
 chapter("outro", "YOUR CARD", "#ff2e4d");
 
@@ -53,11 +53,11 @@ const HL = {
 const HIGH = (ME.highlights || []).filter(x => HL[x.k]);
 
 // One of their messages, as it looked in Discord, with its reactions.
-function bubble(m, at) {
+function bubble(m, at, size = 88) {
   const reacts = (m.reactions || []).map((x, k) => an(h("div.react.px", emojiEl(x.e, x.id, 34), String(x.n)), "pop", at + 0.5 + k * 0.08, 0.5));
-  return h("div.msg.px", avatar(ME.user, 88, at, 0.7),
+  return h("div.msg.px", avatar(ME.user, size, at, 0.7),
     h("div", { style: { flex: 1, minWidth: 0 } }, h("div.who", h("span.name", ME.name), h("span.when", dmyLong(m.day))),
-      h("div.text", { html: richText(m.text) }), reacts.length ? h("div.reacts", reacts) : null));
+      h("div.text", { html: richText(m.text.replace(/`+([^`]+)`+/g, "$1")) }), reacts.length ? h("div.reacts", reacts) : null));
 }
 
 // The card: the year on one picture, in the video's last scene and on its own (?card=1) at 1080x1350.
@@ -115,7 +115,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-msgs", ch: "p-msgs", dur: 6.5, fixed: true, boardGlow: 1,
+    id: "p-msgs", ch: "p-msgs", dur: 6, fixed: true, boardGlow: 1,
     build(r) {
       r.append(h("div.scrim-mid"),
         block(230, {}, kicker("YOUR MESSAGES"),
@@ -131,7 +131,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-when", ch: "p-when", dur: 6.5, fixed: true, boardGlow: 1,
+    id: "p-when", ch: "p-when", dur: 6, fixed: true, boardGlow: 1,
     build(r) {
       const d = ME.busiest ? new Date(ME.busiest.day) : null, max = Math.max(...ME.hours, 1);
       r.append(h("div.scrim-mid"),
@@ -148,7 +148,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-where", ch: "p-where", dur: 5, fixed: true, boardGlow: 1,
+    id: "p-where", ch: "p-where", dur: 4.5, fixed: true, boardGlow: 1,
     build(r) {
       const max = ME.channels[0] ? ME.channels[0].n : 1;
       r.append(h("div.scrim-mid"),
@@ -164,7 +164,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-people", ch: "p-people", dur: 7, fixed: true, boardGlow: 1,
+    id: "p-people", ch: "p-people", dur: 6.5, fixed: true, boardGlow: 1,
     build(r) {
       const mate = ME.mate;
       const rows = [];
@@ -184,7 +184,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-vibe", ch: "p-vibe", dur: 7, fixed: true, boardGlow: 1,
+    id: "p-vibe", ch: "p-vibe", dur: 6.5, fixed: true, boardGlow: 1,
     build(r) {
       const e = ME.emoji;
       r.append(h("div.scrim-mid"),
@@ -213,13 +213,15 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-hit", ch: "p-hit", dur: 6, fixed: true, boardGlow: 1.2,
+    id: "p-hit", ch: "p-hit", dur: 8, fixed: true, boardGlow: 1.2,
     build(r) {
-      const m = ME.hit || ME.first;
+      const hits = ME.hits.length ? ME.hits : ME.first ? [ME.first] : [];
+      const many = ME.hits.length > 1;
       r.append(h("div.scrim-mid"),
-        block(300, {}, kicker(ME.hit ? "YOUR BIGGEST HIT" : `YOUR FIRST MESSAGE OF ${YEAR}`),
-          line(ME.hit ? `${fmt(ME.hit.n)} reactions, your most of the year` : "Where your year started", 0.4, "h3")),
-        m ? h("div.abs", { style: { left: "56px", right: "56px", top: "600px" } }, h("div.bigmsg", an(bubble(m, 0.7), "pop", 0.6, 0.8))) : null);
+        block(230, {}, kicker(ME.hits.length ? (many ? "YOUR BIGGEST HITS" : "YOUR BIGGEST HIT") : `YOUR FIRST MESSAGE OF ${YEAR}`),
+          line(ME.hits.length ? (many ? "Your most-reacted messages of the year" : "Your most-reacted message of the year") : "Where your year started", 0.4, "h3")),
+        h("div.abs.col.pmsgs", { style: { left: "56px", right: "56px", top: "470px", gap: "22px" } },
+          hits.map((m, k) => an(bubble(m, 0.7 + k * 1.1, 72), "up", 0.6 + k * 1.1, 0.7))));
     },
   });
 

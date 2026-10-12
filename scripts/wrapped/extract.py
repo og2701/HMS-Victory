@@ -773,7 +773,7 @@ class Extract:
                               "streak": streaks.get(u, 0)}.get(k, per[u][k])
         board = {k: sorted((value(u, k) for u in streaks), reverse=True) for k, _, _ in boasts}
 
-        # Your biggest hit: your most-reacted message with words in it (no links, not too long), as the reactions
+        # Your biggest hits: your three most-reacted messages with words in them (no links, not too long), as the reactions
         # stand, from people other than you.
         msg_reacts, msg_total, msg_author = defaultdict(Counter), Counter(), {}
         for mid, reactor, author, e, eid, n in self.q(
@@ -788,13 +788,16 @@ class Extract:
         for mid, n in msg_total.items():
             by_author[msg_author[mid]].append((n, mid))
 
-        def hit(u):
-            for n, mid in sorted(by_author.get(u, []), reverse=True)[:8]:
+        def hits(u):
+            out = []
+            for n, mid in sorted(by_author.get(u, []), reverse=True)[:20]:
                 row = self.q("SELECT content, local_day FROM messages WHERE message_id = ?", (mid,))
-                if row and row[0][0] and row[0][0].strip() and not URL.search(row[0][0]) and len(row[0][0]) <= 220:
-                    return {"text": row[0][0], "day": row[0][1], "n": n,
-                            "reactions": [{"e": e, "id": str(i) if i else None, "n": k} for (e, i), k in msg_reacts[mid].most_common(4)]}
-            return None
+                if row and row[0][0] and row[0][0].strip() and not URL.search(row[0][0]) and len(row[0][0]) <= 160:
+                    out.append({"text": row[0][0], "day": row[0][1], "n": n,
+                                "reactions": [{"e": e, "id": str(i) if i else None, "n": k} for (e, i), k in msg_reacts[mid].most_common(4)]})
+                    if len(out) == 3:
+                        break
+            return out
 
         # Highlights: the stats each person stands out for most, against everyone with a card, so the vibe
         # scene and the card show what's actually notable about them (poo only for the people who bring it up).
@@ -888,7 +891,7 @@ class Extract:
                 "poo": c["poo"], "gifs": c["gifs"], "stickers": c["stickers"], "voice": c["voice"],
                 "awards": [a["title"] for a in won.get(u, [])], "medals": {k.lower(): medals[u][k] for k in ("Gold", "Silver", "Bronze", "Secret")},
                 "hof": hof[u], "casino": casino.get(u), "persona": persona(u, c), "highlights": highlights(u),
-                "hit": hit(u) if c["msgs"] >= VIDEO_MIN else None,
+                "hits": hits(u) if c["msgs"] >= VIDEO_MIN else [],
                 "first": self.first_text.get(u) and {"text": self.first_text[u][0], "day": self.first_text[u][1]},
             }
         last_day = self.until - timedelta(days=1)

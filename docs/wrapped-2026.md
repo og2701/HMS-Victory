@@ -335,10 +335,10 @@ mate, who they reply to and who replies to them, biggest fan); their vibe (top e
 their messages, reactions given, swears, poo, GIFs, stickers, voice notes, pictures, questions, caps,
 Hall of Fame, badges and casino games); who they were (their **persona**, most impressive first: an
 award they won in the main video, else a top-20 place in the server, else the habit they're most
-unusual at, "more than N% of us"); their biggest hit (their most-reacted message, or their first
+unusual at, "more than N% of us"); their biggest hits (their three most-reacted messages, or their first
 message of the year); their trophies (awards, or their best rankings, plus badges, Hall of Fame,
 casino); and their card (best mate, biggest fan, top emoji, peak hour, top channel, streak, and their
-top three highlights). Every scene has a fixed length, so every video runs 59.5 seconds over the same
+top three highlights). Every scene has a fixed length, so every video runs 59 seconds over the same
 soundtrack (Don't Stop Me Now, "(Don't stop me now) I'm having such a good time" landing on who they
 were).
 
@@ -354,7 +354,7 @@ The last step writes `<member id>.jpg` and `<member id>.mp4` for everyone (about
 videos and ~1,100 cards with six workers), skipping files already made, so it can be stopped and
 re-run. `personal.html?u=<id>` plays anyone's video in a browser and `?u=<id>&card=1` shows their card.
 The personal cue sheet is one line: `{"song": "dont-stop-me-now", "from": "p-intro", "to": "p-card",
-"sync": [69.8, "p-you", 0.3], "fade_in": 0.4, "fade_out": 2.5}`.
+"sync": [69.8, "p-you", 0.6], "fade_in": 0.4, "fade_out": 2.5}`.
 
 ## Cue sheet (backup)
 

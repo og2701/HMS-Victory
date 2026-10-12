@@ -266,3 +266,6 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .pval { margin-top: 12px; font-stretch: 80%; font-weight: 900; font-size: 52px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pmedals { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 10px; }
 .pfoot { position: absolute; left: 64px; right: 64px; bottom: 56px; display: flex; flex-wrap: wrap; gap: 12px; }
+.pmsgs .msg { padding: 24px 28px; gap: 22px; }
+.pmsgs .msg .text { font-size: 36px; }
+.pmsgs .msg .name { font-size: 32px; }
