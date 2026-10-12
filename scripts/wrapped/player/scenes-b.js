@@ -54,6 +54,84 @@ scene({
   },
 });
 
+// The swear jar and the poo index: how often, against last year, and who.
+const personTile = (kick, user, text, at) => an(h("div.frame.px", h("div.in.px", { style: { padding: "26px 28px" } },
+  h("div.kick", kick), h("div.lrow", { style: { marginTop: "18px" } }, avatar(user, 96, at + 0.2, 0.6),
+    h("div", { style: { minWidth: 0 } }, h("div.h3", { style: { fontSize: "40px" } }, name(user)), h("div.small", text))))), "up", at, 0.6);
+const SW = DATA.swears;
+if (SW && SW.n) {
+  scene({
+    id: "swears", ch: "words", dur: 7, boardGlow: 0.8,
+    build(r) {
+      const max = SW.words[0].n;
+      r._cv = canvasLayer();
+      r.append(h("div.scrim-mid"), r._cv,
+        block(230, {}, kicker("THE SWEAR JAR"), h("div.title", roll(SW.n, 0.3, 1.6), " SWEARS"),
+          h("div.row", { style: { gap: "18px", marginTop: "14px" } }, line(`one in every ${SW.every} messages`, 0.7, "h3"),
+            pctChip(SW.now, SW.prev, 1.0))),
+        h("div.abs.col", { style: { left: "56px", width: "580px", top: "580px", gap: "18px" } }, SW.words.map((x, k) =>
+          an(h("div.lrow", { style: { gap: "18px" } }, h("div.swear", x.w),
+            h("div", { style: { flex: 1, height: "40px" } }, an(h("div.pxbar", { style: { width: (x.n / max) * 100 + "%" } }), "growx", 1.0 + k * 0.12, 0.9)),
+            h("div.h3.acc", { style: { width: "120px", textAlign: "right" } }, short(x.n))), "left", 0.8 + k * 0.12, 0.6))),
+        h("div.abs", { style: { left: "56px", right: "56px", top: "1180px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
+          personTile("POTTY MOUTH", SW.mouth.user, `${fmt(SW.mouth.n)} swears`, 2.2),
+          SW.clean ? personTile("SQUEAKY CLEAN", SW.clean.user, `one swear every ${fmt(SW.clean.every)} messages`, 2.4) : null),
+        SW.channel ? block(1560, {}, line(`Sweariest channel: #${SW.channel.name}`, 2.8, "h3")) : null);
+    },
+    update(t, r) {
+      // a jar on the right filling up with coins, one dropping in for every few swears
+      const ctx = r._cv.getContext("2d");
+      ctx.clearRect(0, 0, W, H);
+      const x0 = 700, x1 = 1000, y0 = 600, y1 = 1040, s = 20;
+      const top = y1 - (y1 - y0) * 0.8 * E.outCubic(prog(t, 0.8, 4.5));
+      for (let y = y1 - s; y >= top; y -= s) for (let x = x0 + 8; x <= x1 - 8 - s; x += s) {
+        const v = hash(x * 7.3 + y * 1.7);
+        ctx.fillStyle = v > 0.6 ? "#ffd86b" : v > 0.25 ? "#ffc23d" : "#c98a1b";
+        ctx.fillRect(x, y, s - 3, s - 3);
+      }
+      for (let i = 0; i < 16; i++) {
+        const p = (t - (0.8 + i * 0.28 + hash(i) * 0.2)) / 0.55;
+        if (p < 0 || p > 1) continue;
+        ctx.fillStyle = "#ffc23d";
+        ctx.fillRect(x0 + 30 + hash(i * 3.1) * (x1 - x0 - 80), 470 + (top - 470) * p * p, 22, 22);
+      }
+      ctx.fillStyle = "rgba(180, 220, 255, .08)";
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.fillStyle = "rgba(220, 240, 255, .55)";
+      ctx.fillRect(x0 - 8, y0, 8, y1 - y0 + 8); ctx.fillRect(x1, y0, 8, y1 - y0 + 8); ctx.fillRect(x0 - 8, y1, x1 - x0 + 16, 8);
+      ctx.fillRect(x0 - 24, y0 - 8, 32, 8); ctx.fillRect(x1, y0 - 8, 32, 8);
+      ctx.fillRect(x0 + 20, y0 + 30, 8, 160);
+    },
+  });
+}
+
+const POOI = DATA.poo;
+if (POOI && POOI.n) {
+  scene({
+    id: "poo", ch: "words", dur: 7, boardGlow: 0.8,
+    build(r) {
+      const months = POOI.months, max = Math.max(...months.map(m => m.n), 1);
+      const peak = months.reduce((a, b) => (b.n > a.n ? b : a), months[0]);
+      const pk = POOI.peak && new Date(POOI.peak.day);
+      r.append(h("div.scrim-mid"),
+        block(230, {}, kicker("THE POO INDEX"), h("div.title", roll(POOI.n, 0.3, 1.5), " POOS"),
+          h("div.row", { style: { gap: "18px", marginTop: "14px" } }, line("times poo came up", 0.7, "h3"),
+            pctChip(POOI.now, POOI.prev, 1.0))),
+        h("div.abs", { style: { left: "56px", right: "56px", top: "540px", height: "560px", display: "flex", alignItems: "flex-end", gap: "14px" } },
+          months.map((m, k) => h("div.col", { style: { flex: 1, alignItems: "center", justifyContent: "flex-end", height: "100%", gap: "10px" } },
+            m === peak ? an(h("div", emojiEl("💩", null, 76)), "pop", 1.8, 0.6) : null,
+            h("div.tiny.white", String(m.n)),
+            an(h("div.pxcol.poo", { style: { width: "100%", height: Math.max(10, (m.n / max) * 360) + "px" } }), "growy", 0.8 + k * 0.08, 0.8),
+            h("div.tiny", MONTHS[+m.m.slice(5) - 1])))),
+        h("div.abs", { style: { left: "56px", right: "56px", top: "1180px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
+          personTile("CHIEF POO OFFICER", POOI.chief.user, `${fmt(POOI.chief.n)} poos`, 2.2),
+          pk ? an(h("div.frame.px", h("div.in.px", { style: { padding: "26px 28px" } }, h("div.kick", "PEAK POO"),
+            h("div.h2", { style: { marginTop: "18px" } }, `${pk.getDate()} ${MONTHS_LONG[pk.getMonth()]}`),
+            h("div.small", `${POOI.peak.n} poos in one day`))), "up", 2.4, 0.6) : null));
+    },
+  });
+}
+
 scene({
   id: "emoji", ch: "words", dur: 6.6, boardGlow: 0.9,
   build(r) {

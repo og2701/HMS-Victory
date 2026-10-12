@@ -91,7 +91,10 @@ County balls are left out of the Wrapped altogether.
 6. **People:** most replied-to, iconic duos, one-way traffic, biggest fans, rivals, and a
    friend-group map drawn from the reply graph.
 7. **Hall of Fame:** five or six short ones.
-8. **Words and emoji:** top emoji and reactions, words of each month, the laugh index.
+8. **Words and emoji:** top emoji and reactions, words of each month, the laugh index, the swear
+   jar (swears per message against last year, the top words censored, the potty mouth, the
+   cleanest regular, the sweariest channel) and the poo index (poo by month, against last year,
+   the peak day and the chief poo officer).
 9. **Casino.**
 10. **UKPence.**
 11. **Games:** Kart, the daily games, Skyrim.

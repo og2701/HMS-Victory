@@ -70,6 +70,13 @@ PEACE = re.compile(r"\b(calm down|chill out|calm it|cool it|guys stop|stop argui
 LAUGH_ONLY = re.compile(r"^(lol+|lmao+|lmfao+|haha+|ha(ha)+|xd+|😭+|💀+|😂+|🤣+)$")
 GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|night all|night guys|night everyone|nini)\b"
                        r"|\b(off to bed|going to bed|going to sleep|off to sleep)\b")
+# Swears, by the word they come from. "arse" leaves Arsenal alone.
+SWEARS = {"fuck": r"f+u+c+k+\w*|motherfuck\w*|fck\w*|ffs", "shit": r"shit\w*|shite|bullshit\w*", "piss": r"piss\w*",
+          "bollocks": r"bollock\w*", "bloody": r"bloody", "wanker": r"wank\w*", "twat": r"twat\w*", "bastard": r"bastard\w*",
+          "prick": r"prick\w*", "dick": r"dick\w*", "bellend": r"bellend\w*", "cunt": r"cunt\w*", "arse": r"arse(?!nal)\w*|ass|asshole\w*",
+          "crap": r"crap\w*", "damn": r"damn\w*|dammit"}
+SWEAR = re.compile(r"\b(?:" + "|".join(f"(?P<{k}>{v})" for k, v in SWEARS.items()) + r")\b")
+POO = re.compile(r"\b(poo+s?|poo+ps?|poo+ped|poo+ping|poo+py|poo+ey|turds?)\b|💩")
 LAUGHS = {"lol": r"\blol\b", "lmao": r"\blmao\b", "lmfao": r"\blmfao\b", "haha": r"\bha(ha)+h?\b",
           "💀": "💀", "😭": "😭", "😂": "😂"}
 
@@ -191,6 +198,8 @@ class Extract:
         goodnights, sent_at = defaultdict(list), defaultdict(list)
         human_replies = []
         jabs = Counter()
+        swear_words, swear_chan, chan_msgs = Counter(), Counter(), Counter()
+        poo_month, poo_day = Counter(), Counter()
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
             "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers, attachments "
@@ -229,6 +238,17 @@ class Extract:
                 c["laugh_only"] += 1
             if PEACE.search(low):
                 c["peace"] += 1
+            chan_msgs[chan] += 1
+            sw = [m.lastgroup for m in SWEAR.finditer(low)]
+            if sw:
+                swear_words.update(sw)
+                c["swears"] += len(sw)
+                c["swear_msgs"] += 1
+                swear_chan[chan] += 1
+            if POO.search(low):
+                c["poo"] += 1
+                poo_month[day[:7]] += 1
+                poo_day[day] += 1
             if len(bare) <= 40 and GOODNIGHT.search(bare):
                 goodnights[uid].append(ts)
             sent_at[uid].append(ts)
@@ -288,6 +308,8 @@ class Extract:
                     per[uid]["fake_gn"] += 1
         self.human_replies = human_replies
         self.jabs = jabs
+        self.swear_words, self.swear_chan, self.chan_msgs = swear_words, swear_chan, chan_msgs
+        self.poo_month, self.poo_day = poo_month, poo_day
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
         keep = lambda u: self.shown(u)
@@ -959,6 +981,7 @@ class Extract:
     def scan_last_year_words(self):
         prev = Counter()
         laughs = Counter()
+        self.prev_swears = self.prev_poo = 0
         rows = self.ch.execute("SELECT content, ts FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0",
                                (self.yo_lo, self.yo_hi))
         n_window = 0
@@ -971,6 +994,8 @@ class Extract:
                 for name, pat in LAUGHS.items():
                     if re.search(pat, low):
                         laughs[name] += 1
+                self.prev_swears += len(SWEAR.findall(low))
+                self.prev_poo += bool(POO.search(low))
         self.prev_words, self.prev_laughs, self.prev_n = prev, laughs, n_window
 
     # ------------------------------------------------------------------ sections
@@ -1179,6 +1204,38 @@ class Extract:
         reacts = [{"e": e, "id": str(i) if i else None, "n": n} for (e, i), n in rc.most_common(10)]
         chars, uid, day, mid = self.longest
         content = self.q("SELECT content FROM messages WHERE message_id = ?", (mid,))[0][0] or ""
+        per10k = lambda n, d: round(n / max(d, 1) * 10000, 1)
+        censor = lambda w: w[0] + "*" * (len(w) - 2) + w[-1]
+        shown_per = {u: c for u, c in self.per.items()}
+        regulars = [u for u, c in shown_per.items() if c["msgs"] >= REGULAR]
+        mouth = max(shown_per, key=lambda u: shown_per[u]["swears"])
+        clean = min(regulars, key=lambda u: shown_per[u]["swear_msgs"] / shown_per[u]["msgs"]) if regulars else None
+        busy = [c for c, n in self.chan_msgs.items() if n >= 5000]
+        sweary = max(busy, key=lambda c: self.swear_chan[c] / self.chan_msgs[c]) if busy else None
+        n_sw = sum(self.swear_words.values())
+        self.out["swears"] = {
+            "n": n_sw, "now": per10k(n_sw, n_now), "prev": per10k(self.prev_swears, self.prev_n),
+            "every": round(n_now / max(sum(c["swear_msgs"] for c in self.per.values()), 1)),
+            "words": [{"w": censor(w), "n": n} for w, n in self.swear_words.most_common(6)],
+            "mouth": {"user": self.who(mouth), "n": shown_per[mouth]["swears"]},
+            "clean": clean and {"user": self.who(clean), "msgs": shown_per[clean]["msgs"],
+                                "every": round(shown_per[clean]["msgs"] / max(shown_per[clean]["swear_msgs"], 1))},
+            "channel": sweary and {"name": (self.channel_name(sweary) or "").split("｜")[-1],
+                                   "pct": round(self.swear_chan[sweary] / self.chan_msgs[sweary] * 100)},
+        }
+        poo_reacts = sum(n for u, n in self.q(
+            "SELECT r.user_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r JOIN messages m "
+            "ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? AND r.emoji = '💩' GROUP BY 1",
+            (self.lo, self.hi)) if self.human(u) and n > 0)
+        n_poo = sum(self.poo_month.values())
+        chief = max(shown_per, key=lambda u: shown_per[u]["poo"])
+        peak = max(self.poo_day.items(), key=lambda kv: kv[1]) if self.poo_day else None
+        self.out["poo"] = {
+            "n": n_poo, "reacts": poo_reacts, "now": per10k(n_poo, n_now), "prev": per10k(self.prev_poo, self.prev_n),
+            "months": [{"m": m, "n": self.poo_month[m]} for m in sorted(self.months_words)],
+            "peak": peak and {"day": peak[0], "n": peak[1]},
+            "chief": {"user": self.who(chief), "n": shown_per[chief]["poo"]},
+        }
         self.out["words"] = {
             "by_month": by_month, "born": born[:8], "laugh": laugh, "emoji": emoji, "reactions": reacts,
             "longest": {"user": self.who(uid), "chars": chars, "day": day, "words": len(content.split()),
