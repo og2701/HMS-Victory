@@ -554,10 +554,9 @@ class Extract:
         # HMS Victory. The bot's own changes count for whoever its reason names, or for its developer when it
         # gives none (their scripts); Big Brother, raid lockdowns and the Halloween icons run themselves.
         built_kinds = ("channel_", "overwrite_", "role_", "guild_update", "automod_rule", "onboarding_", "emoji_", "sticker_")
-        built, start = Counter(), None
-        for act, uid, reason, ts in self.q("SELECT action, user_id, reason, ts FROM audit_log WHERE ts >= ? AND ts < ?",
-                                           (self.lo, self.hi)):
-            start = min(start or ts, ts)
+        built = Counter()
+        for act, uid, reason in self.q("SELECT action, user_id, reason FROM audit_log WHERE ts >= ? AND ts < ?",
+                                       (self.lo, self.hi)):
             if not act.startswith(built_kinds):
                 continue
             if uid == HMS_VICTORY:
@@ -568,9 +567,7 @@ class Extract:
                 uid = usernames.get(named.group(1)) if named else DEVELOPER
             if uid and self.human(uid):
                 built[uid] += 1
-        if start:
-            award("architect", "Server Architect", f"changes to the server since {self.long_day(datetime.fromtimestamp(start, UK).date().isoformat())}, "
-                  "by hand and through HMS", counted(built), num)
+        award("architect", "Server Architect", "changes to the server", counted(built), num)
 
     def long_day(self, iso):
         d = date.fromisoformat(iso)
