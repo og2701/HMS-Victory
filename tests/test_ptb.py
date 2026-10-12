@@ -31,13 +31,22 @@ def _make_interaction(user_id=USERS.OGGERS, channel=None, voice_client=None, gui
     return interaction
 
 
-def test_ptb_rejects_non_oggers():
+def test_ptb_rejects_unauthorised_user():
     interaction = _make_interaction(user_id=123456)
     asyncio.run(ptb.handle_ptb_command(interaction))
     interaction.response.send_message.assert_awaited_once()
     args, kwargs = interaction.response.send_message.await_args
-    assert "Only Oggers" in args[0]
+    assert "permission" in args[0]
     assert kwargs.get("ephemeral") is True
+
+
+def test_ptb_allows_chin():
+    assert USERS.CHIN in ptb.PTB_ALLOWED_USER_IDS
+    interaction = _make_interaction(user_id=USERS.CHIN, channel=None)
+    asyncio.run(ptb.handle_ptb_command(interaction))
+    interaction.response.send_message.assert_awaited_once()
+    args, _ = interaction.response.send_message.await_args
+    assert "voice channel" in args[0]
 
 
 def test_ptb_requires_voice_channel():

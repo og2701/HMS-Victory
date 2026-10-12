@@ -229,7 +229,7 @@ def define_commands(tree, client):
     async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await glaze(interaction, channel, user)
 
-    @command("ptb", "Push the button in your current voice channel (Oggers only)", checks=[lambda i: i.user.id == USERS.OGGERS])
+    @command("ptb", "Push the button in your current voice channel", checks=[lambda i: i.user.id in (USERS.OGGERS, USERS.CHIN)])
     async def ptb_command(interaction: Interaction):
         from commands.social.ptb import handle_ptb_command
         await handle_ptb_command(interaction)

@@ -7,12 +7,13 @@ from config import BASE_DIR, USERS
 logger = logging.getLogger(__name__)
 
 PTB_AUDIO_PATH = os.path.join(BASE_DIR, "data", "audio", "ptb.mp3")
+PTB_ALLOWED_USER_IDS = {USERS.OGGERS, USERS.CHIN}
 
 
 async def handle_ptb_command(interaction: discord.Interaction):
-    if interaction.user.id != USERS.OGGERS:
+    if interaction.user.id not in PTB_ALLOWED_USER_IDS:
         await interaction.response.send_message(
-            "Only Oggers can push the button for now.", ephemeral=True
+            "You do not have permission to push the button.", ephemeral=True
         )
         return
 
