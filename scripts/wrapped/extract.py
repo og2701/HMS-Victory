@@ -74,7 +74,7 @@ GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|ni
 SWEARS = {"fuck": r"f+u+c+k+\w*|motherfuck\w*|fck\w*|ffs", "shit": r"shit\w*|shite|bullshit\w*", "piss": r"piss\w*",
           "bollocks": r"bollock\w*", "bloody": r"bloody", "wanker": r"wank\w*", "twat": r"twat\w*", "bastard": r"bastard\w*",
           "prick": r"prick\w*", "dick": r"dick\w*", "bellend": r"bellend\w*", "cunt": r"cunt\w*", "arse": r"arse(?!nal)\w*|ass|asshole\w*",
-          "crap": r"crap\w*", "damn": r"damn\w*|dammit"}
+          "crap": r"crap\w*"}
 SWEAR = re.compile(r"\b(?:" + "|".join(f"(?P<{k}>{v})" for k, v in SWEARS.items()) + r")\b")
 # Poo, the ways people actually spell it ("poopja" is a pun on a member's name). Pooh, pookie and dump mean other things.
 POO = re.compile(r"\b(poo+s?|poo+ps?|poo+ped|poo+ping|poo+py|poo+ey|poo+ed|poo+ing|poo+pers?|poo+pies?|poo+poo+|(?:pee)+poo+(?:poo+)?|"
@@ -200,7 +200,7 @@ class Extract:
         goodnights, sent_at = defaultdict(list), defaultdict(list)
         human_replies = []
         jabs = Counter()
-        swear_words, swear_chan, chan_msgs = Counter(), Counter(), Counter()
+        swear_words, swear_by = Counter(), Counter()
         poo_month, poo_day = Counter(), Counter()
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
@@ -240,13 +240,12 @@ class Extract:
                 c["laugh_only"] += 1
             if PEACE.search(low):
                 c["peace"] += 1
-            chan_msgs[chan] += 1
             sw = [m.lastgroup for m in SWEAR.finditer(low)]
             if sw:
                 swear_words.update(sw)
+                swear_by.update((w, uid) for w in sw)
                 c["swears"] += len(sw)
                 c["swear_msgs"] += 1
-                swear_chan[chan] += 1
             if POO.search(low):
                 c["poo"] += 1
                 poo_month[day[:7]] += 1
@@ -310,7 +309,7 @@ class Extract:
                     per[uid]["fake_gn"] += 1
         self.human_replies = human_replies
         self.jabs = jabs
-        self.swear_words, self.swear_chan, self.chan_msgs = swear_words, swear_chan, chan_msgs
+        self.swear_words, self.swear_by = swear_words, swear_by
         self.poo_month, self.poo_day = poo_month, poo_day
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
@@ -1207,23 +1206,23 @@ class Extract:
         chars, uid, day, mid = self.longest
         content = self.q("SELECT content FROM messages WHERE message_id = ?", (mid,))[0][0] or ""
         per10k = lambda n, d: round(n / max(d, 1) * 10000, 1)
-        censor = lambda w: w[0] + "*" * (len(w) - 2) + w[-1]
+        censor = lambda w: re.sub(r"[aeiou]", "*", w, count=1)  # sh*t, f*ck
         shown_per = {u: c for u, c in self.per.items()}
         regulars = [u for u, c in shown_per.items() if c["msgs"] >= REGULAR]
         mouth = max(shown_per, key=lambda u: shown_per[u]["swears"])
         clean = min(regulars, key=lambda u: shown_per[u]["swear_msgs"] / shown_per[u]["msgs"]) if regulars else None
-        busy = [c for c, n in self.chan_msgs.items() if n >= 5000]
-        sweary = max(busy, key=lambda c: self.swear_chan[c] / self.chan_msgs[c]) if busy else None
+        def loudest(word):
+            # whoever said this one the most
+            k, u = max(((k, u) for (w, u), k in self.swear_by.items() if w == word and self.shown(u)), default=(0, None))
+            return u and {"user": self.who(u), "n": k}
         n_sw = sum(self.swear_words.values())
         self.out["swears"] = {
             "n": n_sw, "now": per10k(n_sw, n_now), "prev": per10k(self.prev_swears, self.prev_n),
             "every": round(n_now / max(sum(c["swear_msgs"] for c in self.per.values()), 1)),
-            "words": [{"w": censor(w), "n": n} for w, n in self.swear_words.most_common(6)],
+            "words": [{"w": censor(w), "n": n, "top": loudest(w)} for w, n in self.swear_words.most_common(6)],
             "mouth": {"user": self.who(mouth), "n": shown_per[mouth]["swears"]},
             "clean": clean and {"user": self.who(clean), "msgs": shown_per[clean]["msgs"],
                                 "every": round(shown_per[clean]["msgs"] / max(shown_per[clean]["swear_msgs"], 1))},
-            "channel": sweary and {"name": (self.channel_name(sweary) or "").split("｜")[-1],
-                                   "pct": round(self.swear_chan[sweary] / self.chan_msgs[sweary] * 100)},
         }
         poo_reacts = sum(n for u, n in self.q(
             "SELECT r.user_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r JOIN messages m "

@@ -69,20 +69,23 @@ if (SW && SW.n) {
         block(230, {}, kicker("THE SWEAR JAR"), h("div.title", roll(SW.n, 0.3, 1.6), " SWEARS"),
           h("div.row", { style: { gap: "18px", marginTop: "14px" } }, line(`one in every ${SW.every} messages`, 0.7, "h3"),
             pctChip(SW.now, SW.prev, 1.0))),
-        h("div.abs.col", { style: { left: "56px", width: "580px", top: "580px", gap: "18px" } }, SW.words.map((x, k) =>
-          an(h("div.lrow", { style: { gap: "18px" } }, h("div.swear", x.w),
-            h("div", { style: { flex: 1, height: "40px" } }, an(h("div.pxbar", { style: { width: (x.n / max) * 100 + "%" } }), "growx", 1.0 + k * 0.12, 0.9)),
-            h("div.h3.acc", { style: { width: "120px", textAlign: "right" } }, short(x.n))), "left", 0.8 + k * 0.12, 0.6))),
+        // each word, how often, and who said it most
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: "520px", gap: "14px" } }, SW.words.map((x, k) =>
+          an(h("div.lrow.listpanel", { style: { gap: "18px", height: "92px", padding: "0 22px" } }, h("div.swear", x.w),
+            h("div", { style: { width: "200px", height: "36px", flex: "none" } }, an(h("div.pxbar", { style: { width: (x.n / max) * 100 + "%" } }), "growx", 1.0 + k * 0.12, 0.9)),
+            h("div.h3.acc", { style: { width: "110px", flex: "none" } }, short(x.n)),
+            x.top ? avatar(x.top.user, 56, 1.3 + k * 0.12, 0.5) : null,
+            x.top ? h("div", { style: { flex: 1, minWidth: 0 } }, h("div.small.white", { style: { fontSize: "28px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, name(x.top.user)),
+              h("div.tiny", `${fmt(x.top.n)} TIMES`)) : null), "left", 0.8 + k * 0.12, 0.6))),
         h("div.abs", { style: { left: "56px", right: "56px", top: "1180px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
-          personTile("POTTY MOUTH", SW.mouth.user, `${fmt(SW.mouth.n)} swears`, 2.2),
-          SW.clean ? personTile("SQUEAKY CLEAN", SW.clean.user, `one swear every ${fmt(SW.clean.every)} messages`, 2.4) : null),
-        SW.channel ? block(1560, {}, line(`Sweariest channel: #${SW.channel.name}`, 2.8, "h3")) : null);
+          personTile("POTTY MOUTH", SW.mouth.user, `${fmt(SW.mouth.n)} swears`, 2.4),
+          SW.clean ? personTile("SQUEAKY CLEAN", SW.clean.user, `one swear every ${fmt(SW.clean.every)} messages`, 2.6) : null));
     },
     update(t, r) {
-      // a jar on the right filling up with coins, one dropping in for every few swears
+      // a jar along the bottom filling up with coins
       const ctx = r._cv.getContext("2d");
       ctx.clearRect(0, 0, W, H);
-      const x0 = 700, x1 = 1000, y0 = 600, y1 = 1040, s = 20;
+      const x0 = 390, x1 = 690, y0 = 1540, y1 = 1820, s = 20;
       const top = y1 - (y1 - y0) * 0.8 * E.outCubic(prog(t, 0.8, 4.5));
       for (let y = y1 - s; y >= top; y -= s) for (let x = x0 + 8; x <= x1 - 8 - s; x += s) {
         const v = hash(x * 7.3 + y * 1.7);
@@ -93,14 +96,14 @@ if (SW && SW.n) {
         const p = (t - (0.8 + i * 0.28 + hash(i) * 0.2)) / 0.55;
         if (p < 0 || p > 1) continue;
         ctx.fillStyle = "#ffc23d";
-        ctx.fillRect(x0 + 30 + hash(i * 3.1) * (x1 - x0 - 80), 470 + (top - 470) * p * p, 22, 22);
+        ctx.fillRect(x0 + 30 + hash(i * 3.1) * (x1 - x0 - 80), y0 - 90 + (top - y0 + 90) * p * p, 22, 22);
       }
       ctx.fillStyle = "rgba(180, 220, 255, .08)";
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
       ctx.fillStyle = "rgba(220, 240, 255, .55)";
       ctx.fillRect(x0 - 8, y0, 8, y1 - y0 + 8); ctx.fillRect(x1, y0, 8, y1 - y0 + 8); ctx.fillRect(x0 - 8, y1, x1 - x0 + 16, 8);
       ctx.fillRect(x0 - 24, y0 - 8, 32, 8); ctx.fillRect(x1, y0 - 8, 32, 8);
-      ctx.fillRect(x0 + 20, y0 + 30, 8, 160);
+      ctx.fillRect(x0 + 20, y0 + 30, 8, 120);
     },
   });
 }
