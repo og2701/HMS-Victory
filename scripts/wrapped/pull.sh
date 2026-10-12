@@ -38,4 +38,9 @@ fi
 echo "names, avatars, channels, emoji..."
 "${SSH[@]}" "cd ~/HMS-Victory && venv/bin/python - $*" < "$HERE/fetch_discord.py" > "$OUT/discord.json.tmp"
 mv "$OUT/discord.json.tmp" "$OUT/discord.json"
+if [ $# -eq 0 ]; then
+  echo "Wick's mod cases and Ticket Tool's closed tickets..."
+  "${SSH[@]}" "cd ~/HMS-Victory && venv/bin/python - 2026-01-01" < "$HERE/fetch_logs.py" > "$OUT/mod_logs.json.tmp"
+  mv "$OUT/mod_logs.json.tmp" "$OUT/mod_logs.json"
+fi
 ls -la "$OUT"

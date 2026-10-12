@@ -71,6 +71,11 @@ the emoji slides and the avatar wall ending.
    31 December so 2027 can be diffed.
 4. **Voice, slash commands and joins via the gateway** only start on 22 September. Nothing to
    do but keep recording; those slides say "since September" or get cut.
+5. **Moderation before 17 August.** Discord keeps 45 days of audit log, so the chronicle's starts
+   on 17 August. Wick's mod log (#police-station) and Ticket Tool's closed tickets
+   (#ticket-archive) cover the whole year instead: the chronicle keeps their messages but not
+   their embeds, so `fetch_logs.py` (run by `pull.sh`) re-reads them into `mod_logs.json`. Wick's
+   cases give type, moderator, target and reason; each ticket lists who spoke in it and how much.
 
 County balls are left out of the Wrapped altogether.
 
