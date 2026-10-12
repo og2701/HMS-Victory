@@ -872,7 +872,7 @@ if (DATA.iceberg && DATA.iceberg.entries.length) {
       const win = an(h("div.icewin", layer), "zoom", 0.2, 0.9);
       const intro = h("div.fill",
         block(230, {}, kicker("/ICEBERG"), words("SERVER LORE", "title", 0.2)),
-        block(1560, {}, html(`${b(fmt(IB.entries.length))} pieces of lore made the iceberg this year. ${b(fmt(IB.denied))} more were turned down.`, 3.2)));
+        block(1560, {}, html(`${b(fmt(IB.entries.length))} pieces of lore made the iceberg this year.`, 3.2)));
       const cards = IB.stories.map((s, k) => {
         const e = ENT[s.entry], at = starts[k];
         return h("div.abs", { style: { left: "56px", right: "56px", top: "1200px" } },
