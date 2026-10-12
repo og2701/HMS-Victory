@@ -31,8 +31,8 @@ echo "[1/8] Updating system packages..."
 sudo apt-get update && sudo apt-get upgrade -y
 
 # 2. Install Dependencies
-echo "[2/8] Installing system dependencies (Python, SQLite, Chrome)..."
-sudo apt-get install -y python3 python3-pip python3-venv sqlite3 wget gnupg git curl
+echo "[2/8] Installing system dependencies (Python, SQLite, Chrome, FFmpeg)..."
+sudo apt-get install -y python3 python3-pip python3-venv sqlite3 wget gnupg git curl ffmpeg
 
 # Google Chrome for the rendered cards (balance graphs, crossword boards, game art).
 # apt-key was removed in Ubuntu 24.04 - the key goes in its own keyring and the source

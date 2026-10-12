@@ -229,6 +229,11 @@ def define_commands(tree, client):
     async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await glaze(interaction, channel, user)
 
+    @command("ptb", "Push the button in your current voice channel (Oggers only)", checks=[lambda i: i.user.id == USERS.OGGERS])
+    async def ptb_command(interaction: Interaction):
+        from commands.social.ptb import handle_ptb_command
+        await handle_ptb_command(interaction)
+
     @command("whatsgoingon", "Catch up on the last 10 minutes of chat - screen-reader friendly summary (only you see it)")
     async def whatsgoingon_command(interaction: Interaction):
         await whatsgoingon(interaction)
