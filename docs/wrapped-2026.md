@@ -232,8 +232,10 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    renders single frames for checking a scene without a full render, and `--qa` checks every
    scene at the moment it's fully revealed for text running off the screen, cut off by its panel,
    or sitting on other text, and prints each scene's length. Run it after any change to copy or
-   layout. For Discord, re-encode the master with `-crf 30 -preset slow` and 128k AAC to get under
-   100 MB at about ten minutes (about 95 MB); each extra half-minute needs watching.
+   layout. For Discord, re-encode the master with `-crf 30 -preset veryslow -tune animation` and
+   128k AAC: about 84 MB at ten minutes, 13% smaller than `-preset slow` for the same quality (SSIM
+   0.966 against the master). Halving that costs visible sharpness (720p two-pass is the best of a
+   bad lot at 50 MB), and H.265 or AV1 would save 40% but Discord often won't play them inline.
 
 How the player works: every frame is a pure function of time. Scenes build their DOM once, and
 `data-a` attributes, number rolls, pixel-reveal avatars, card flips and the three.js world are
