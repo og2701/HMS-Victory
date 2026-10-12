@@ -20,6 +20,7 @@ import random
 import re
 import sqlite3
 import statistics
+import subprocess
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -27,7 +28,9 @@ from zoneinfo import ZoneInfo
 
 UK = ZoneInfo("Europe/London")
 VOICE_NOTE = 1 << 13  # MessageFlags.is_voice_message
-TEST_ACCOUNTS = {818885214189256714}  # the developer's test account, kept off the bot's own leaderboards too
+TEST_ACCOUNTS = {818885214189256714}
+HMS_VICTORY = 1171842947440967770  # the bot
+DEVELOPER = 404634271861571584  # who builds it: its updates, and its no-reason server changes, are theirs  # the developer's test account, kept off the bot's own leaderboards too
 REGULAR = 10_000  # messages needed for the "share of your messages" awards, so they go to people everyone knows
 LAUGH_REACTS = {"😂", "🤣", "😆", "💀", "😭", "😹"}
 HEARTS = {"❤️", "♥️", "🩷", "💖", "💗", "💕", "💞", "💓", "😍", "🥰", "🫶", "💘", "💝", "❣️", "🧡", "💛", "💚", "💙",
@@ -490,10 +493,84 @@ class Extract:
         award("glowup", "Glow-up of the Year", "more messages than the same stretch last year",
               [(n, n, u) for n, u in glow], lambda v, r, u: f"+{int(v):,}")
 
+        self.staff(award, counted, num)
         self.out["awards"] = out
         self.out["rookies"] = [{"user": self.who(u), "n": n, "first": min(self.days_active[u])} for n, u in rookies[:3]]
         self.out["glowups"] = [{"user": self.who(u), "n": per[u]["msgs"], "prev": prev_window.get(u, 0)}
                                for _, u in glow[:3]]
+
+    def staff(self, award, counted, num):
+        """The staff page. Mod cases and tickets come from Wick's and Ticket Tool's logs (mod_logs.json, the
+        whole year); server changes from the audit log, which starts in August; the Shipwright from the
+        bot's own history."""
+        try:
+            logs = json.loads((self.data / "mod_logs.json").read_text())
+        except FileNotFoundError:
+            return
+        usernames = {k: int(v) for k, v in logs["usernames"].items()}
+        cases, night, tickets = Counter(), Counter(), Counter()
+        for m in logs["logs"]:
+            t = datetime.fromisoformat(m["ts"]).timestamp()
+            if not (self.lo <= t < self.hi) or not m["embeds"]:
+                continue
+            f = {x["name"].rstrip(":"): x["value"] for x in m["embeds"][0].get("fields") or []}
+            if m["bot"] == "wick" and "Case" in f and "Moderator" in f:
+                mod = re.search(r"`([^`]+)`", f["Moderator"])
+                uid = usernames.get(mod.group(1)) if mod else None
+                if uid and self.human(uid):
+                    cases[uid] += 1
+                    if datetime.fromtimestamp(t, UK).hour < 6:
+                        night[uid] += 1
+            elif m["bot"] == "ticket-tool" and "Ticket Owner" in f:
+                owner = re.search(r"\d{15,}", f["Ticket Owner"])
+                # everyone who spoke in the ticket apart from whoever opened it
+                for _, uid in re.findall(r"(\d+) - <@!?(\d+)>", f.get("Users in transcript", "")):
+                    if not (owner and uid == owner.group(0)) and self.human(int(uid)):
+                        tickets[int(uid)] += 1
+        jobs = Counter({u: cases[u] + tickets[u] for u in set(cases) | set(tickets)})
+        msgs = lambda u: self.per[u]["msgs"] if u in self.per else 0
+        award("hardest", "Hardest Worker", lambda v, r, u: f"mod cases and tickets ({cases[u]:,} and {tickets[u]:,})",
+              counted(jobs), num)
+        lowkey = sorted(((jobs[u] / max(msgs(u), 1), jobs[u], u) for u in jobs if jobs[u] >= 50 and self.shown(u)), reverse=True)
+        award("lowkey", "Low-key Hardest Worker", lambda v, r, u: f"cases and tickets, and only {msgs(u):,} messages all year",
+              lowkey[:3], num)
+        award("ticket_hero", "Ticket Hero", "tickets worked", counted(tickets), num)
+        award("night_shift", "Night Shift", "mod cases between midnight and 6am", counted(night), num)
+
+        # The Shipwright: every update to the bot this year, wherever it was committed, and what it went on to say.
+        since, until = (datetime.fromtimestamp(x, UK).isoformat() for x in (self.lo, self.hi))
+        try:
+            updates = int(subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-list", "--count",
+                                          "--no-merges", "--all", f"--since={since}", f"--until={until}"],
+                                         capture_output=True, text=True, check=True).stdout)
+        except (subprocess.CalledProcessError, ValueError, FileNotFoundError):
+            updates = 0
+        said = self.q("SELECT COUNT(*) FROM messages WHERE user_id = ? AND ts >= ? AND ts < ?", (HMS_VICTORY, self.lo, self.hi))[0][0]
+        if updates:
+            award("shipwright", "The Shipwright", f"updates to HMS Victory, which sent {said:,} messages this year",
+                  [(updates, updates, DEVELOPER)], num)
+
+        # Server Architect: changes to channels, permissions, roles and the server's settings, by hand or through
+        # HMS Victory. The bot's own changes count for whoever its reason names, or for its developer when it
+        # gives none (their scripts); Big Brother, raid lockdowns and the Halloween icons run themselves.
+        built_kinds = ("channel_", "overwrite_", "role_", "guild_update", "automod_rule", "onboarding_", "emoji_", "sticker_")
+        built, start = Counter(), None
+        for act, uid, reason, ts in self.q("SELECT action, user_id, reason, ts FROM audit_log WHERE ts >= ? AND ts < ?",
+                                           (self.lo, self.hi)):
+            start = min(start or ts, ts)
+            if not act.startswith(built_kinds):
+                continue
+            if uid == HMS_VICTORY:
+                r = (reason or "").strip()
+                if r.startswith(("Big Brother", "Anti-raid", "Halloween")):
+                    continue
+                named = re.search(r"\b(?:by|at) ([\w.]+?)(?:'s request)?$", r)
+                uid = usernames.get(named.group(1)) if named else DEVELOPER
+            if uid and self.human(uid):
+                built[uid] += 1
+        if start:
+            award("architect", "Server Architect", f"changes to the server since {self.long_day(datetime.fromtimestamp(start, UK).date().isoformat())}, "
+                  "by hand and through HMS", counted(built), num)
 
     def long_day(self, iso):
         d = date.fromisoformat(iso)

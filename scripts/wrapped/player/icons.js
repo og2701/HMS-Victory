@@ -231,6 +231,36 @@ const ICONS = {
     "........gg..", ".......gggg.", "......gggggg", "........gg..", "........gg..", "..ss....gg..",
     "..ss....gg..", "..ss....gg..", "..ss....gg..", "..ss....gg..", "wwwwwwwwwwww", "............",
   ],
+  // the ban hammer
+  hardest: [
+    "............", "..ssssssss..", "..swwwwwws..", "..ssssssss..", ".....nn.....", ".....nn.....",
+    ".....nn.....", ".....nn.....", ".....nn.....", ".....nn.....", "....nnnn....", "............",
+  ],
+  // low-key: a key
+  lowkey: [
+    "............", "............", "..yyyy......", ".yy..yy.....", ".y....y.....", ".yy..yy.....",
+    "..yyyyyyyyy.", "......y.y.y.", "......y...y.", "............", "............", "............",
+  ],
+  // a ticket, perforated down the middle
+  ticket_hero: [
+    "............", "............", "yyyyyyyyyyyy", "yyyyyoyyyyyy", ".yyyyyyyyyy.", ".yyyyoyyyyy.",
+    ".yyyyyyyyyy.", "yyyyyoyyyyyy", "yyyyyyyyyyyy", "............", "............", "............",
+  ],
+  // a police light going round
+  night_shift: [
+    "............", ".c...cc...c.", "..c..cc..c..", "............", "....bbbb....", "...bbccbb...",
+    "...bccccb...", "...bccccb...", "..ssssssss..", "..ssssssss..", "............", "............",
+  ],
+  // HMS Victory herself
+  shipwright: [
+    ".....r......", ".....rr.....", ".....s......", "...wwsww....", "..wwwswww...", "..wwwswww...",
+    "...wwsww....", ".....s......", "nnnnnnnnnnnn", ".nnnnnnnnnn.", "..nnnnnnnn..", "bbbbbbbbbbbb",
+  ],
+  // a building going up
+  architect: [
+    "............", "....cccc....", "....cwwc....", "....cccc....", "..cccccccc..", "..cwwccwwc..",
+    "..cccccccc..", "..cwwccwwc..", "..cccccccc..", "..cwwccwwc..", "cccccccccccc", "............",
+  ],
   // a phone still lit up under "zz"
   fake_gn: [
     "........ww..", ".........w..", "........ww..", "..sssssss...", "..scccccs...", "..scwwwcs...",

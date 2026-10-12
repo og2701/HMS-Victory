@@ -128,6 +128,12 @@ Last year's 16 stay. New for 2026:
 | The Fake Goodnight | said goodnight, still posting half an hour later | `messages` |
 | Own Biggest Fan | most reactions on their own messages | `reactions` |
 | Ratio King | most replies with more reactions than the message they answered (five at least) | `reactions` |
+| Hardest Worker | most Wick mod cases plus tickets worked | `mod_logs.json` |
+| Low-key Hardest Worker | most cases and tickets per message sent (50 jobs at least) | `mod_logs.json`, `messages` |
+| Ticket Hero | most tickets worked (spoke in, and didn't open) | `mod_logs.json` |
+| Night Shift | most mod cases between midnight and 6am | `mod_logs.json` |
+| The Shipwright | updates to HMS Victory this year (every branch), and the messages it sent | `git`, `messages` |
+| Server Architect | changes to channels, permissions, roles and settings, by hand and through HMS (its reasonless changes are the developer's scripts; Big Brother, raid lockdowns and the Halloween icons don't count) | `audit_log` |
 | Kart Champion | most wins, plus fastest lap per track | `kart_results` |
 | Rival of the Year | most PvP games against one person (bots excluded) | `pvp_results` |
 | Most Dead | most Skyrim deaths | `skyrim_profiles.json` |
