@@ -468,7 +468,7 @@ if (GM.kart) {
       const K = GM.kart, champ = K.champions[0];
       r._cv = canvasLayer();
       r.append(h("div.scrim-mid"), r._cv,
-        block(230, {}, kicker("UKP KART"), h("div.title", roll(K.races, 0.3, 1.2), " RACES"), line(`${K.racers} drivers on the grid so far`, 0.7, "small")),
+        block(230, {}, kicker("UKP KART"), h("div.title", roll(K.races, 0.3, 1.2), " RACES"), line(`${K.racers} drivers on the grid${FULL ? "" : " so far"}`, 0.7, "small")),
         champ ? block(560, {}, an(h("div.row", { style: { gap: "30px" } }, avatar(champ.user, 190, 0.8, 0.8, "ring"),
           h("div", h("div.kick", "CHAMPION"), h("div.h2", { style: { marginTop: "12px" } }, name(champ.user)),
             h("div.big.acc", { style: { fontSize: "110px" } }, roll(champ.wins, 1.1, 1), " WINS"))), "left", 0.7, 0.7)) : null,

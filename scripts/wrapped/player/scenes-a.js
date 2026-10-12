@@ -245,7 +245,7 @@ scene({
     r._cv = canvasLayer();
     r.append(h("div.scrim-mid"), r._cv,
       block(230, {}, kicker("THE RACE"), words(`${YEAR} VS ${YEAR - 1}`, "title", 0.2),
-        html(`Messages so far, added up day by day. ${ba("Blue")} is ${YEAR}, <span class="red"><b>red</b></span> is ${YEAR - 1}.`, 0.5, "small")),
+        html(`${FULL ? "Messages" : "Messages so far"}, added up day by day. ${ba("Blue")} is ${YEAR}, <span class="red"><b>red</b></span> is ${YEAR - 1}.`, 0.5, "small")),
       h("div.abs.racelabel", { style: { left: "80px", top: "0px" } }, h("div.kick.plain.rl1", ""), h("div.h2.rl2", "")),
       block(1560, {},
         rc.passed_on ? html(`Already ${ba(Math.round((rc.this_total / rc.last_total - 1) * 100) + "%")} more than the whole of ${YEAR - 1}.`, 5.0, "h3") :
