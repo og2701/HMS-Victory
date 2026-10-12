@@ -324,6 +324,32 @@ theme), because there the jolt is the joke. Because cues name scenes, they keep 
 scene lengths change. Every song is levelled to the same loudness over the stretch it plays, and a
 limiter keeps the mix at -2dB.
 
+## Personal Wrapped
+
+Everyone also gets their own: a summary card (a 1080x1350 picture) for every current member with 10+
+messages in the year, and a video of under a minute (720x1280) for everyone with 50+. Nine scenes:
+their name, their messages (rank, change on last year, words, days, longest streak), their biggest day
+and hours, their channels, their people (best mate, who they reply to and who replies to them, their
+biggest fan), their vibe (top emoji, laughs and hearts on their messages, swears, poo), who they were
+(the habit they're most unusual at against everyone with 50+ messages, "more than N% of us"), their
+trophies (awards, badges, Hall of Fame, casino), and their card. Every scene has a fixed length, so
+every video runs 54.5 seconds over the same soundtrack (Don't Stop Me Now, its "(Don't stop me now)
+I'm having such a good time" landing on who they were).
+
+```bash
+python3 scripts/wrapped/extract.py ... --personal $D/personal.json        # alongside the usual run
+python3 scripts/wrapped/build.py $D/personal.json $D/out/personal.html --personal
+node scripts/wrapped/render.mjs http://localhost:5193/personal.html --timeline $D/ptimeline.json
+python3 scripts/wrapped/soundtrack.py mix <music dir> $D/ptimeline.json - $D/personal-bed.m4a <music dir>/personal-cues.json
+node scripts/wrapped/render.mjs http://localhost:5193/personal.html --personal $D/personal-out $D/personal-bed.m4a all
+```
+
+The last step writes `<member id>.jpg` and `<member id>.mp4` for everyone (about an hour for ~500
+videos and ~1,100 cards with six workers), skipping files already made, so it can be stopped and
+re-run. `personal.html?u=<id>` plays anyone's video in a browser and `?u=<id>&card=1` shows their card.
+The personal cue sheet is one line: `{"song": "dont-stop-me-now", "from": "p-intro", "to": "p-card",
+"sync": [69.8, "p-you", 0.3], "fade_in": 0.4, "fade_out": 2.5}`.
+
 ## Cue sheet (backup)
 
 The mixer reads `scratch/wrapped-2026/music/cues.json`, which sits beside the song files and isn't

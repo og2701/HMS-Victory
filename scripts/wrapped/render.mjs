@@ -3,6 +3,7 @@
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core/index.mjs \
 //     node scripts/wrapped/render.mjs <page url> <out.mp4>
 //   node scripts/wrapped/render.mjs <page url> --stills <out dir> 12.5 40 61.2 ...   (or scene ids)
+//   node scripts/wrapped/render.mjs <personal page url> --personal <out dir> <soundtrack.m4a> [ids... | all]
 //
 // Recording a screen in real time drops frames. Instead each worker opens the page in headless Chrome
 // (with the GPU, for the 3D) and steps window.WRAP.seek one frame at a time, screenshotting each into
@@ -119,6 +120,72 @@ if (args[1] === "--stills") {
     fs.writeFileSync(file, await shoot(probe, t));
     console.log(file);
   }
+  await browser.close();
+  process.exit(0);
+}
+
+if (args[1] === "--personal") {
+  // Everyone's own Wrapped: their card (a 1080x1350 picture) and, if they have enough messages for one,
+  // their video (720x1280, with the shared soundtrack under it). Files already made are skipped and
+  // each lands under its final name only when complete, so a long run can stop and carry on.
+  const [dir, bed, ...want] = args.slice(2);
+  fs.mkdirSync(dir, { recursive: true });
+  const ids = await probe.evaluate(() => window.PERSONAL_IDS);
+  const pick = want.length && want[0] !== "all" ? ids.filter(([id]) => want.includes(id)) : ids;
+  const jobs = pick.flatMap(([id, video]) => [[id, "card"], ...(video ? [[id, "video"]] : [])])
+    .filter(([id, kind]) => !fs.existsSync(path.join(dir, `${id}.${kind === "card" ? "jpg" : "mp4"}`)));
+  const at = (id, card) => `${url}${url.includes("?") ? "&" : "?"}u=${id}${card ? "&card=1" : ""}`;
+  const open = async u => {
+    const page = await (await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 })).newPage();
+    page.on("pageerror", e => console.error("page error:", e.message));
+    await page.goto(u, { waitUntil: "load" });
+    await page.waitForFunction(() => window.WRAP && window.WRAP.ready, null, { timeout: 180000 });
+    return page;
+  };
+  console.log(`${pick.length} people: ${jobs.length} files to make`);
+  let next = 0, done = 0;
+  const started = Date.now();
+  const worker = async () => {
+    while (next < jobs.length) {
+      const [id, kind] = jobs[next++];
+      let page = await open(at(id, kind === "card"));
+      if (kind === "card") {
+        await page.evaluate(() => window.WRAP.seek(0.5));
+        const jpg = await page.screenshot({ type: "jpeg", quality: 92, clip: { x: 0, y: 0, width: 1080, height: 1350 } });
+        fs.writeFileSync(path.join(dir, `${id}.jpg`), jpg);
+      } else {
+        const total = await page.evaluate(() => window.WRAP.total), fps = info.fps;
+        const part = path.join(dir, `${id}.part.mp4`);
+        const ff = spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-",
+          "-i", bed, "-map", "0:v", "-map", "1:a", "-vf", "scale=720:1280:flags=lanczos", "-c:v", "libx264", "-preset", "medium",
+          "-crf", "23", "-pix_fmt", "yuv420p", "-r", String(fps), "-c:a", "copy", "-shortest", "-movflags", "+faststart", part],
+          { stdio: ["pipe", "ignore", "inherit"] });
+        const finished = new Promise((ok, fail) => ff.on("close", c => (c === 0 ? ok() : fail(new Error("ffmpeg " + id)))));
+        for (let f = 0; f < Math.ceil(total * fps); f++) {
+          let jpg;
+          try {
+            jpg = await shoot(page, f / fps);
+          } catch (e) {
+            console.error(`${id}: frame ${f} failed (${e.message.split("\n")[0]}), reopening`);
+            await page.context().close().catch(() => {});
+            page = await open(at(id, false));
+            jpg = await shoot(page, f / fps);
+          }
+          if (!ff.stdin.write(jpg)) await new Promise(r => ff.stdin.once("drain", r));
+        }
+        ff.stdin.end();
+        await finished;
+        fs.renameSync(part, path.join(dir, `${id}.mp4`));
+      }
+      await page.context().close();
+      done++;
+      if (done % 10 === 0 || done === jobs.length) {
+        const each = (Date.now() - started) / 1000 / done;
+        console.log(`${done}/${jobs.length} files, about ${Math.round((each * (jobs.length - done)) / 60)} min to go`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WORKERS, jobs.length) }, worker));
   await browser.close();
   process.exit(0);
 }

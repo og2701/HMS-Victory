@@ -7,6 +7,16 @@
 
 const W = 1080, H = 1920, FPS = 25;
 const DATA = JSON.parse(document.getElementById("data").textContent);
+// The personal page carries everyone's own Wrapped; ?u=<id> picks whose this one is.
+if (DATA.personal) {
+  const id = new URLSearchParams(location.search).get("u") || Object.keys(DATA.personal.people)[0];
+  DATA.me = { ...DATA.personal.people[id], user: id };
+  DATA.meta = DATA.personal.meta;
+  DATA.people = { [id]: { name: DATA.me.name, avatar: DATA.me.avatar } };
+  for (const r of [DATA.me.mate, DATA.me.you_reply, DATA.me.reply_you, DATA.me.fan]) {
+    if (r) DATA.people[r.user] = { name: r.name, avatar: r.avatar };
+  }
+}
 const PEOPLE = DATA.people;
 
 // ---------------------------------------------------------------- maths

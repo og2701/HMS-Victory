@@ -31,6 +31,7 @@ VOICE_NOTE = 1 << 13  # MessageFlags.is_voice_message
 TEST_ACCOUNTS = {818885214189256714}
 HMS_VICTORY = 1171842947440967770  # the bot
 DEVELOPER = 404634271861571584  # who builds it: its updates, and its no-reason server changes, are theirs  # the developer's test account, kept off the bot's own leaderboards too
+PERSONAL_MIN, VIDEO_MIN = 10, 50  # messages this year for a personal card, and for a personal video
 REGULAR = 10_000  # messages needed for the "share of your messages" awards, so they go to people everyone knows
 LAUGH_REACTS = {"😂", "🤣", "😆", "💀", "😭", "😹"}
 HEARTS = {"❤️", "♥️", "🩷", "💖", "💗", "💕", "💞", "💓", "😍", "🥰", "🫶", "💘", "💝", "❣️", "🧡", "💛", "💚", "💙",
@@ -651,6 +652,152 @@ class Extract:
             if uid and self.human(uid):
                 built[uid] += 1
         award("architect", "Server Architect", "changes to the server", counted(built), num)
+
+    def personal(self):
+        """Every member's own Wrapped, for the personal card and video: their numbers, when and where they
+        talk, their people, their habits, what they won, and who they are (the habit they do most compared
+        with everyone else). Current members with PERSONAL_MIN messages; a video from VIDEO_MIN."""
+        per = self.per
+        ranked = sorted(per, key=lambda u: -per[u]["msgs"])
+        rank = {u: i + 1 for i, u in enumerate(ranked)}
+        prev = dict(self.q("SELECT user_id, COUNT(*) FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 "
+                           "GROUP BY user_id", (self.plo, self.phi)))
+        known = self.discord["people"]
+
+        def ref(u, n):
+            p = known.get(str(u), {})
+            return {"user": str(u), "name": p.get("name", "someone"), "avatar": p.get("avatar"), "n": n}
+
+        # reactions people put on each other's messages, as they stand
+        got, laughs, hearts, fans = Counter(), Counter(), Counter(), Counter()
+        for reactor, author, emoji, n in self.q(
+                "SELECT r.user_id, r.author_id, r.emoji, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r "
+                "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? GROUP BY 1, 2, 3",
+                (self.lo, self.hi)):
+            if n <= 0 or reactor == author or not self.human(reactor) or not self.human(author):
+                continue
+            got[author] += n
+            fans[(reactor, author)] += n
+            if emoji in LAUGH_REACTS or any(k in emoji.lower() for k in ("kek", "laugh", "lmao", "lol")):
+                laughs[author] += n
+            if emoji in HEARTS:
+                hearts[author] += n
+        emoji = defaultdict(Counter)
+        for u, e, eid, n in self.q("SELECT user_id, emoji, emoji_id, SUM(n) FROM emoji_uses WHERE ts >= ? AND ts < ? "
+                                   "GROUP BY 1, 2, 3", (self.lo, self.hi)):
+            emoji[u][(e, eid)] += n
+        medals = defaultdict(Counter)
+        try:
+            for u, tier in self.q("SELECT ub.user_id, b.rarity FROM user_badges ub JOIN badges b ON b.id = ub.badge_id "
+                                  "WHERE ub.awarded_at >= ? AND ub.awarded_at < ?", (self.lo, self.hi), db=self.db):
+                medals[int(u)][tier] += 1
+        except sqlite3.OperationalError:
+            pass
+        casino = {}
+        try:
+            for u, n, net, best in self.q("SELECT user_id, COUNT(*), SUM(net), MAX(net) FROM casino_results "
+                                          "WHERE timestamp >= ? AND timestamp < ? GROUP BY 1", (self.lo, self.hi), db=self.db):
+                casino[int(u)] = {"games": n, "net": net, "best": max(best, 0)}
+        except sqlite3.OperationalError:
+            pass
+        hof = Counter()
+        for mid in self.hof_ids():
+            r = self.q("SELECT user_id, ts FROM messages WHERE message_id = ?", (mid,))
+            if r and self.lo <= r[0][1] < self.hi:
+                hof[r[0][0]] += 1
+        won = defaultdict(list)
+        for a in self.out.get("awards", []):
+            for u in (a.get("user"), a.get("a"), a.get("b")):
+                if u:
+                    won[int(u)].append(a["title"])
+        outs, ins = defaultdict(Counter), defaultdict(Counter)
+        for (a, b), n in self.pairs.items():
+            outs[a][b] += n
+            ins[b][a] += n
+        top_swear = {}
+        for (w, u), n in self.swear_by.items():
+            if n > top_swear.get(u, ("", 0))[1]:
+                top_swear[u] = (w, n)
+
+        # Who you are: the habit you're most unusual at, against everyone with VIDEO_MIN messages.
+        personas = [("night", "THE NIGHT OWL", "{p}% of your messages came between 1am and 5am"),
+                    ("early", "THE EARLY BIRD", "{p}% of your messages came before 8am"),
+                    ("weekend", "THE WEEKENDER", "{p}% of your messages came at the weekend"),
+                    ("questions", "THE CURIOUS ONE", "{p}% of your messages were questions"),
+                    ("caps", "THE SHOUTER", "{p}% of your messages were IN CAPS"),
+                    ("laugh_only", "THE LAUGH TRACK", "{p}% of your messages were just a laugh"),
+                    ("dry", "THE DRY TEXTER", "{p}% of your messages were just \"ok\" or \"yeah\""),
+                    ("swear_msgs", "THE POTTY MOUTH", "{p}% of your messages had a swear in them"),
+                    ("files", "THE PHOTOGRAPHER", "{p}% of your messages had a picture or a file"),
+                    ("gifs", "THE GIF MACHINE", "{p}% of your messages were GIFs"),
+                    ("stickers", "THE STICKER FIEND", "{p}% of your messages were stickers"),
+                    ("replies", "THE REPLY GUY", "{p}% of your messages were replies"),
+                    ("poo", "THE POO ENTHUSIAST", "you brought up poo {n} times")]
+        base = [u for u in per if per[u]["msgs"] >= VIDEO_MIN]
+        rates = {k: sorted(per[u][k] / per[u]["msgs"] for u in base) for k, _, _ in personas}
+
+        def persona(c):
+            best = None
+            for k, title, line in personas:
+                if c[k] < 5:
+                    continue
+                rate = c[k] / c["msgs"]
+                beat = bisect.bisect_left(rates[k], rate) / max(len(rates[k]), 1)
+                if beat >= 0.6 and (not best or (beat, rate) > best[:2]):
+                    best = (beat, rate, k, title, line)
+            if not best:
+                return {"title": "THE ALL-ROUNDER", "line": "a bit of everything, all year"}
+            beat, rate, k, title, line = best
+            return {"title": title, "line": line.format(p=max(1, round(rate * 100)), n=c[k]),
+                    "beat": min(99, int(beat * 100))}
+
+        def streak(days):
+            ds = sorted(date.fromisoformat(d) for d in days)
+            best = run = 1
+            for a, b in zip(ds, ds[1:]):
+                run = run + 1 if (b - a).days == 1 else 1
+                best = max(best, run)
+            return best if ds else 0
+
+        def most(counter, n_min=1):
+            return max(counter.items(), key=lambda kv: kv[1], default=(None, 0))
+
+        people = {}
+        for u in ranked:
+            c = per[u]
+            if c["msgs"] < PERSONAL_MIN:
+                break
+            p = known.get(str(u), {})
+            days = self.day_counts.get(u, {})
+            busy = max(days.items(), key=lambda kv: kv[1]) if days else None
+            hrs = self.hours.get(u, [0] * 24)
+            mate = max(((min(n, ins[u].get(x, 0)), x) for x, n in outs[u].items() if self.shown(x)), default=(0, None))
+            you_reply, reply_you = most(outs[u]), most(ins[u])
+            fan = max(((n, a) for (a, b), n in fans.items() if b == u and self.shown(a)), default=(0, None))
+            top_e = emoji[u].most_common(1)
+            sw = top_swear.get(u)
+            people[str(u)] = {
+                "name": p.get("name", "you"), "avatar": p.get("avatar"), "video": c["msgs"] >= VIDEO_MIN,
+                "msgs": c["msgs"], "rank": rank[u], "of": len(per), "prev": prev.get(u, 0), "words": c["words"],
+                "days": len(days), "streak": streak(days), "busiest": busy and {"day": busy[0], "n": busy[1]},
+                "hours": hrs, "peak": max(range(24), key=lambda h: hrs[h]),
+                "channels": [{"name": (self.channel_name(ch) or "a channel").split("｜")[-1], "n": n}
+                             for ch, n in self.channels_seen.get(u, Counter()).most_common(3)],
+                "mate": ref(mate[1], mate[0]) if mate[1] and mate[0] >= 5 else None,
+                "you_reply": ref(*you_reply) if you_reply[0] else None,
+                "reply_you": ref(*reply_you) if reply_you[0] else None,
+                "fan": ref(fan[1], fan[0]) if fan[1] else None,
+                "emoji": {"e": top_e[0][0][0], "id": str(top_e[0][0][1]) if top_e[0][0][1] else None, "n": top_e[0][1]} if top_e else None,
+                "reacts": got[u], "laughs": laughs[u], "hearts": hearts[u],
+                "swears": c["swears"], "top_swear": sw and {"w": re.sub(r"[aeiou]", "*", sw[0], count=1), "n": sw[1]},
+                "poo": c["poo"], "gifs": c["gifs"], "stickers": c["stickers"], "voice": c["voice"],
+                "awards": won.get(u, []), "medals": {k.lower(): medals[u][k] for k in ("Gold", "Silver", "Bronze", "Secret")},
+                "hof": hof[u], "casino": casino.get(u), "persona": persona(c),
+            }
+        last_day = self.until - timedelta(days=1)
+        return {"meta": {"since": self.since.isoformat(), "until": last_day.isoformat(), "year": self.since.year,
+                         "full_year": self.until >= date(self.since.year + 1, 1, 1)},
+                "people": people}
 
     def long_day(self, iso):
         d = date.fromisoformat(iso)
@@ -1606,8 +1753,15 @@ def main():
     ap.add_argument("--since", default=f"{date.today().year}-01-01")
     ap.add_argument("--until", default=date.today().isoformat())
     ap.add_argument("--hof-picks", help="JSON list of message ids for the Hall of Fame, in order")
+    ap.add_argument("--personal", help="also write everyone's personal Wrapped here (personal.json)")
     a = ap.parse_args()
-    result = Extract(a.data, date.fromisoformat(a.since), date.fromisoformat(a.until), a.hof_picks).run()
+    ex = Extract(a.data, date.fromisoformat(a.since), date.fromisoformat(a.until), a.hof_picks)
+    result = ex.run()
+    if a.personal:
+        mine = ex.personal()
+        Path(a.personal).write_text(json.dumps(mine, ensure_ascii=False, separators=(",", ":")))
+        print(f"wrote {a.personal}: {len(mine['people'])} people, "
+              f"{sum(p['video'] for p in mine['people'].values())} with a video")
     Path(a.out).write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     print(f"wrote {a.out}: {len(result['people'])} people, {result['unresolved']} unresolved")
 

@@ -1,7 +1,7 @@
 """The Wrapped soundtrack: find where things happen in each song, then mix the songs under the video.
 
     ~/.venv/bin/python scripts/wrapped/soundtrack.py analyze <music dir>
-    ~/.venv/bin/python scripts/wrapped/soundtrack.py mix <music dir> <timeline.json> <video.mp4> <out.mp4>
+    ~/.venv/bin/python scripts/wrapped/soundtrack.py mix <music dir> <timeline.json> <video.mp4> <out.mp4> [cues.json]
 
 analyze: for each song in the music dir, works out the tempo and beat grid, and lines up time-synced lyrics
 (lyrics/<name>.json, from lrclib) against the actual file - which may be a music-video cut with an intro
@@ -14,6 +14,8 @@ each cue plays a song from a point in it, over a span of scenes, with fades, dip
 listed in its "duck"; stings and sound effects drop in at a scene's start (or every matching scene's,
 with "each"); a "muffle" cue low-passes the songs inside matching scenes, as if heard from the next
 room. Cues name scenes, not seconds, so the soundtrack follows the video when scene lengths change.
+A different cue sheet can be named last (the personal videos have their own); with "-" for the video,
+mix writes just the audio to <out> (an .m4a), to lay under many videos of the same length.
 
 Needs numpy and scipy (the analysis), and ffmpeg.
 """
@@ -195,11 +197,11 @@ def strongest_hit(path, lo, hi):
     return (a + int(np.argmax(curve[a:b]))) * HOP / SR + ONSET_LAG
 
 
-def mix(music_dir, timeline_path, video, out):
+def mix(music_dir, timeline_path, video, out, cues_path=None):
     import math
     import tempfile
     music_dir = Path(music_dir)
-    cues = json.loads((music_dir / "cues.json").read_text())
+    cues = json.loads(Path(cues_path or music_dir / "cues.json").read_text())
     timeline = json.loads(Path(timeline_path).read_text())
     times = scene_times(timeline)
     order = [sc["id"] for sc in timeline["scenes"]]
@@ -338,6 +340,10 @@ def mix(music_dir, timeline_path, video, out):
     audio = Path(out).with_suffix(".m4a")
     subprocess.run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", graph, "-map", "[a]", "-c:a", "aac",
                     "-b:a", "192k", str(audio)], check=True)
+    if video == "-":
+        tmp.cleanup()
+        print(f"wrote {audio}: {n} audio cues over {total:.1f}s")
+        return
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-i", str(audio), "-map", "0:v", "-map", "1:a",
                     "-c:v", "copy", "-c:a", "copy", "-shortest", "-movflags", "+faststart", str(out)], check=True)
     audio.unlink()
@@ -349,4 +355,4 @@ if __name__ == "__main__":
     if sys.argv[1] == "analyze":
         analyze(sys.argv[2])
     elif sys.argv[1] == "mix":
-        mix(*sys.argv[2:6])
+        mix(*sys.argv[2:7])

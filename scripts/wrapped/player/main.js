@@ -45,7 +45,7 @@ function seek(time) {
   runAnims(s.anims, t);
   runRolls(s.root, t);
   runAvatars(s.root, t);
-  runFlips(s.root, t);
+  if (typeof runFlips === "function") runFlips(s.root, t);  // award cards, main video only
   if (s.update) s.update(t, s.root);
   hud(time, s, ch);
   fctx.clearRect(0, 0, W, H);
@@ -102,8 +102,9 @@ async function boot() {
   await document.fonts.ready;
   await Promise.all(Object.keys(PEOPLE).map(uid => loadImage(avatarUrl(uid))));
   initWorld();
-  buildAtlas([...new Set([...DATA.network.nodes.map(n => n.user), ...DATA.wall])]);
-  buildPieces();
+  // the 3D pieces and the avatar wall are the main video's; the personal page has neither
+  buildAtlas([...new Set([...(DATA.network ? DATA.network.nodes.map(n => n.user) : []), ...(DATA.wall || [])])]);
+  if (typeof buildPieces === "function") buildPieces();
   for (const s of SCENES) {
     const r = h("section.scene", { data: { id: s.id } });
     // Scenes pass optional parts as null; Element.append would print those as the text "null".
