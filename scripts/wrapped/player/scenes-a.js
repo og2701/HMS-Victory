@@ -445,7 +445,7 @@ chapterScene("awards", 2, "THE AWARDS", "No speeches.");
 const AWARD_PAGES = [
   ["AROUND THE CLOCK", ["night_owl", "early_bird", "lunch", "weekend", "committed", "one_day"]],
   ["HOW YOU TALK", ["waffler", "silent", "shouter", "nosey", "apologist", "british"]],
-  ["WHAT YOU SHARE", ["media", "plug", "voice", "sticker", "emoji", "meme"]],
+  ["WHAT YOU SHARE", ["media", "gif", "voice", "sticker", "emoji", "meme"]],
   ["THE CROWD PLEASERS", ["hype", "crowd", "comedian", "heartthrob", "celeb", "hall_of_famer"]],
   ["THE REGULARS", ["gossip", "tourist", "glue", "starter", "killer", "bot_friend"]],
   ["AROUND THE SERVER", ["welcomer", "wordle", "bump", "tree", "oracle", "roasted"]],

@@ -231,6 +231,11 @@ const ICONS = {
     "........gg..", ".......gggg.", "......gggggg", "........gg..", "........gg..", "..ss....gg..",
     "..ss....gg..", "..ss....gg..", "..ss....gg..", "..ss....gg..", "wwwwwwwwwwww", "............",
   ],
+  // GIF, in a frame
+  gif: [
+    "............", "cccccccccccc", "c..........c", "cwww.w.www.c", "cw...w.w...c", "cw.w.w.ww..c",
+    "cw.w.w.w...c", "cwww.w.w...c", "c..........c", "cccccccccccc", "............", "............",
+  ],
   // crossed swords
   frenemies: [
     "s..........s", ".s........s.", "..s......s..", "...s....s...", "....s..s....", ".....ss.....",

@@ -63,6 +63,7 @@ BRITISH = {"innit", "mate", "proper", "cheers", "bruv", "bloody", "quid", "cuppa
            "minging", "naff", "peckish", "bants", "wanker", "arse", "dodgy", "faff", "gobsmacked", "rubbish"}
 SORRY = re.compile(r"\b(sorry|soz|apologies|my bad)\b")
 DRY = re.compile(r"^(ok|okay|k|kk|ye|yea|yeah|ya|yep|yh|sure|fair|true|mhm|cool|nice)[.!]*$")
+GIF = re.compile(r"(tenor\.com|giphy\.com|\.gif\b)", re.I)
 JAB = re.compile(r"\b(shut up|stfu|shush|idiot|clown|loser|bozo|cope|seethe|ratio|dumbass|muppet|melt|nonce|div|pillock|"
                  r"you'?re wrong|ur wrong|nobody cares|no one cares)\b")
 PEACE = re.compile(r"\b(calm down|chill out|calm it|cool it|guys stop|stop arguing|stop fighting|be nice|relax guys|everyone calm)\b")
@@ -192,10 +193,10 @@ class Extract:
         jabs = Counter()
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
-            "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers "
+            "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers, attachments "
             "FROM messages WHERE ts >= ? AND ts < ? AND is_bot = 0 ORDER BY ts", (self.lo, self.hi))
         for (mid, uid, content, day, hour, chars, words, atts, flags, edited, chan, mtype, rto_msg, rto, ts,
-             stickers) in rows:
+             stickers, att_json) in rows:
             c = per[uid]
             text = content or ""
             low = text.lower()
@@ -206,7 +207,9 @@ class Extract:
                 c["files"] += 1
             if stickers and stickers not in ("[]", ""):
                 c["stickers"] += 1
-            if "http" in low:
+            if GIF.search(text) or (att_json and GIF.search(att_json)):
+                c["gifs"] += 1
+            elif "http" in low:
                 c["links"] += 1
             if flags & VOICE_NOTE:
                 c["voice"] += 1
@@ -374,7 +377,7 @@ class Extract:
         award("perfectionist", "The Perfectionist", "of their messages edited after sending",
               best("edited", regulars, rate=True), pct)
         award("media", "Media Mogul", "messages with a file or picture", best("files"), num)
-        award("plug", "The Plug", "links shared", best("links"), num)
+        award("gif", "GIF Machine", "GIFs sent", best("gifs"), num)
         award("voice", "Voice Note Royalty", "voice notes", best("voice"), num)
         award("sticker", "Sticker Fiend", "stickers sent", best("stickers"), num)
         award("replier", "The Replier", "replies sent", best("replies"), num)
