@@ -20,6 +20,7 @@ def _make_interaction(user_id=USERS.OGGERS, channel=None, voice_client=None, gui
     interaction = SimpleNamespace(
         user=user,
         guild=guild,
+        channel=SimpleNamespace(send=AsyncMock()),
         response=SimpleNamespace(
             send_message=AsyncMock(),
             defer=AsyncMock(),
@@ -58,7 +59,14 @@ def test_ptb_requires_voice_channel():
     assert kwargs.get("ephemeral") is True
 
 
-def test_ptb_joins_plays_and_disconnects():
+def test_format_lyric_cue():
+    cue = ptb.format_lyric_cue("Push the button", "Pu-push the button", "I'm busy throwing hints")
+    assert "🎤 **Push the button**" in cue
+    assert "🎶 **Pu-push the button**" in cue
+    assert "-# ⏭️ *I'm busy throwing hints...*" in cue
+
+
+def test_ptb_joins_plays_streams_lyrics_and_disconnects():
     vc = MagicMock()
     vc.is_playing.return_value = False
     vc.is_paused.return_value = False
@@ -69,15 +77,19 @@ def test_ptb_joins_plays_and_disconnects():
         id=999,
         mention="<#999>",
         connect=AsyncMock(return_value=vc),
+        send=AsyncMock(),
     )
     interaction = _make_interaction(user_id=USERS.OGGERS, channel=channel)
 
     async def _run():
-        with patch("commands.social.ptb.discord.FFmpegPCMAudio") as mock_audio:
+        with patch("commands.social.ptb.discord.FFmpegPCMAudio") as mock_audio, \
+             patch.object(ptb, "PTB_CUES", [(0.0, "Push the button", "Push the button")]):
             await ptb.handle_ptb_command(interaction)
+            await asyncio.sleep(0.05)
             channel.connect.assert_awaited_once()
             mock_audio.assert_called_once_with(ptb.PTB_AUDIO_PATH)
             vc.play.assert_called_once()
+            channel.send.assert_awaited_once()
             after_cb = vc.play.call_args.kwargs["after"]
             after_cb(None)
             await asyncio.sleep(0.6)
