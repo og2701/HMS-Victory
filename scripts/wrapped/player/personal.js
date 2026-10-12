@@ -34,10 +34,10 @@ const change = (now, prev, at) => {
 };
 const stat = (label, value, at, extra = {}) => an(h("div.frame.px", h("div.in.px", { style: { padding: "24px 28px" } },
   h("div.big", { style: { fontSize: extra.size || "86px" } }, value), h("div.tiny", { style: { marginTop: "8px" } }, label))), "up", at, 0.6);
-const personRow = (label, ref, text, at) => an(h("div.lrow.listpanel", { style: { padding: "18px 22px" } },
-  avatar(ref.user, 96, at + 0.15, 0.6), h("div", { style: { minWidth: 0 } }, h("div.tiny", label),
-    h("div.h3", { style: { fontSize: "44px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, ref.name),
-    h("div.small", text))), "left", at, 0.6);
+const personRow = (label, ref, text, at) => an(h("div.lrow.listpanel", { style: { padding: "14px 20px" } },
+  avatar(ref.user, 84, at + 0.15, 0.6), h("div", { style: { minWidth: 0 } }, h("div.tiny", label),
+    h("div.h3", { style: { fontSize: "40px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, ref.name),
+    h("div.small", { style: { fontSize: "28px" } }, text))), "left", at, 0.6);
 
 // Highlights: the stats this person stands out for most (extract.py picks them), each with its words in
 // the video and, shorter, on the card.
@@ -59,6 +59,21 @@ function bubble(m, at, size = 88) {
     h("div", { style: { flex: 1, minWidth: 0 } }, h("div.who", h("span.name", ME.name), h("span.when", dmyLong(m.day))),
       h("div.text", { html: richText(m.text.replace(/`+([^`]+)`+/g, "$1")) }), reacts.length ? h("div.reacts", reacts) : null));
 }
+
+// The people around them: eleven kinds, and extract.py picks the five that stand out most for this person.
+const CIRCLE = {
+  fan: ["YOUR BIGGEST FAN", n => `${fmt(n)} reactions on your messages`],
+  react: ["YOU REACT TO THEM MOST", n => `${fmt(n)} reactions from you`],
+  pinged_by: ["PINGS YOU THE MOST", n => `${fmt(n)} @mentions of you`],
+  pings: ["YOU PING THEM MOST", n => `${fmt(n)} @mentions from you`],
+  night: ["YOUR LATE-NIGHT CREW", n => `${fmt(n)} replies between 1am and 5am`],
+  rival: ["YOUR SPARRING PARTNER", n => `${fmt(n)} "shut up"s and "idiot"s traded`],
+  hearts: ["SENDS YOU THE MOST HEARTS", n => `${fmt(n)} hearts on your messages`],
+  laughs: ["FINDS YOU FUNNIEST", n => `${fmt(n)} laughs at your messages`],
+  shut: ["SHUTS YOU UP THE MOST", n => `${fmt(n)} :shut:s on your messages`],
+  you_reply: ["YOU REPLY TO THEM MOST", n => `${fmt(n)} replies from you`],
+  reply_you: ["REPLIES TO YOU MOST", n => `${fmt(n)} replies to you`],
+};
 
 // The card: the year on one picture, in the video's last scene and on its own (?card=1) at 1080x1350.
 function card(at = 0) {
@@ -167,19 +182,15 @@ if (CARD_ONLY) {
     id: "p-people", ch: "p-people", dur: 6.5, fixed: true, boardGlow: 1,
     build(r) {
       const mate = ME.mate;
-      const rows = [];
-      if (ME.you_reply && (!mate || ME.you_reply.user !== mate.user)) rows.push(["YOU REPLIED TO MOST", ME.you_reply, `${fmt(ME.you_reply.n)} replies`]);
-      if (ME.reply_you && (!mate || ME.reply_you.user !== mate.user)) rows.push(["REPLIED TO YOU MOST", ME.reply_you, `${fmt(ME.reply_you.n)} replies`]);
-      if (ME.fan) rows.push(["YOUR BIGGEST FAN", ME.fan, `${fmt(ME.fan.n)} reactions on your messages`]);
       r.append(h("div.scrim-mid"),
         block(230, {}, kicker("YOUR PEOPLE")),
-        mate ? block(340, {}, an(h("div.frame.acc.px", h("div.in.px", { style: { padding: "34px 36px" } },
+        mate ? block(330, {}, an(h("div.frame.acc.px", h("div.in.px", { style: { padding: "30px 34px" } },
           h("div.kick.plain", "YOUR BEST MATE"),
-          h("div.lrow", { style: { marginTop: "26px", gap: "26px" } }, avatar(ME.user, 150, 0.6, 0.7, "ring"), avatar(mate.user, 150, 0.75, 0.7, "ring"),
-            h("div", { style: { minWidth: 0 } }, h("div.h2", { style: { fontSize: "54px" } }, mate.name),
+          h("div.lrow", { style: { marginTop: "22px", gap: "26px" } }, avatar(ME.user, 130, 0.6, 0.7, "ring"), avatar(mate.user, 130, 0.75, 0.7, "ring"),
+            h("div", { style: { minWidth: 0 } }, h("div.h2", { style: { fontSize: "50px" } }, mate.name),
               h("div.small", `${fmt(mate.n)} replies each way`))))), "pop", 0.4, 0.7)) : null,
-        h("div.abs.col", { style: { left: "56px", right: "56px", top: mate ? "790px" : "360px", gap: "18px" } },
-          rows.slice(0, 3).map(([label, ref, text], k) => personRow(label, ref, text, 1.6 + k * 0.3))));
+        h("div.abs.col", { style: { left: "56px", right: "56px", top: mate ? "720px" : "340px", gap: "14px" } },
+          (ME.circle || []).map((c, k) => personRow(CIRCLE[c.k][0], c, CIRCLE[c.k][1](c.n), 1.4 + k * 0.28))));
     },
   });
 

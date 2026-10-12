@@ -329,8 +329,11 @@ limiter keeps the mix at -2dB.
 Everyone also gets their own: a summary card (a 1080x1350 picture) for every current member with 10+
 messages in the year, and a video of under a minute (720x1280) for everyone with 50+. The frame is the
 same for everyone; what's in it is theirs. Ten scenes: their name; their messages (rank, change on last
-year, words, days, longest streak); their biggest day and hours; their channels; their people (best
-mate, who they reply to and who replies to them, biggest fan); their vibe (top emoji, then their four
+year, words, days, longest streak); their biggest day and hours; their channels; their people (their best
+mate, then the five strongest of eleven kinds of connection, scored against what's typical for each:
+biggest fan, who they react to, who pings them, who they ping, their late-night crew, their sparring
+partner, who sends them hearts, who finds them funniest, who shuts them up, who they reply to, who
+replies to them; the same person can come up more than once); their vibe (top emoji, then their four
 **highlights**: the stats they rank highest for in the server, out of laughs, hearts and reactions on
 their messages, reactions given, swears, poo, GIFs, stickers, voice notes, pictures, questions, caps,
 Hall of Fame, badges and casino games); who they were (their **persona**, most impressive first: an

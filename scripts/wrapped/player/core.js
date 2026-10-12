@@ -13,7 +13,7 @@ if (DATA.personal) {
   DATA.me = { ...DATA.personal.people[id], user: id };
   DATA.meta = DATA.personal.meta;
   DATA.people = { [id]: { name: DATA.me.name, avatar: DATA.me.avatar } };
-  for (const r of [DATA.me.mate, DATA.me.you_reply, DATA.me.reply_you, DATA.me.fan]) {
+  for (const r of [DATA.me.mate, DATA.me.you_reply, DATA.me.reply_you, DATA.me.fan, ...(DATA.me.circle || [])]) {
     if (r) DATA.people[r.user] = { name: r.name, avatar: r.avatar };
   }
 }

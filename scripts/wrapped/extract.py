@@ -681,7 +681,7 @@ class Extract:
             return {"user": str(u), "name": p.get("name", "someone"), "avatar": p.get("avatar"), "n": n}
 
         # reactions people put on each other's messages, as they stand
-        got, laughs, hearts, fans, gave = Counter(), Counter(), Counter(), Counter(), Counter()
+        got, laughs, hearts, fans, gave, heart_pairs, laugh_pairs = (Counter() for _ in range(7))
         for reactor, author, emoji, n in self.q(
                 "SELECT r.user_id, r.author_id, r.emoji, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r "
                 "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? GROUP BY 1, 2, 3",
@@ -693,8 +693,10 @@ class Extract:
             fans[(reactor, author)] += n
             if emoji in LAUGH_REACTS or any(k in emoji.lower() for k in ("kek", "laugh", "lmao", "lol")):
                 laughs[author] += n
+                laugh_pairs[(reactor, author)] += n
             if emoji in HEARTS:
                 hearts[author] += n
+                heart_pairs[(reactor, author)] += n
         emoji = defaultdict(Counter)
         for u, e, eid, n in self.q("SELECT user_id, emoji, emoji_id, SUM(n) FROM emoji_uses WHERE ts >= ? AND ts < ? "
                                    "GROUP BY 1, 2, 3", (self.lo, self.hi)):
@@ -776,6 +778,50 @@ class Extract:
         value = lambda u, k: {"laughs": laughs[u], "hearts": hearts[u], "reacts": got[u], "hof": hof[u],
                               "streak": streaks.get(u, 0)}.get(k, per[u][k])
         board = {k: sorted((value(u, k) for u in streaks), reverse=True) for k, _, _ in boasts}
+
+        # Your circle: eleven ways someone can matter to you; each person gets the five that stand out most for
+        # them (their strongest against what's typical for that kind across everyone with a video).
+        pings = Counter()
+        for a, b, n in self.q("SELECT user_id, target_id, COUNT(*) FROM mentions WHERE ts >= ? AND ts < ? AND kind = 'user' "
+                              "GROUP BY 1, 2", (self.lo, self.hi)):
+            if a != b and self.shown(a) and self.shown(b):
+                pings[(a, b)] += n
+        shuts = Counter()
+        top = self.q("SELECT emoji_id, COUNT(*) n FROM reactions WHERE lower(emoji) = 'shut' AND emoji_id IS NOT NULL "
+                     "GROUP BY 1 ORDER BY n DESC LIMIT 1")
+        if top:
+            for a, b, n in self.q("SELECT r.user_id, r.author_id, COUNT(*) FROM reactions r JOIN messages m ON m.message_id = r.message_id "
+                                  "WHERE m.ts >= ? AND m.ts < ? AND r.action = 'add' AND r.emoji_id = ? GROUP BY 1, 2",
+                                  (self.lo, self.hi, top[0][0])):
+                if a != b and self.human(a):
+                    shuts[(a, b)] += n
+        index = defaultdict(lambda: defaultdict(Counter))  # index[u][angle][other] = n
+        for angle, pairs, towards in (("fan", fans, True), ("react", fans, False), ("pinged_by", pings, True),
+                                      ("pings", pings, False), ("hearts", heart_pairs, True), ("laughs", laugh_pairs, True),
+                                      ("shut", shuts, True), ("you_reply", self.pairs, False), ("reply_you", self.pairs, True)):
+            for (a, b), n in pairs.items():
+                if towards:
+                    index[b][angle][a] += n
+                else:
+                    index[a][angle][b] += n
+        for (a, b), n in self.night_pairs.items():
+            index[a]["night"][b] += n
+            index[b]["night"][a] += n
+        for (a, b), n in self.jabs.items():
+            index[a]["rival"][b] += n
+            index[b]["rival"][a] += n
+        angles = ["fan", "react", "pinged_by", "pings", "night", "rival", "hearts", "laughs", "shut", "you_reply", "reply_you"]
+        video = [u for u in per if per[u]["msgs"] >= VIDEO_MIN]
+        typical = {a: max(statistics.median([max(index[u][a].values(), default=0) for u in video] or [1]), 1) for a in angles}
+
+        def circle(u):
+            # each kind's top person (people can come up more than once), the five that stand out most
+            options = []
+            for a in angles:
+                other, n = next(((o, n) for o, n in index[u][a].most_common(4) if self.shown(o)), (None, 0))
+                if other and n >= 3:
+                    options.append((n / typical[a], a, other, n))
+            return [{"k": a, **ref(other, n)} for _, a, other, n in sorted(options, reverse=True)[:5]]
 
         # Your biggest hits: your three most-reacted messages with words in them, outside announcement channels (no links, not too long), as the reactions
         # stand, from people other than you.
@@ -897,6 +943,7 @@ class Extract:
                 "awards": [a["title"] for a in won.get(u, [])], "medals": {k.lower(): medals[u][k] for k in ("Gold", "Silver", "Bronze", "Secret")},
                 "hof": hof[u], "casino": casino.get(u), "persona": persona(u, c), "highlights": highlights(u),
                 "hits": hits(u) if c["msgs"] >= VIDEO_MIN else [],
+                "circle": circle(u),
                 "first": self.first_text.get(u) and {"text": self.first_text[u][0], "day": self.first_text[u][1]},
             }
         last_day = self.until - timedelta(days=1)
