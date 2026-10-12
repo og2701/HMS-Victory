@@ -59,7 +59,8 @@ BRITISH = {"innit", "mate", "proper", "cheers", "bruv", "bloody", "quid", "cuppa
            "chuffed", "blimey", "cheeky", "bollocks", "brew", "lad", "lads", "init", "fortnight", "skint",
            "minging", "naff", "peckish", "bants", "wanker", "arse", "dodgy", "faff", "gobsmacked", "rubbish"}
 SORRY = re.compile(r"\b(sorry|soz|apologies|my bad)\b")
-TYPO_FIX = re.compile(r"^\*[a-z'][a-z' ]{1,24}$")  # "*their": a correction, not an *action*
+DRY = re.compile(r"^(ok|okay|k|kk|ye|yea|yeah|ya|yep|yh|sure|fair|true|mhm|cool|nice)[.!]*$")
+LAUGH_ONLY = re.compile(r"^(lol+|lmao+|lmfao+|haha+|ha(ha)+|xd+|😭+|💀+|😂+|🤣+)$")
 GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|night all|night guys|night everyone|nini)\b"
                        r"|\b(off to bed|going to bed|going to sleep|off to sleep)\b")
 LAUGHS = {"lol": r"\blol\b", "lmao": r"\blmao\b", "lmfao": r"\blmfao\b", "haha": r"\bha(ha)+h?\b",
@@ -151,13 +152,6 @@ class Extract:
     def q(self, sql, params=(), db=None):
         return (db or self.ch).execute(sql, params).fetchall()
 
-    def chat_channel(self, cid):
-        """A text channel people talk in: not a voice channel's chat, where the other side of the
-        conversation is out loud, and not a spam or bot channel."""
-        c = self.discord["channels"].get(str(cid)) or {}
-        name = c.get("name", "").lower()
-        return c.get("type") not in (2, 13) and not any(w in name for w in ("spam", "bot", "count"))
-
     def channel_name(self, cid):
         c = self.discord["channels"].get(str(cid))
         return c["name"] if c else None
@@ -185,15 +179,10 @@ class Extract:
         weekday = {}
         first = []
         longest = None
-        # runs of messages in one channel with nobody else in between (a gap of 10 minutes ends one too),
-        # and goodnights, checked at the end against each person's later messages
-        solo, monologue = {}, {}
+        # goodnights, checked at the end against each person's later messages; replies to other people,
+        # checked against reactions for ratios
         goodnights, sent_at = defaultdict(list), defaultdict(list)
-
-        def close_solo(chan):
-            r = solo.get(chan)
-            if r and r[1] > monologue.get(r[0], (0,))[0] and self.chat_channel(chan):
-                monologue[r[0]] = (r[1], chan, r[3])
+        human_replies = []
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
             "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers "
@@ -223,17 +212,14 @@ class Extract:
                 c["questions"] += 1
             if SORRY.search(low):
                 c["sorry"] += 1
-            if TYPO_FIX.match(low.strip()):
-                c["typo"] += 1
-            if len(low) <= 40 and GOODNIGHT.search(low.strip()):
+            bare = low.strip()
+            if DRY.match(bare):
+                c["dry"] += 1
+            if LAUGH_ONLY.match(bare):
+                c["laugh_only"] += 1
+            if len(bare) <= 40 and GOODNIGHT.search(bare):
                 goodnights[uid].append(ts)
             sent_at[uid].append(ts)
-            r = solo.get(chan)
-            if r and r[0] == uid and ts - r[2] <= 600:
-                solo[chan] = (uid, r[1] + 1, ts, r[3])
-            else:
-                close_solo(chan)
-                solo[chan] = (uid, 1, ts, day)
             if hour is not None:
                 hours[uid][hour] += 1
                 if 1 <= hour < 5:
@@ -254,6 +240,7 @@ class Extract:
                 if int(rto) in self.bots:
                     c["bot_replies"] += 1
                 else:
+                    human_replies.append((mid, uid, rto_msg))
                     pairs[(uid, rto)] += 1
                     k = (min(uid, rto), max(uid, rto))
                     if hour is not None and 1 <= hour < 5:
@@ -278,8 +265,6 @@ class Extract:
                 first.append({"user": uid, "text": text[:140], "ts": ts})
             if self.shown(uid) and (longest is None or chars > longest[0]):
                 longest = (chars, uid, day, mid)
-        for chan in list(solo):
-            close_solo(chan)
         # A fake goodnight: still posting half an hour later, the same night (within four hours).
         for uid, times in goodnights.items():
             later = sent_at[uid]
@@ -287,7 +272,7 @@ class Extract:
                 i = bisect.bisect_left(later, t + 1800)
                 if i < len(later) and later[i] < t + 4 * 3600:
                     per[uid]["fake_gn"] += 1
-        self.monologue = monologue
+        self.human_replies = human_replies
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
         keep = lambda u: self.shown(u)
@@ -423,11 +408,20 @@ class Extract:
         award("heartthrob", "Heartthrob", "hearts on their messages", counted(hearts), num)
         award("meme", "Meme Lord", "reactions on the pictures and clips they posted", counted(memes), num)
         award("own_fan", "Own Biggest Fan", "reactions on their own messages", counted(own), num)
-        award("typo", "The Typo Fixer", "*corrections, like this", best("typo"), num)
         award("fake_gn", "The Fake Goodnight", "goodnights, then still typing half an hour later", best("fake_gn"), num)
-        mono = sorted(((n, n, u) for u, (n, _, _) in self.monologue.items() if self.shown(u)), reverse=True)[:3]
-        award("monologue", "The Monologue", lambda v, r, u: f"messages in a row in #{(self.channel_name(self.monologue[u][1]) or 'a channel').split('｜')[-1]}, "
-              f"nobody else getting a word in", mono, num)
+        award("dry", "The Dry Texter", "messages that were just \"ok\", \"yeah\" or \"fair\"", best("dry"), num)
+        award("laugh_only", "The Laugh Track", "messages that were just \"lol\" or 😭", best("laugh_only"), num)
+        # A ratio: a reply with more reactions than the message it answered (five at least), from
+        # people other than the two involved, as the reactions stand now.
+        score = Counter()
+        for mid, reactor, author, n in self.q(
+                "SELECT r.message_id, r.user_id, r.author_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r "
+                "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? - 86400 AND m.ts < ? GROUP BY 1, 2, 3",
+                (self.lo, self.hi)):
+            if self.human(reactor) and reactor != author and n > 0:
+                score[mid] += 1
+        ratios = Counter(uid for mid, uid, parent in self.human_replies if score[mid] >= 5 and score[mid] > score[parent])
+        award("ratio", "Ratio King", "replies with more reactions than the message they answered", counted(ratios), num)
 
         sent_m, got_m, self.mention_pairs = Counter(), Counter(), Counter()
         for author, target, n in self.q(

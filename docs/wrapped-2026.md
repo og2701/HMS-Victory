@@ -115,14 +115,14 @@ Last year's 16 stay. New for 2026:
 | The Most British | innit, mate, proper, cheers, bruv per message | `messages` |
 | The Apologist | most "sorry" | `messages` |
 | The Glue | talked to the most different people | `messages` reply graph |
-| Fastest Fingers | quickest median reply time | `messages` |
 | Conversation Starter | messages after 30+ minutes of silence that got the most replies | `messages` |
 | Conversation Killer | last word before the longest silences | `messages` |
 | The Perfectionist | most edits | `message_edits` |
-| The Typo Fixer | most "*word" corrections | `messages` |
-| The Monologue | most messages in a row in a text channel with nobody else in between (voice chats and spam channels don't count) | `messages` |
+| The Dry Texter | most messages that were just "ok", "yeah" or "fair" | `messages` |
+| The Laugh Track | most messages that were just "lol", "lmao" or 😭 | `messages` |
 | The Fake Goodnight | said goodnight, still posting half an hour later | `messages` |
 | Own Biggest Fan | most reactions on their own messages | `reactions` |
+| Ratio King | most replies with more reactions than the message they answered (five at least) | `reactions` |
 | Kart Champion | most wins, plus fastest lap per track | `kart_results` |
 | Rival of the Year | most PvP games against one person (bots excluded) | `pvp_results` |
 | Most Dead | most Skyrim deaths | `skyrim_profiles.json` |

@@ -216,15 +216,20 @@ const ICONS = {
     "............", "...yyyyyy...", "..yoooooyy..", ".yoyyyyyoyy.", ".yoyyoyyoyy.", ".yoyoooyoyy.",
     ".yoyyoyyoyy.", ".yoyyyyyoyy.", "..yoooooyy..", "...yyyyyy...", "............", "............",
   ],
-  // the asterisk that comes straight after a typo
-  typo: [
-    "............", ".....yy.....", ".y...yy...y.", "..yy.yy.yy..", "...yyyyyy...", "....yyyy....",
-    "...yyyyyy...", "..yy.yy.yy..", ".y...yy...y.", ".....yy.....", "............", "............",
+  // dry as a cactus
+  dry: [
+    "..........y.", ".....gg..yyy", ".....gg...y.", ".g...gg.....", ".g...gg...g.", ".gg..gg..gg.",
+    "..gggggggg..", ".....gg.....", ".....gg.....", ".....gg.....", "..nnnnnnnn..", "...nnnnnn...",
   ],
-  // three messages stacked up from the same side, no reply in between
-  monologue: [
-    "cccccccc....", "cwwwwwwc....", "cccccccc....", ".c..........", "cccccccccc..", "cwwwwwwwwc..",
-    "cccccccccc..", ".c..........", "ccccccccccc.", "cwwwwwwwwwc.", "ccccccccccc.", ".c..........",
+  // laughing so hard it's crying
+  laugh_only: [
+    "...yyyyyy...", "..yyyyyyyy..", ".yyyyyyyyyy.", "cykkyyyykkyc", "cyyyyyyyyyyc", "cyyyyyyyyyyc",
+    "cykkkkkkkkyc", "cyykwwwwkyyc", ".yyykkkkyyy.", "..yyyyyyyy..", "...yyyyyy...", "............",
+  ],
+  // the reply's bar taller than the message it answered
+  ratio: [
+    "........gg..", ".......gggg.", "......gggggg", "........gg..", "........gg..", "..ss....gg..",
+    "..ss....gg..", "..ss....gg..", "..ss....gg..", "..ss....gg..", "wwwwwwwwwwww", "............",
   ],
   // a phone still lit up under "zz"
   fake_gn: [
