@@ -26,6 +26,9 @@ const block = (top, style, ...kids) => h("div.pad", { style: Object.assign({ top
 const kicker = (text, at = 0.1) => an(h("div.kick", text), "left", at, 0.7);
 const line = (text, at, cls = "body", fx = "up") => an(h("div." + cls, text), fx, at, 0.7);
 const hourName = hr => `${hr % 12 || 12}${hr < 12 ? "AM" : "PM"}`;
+const days = n => `${fmt(n)} ${n === 1 ? "day" : "days"}`;
+// the awards on the card, leaving out the one that already made their title
+const CHIPS = ME.awards.filter(a => a.toUpperCase() !== ME.persona.title);
 const topPct = Math.max(1, Math.ceil((ME.rank / ME.of) * 100));
 const change = (now, prev, at) => {
   if (!prev) return an(h("span.chip.new", `NEW IN ${YEAR}`), "pop", at, 0.5);
@@ -105,10 +108,10 @@ function card(at = 0) {
         h("div.pval", ME.emoji ? `×${short(ME.emoji.n)}` : "-"))),
       tile("PEAK HOUR", h("div.pval", hourName(ME.peak))),
       tile("TOP CHANNEL", h("div.pval", { style: { fontSize: "40px" } }, ME.channels[0] ? "#" + ME.channels[0].name : "-")),
-      tile("BEST STREAK", h("div.pval", `${ME.streak} DAYS`)),
+      tile("BEST STREAK", h("div.pval", days(ME.streak).toUpperCase())),
       ...fill),
-    h("div.pfoot", ME.awards.length ? ME.awards.slice(0, 3).map(a => h("span.chip", a.toUpperCase())) :
-      h("div.small", ME.hof ? `${ME.hof} messages in the Hall of Fame` : `${fmt(ME.days)} days you showed up`)));
+    h("div.pfoot", CHIPS.length ? CHIPS.slice(0, 3).map(a => h("span.chip", a.toUpperCase())) :
+      h("div.small", ME.hof ? `${ME.hof} messages in the Hall of Fame` : `${days(ME.days)} you showed up`)));
 }
 
 // ---------------------------------------------------------------- the scenes
