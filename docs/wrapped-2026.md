@@ -289,7 +289,7 @@ mute or claim it.
 | `bitter-sweet-symphony` | Bitter Sweet Symphony - The Verve | The People, from the strings |
 | `shut-up` | Shut Up - Stormzy | The Shut page |
 | `only-fools-and-horses` | Only Fools and Horses theme - John Sullivan | The Hall of Fame |
-| `push-the-button` | Push the Button - Sugababes | The Words: the opening hook on the chapter card and words of the month, then the second verse from the laugh index, so the chorus's "push the button" lands on the Poo Index |
+| `push-the-button` | Push the Button - Sugababes | The Words, straight through (a skip to get the opening hook in as well sounded wrong): "the early conversation piece" over the words of the month, and the chorus's "push the button" as the Poo Index lands |
 | `gold` | Gold - Spandau Ballet | Casino and Money, "Gold!" on the biggest win |
 | `vindaloo` | Vindaloo - Fat Les | The Games |
 | `big-brother-theme` | Big Brother UK TV Theme - Elementfour | Big Brother |
