@@ -76,7 +76,9 @@ SWEARS = {"fuck": r"f+u+c+k+\w*|motherfuck\w*|fck\w*|ffs", "shit": r"shit\w*|shi
           "prick": r"prick\w*", "dick": r"dick\w*", "bellend": r"bellend\w*", "cunt": r"cunt\w*", "arse": r"arse(?!nal)\w*|ass|asshole\w*",
           "crap": r"crap\w*", "damn": r"damn\w*|dammit"}
 SWEAR = re.compile(r"\b(?:" + "|".join(f"(?P<{k}>{v})" for k, v in SWEARS.items()) + r")\b")
-POO = re.compile(r"\b(poo+s?|poo+ps?|poo+ped|poo+ping|poo+py|poo+ey|turds?)\b|💩")
+# Poo, the ways people actually spell it ("poopja" is a pun on a member's name). Pooh, pookie and dump mean other things.
+POO = re.compile(r"\b(poo+s?|poo+ps?|poo+ped|poo+ping|poo+py|poo+ey|poo+ed|poo+ing|poo+pers?|poo+pies?|poo+poo+|(?:pee)+poo+(?:poo+)?|"
+                 r"poopja|doo+doo+|dookie|dooky|sharts?|sharted|sharting|turds?)\b|💩")
 LAUGHS = {"lol": r"\blol\b", "lmao": r"\blmao\b", "lmfao": r"\blmfao\b", "haha": r"\bha(ha)+h?\b",
           "💀": "💀", "😭": "😭", "😂": "😂"}
 
