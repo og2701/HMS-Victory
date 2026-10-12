@@ -111,6 +111,10 @@ WORD = re.compile(r"[a-z][a-z']{2,}")
 CUSTOM_EMOJI = re.compile(r"<(a?):(\w+):(\d+)>")
 
 
+def fmt_n(n):
+    return f"{int(n):,}"
+
+
 def day_bounds(since, until):
     lo = datetime.combine(since, datetime.min.time(), UK).timestamp()
     hi = datetime.combine(until, datetime.min.time(), UK).timestamp()
@@ -199,6 +203,7 @@ class Extract:
         # goodnights, checked at the end against each person's later messages; replies to other people,
         # checked against reactions for ratios
         goodnights, sent_at = defaultdict(list), defaultdict(list)
+        first_text = {}
         human_replies = []
         jabs = Counter()
         swear_words, swear_by = Counter(), Counter()
@@ -254,6 +259,8 @@ class Extract:
             if len(bare) <= 40 and GOODNIGHT.search(bare):
                 goodnights[uid].append(ts)
             sent_at[uid].append(ts)
+            if uid not in first_text and text.strip() and not URL.search(text) and len(text) <= 220:
+                first_text[uid] = (text, day)
             if hour is not None:
                 hours[uid][hour] += 1
                 if 1 <= hour < 5:
@@ -309,6 +316,7 @@ class Extract:
                 if i < len(later) and later[i] < t + 4 * 3600:
                     per[uid]["fake_gn"] += 1
         self.human_replies = human_replies
+        self.first_text = first_text
         self.jabs = jabs
         self.swear_words, self.swear_by = swear_words, swear_by
         self.poo_month, self.poo_day = poo_month, poo_day
@@ -669,7 +677,7 @@ class Extract:
             return {"user": str(u), "name": p.get("name", "someone"), "avatar": p.get("avatar"), "n": n}
 
         # reactions people put on each other's messages, as they stand
-        got, laughs, hearts, fans = Counter(), Counter(), Counter(), Counter()
+        got, laughs, hearts, fans, gave = Counter(), Counter(), Counter(), Counter(), Counter()
         for reactor, author, emoji, n in self.q(
                 "SELECT r.user_id, r.author_id, r.emoji, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) FROM reactions r "
                 "JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? GROUP BY 1, 2, 3",
@@ -677,6 +685,7 @@ class Extract:
             if n <= 0 or reactor == author or not self.human(reactor) or not self.human(author):
                 continue
             got[author] += n
+            gave[reactor] += n
             fans[(reactor, author)] += n
             if emoji in LAUGH_REACTS or any(k in emoji.lower() for k in ("kek", "laugh", "lmao", "lol")):
                 laughs[author] += n
@@ -709,7 +718,7 @@ class Extract:
         for a in self.out.get("awards", []):
             for u in (a.get("user"), a.get("a"), a.get("b")):
                 if u:
-                    won[int(u)].append(a["title"])
+                    won[int(u)].append(a)
         outs, ins = defaultdict(Counter), defaultdict(Counter)
         for (a, b), n in self.pairs.items():
             outs[a][b] += n
@@ -718,6 +727,14 @@ class Extract:
         for (w, u), n in self.swear_by.items():
             if n > top_swear.get(u, ("", 0))[1]:
                 top_swear[u] = (w, n)
+
+        def streak(days):
+            ds = sorted(date.fromisoformat(d) for d in days)
+            best = run = 1
+            for a, b in zip(ds, ds[1:]):
+                run = run + 1 if (b - a).days == 1 else 1
+                best = max(best, run)
+            return best if ds else 0
 
         # Who you are: the habit you're most unusual at, against everyone with VIDEO_MIN messages.
         personas = [("night", "THE NIGHT OWL", "{p}% of your messages came between 1am and 5am"),
@@ -736,7 +753,93 @@ class Extract:
         base = [u for u in per if per[u]["msgs"] >= VIDEO_MIN]
         rates = {k: sorted(per[u][k] / per[u]["msgs"] for u in base) for k, _, _ in personas}
 
-        def persona(c):
+        # Who you are, most impressive first: an award you won in the main video; then a top-20 place in the
+        # whole server for something; then the habit you're most unusual at.
+        favourite = ["shipwright", "architect", "hardest", "lowkey", "ticket_hero", "night_shift", "comedian", "heartthrob",
+                     "celeb", "hall_of_famer", "crowd", "meme", "hype", "glue", "starter", "night_owl", "early_bird",
+                     "committed", "one_day", "rookie", "glowup"]
+        order = {k: i for i, k in enumerate(favourite)}
+        boasts = [("laughs", "THE COMEDIAN", "laughs on your messages"), ("hearts", "THE HEARTTHROB", "hearts on your messages"),
+                  ("reacts", "THE CROWD PLEASER", "reactions on your messages"),
+                  ("hof", "THE HALL OF FAMER", "messages in the Hall of Fame"), ("streak", "THE EVER-PRESENT", "days in a row"),
+                  ("night", "THE NIGHT OWL", "messages between 1am and 5am"), ("early", "THE EARLY BIRD", "messages before 8am"),
+                  ("stickers", "THE STICKER FIEND", "stickers"), ("gifs", "THE GIF MACHINE", "GIFs"),
+                  ("voice", "THE VOICE", "voice notes"), ("files", "THE PHOTOGRAPHER", "pictures and files"),
+                  ("swears", "THE POTTY MOUTH", "swears"), ("poo", "THE POO ENTHUSIAST", "mentions of poo"),
+                  ("questions", "THE CURIOUS ONE", "questions"), ("caps", "THE SHOUTER", "messages in ALL CAPS"),
+                  ("replies", "THE REPLY GUY", "replies")]
+        streaks = {u: streak(self.day_counts.get(u, {})) for u in per if per[u]["msgs"] >= PERSONAL_MIN}
+        value = lambda u, k: {"laughs": laughs[u], "hearts": hearts[u], "reacts": got[u], "hof": hof[u],
+                              "streak": streaks.get(u, 0)}.get(k, per[u][k])
+        board = {k: sorted((value(u, k) for u in streaks), reverse=True) for k, _, _ in boasts}
+
+        # Your biggest hit: your most-reacted message with words in it (no links, not too long), as the reactions
+        # stand, from people other than you.
+        msg_reacts, msg_total, msg_author = defaultdict(Counter), Counter(), {}
+        for mid, reactor, author, e, eid, n in self.q(
+                "SELECT r.message_id, r.user_id, r.author_id, r.emoji, r.emoji_id, SUM(CASE WHEN r.action = 'add' THEN 1 ELSE -1 END) "
+                "FROM reactions r JOIN messages m ON m.message_id = r.message_id WHERE m.ts >= ? AND m.ts < ? GROUP BY 1, 2, 4, 5",
+                (self.lo, self.hi)):
+            if n > 0 and reactor != author and self.human(reactor):
+                msg_reacts[mid][(e, eid)] += n
+                msg_total[mid] += n
+                msg_author[mid] = author
+        by_author = defaultdict(list)
+        for mid, n in msg_total.items():
+            by_author[msg_author[mid]].append((n, mid))
+
+        def hit(u):
+            for n, mid in sorted(by_author.get(u, []), reverse=True)[:8]:
+                row = self.q("SELECT content, local_day FROM messages WHERE message_id = ?", (mid,))
+                if row and row[0][0] and row[0][0].strip() and not URL.search(row[0][0]) and len(row[0][0]) <= 220:
+                    return {"text": row[0][0], "day": row[0][1], "n": n,
+                            "reactions": [{"e": e, "id": str(i) if i else None, "n": k} for (e, i), k in msg_reacts[mid].most_common(4)]}
+            return None
+
+        # Highlights: the stats each person stands out for most, against everyone with a card, so the vibe
+        # scene and the card show what's actually notable about them (poo only for the people who bring it up).
+        spots = ["laughs", "hearts", "reacts", "given", "swears", "poo", "gifs", "stickers", "voice", "files", "questions",
+                 "caps", "hof", "badges", "casino"]
+
+        def spot(u, k):
+            if k == "given":
+                return gave[u]
+            if k == "badges":
+                return sum(medals[u].values())
+            if k == "casino":
+                return (casino.get(u) or {}).get("games", 0)
+            return value(u, k)
+        spot_board = {k: sorted(spot(u, k) for u in streaks) for k in spots}
+
+        def highlights(u):
+            out = []
+            for k in spots:
+                n = spot(u, k)
+                if n >= 3:
+                    out.append((bisect.bisect_left(spot_board[k], n) / len(spot_board[k]), n, k))
+            return [{"k": k, "n": n, "pct": round(p * 100)} for p, n, k in sorted(out, reverse=True)[:6]]
+
+        def persona(u, c):
+            mine = sorted(won.get(u, []), key=lambda a: order.get(a["key"], len(order)))
+            if mine:
+                a = mine[0]
+                line = re.sub(r"\btheir\b", "your", re.sub(r"\bthey\b", "you", f"{a['value']} {a['line']}"))
+                return {"title": a["title"].upper(), "line": line}
+            best = None
+            for k, title, label in boasts:
+                n = value(u, k)
+                if n < 10:
+                    continue
+                place = bisect.bisect_left([-x for x in board[k]], -n) + 1
+                if place <= 20 and (not best or place < best[0]):
+                    best = (place, title, label, n)
+            if best:
+                place, title, label, n = best
+                return {"title": title, "line": (f"No one had more: {fmt_n(n)} {label}" if place == 1
+                                                 else f"#{place} in the server: {fmt_n(n)} {label}")}
+            return habit(c)
+
+        def habit(c):
             best = None
             for k, title, line in personas:
                 if c[k] < 5:
@@ -750,14 +853,6 @@ class Extract:
             beat, rate, k, title, line = best
             return {"title": title, "line": line.format(p=max(1, round(rate * 100)), n=c[k]),
                     "beat": min(99, int(beat * 100))}
-
-        def streak(days):
-            ds = sorted(date.fromisoformat(d) for d in days)
-            best = run = 1
-            for a, b in zip(ds, ds[1:]):
-                run = run + 1 if (b - a).days == 1 else 1
-                best = max(best, run)
-            return best if ds else 0
 
         def most(counter, n_min=1):
             return max(counter.items(), key=lambda kv: kv[1], default=(None, 0))
@@ -791,8 +886,10 @@ class Extract:
                 "reacts": got[u], "laughs": laughs[u], "hearts": hearts[u],
                 "swears": c["swears"], "top_swear": sw and {"w": re.sub(r"[aeiou]", "*", sw[0], count=1), "n": sw[1]},
                 "poo": c["poo"], "gifs": c["gifs"], "stickers": c["stickers"], "voice": c["voice"],
-                "awards": won.get(u, []), "medals": {k.lower(): medals[u][k] for k in ("Gold", "Silver", "Bronze", "Secret")},
-                "hof": hof[u], "casino": casino.get(u), "persona": persona(c),
+                "awards": [a["title"] for a in won.get(u, [])], "medals": {k.lower(): medals[u][k] for k in ("Gold", "Silver", "Bronze", "Secret")},
+                "hof": hof[u], "casino": casino.get(u), "persona": persona(u, c), "highlights": highlights(u),
+                "hit": hit(u) if c["msgs"] >= VIDEO_MIN else None,
+                "first": self.first_text.get(u) and {"text": self.first_text[u][0], "day": self.first_text[u][1]},
             }
         last_day = self.until - timedelta(days=1)
         return {"meta": {"since": self.since.isoformat(), "until": last_day.isoformat(), "year": self.since.year,

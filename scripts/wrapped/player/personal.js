@@ -17,6 +17,7 @@ chapter("p-where", "YOUR CHANNELS", "#c6ff3d");
 chapter("p-people", "YOUR PEOPLE", "#ff4f9e");
 chapter("p-vibe", "YOUR VIBE", "#1fe08f");
 chapter("p-you", "THIS WAS YOU", "#ffc23d");
+chapter("p-hit", "YOUR BIGGEST HIT", "#38d9ff");
 chapter("p-trophies", "YOUR TROPHIES", "#ff7a2e");
 chapter("outro", "YOUR CARD", "#ff2e4d");
 
@@ -38,35 +39,59 @@ const personRow = (label, ref, text, at) => an(h("div.lrow.listpanel", { style: 
     h("div.h3", { style: { fontSize: "44px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, ref.name),
     h("div.small", text))), "left", at, 0.6);
 
+// Highlights: the stats this person stands out for most (extract.py picks them), each with its words in
+// the video and, shorter, on the card.
+const HL = {
+  laughs: ["LAUGHS ON YOUR MESSAGES", "LAUGHS GOT"], hearts: ["HEARTS ON YOUR MESSAGES", "HEARTS GOT"],
+  reacts: ["REACTIONS ON YOUR MESSAGES", "REACTIONS"], given: ["REACTIONS YOU GAVE OUT", "REACTS GIVEN"],
+  swears: [ME.top_swear ? `SWEARS, MOSTLY ${ME.top_swear.w.toUpperCase()}` : "SWEARS", "SWEARS"],
+  poo: ["TIMES YOU BROUGHT UP POO", "POOS"], gifs: ["GIFS SENT", "GIFS"], stickers: ["STICKERS SENT", "STICKERS"],
+  voice: ["VOICE NOTES", "VOICE NOTES"], files: ["PICTURES AND FILES", "PICTURES"], questions: ["QUESTIONS ASKED", "QUESTIONS"],
+  caps: ["MESSAGES IN ALL CAPS", "ALL CAPS"], hof: ["IN THE HALL OF FAME", "HALL OF FAME"], badges: ["BADGES EARNED", "BADGES"],
+  casino: ["CASINO GAMES PLAYED", "CASINO GAMES"],
+};
+const HIGH = (ME.highlights || []).filter(x => HL[x.k]);
+
+// One of their messages, as it looked in Discord, with its reactions.
+function bubble(m, at) {
+  const reacts = (m.reactions || []).map((x, k) => an(h("div.react.px", emojiEl(x.e, x.id, 34), String(x.n)), "pop", at + 0.5 + k * 0.08, 0.5));
+  return h("div.msg.px", avatar(ME.user, 88, at, 0.7),
+    h("div", { style: { flex: 1, minWidth: 0 } }, h("div.who", h("span.name", ME.name), h("span.when", dmyLong(m.day))),
+      h("div.text", { html: richText(m.text) }), reacts.length ? h("div.reacts", reacts) : null));
+}
+
 // The card: the year on one picture, in the video's last scene and on its own (?card=1) at 1080x1350.
 function card(at = 0) {
   const tile = (label, ...kids) => h("div.ptile.px", h("div.tiny", label), ...kids);
   const md = ME.medals || {};
   const mate = ME.mate || ME.you_reply;
+  const who = ref => (ref ? h("div.lrow", { style: { gap: "14px", marginTop: "14px" } }, avatar(ref.user, 64, at, 0.6),
+    h("div.small.white", { style: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, ref.name)) : h("div.pval", "-"));
+  const high = x => (x.k === "badges"
+    ? tile("BADGES", h("div.pmedals", ...["Gold", "Silver", "Bronze", "Secret"].map(t => h("div.row", { style: { gap: "6px" } },
+      medalIcon(t, 30), h("div.small.white", { style: { fontWeight: 800 } }, String(md[t.toLowerCase()] || 0))))))
+    : tile(HL[x.k][1], h("div.pval", short(x.n))));
+  const fill = [...HIGH.slice(0, 3).map(high), tile("DAYS YOU SHOWED UP", h("div.pval", String(ME.days))),
+    tile("BIGGEST DAY", h("div.pval", ME.busiest ? dmy(ME.busiest.day) : "-")), tile("WORDS", h("div.pval", short(ME.words)))].slice(0, 3);
   return h("div.pcard",
     h("div.row", { style: { justifyContent: "space-between" } },
       h("div.brandmark", { style: { opacity: 1 } }, ujIcon(44), `UKPLACE WRAPPED ${String(YEAR).slice(2)}`),
       h("div.tiny.white", FULL ? String(YEAR) : `1 JAN - ${dmy(M.until)}`)),
-    h("div.lrow", { style: { marginTop: "44px", gap: "30px" } }, avatar(ME.user, 190, at, 0.8, "ring"),
-      h("div", { style: { minWidth: 0 } }, h("div.h2", { style: { fontSize: "60px" } }, ME.name),
+    h("div.lrow", { style: { marginTop: "40px", gap: "30px" } }, avatar(ME.user, 170, at, 0.8, "ring"),
+      h("div", { style: { minWidth: 0 } }, h("div.h2", { style: { fontSize: "56px" } }, ME.name),
         h("div.kick.plain", { style: { color: "var(--gold)", marginTop: "14px" } }, ME.persona.title),
         h("div.small", { style: { marginTop: "8px" } }, ME.persona.line))),
-    h("div", { style: { marginTop: "38px" } }, h("div.mega", { style: { fontSize: "170px", lineHeight: ".85" } }, fmt(ME.msgs)),
+    h("div", { style: { marginTop: "30px" } }, h("div.mega", { style: { fontSize: "150px", lineHeight: ".85" } }, fmt(ME.msgs)),
       h("div.h3", { style: { marginTop: "12px" } }, `messages · #${fmt(ME.rank)} of ${fmt(ME.of)} · top ${topPct}%`)),
     h("div.pgrid", { style: { marginTop: "36px" } },
-      tile("BEST MATE", mate ? h("div.lrow", { style: { gap: "14px", marginTop: "14px" } }, avatar(mate.user, 64, at, 0.6),
-        h("div.small.white", { style: { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, mate.name)) : h("div.pval", "-")),
+      tile("BEST MATE", who(mate)),
+      tile("BIGGEST FAN", who(ME.fan)),
       tile("TOP EMOJI", h("div.row", { style: { gap: "14px", marginTop: "12px" } }, ME.emoji ? emojiEl(ME.emoji.e, ME.emoji.id, 60) : null,
         h("div.pval", ME.emoji ? `×${short(ME.emoji.n)}` : "-"))),
       tile("PEAK HOUR", h("div.pval", hourName(ME.peak))),
       tile("TOP CHANNEL", h("div.pval", { style: { fontSize: "40px" } }, ME.channels[0] ? "#" + ME.channels[0].name : "-")),
       tile("BEST STREAK", h("div.pval", `${ME.streak} DAYS`)),
-      tile("BADGES", h("div.pmedals", ...["Gold", "Silver", "Bronze", "Secret"].map(t => h("div.row", { style: { gap: "6px" } },
-        medalIcon(t, 30), h("div.small.white", { style: { fontWeight: 800 } }, String(md[t.toLowerCase()] || 0)))))),
-      tile("BIGGEST DAY", h("div.pval", ME.busiest ? dmy(ME.busiest.day) : "-"),
-        ME.busiest ? h("div.tiny", { style: { marginTop: "6px" } }, `${fmt(ME.busiest.n)} SENT`) : null),
-      tile("LAUGHS GOT", h("div.pval", short(ME.laughs))),
-      ME.hof ? tile("HALL OF FAME", h("div.pval", String(ME.hof))) : tile("WORDS", h("div.pval", short(ME.words)))),
+      ...fill),
     h("div.pfoot", ME.awards.length ? ME.awards.slice(0, 3).map(a => h("span.chip", a.toUpperCase())) :
       h("div.small", ME.hof ? `${ME.hof} messages in the Hall of Fame` : `${fmt(ME.days)} days you showed up`)));
 }
@@ -123,7 +148,7 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-where", ch: "p-where", dur: 5.5, fixed: true, boardGlow: 1,
+    id: "p-where", ch: "p-where", dur: 5, fixed: true, boardGlow: 1,
     build(r) {
       const max = ME.channels[0] ? ME.channels[0].n : 1;
       r.append(h("div.scrim-mid"),
@@ -159,18 +184,15 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-vibe", ch: "p-vibe", dur: 6.5, fixed: true, boardGlow: 1,
+    id: "p-vibe", ch: "p-vibe", dur: 7, fixed: true, boardGlow: 1,
     build(r) {
       const e = ME.emoji;
       r.append(h("div.scrim-mid"),
         block(230, {}, kicker("YOUR VIBE"),
           e ? h("div.lrow", { style: { marginTop: "30px", gap: "34px" } }, an(h("div", emojiEl(e.e, e.id, 220)), "pop", 0.4, 0.7),
             h("div", h("div.big.acc", { style: { fontSize: "130px" } }, roll(e.n, 0.6, 1.2)), line("times, your favourite emoji", 0.9, "h3"))) : null),
-        h("div.abs", { style: { left: "56px", right: "56px", top: "720px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
-          stat("LAUGHS ON YOUR MESSAGES", roll(ME.laughs, 1.6, 1.2), 1.4),
-          stat("HEARTS ON YOUR MESSAGES", roll(ME.hearts, 1.7, 1.2), 1.55),
-          stat(ME.top_swear ? `SWEARS, MOSTLY ${ME.top_swear.w.toUpperCase()}` : "SWEARS. SQUEAKY CLEAN", roll(ME.swears, 1.8, 1.2), 1.7),
-          stat(ME.poo ? "TIMES YOU BROUGHT UP POO" : "POOS. NOT ONE", roll(ME.poo, 1.9, 1.2), 1.85)));
+        h("div.abs", { style: { left: "56px", right: "56px", top: e ? "720px" : "380px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "22px" } },
+          HIGH.slice(0, 4).map((x, k) => stat(HL[x.k][0], roll(x.n, 1.6 + k * 0.1, 1.2), 1.4 + k * 0.15))));
     },
   });
 
@@ -191,7 +213,18 @@ if (CARD_ONLY) {
   });
 
   scene({
-    id: "p-trophies", ch: "p-trophies", dur: 6, fixed: true, boardGlow: 1,
+    id: "p-hit", ch: "p-hit", dur: 6, fixed: true, boardGlow: 1.2,
+    build(r) {
+      const m = ME.hit || ME.first;
+      r.append(h("div.scrim-mid"),
+        block(300, {}, kicker(ME.hit ? "YOUR BIGGEST HIT" : `YOUR FIRST MESSAGE OF ${YEAR}`),
+          line(ME.hit ? `${fmt(ME.hit.n)} reactions, your most of the year` : "Where your year started", 0.4, "h3")),
+        m ? h("div.abs", { style: { left: "56px", right: "56px", top: "600px" } }, h("div.bigmsg", an(bubble(m, 0.7), "pop", 0.6, 0.8))) : null);
+    },
+  });
+
+  scene({
+    id: "p-trophies", ch: "p-trophies", dur: 5, fixed: true, boardGlow: 1,
     build(r) {
       const md = ME.medals || {}, cs = ME.casino;
       r.append(h("div.scrim-mid"),
@@ -199,7 +232,11 @@ if (CARD_ONLY) {
           ME.awards.length
             ? h("div.col", { style: { gap: "14px", marginTop: "26px" } }, ME.awards.slice(0, 5).map((a, k) =>
               an(h("div.lrow.listpanel", { style: { padding: "16px 22px" } }, icon("trophy", 44), h("div.h3", a)), "left", 0.4 + k * 0.15, 0.6)))
-            : line("No awards this year. Next year's yours.", 0.4, "h3")),
+            : HIGH.length > 4
+              ? h("div.col", { style: { gap: "14px", marginTop: "26px" } }, HIGH.slice(4, 7).map((x, k) =>
+                an(h("div.lrow.listpanel", { style: { padding: "16px 22px" } }, icon("trophy", 44),
+                  h("div.h3", `Top ${Math.max(1, 100 - x.pct)}% for ${HL[x.k][1].toLowerCase()}`)), "left", 0.4 + k * 0.15, 0.6)))
+              : line("No awards this year. Next year's yours.", 0.4, "h3")),
         block(1010, {}, kicker("YOUR BADGES", 1.6),
           h("div.row", { style: { gap: "34px", marginTop: "24px" } }, ["Gold", "Silver", "Bronze", "Secret"].map((t, k) =>
             an(h("div.center", medalIcon(t, 96), h("div.big", { style: { fontSize: "70px", marginTop: "10px" } }, String(md[t.toLowerCase()] || 0)),

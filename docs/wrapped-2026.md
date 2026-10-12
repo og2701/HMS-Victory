@@ -327,14 +327,20 @@ limiter keeps the mix at -2dB.
 ## Personal Wrapped
 
 Everyone also gets their own: a summary card (a 1080x1350 picture) for every current member with 10+
-messages in the year, and a video of under a minute (720x1280) for everyone with 50+. Nine scenes:
-their name, their messages (rank, change on last year, words, days, longest streak), their biggest day
-and hours, their channels, their people (best mate, who they reply to and who replies to them, their
-biggest fan), their vibe (top emoji, laughs and hearts on their messages, swears, poo), who they were
-(the habit they're most unusual at against everyone with 50+ messages, "more than N% of us"), their
-trophies (awards, badges, Hall of Fame, casino), and their card. Every scene has a fixed length, so
-every video runs 54.5 seconds over the same soundtrack (Don't Stop Me Now, its "(Don't stop me now)
-I'm having such a good time" landing on who they were).
+messages in the year, and a video of under a minute (720x1280) for everyone with 50+. The frame is the
+same for everyone; what's in it is theirs. Ten scenes: their name; their messages (rank, change on last
+year, words, days, longest streak); their biggest day and hours; their channels; their people (best
+mate, who they reply to and who replies to them, biggest fan); their vibe (top emoji, then their four
+**highlights**: the stats they rank highest for in the server, out of laughs, hearts and reactions on
+their messages, reactions given, swears, poo, GIFs, stickers, voice notes, pictures, questions, caps,
+Hall of Fame, badges and casino games); who they were (their **persona**, most impressive first: an
+award they won in the main video, else a top-20 place in the server, else the habit they're most
+unusual at, "more than N% of us"); their biggest hit (their most-reacted message, or their first
+message of the year); their trophies (awards, or their best rankings, plus badges, Hall of Fame,
+casino); and their card (best mate, biggest fan, top emoji, peak hour, top channel, streak, and their
+top three highlights). Every scene has a fixed length, so every video runs 59.5 seconds over the same
+soundtrack (Don't Stop Me Now, "(Don't stop me now) I'm having such a good time" landing on who they
+were).
 
 ```bash
 python3 scripts/wrapped/extract.py ... --personal $D/personal.json        # alongside the usual run
