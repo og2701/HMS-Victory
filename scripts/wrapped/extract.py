@@ -72,6 +72,12 @@ PEACE = re.compile(r"\b(calm down|chill out|calm it|cool it|guys stop|stop argui
 LAUGH_ONLY = re.compile(r"^(lol+|lmao+|lmfao+|haha+|ha(ha)+|xd+|😭+|💀+|😂+|🤣+)$")
 GOODNIGHT = re.compile(r"^(good ?night|gn|g'?night|nighty? ?night|night night|night all|night guys|night everyone|nini)\b"
                        r"|\b(off to bed|going to bed|going to sleep|off to sleep)\b")
+# The finale's kind words, counted across everyone's messages.
+WARM = {"morning": re.compile(r"\b(good ?morning|gm|morning all|mornin)\b"),
+        "night": re.compile(r"\b(good ?night|gn|nighty? ?night|night night|sleep well|sweet dreams|nini)\b"),
+        "welcome": re.compile(r"\bwelcome\b"),
+        "thanks": re.compile(r"\b(thank you|thanks|thank u|ty|tysm|thx|cheers)\b"),
+        "love": re.compile(r"\b(i )?(love|luv) (you|u|ya|yall|you all|you guys)\b|\bily(sm)?\b")}
 # Swears, by the word they come from. "arse" leaves Arsenal alone.
 SWEARS = {"fuck": r"f+u+c+k+\w*|motherfuck\w*|fck\w*|ffs", "shit": r"shit\w*|shite|bullshit\w*", "piss": r"piss\w*",
           "bollocks": r"bollock\w*", "bloody": r"bloody", "wanker": r"wank\w*", "twat": r"twat\w*", "bastard": r"bastard\w*",
@@ -138,6 +144,8 @@ class Extract:
         self.interlude_picks = picks.get("interludes", []) if isinstance(picks, dict) else []
         # ... and "iceberg": the stories behind some /iceberg entries, [{"entry", "story", "quote", "count"}].
         self.iceberg_picks = picks.get("iceberg", []) if isinstance(picks, dict) else []
+        # ... and "shipwright_crew": the other people who've worked on the bot, in order, as the Shipwright's runners-up.
+        self.shipwright_crew = picks.get("shipwright_crew", []) if isinstance(picks, dict) else []
         self.since, self.until = since, until
         self.lo, self.hi = day_bounds(since, until)
         self.plo, self.phi = day_bounds(year_ago(since), year_ago(until))
@@ -215,6 +223,7 @@ class Extract:
         jabs = Counter()
         swear_words, swear_by = Counter(), Counter()
         poo_month, poo_day = Counter(), Counter()
+        warm, quiet, last_ts = Counter(), 0, None  # kind words, and the longest the chat went without anyone
         rows = self.ch.execute(
             "SELECT message_id, user_id, content, local_day, local_hour, char_count, word_count, n_attachments, "
             "flags, edited_ts, COALESCE(parent_id, channel_id), msg_type, reply_to, reply_to_user, ts, stickers, attachments "
@@ -224,6 +233,11 @@ class Extract:
             c = per[uid]
             text = content or ""
             low = text.lower()
+            if self.human(uid):
+                if last_ts is not None:
+                    quiet = max(quiet, ts - last_ts)
+                last_ts = ts
+                warm.update(k for k, rx in WARM.items() if rx.search(low))
             c["msgs"] += 1
             c["chars"] += chars
             c["words"] += words
@@ -327,6 +341,7 @@ class Extract:
         self.jabs = jabs
         self.swear_words, self.swear_by = swear_words, swear_by
         self.poo_month, self.poo_day = poo_month, poo_day
+        self.out["finale"] = {**{k: warm[k] for k in WARM}, "quiet": quiet}
         # Everything below ranks people, so only people who can be shown take part. Totals elsewhere are
         # counted straight from the database and still include everyone.
         keep = lambda u: self.shown(u)
@@ -647,7 +662,7 @@ class Extract:
         said = self.q("SELECT COUNT(*) FROM messages WHERE user_id = ? AND ts >= ? AND ts < ?", (HMS_VICTORY, self.lo, self.hi))[0][0]
         if updates:
             award("shipwright", "The Shipwright", f"updates to HMS Victory, which sent {said:,} messages this year",
-                  [(updates, updates, DEVELOPER)], num)
+                  [(updates, updates, DEVELOPER)] + [(0, 0, int(u)) for u in self.shipwright_crew], num)
 
         # Server Architect: changes to channels, permissions, roles and the server's settings, by hand or through
         # HMS Victory. The bot's own changes count for whoever its reason names, or for its developer when it
