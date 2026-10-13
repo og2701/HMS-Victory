@@ -23,16 +23,16 @@ def test_handle_bump_reward_saves_reminder_and_sends_to_bot_spam():
     )
 
     store_mock = {}
-
     with patch("lib.features.ukp_rewards.load_json_file", return_value=store_mock), \
          patch("lib.features.ukp_rewards.save_json_file") as mock_save, \
          patch("lib.features.ukp_rewards._pay", return_value=True):
         asyncio.run(ukp_rewards.handle_bump_reward(client, msg))
 
-        assert store_mock.get("last_msg_id") == 999999
-        assert store_mock.get("reminder_sent") is False
-        assert "next_reminder_ts" in store_mock
         mock_save.assert_called_once()
+        saved_data = mock_save.call_args[0][1]
+        assert saved_data.get("last_msg_id") == 999999
+        assert saved_data.get("reminder_sent") is False
+        assert "next_reminder_ts" in saved_data
 
 
 def test_check_bump_reminder_pings_bumpity_bumps_in_bot_spam():
