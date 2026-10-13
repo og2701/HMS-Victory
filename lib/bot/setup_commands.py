@@ -461,7 +461,8 @@ def define_commands(tree, client):
             allowed_mentions=discord.AllowedMentions.none())
 
     @command("pay", "Transfer UKPence to another member")
-    async def pay_command(interaction: Interaction, recipient: Member, amount: int):
+    async def pay_command(interaction: Interaction, recipient: Member, amount: int,
+                          reason: Optional[str] = None):
         if amount <= 0:
             return await interaction.response.send_message("Enter a positive amount.", ephemeral=True)
         if recipient.id == interaction.user.id:
@@ -604,12 +605,15 @@ def define_commands(tree, client):
         from database import DatabaseManager
         now_ts = int(time.time())
 
+        clean_reason = reason.strip() if reason and reason.strip() else None
+
         if recipient.id == interaction.client.user.id:
             # Pay to bot goes directly to bank
+            tx_reason = f"/pay to HMS Victory (Bank): {clean_reason}" if clean_reason else "/pay to HMS Victory (Bank)"
             if not remove_bb(
                 interaction.user.id,
                 amount,
-                reason="/pay to HMS Victory (Bank)",
+                reason=tx_reason,
                 to_bank=True,
                 record_pay_transfer=True,
             ):
@@ -621,9 +625,11 @@ def define_commands(tree, client):
         else:
             # Atomic user→user move: both balances update in one transaction or
             # neither does, so the closed-economy total can never drift on a /pay.
+            base_reason = f"/pay {interaction.user.display_name} → {recipient.display_name}"
+            tx_reason = f"{base_reason}: {clean_reason}" if clean_reason else base_reason
             if not DatabaseManager.transfer(
                 interaction.user.id, recipient.id, amount,
-                reason=f"/pay {interaction.user.display_name} → {recipient.display_name}",
+                reason=tx_reason,
                 record_pay_transfer=True,
             ):
                 return await interaction.response.send_message("Insufficient UKPence.", ephemeral=True)
@@ -633,6 +639,8 @@ def define_commands(tree, client):
             description=f"{interaction.user.mention} paid **{amount:,}** UKPence to {recipient.mention}",
             color=discord.Color.gold(),
         )
+        if clean_reason:
+            embed.add_field(name="Reason", value=clean_reason, inline=False)
         # Put the recipient's mention in the message CONTENT, not just the embed - a
         # mention inside an embed renders but never fires a notification. Skip the ping
         # when the recipient is the bank (the bot can't be usefully pinged).
