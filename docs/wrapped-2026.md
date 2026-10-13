@@ -106,9 +106,11 @@ County balls are left out of the Wrapped altogether.
     or shown.
 14. **Server life:** members in and out, boosts, new emoji, the Halloween icons.
 15. **Thank you** over the avatar wall: as the camera pulls back from one face, "Every square in this flag is
-    one of you"; then THANK YOU on the chorus, and the kind things people said to each other this year, one
-    at a time (good morning and goodnight, welcome, thank you and "love you", and the longest the chat went
-    quiet), before the goodbye.
+    one of you"; then THANK YOU on the chorus, the friendships that started this year (two current members who
+    had never replied to each other before January and have swapped 100+ replies since), and "In your words":
+    messages where people said what the server means to them, one at a time, before the goodbye. Those are
+    picked by hand into `finale` in the picks file (`[{"id", "text"}]`, text optional for trimming); at year end,
+    search the chat for new ones ("love this server", "you guys are", "miss you guys") and keep the best few.
 
 ## Award catalogue
 

@@ -705,22 +705,20 @@ scene({
 });
 
 // The end: while the camera pulls back from one face to the whole flag, a reminder of what the flag is made
-// of; then THANK YOU on the chorus, and the small things everyone said to each other, one at a time.
-const FIN = DATA.finale;
-const quietFor = sec => {
-  const m = Math.round(sec / 60), hh = Math.floor(m / 60), mm = m % 60;
-  const mins = `${mm} minute${mm === 1 ? "" : "s"}`;
-  return hh ? `${hh} hour${hh > 1 ? "s" : ""}${mm ? " and " + mins : ""}` : mins;
-};
-const KIND = FIN ? [
-  `You said good morning ${ba(fmt(FIN.morning))} times, and goodnight ${ba(fmt(FIN.night))}.`,
-  `You said welcome ${ba(fmt(FIN.welcome))} times.`,
-  `You said thank you ${ba(fmt(FIN.thanks))} times, and "love you" ${ba(fmt(FIN.love))}.`,
-  FIN.quiet ? `And ${FULL ? "all year" : "this year"}, the chat never went quiet for longer than ${ba(quietFor(FIN.quiet))}.` : null,
-].filter(Boolean) : [];
-const KIND_AT = 8.4, KIND_STEP = 3.8, SEE_AT = KIND.length ? KIND_AT + KIND.length * KIND_STEP + 1.0 : 7.0;
+// of; then THANK YOU on the chorus, the friendships that started this year, and people's own words about the
+// place, one at a time, before the goodbye.
+const FIN = DATA.finale || { friendships: 0, words: [] };
+const FRIEND_AT = 8.2, FRIEND_END = FIN.friendships ? 13.6 : FRIEND_AT;
+const WORDS_AT = FRIEND_END + 0.4;
+let _at = WORDS_AT;
+const QUOTES = FIN.words.map((m, k) => {
+  const s = _at;
+  _at += clamp(2.6 + m.text.split(/\s+/).length * 0.12, 3.8, 6.0) + (k === FIN.words.length - 1 ? 0.8 : 0);
+  return { m, s, e: _at };
+});
+const SEE_AT = (QUOTES.length ? _at : FRIEND_END) + 0.4;
 scene({
-  id: "finale", ch: "outro", dur: +(SEE_AT + 7.5).toFixed(1), fixed: true, gl: "mosaic", bloom: 0.35, boardGlow: 0.7, pin: "radial", pout: "radial",
+  id: "finale", ch: "outro", dur: +(SEE_AT + 7.0).toFixed(1), fixed: true, gl: "mosaic", bloom: 0.35, boardGlow: 0.7, pin: "radial", pout: "radial",
   cam: t => {
     // From the face at the centre of the flag out to the whole flag, fitted to the frame's width.
     const f = MOS.first || { tx: 0, ty: 60 };
@@ -732,14 +730,21 @@ scene({
   build(r) {
     r._first = h("div.pad", { style: { top: "300px", textAlign: "center" } },
       an(h("div.h2", "Every square in this flag is one of you."), "fade", 0.9, 1.2));
-    r._kind = KIND.map((m, k) => h("div.pad", { style: { top: "1300px", textAlign: "center" } },
-      an(h("div.h3", { html: m }), "up", KIND_AT + k * KIND_STEP, 0.9, "outCubic")));
-    r.append(h("div.scrim-top", { style: { height: "760px" } }), h("div.scrim-bot", { style: { height: "720px" } }),
+    r._friend = FIN.friendships ? h("div.pad", { style: { top: "1310px", textAlign: "center" } },
+      an(h("div.big.acc", { style: { fontSize: "150px" } }, roll(FIN.friendships, FRIEND_AT, 1.6)), "up", FRIEND_AT, 0.8),
+      an(h("div.h3", { style: { marginTop: "6px" } }, "friendships started this year"), "up", FRIEND_AT + 0.3, 0.8),
+      an(h("div.small", { style: { marginTop: "12px" } },
+        "Two of you who had never replied to each other before January, and have swapped 100 or more replies since."), "up", FRIEND_AT + 0.6, 0.8)) : null;
+    r._kick = QUOTES.length ? h("div.pad", { style: { top: "1310px", textAlign: "center" } },
+      an(h("div.kick", { style: { justifyContent: "center" } }, "IN YOUR WORDS"), "fade", WORDS_AT, 0.6)) : null;
+    r._quotes = QUOTES.map(q => h("div.abs", { style: { left: "56px", right: "56px", top: "1390px" } },
+      message({ user: q.m.user, text: q.m.text, when: dmyLong(q.m.day) }, q.s, { fx: "up" })));
+    r.append(h("div.scrim-top", { style: { height: "760px" } }), h("div.scrim-bot", { style: { height: "760px" } }),
       r._first,
       block(250, { textAlign: "center" },
         h("div.mega", { style: { fontSize: "260px" } }, split("THANK YOU", "slam", 5.2, 0.05, 0.5)),
         html(`${b(fmt(NOW.messages))} messages. ${b(fmt(SV.members))} of you.`, 6.0, "h3")),
-      r._kind,
+      r._friend, r._kick, r._quotes,
       block(1440, { textAlign: "center" },
         an(h("div.kick", { style: { justifyContent: "center", color: "var(--white)", fontSize: "30px" } },
           FULL ? `SEE YOU IN ${YEAR + 1}` : "THE YEAR ISN'T OVER YET"), "up", SEE_AT, 0.9),
@@ -749,10 +754,13 @@ scene({
     const [sx, sy] = shake(t, 5.3, 10);
     r.style.transform = `translate(${sx}px, ${sy}px)`;
     r._first.style.opacity = 1 - prog(t, 4.3, 0.6);
-    // each line gives way to the next; the last one leaves just before the goodbye
-    r._kind.forEach((el, k) => {
-      const end = k === KIND.length - 1 ? SEE_AT - 0.2 : KIND_AT + (k + 1) * KIND_STEP;
-      el.style.opacity = 1 - prog(t, end - 0.55, 0.5);
+    if (r._friend) r._friend.style.opacity = t < FRIEND_AT ? 0 : 1 - prog(t, FRIEND_END - 0.5, 0.45);
+    if (r._kick) r._kick.style.opacity = 1 - prog(t, SEE_AT - 0.9, 0.5);
+    // each message gives way to the next; the last one leaves just before the goodbye
+    QUOTES.forEach((q, k) => {
+      const el = r._quotes[k], on = t >= q.s && t < q.e;
+      el.style.display = on ? "" : "none";
+      if (on) el.style.opacity = 1 - prog(t, q.e - 0.5, 0.45);
     });
   },
 });
