@@ -1491,10 +1491,16 @@ class Extract:
                 text = text.replace("{n}", fmt_n(n))
             story = {"entry": e["id"], "story": text}
             q = pick.get("quote")
-            row = self.q("SELECT user_id, content, local_day FROM messages WHERE message_id = ?", (int(q["id"]),)) if q else None
-            if row and (row[0][0] == HMS_VICTORY or self.shown(row[0][0])):
-                uid, content, day = row[0]
-                story["quote"] = {"user": self.who(uid), "text": q.get("text") or self.render_text(content), "day": day}
+            row = self.q("SELECT user_id, content, local_day, reply_to FROM messages WHERE message_id = ?", (int(q["id"]),)) if q else None
+            # someone who has left is only quoted when the pick says so ("former"), and then never by name
+            if row and (row[0][0] == HMS_VICTORY or self.shown(row[0][0]) or q.get("former")):
+                uid, content, day, rto = row[0]
+                who = self.who(uid) if (uid == HMS_VICTORY or self.shown(uid)) else "former"
+                story["quote"] = {"user": who, "text": q.get("text") or self.render_text(content), "day": day}
+                # "reply": show the message it replied to, the way Discord does, above it
+                orig = self.q("SELECT user_id, content FROM messages WHERE message_id = ?", (rto,)) if q.get("reply") and rto else None
+                if orig and (orig[0][0] == HMS_VICTORY or self.shown(orig[0][0])):
+                    story["quote"]["reply"] = {"user": self.who(orig[0][0]), "text": self.render_text(orig[0][1])}
             stories.append(story)
         place = {e["id"]: (e["level"], e["y"]) for e in entries}
         stories.sort(key=lambda s: place[s["entry"]])
@@ -1954,6 +1960,7 @@ class Extract:
                 unresolved.append(str(uid))
                 people[str(uid)] = {"name": "A former member",
                                     "avatar": f"https://cdn.discordapp.com/embed/avatars/{(uid >> 22) % 6}.png"}
+        people["former"] = {"name": "A former member", "avatar": "https://cdn.discordapp.com/embed/avatars/0.png"}
         (self.data / "unresolved.txt").write_text("\n".join(unresolved))
         emoji_names = {k: v for k, v in self.discord.get("emojis", {}).items()}
         last_day = self.until - timedelta(days=1)

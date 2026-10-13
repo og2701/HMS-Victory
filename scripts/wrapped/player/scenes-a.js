@@ -77,12 +77,17 @@ function runFlips(root, t) {
 function message(m, at, opts = {}) {
   const reacts = (m.reactions || []).slice(0, 5).map((r, k) =>
     an(h("div.react.px", emojiEl(r.e, r.id, 34), roll(r.n, at + 0.55 + k * 0.08, 1)), "pop", at + 0.5 + k * 0.08, 0.5));
-  const el = h("div.msg.px", { style: opts.style || {} },
-    avatar(m.user, 88, at + 0.05, 0.7),
+  const row = [avatar(m.user, 88, at + 0.05, 0.7),
     h("div", { style: { flex: 1, minWidth: 0 } },
       h("div.who", h("span.name", name(m.user)), h("span.when", m.when || "")),
       h("div.text", { html: richText(m.text) }),
-      reacts.length ? h("div.reacts", reacts) : null));
+      reacts.length ? h("div.reacts", reacts) : null)];
+  // a reply shows the message it answered above it, as Discord does: a spine, a small avatar, the name and the text
+  const el = m.reply
+    ? h("div.msg.px.hasreply", { style: opts.style || {} },
+        h("div.replyto", h("span.spine"), avatar(m.reply.user, 34, at, 0.4), h("span.rname", name(m.reply.user)), h("span.rtext", { html: richText(m.reply.text) })),
+        h("div.msgrow", row))
+    : h("div.msg.px", { style: opts.style || {} }, row);
   return an(el, opts.fx || "up", at, 0.75);
 }
 
@@ -880,7 +885,7 @@ if (DATA.iceberg && DATA.iceberg.entries.length) {
           an(h("div.iceent", { style: { color: e.color, marginTop: "20px" } }, e.text), "up", at + 0.25, 0.7),
           an(h("div.body", { style: { marginTop: "16px", color: "var(--white)" } }, s.story), "up", at + 0.4, 0.7),
           s.quote ? h("div", { style: { marginTop: "26px" } },
-            message({ user: s.quote.user, text: s.quote.text, when: dmyLong(s.quote.day) }, at + 0.8)) : null);
+            message({ user: s.quote.user, text: s.quote.text, when: dmyLong(s.quote.day), reply: s.quote.reply }, at + 0.8)) : null);
       });
       r.append(h("div.scrim-bot", { style: { height: "900px" } }), win, intro, cards);
       r._ice = { layer, box, win, intro, cards, ents, sizes: null };

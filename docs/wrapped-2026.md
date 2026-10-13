@@ -108,7 +108,8 @@ County balls are left out of the Wrapped altogether.
 15. **Thank you** over the avatar wall: as the camera pulls back from one face, "Every square in this flag is
     one of you"; then THANK YOU on the chorus, the friendships that started this year (two current members who
     had never replied to each other before January and have swapped 100+ replies since), and "In your words":
-    messages where people said what the server means to them, one at a time, before the goodbye. Those are
+    messages where people said what the server means to them, three at a time over the dimmed flag, before the
+    goodbye. Those are
     picked by hand into `finale` in the picks file (`[{"id", "text"}]`, text optional for trimming); at year end,
     search the chat for new ones ("love this server", "you guys are", "miss you guys") and keep the best few.
 
@@ -237,8 +238,9 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    posts are used and there are no interludes. The picks file also holds the **iceberg** stories:
    `"iceberg": [{"entry", "story", "quote", "count"}]`, where `entry` is an /iceberg entry's text,
    `story` a line or two on where it came from (dated, found by searching the chronicle for the
-   phrase), `quote` an optional `{"id", "text"}` (a message id, with an optional shortened text;
-   quotes from people who have left are dropped), and `count` an optional
+   phrase), `quote` an optional `{"id", "text", "reply", "former"}` (a message id, with an optional
+   shortened text; `reply` also shows the message it answered, Discord-style; quotes from people who have
+   left are dropped unless `former` is set, and then they show as "A former member"), and `count` an optional
    `{"user": "bot" | id, "regex", "after"}` that fills `{n}` in the story with how many of that
    person's messages this year match. The iceberg scene draws every entry from the `iceberg`
    table over the bot's own picture (`data/image.png`, lettering in `data/fluff.ttf`), so new

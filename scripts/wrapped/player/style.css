@@ -128,6 +128,13 @@ canvas.layer { position: absolute; inset: 0; width: 1080px; height: 1920px; }
 .msg .when { font-size: 26px; color: var(--dim); font-weight: 500; }
 .msg .text { font-size: 42px; line-height: 1.24; color: #e6e8f5; margin-top: 6px; font-weight: 480; word-break: break-word; }
 .msg .text img.emo { height: 1.15em; vertical-align: -.22em; }
+.msg.hasreply { display: block; }
+.msg .msgrow { display: flex; gap: 26px; }
+.msg .replyto { display: flex; align-items: center; gap: 12px; font-size: 28px; color: var(--mute); min-width: 0; margin-bottom: 8px; }
+.msg .replyto .spine { width: 58px; height: 20px; margin: 18px 0 0 42px; flex: none; border-left: 4px solid #4e5160; border-top: 4px solid #4e5160; }
+.msg .replyto .av { flex: none; }
+.msg .replyto .rname { font-weight: 700; color: #c9cbe0; flex: none; }
+.msg .replyto .rtext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reacts { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 .react { display: flex; gap: 10px; align-items: center; padding: 8px 16px; background: rgba(88, 101, 242, .18);
   box-shadow: inset 0 0 0 2px rgba(88, 101, 242, .55); font-size: 30px; font-weight: 700; color: #c9cdfb; }
