@@ -240,7 +240,8 @@ PLAYWRIGHT_CORE=<node_modules>/playwright-core/index.mjs node scripts/wrapped/re
    `story` a line or two on where it came from (dated, found by searching the chronicle for the
    phrase), `quote` an optional `{"id", "text", "reply", "former"}` (a message id, with an optional
    shortened text; `reply` also shows the message it answered, Discord-style; quotes from people who have
-   left are dropped unless `former` is set, and then they show as "A former member"), and `count` an optional
+   left are dropped unless `former` is set, and then they show as "A former member", or `name` gives the
+   name to show them under), and `count` an optional
    `{"user": "bot" | id, "regex", "after"}` that fills `{n}` in the story with how many of that
    person's messages this year match. The iceberg scene draws every entry from the `iceberg`
    table over the bot's own picture (`data/image.png`, lettering in `data/fluff.ttf`), so new

@@ -155,6 +155,7 @@ class Extract:
         # Only people still in the server are named anywhere; their messages still count in the totals.
         self.members = {int(k) for k, v in self.discord["people"].items() if v.get("member") and not v.get("bot")} - self.bots
         self.featured = set()
+        self.extra_people = {}  # people who have left but are named on purpose, by the picks file
         self.out = {}
         self.bb_start, self.bb_end = self.big_brother_dates()
 
@@ -1492,10 +1493,14 @@ class Extract:
             story = {"entry": e["id"], "story": text}
             q = pick.get("quote")
             row = self.q("SELECT user_id, content, local_day, reply_to FROM messages WHERE message_id = ?", (int(q["id"]),)) if q else None
-            # someone who has left is only quoted when the pick says so ("former"), and then never by name
-            if row and (row[0][0] == HMS_VICTORY or self.shown(row[0][0]) or q.get("former")):
+            # someone who has left is only quoted when the pick says so: as "A former member" ("former"), or under
+            # the name the pick gives them ("name")
+            if row and (row[0][0] == HMS_VICTORY or self.shown(row[0][0]) or q.get("former") or q.get("name")):
                 uid, content, day, rto = row[0]
                 who = self.who(uid) if (uid == HMS_VICTORY or self.shown(uid)) else "former"
+                if who == "former" and q.get("name"):
+                    who = f"left-{uid}"
+                    self.extra_people[who] = {"name": q["name"], "avatar": f"https://cdn.discordapp.com/embed/avatars/{(uid >> 22) % 6}.png"}
                 story["quote"] = {"user": who, "text": q.get("text") or self.render_text(content), "day": day}
                 # "reply": show the message it replied to, the way Discord does, above it
                 orig = self.q("SELECT user_id, content FROM messages WHERE message_id = ?", (rto,)) if q.get("reply") and rto else None
@@ -1961,6 +1966,7 @@ class Extract:
                 people[str(uid)] = {"name": "A former member",
                                     "avatar": f"https://cdn.discordapp.com/embed/avatars/{(uid >> 22) % 6}.png"}
         people["former"] = {"name": "A former member", "avatar": "https://cdn.discordapp.com/embed/avatars/0.png"}
+        people.update(self.extra_people)
         (self.data / "unresolved.txt").write_text("\n".join(unresolved))
         emoji_names = {k: v for k, v in self.discord.get("emojis", {}).items()}
         last_day = self.until - timedelta(days=1)
