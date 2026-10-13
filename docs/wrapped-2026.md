@@ -105,7 +105,10 @@ County balls are left out of the Wrapped altogether.
     Olympics), the rarest, the ones nobody has yet, and the secret ones, counted but never named
     or shown.
 14. **Server life:** members in and out, boosts, new emoji, the Halloween icons.
-15. **Thank you** over the avatar wall.
+15. **Thank you** over the avatar wall: as the camera pulls back from one face, "Every square in this flag is
+    one of you"; then THANK YOU on the chorus, and the kind things people said to each other this year, one
+    at a time (good morning and goodnight, welcome, thank you and "love you", and the longest the chat went
+    quiet), before the goodbye.
 
 ## Award catalogue
 
@@ -143,7 +146,7 @@ Last year's 16 stay. New for 2026:
 | Low-key Hardest Worker | most cases and tickets per message sent (50 jobs at least) | `mod_logs.json`, `messages` |
 | Ticket Hero | most tickets worked (spoke in, and didn't open) | `mod_logs.json` |
 | Night Shift | most mod cases between midnight and 6am | `mod_logs.json` |
-| The Shipwright | updates to HMS Victory this year (every branch), and the messages it sent | `git`, `messages` |
+| The Shipwright | updates to HMS Victory this year (every branch), and the messages it sent; the runners-up are the other people who've worked on the bot, listed as `shipwright_crew` (member ids, in order) in the picks file | `git`, `messages` |
 | Server Architect | changes to channels, permissions, roles and settings, by hand and through HMS (its reasonless changes are the developer's scripts; Big Brother, raid lockdowns and the Halloween icons don't count) | `audit_log` |
 | Kart Champion | most wins, plus fastest lap per track | `kart_results` |
 | Rival of the Year | most PvP games against one person (bots excluded) | `pvp_results` |
