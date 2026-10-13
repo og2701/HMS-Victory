@@ -632,7 +632,17 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, _lottery_tick, IntervalTrigger(minutes=2), args=[client],
                      id="lottery_tick_job", name="Lottery tick (reminders + sellout)")
 
+    # DISBOARD bump reminder: checks every minute if 2 hours have passed since the last bump
+    # and reminds the @bumpity bumps role in #bot-spam.
+    _add_process_job(scheduler, _bump_reminder_tick, IntervalTrigger(minutes=1), args=[client],
+                     id="bump_reminder_job", name="DISBOARD Bump Reminder")
+
     _register_pending_scheduled_predictions(client, scheduler)
+
+
+async def _bump_reminder_tick(client):
+    from lib.features.ukp_rewards import check_bump_reminder
+    await check_bump_reminder(client)
 
 
 async def _lottery_tick(client):

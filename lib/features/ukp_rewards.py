@@ -202,6 +202,10 @@ async def handle_bump_reward(client, message):
     if store.get("last_msg_id") == message.id:
         return
     store["last_msg_id"] = message.id
+    now_ts = int(time.time())
+    store["last_bump_ts"] = now_ts
+    store["next_reminder_ts"] = now_ts + 7200  # 2 hours
+    store["reminder_sent"] = False
     save_json_file(config.BUMP_REWARD_FILE, store)
 
     amount = getattr(config, "BUMP_REWARD", 50)
@@ -213,14 +217,44 @@ async def handle_bump_reward(client, message):
     except Exception:
         pass
     try:
-        await message.channel.send(
+        target_channel = client.get_channel(config.CHANNELS.BOT_SPAM) or message.channel
+        await target_channel.send(
             f"\U0001F4E3 <@{bumper.id}> earned **{amount:,} UKPence** for bumping the server - "
-            "thanks for the support!",
+            "thanks for the support! Next bump ready <t:" + str(now_ts + 7200) + ":R>.",
             allowed_mentions=discord.AllowedMentions(users=True),
-            delete_after=600,
         )
     except Exception:
         log.debug("bump reward message failed", exc_info=True)
+
+
+async def check_bump_reminder(client):
+    """Check if 2 hours have passed since the last DISBOARD bump and ping @bumpity bumps in bot-spam."""
+    store = load_json_file(config.BUMP_REWARD_FILE) or {}
+    next_ts = store.get("next_reminder_ts")
+    if not next_ts or store.get("reminder_sent", False):
+        return
+
+    now_ts = int(time.time())
+    if now_ts >= next_ts:
+        store["reminder_sent"] = True
+        save_json_file(config.BUMP_REWARD_FILE, store)
+        try:
+            bot_spam = client.get_channel(config.CHANNELS.BOT_SPAM)
+            if bot_spam:
+                role_id = getattr(config.ROLES, "BUMPITY_BUMPS", 1215939975686918174)
+                embed = discord.Embed(
+                    title="It's time to bump!",
+                    description="Bump us on Disboard by using </bump:947088344167366698> in <#" + str(config.CHANNELS.BOT_SPAM) + ">!",
+                    color=discord.Color.gold(),
+                )
+                embed.set_footer(text="Earn 50 UKPence for bumping!")
+                await bot_spam.send(
+                    content=f"<@&{role_id}>",
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(roles=True),
+                )
+        except Exception:
+            log.exception("Failed to send bump reminder notification")
 
 
 # ---------------------------------------------------------------------------
