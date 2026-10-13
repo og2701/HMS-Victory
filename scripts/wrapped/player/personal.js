@@ -111,7 +111,9 @@ function card(at = 0) {
       tile("BEST STREAK", h("div.pval", days(ME.streak).toUpperCase())),
       ...fill),
     h("div.pfoot", CHIPS.length ? CHIPS.slice(0, 3).map(a => h("span.chip", a.toUpperCase())) :
-      h("div.small", ME.hof ? `${ME.hof} messages in the Hall of Fame` : `${days(ME.days)} you showed up`)));
+      // the Hall of Fame line, unless their persona already says it
+      h("div.small", ME.hof && !/hall of fame/i.test(ME.persona.title + ME.persona.line)
+        ? `${ME.hof} messages in the Hall of Fame` : `${days(ME.days)} you showed up`)));
 }
 
 // ---------------------------------------------------------------- the scenes
