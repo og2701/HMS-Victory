@@ -493,7 +493,13 @@ def record_interaction(interaction):
 
 def audit_row(entry):
     """The one row an audit entry produces, shared by the live hook and the backfill."""
-    target = getattr(entry, "target", None)
+    try:
+        target = getattr(entry, "target", None)
+    except Exception:
+        # discord.py resolves the target lazily and can raise on an entry it can't place
+        # (an int(None) seen in October 2026), which took the whole restart catch-up down
+        # with it. The row without its target beats no row.
+        target = None
     # entry.changes is an AuditLogChanges holding two AuditLogDiffs, not a list of
     # changes; each diff iterates as (attribute, value) pairs.
     changes = {}

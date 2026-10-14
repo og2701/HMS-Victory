@@ -149,6 +149,19 @@ class TestAuditAndPolls(ChronicleTestCase):
         self.assertEqual(row[:5], ("member_role_update", 100, 200, "SimpleNamespace", "spam"))
         self.assertIn('"name": "muted"'.replace(" ", ""), row[5].replace(" ", ""))
 
+    def test_audit_entry_whose_target_raises_is_still_kept(self):
+        class Entry(SimpleNamespace):
+            @property
+            def target(self):
+                return int(None)
+        entry = Entry(
+            id=557, guild=SimpleNamespace(id=1), action=SimpleNamespace(name="role_update"),
+            user=SimpleNamespace(id=100), reason=None,
+            changes=SimpleNamespace(before=_Diff(), after=_Diff()), extra=None,
+            created_at=datetime(2026, 6, 1, 12, tzinfo=timezone.utc))
+        self.write([recorder.audit_row(entry)])
+        self.assertEqual(ChronicleDB.fetch_one("SELECT target_id FROM audit_log")[0], None)
+
     def test_audit_entries_dedupe_on_rerun(self):
         entry = SimpleNamespace(
             id=556, guild=SimpleNamespace(id=1), action=SimpleNamespace(name="kick"),
