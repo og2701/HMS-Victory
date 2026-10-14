@@ -151,6 +151,8 @@ def _submit_guess(uid, date_str, word, guess):
         p["done"] = True
     save_json_file(config.WORDLE_STATE_FILE, state)
     _log_result(uid, date_str, p)
+    from lib.economy import activity_badges
+    activity_badges.all_rounder(uid, date_str)
     return "ok", None, p
 
 
@@ -390,6 +392,8 @@ def _pay_solve(client, uid: int, date, p) -> int | None:
         return None
     guess_count = len(p["guesses"])
     _record_solve_guesses(uid, guess_count)
+    from lib.economy import activity_badges
+    activity_badges.wordle_solved(uid, guess_count, date.isoformat())
     consecutive_1g = _get_consecutive_first_try(uid)
     if guess_count == 1 and consecutive_1g >= 2:
         # 2+ consecutive 1-guess solves: 100% anti-cheat tax

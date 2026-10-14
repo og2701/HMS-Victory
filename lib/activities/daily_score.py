@@ -377,6 +377,8 @@ class ScoreGame:
                 extra = self.after_run(uid, iso, played)
             except Exception:
                 log.error("couldn't count a %s run's extras for %s", self.key, uid, exc_info=True)
+        from lib.economy import activity_badges
+        activity_badges.daily_run(uid, self.key, iso, played)
         return self.state(uid, date), {"height": score, "earned": earned, "newBest": new_best, "trimmed": trimmed, **extra}
 
     # ---- telling the channel -------------------------------------------------------------------

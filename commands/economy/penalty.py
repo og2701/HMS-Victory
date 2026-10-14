@@ -190,6 +190,8 @@ class PenaltyGame:
         self.last_dove = spot
         self.state = "over"
         self.outcome = "lose"
+        from lib.economy import activity_badges
+        activity_badges.penalty_saved(self.player_id, self.goals)
         return "save"
 
     def cash_out(self) -> int:

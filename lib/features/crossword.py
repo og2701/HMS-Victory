@@ -283,6 +283,8 @@ def _pay_finish(client, uid: int, date, p, puzzle) -> int | None:
         return None
     reward = reward_for(p, date)
     _run_solve_checks(client, uid, p, puzzle, reward)
+    from lib.economy import activity_badges
+    activity_badges.crossword_finished(uid, p, date.isoformat())
     # discretionary: this is a reward the server chooses to give, so it scales down when
     # bank reserves are low. Scaled here too only so the board can show what landed.
     from lib.economy.reserve_policy import scale_reward
@@ -322,9 +324,11 @@ def submit(uid, date_str, puzzle, entry_key: str, guess: str):
     if len(clean) != len(entry["answer"]):
         return "invalid", (f"**{entry['num']} {entry['dir'].title()}** needs "
                            f"{len(entry['answer'])} letters."), p
+    from lib.economy import activity_badges
     if clean != entry["answer"]:
         p["wrong"] = int(p.get("wrong", 0)) + 1
         _save_player(date_str, uid, p)
+        activity_badges.all_rounder(uid, date_str)
         return "wrong", f"**{clean}** isn't it. Try again.", p
 
     p["solved"] = sorted(set(p["solved"] + [entry_key]))
@@ -342,6 +346,7 @@ def submit(uid, date_str, puzzle, entry_key: str, guess: str):
             f"{e['num']} {e['dir'].title()}"
             for e in puzzle["entries"] if _key(e) in free)
         msg = f"✅ The crossings filled in **{names}** too."
+    activity_badges.all_rounder(uid, date_str)
     return "ok", msg, p
 
 

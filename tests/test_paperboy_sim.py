@@ -17,7 +17,10 @@ def test_the_bot_replays_runs_exactly_as_the_page_played_them():
         runs = json.load(f)
     assert len(runs) >= 9
     for v in runs:
-        assert S.replay(v["seed"], v["inputs"], v["maxSteps"], theme=v["theme"]) == v["result"], (v["seed"], v["theme"])
+        # (what a crash was into is the bot's own addition, for a badge: the page doesn't say)
+        out = S.replay(v["seed"], v["inputs"], v["maxSteps"], theme=v["theme"])
+        out.pop("crashedOn", None)
+        assert out == v["result"], (v["seed"], v["theme"])
 
 
 def test_inputs_that_arent_inputs_are_ignored():

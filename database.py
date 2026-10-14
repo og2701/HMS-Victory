@@ -1415,6 +1415,16 @@ def init_db():
             ('sky_no_stone_unturned', 'No Stone Unturned', 'Complete the Skyrim collection log', '📜', 'Gold'),
             # Paperboy's wardrobe (lib/activities/paperboy.py BADGE_FOR)
             ('paperboy_birkin', 'Arm Candy', 'Bought the Birkin for the paper round', '👜', 'Silver'),
+            # The activity's games (lib/economy/activity_badges.py)
+            ('kart_learner', 'Learner Plates', 'Finish your first UKP Kart race', '🔰', 'Bronze'),
+            ('kart_chequered', 'Chequered Flag', 'Win a UKP Kart race against at least one other person', '🏁', 'Bronze'),
+            ('kart_purple', 'Purple Patch', 'Set the fastest lap of a UKP Kart race', '🟣', 'Silver'),
+            ('kart_grand_slam', 'Grand Slam', 'Win a UKP Kart race on every track', '🏆', 'Silver'),
+            ('paperboy_dogs', 'Who Let the Dogs Out', 'Get knocked off your bike by a dog in Paperboy', '🐕', 'Bronze'),
+            ('countdown_nine', 'Nine-Letter Word', 'Find a nine-letter word in Countdown', '🔠', 'Gold'),
+            ('wordle_phew', 'Phew', 'Solve HMS Wordle on your sixth guess', '😮‍💨', 'Bronze'),
+            ('crossword_no_peeking', 'No Peeking', 'Finish the HMS Crossword without revealing a letter', '🙈', 'Bronze'),
+            ('all_rounder', 'All-Rounder', 'Play every daily game in one day: Wordle, the crossword, Climb, Spitfire and Paperboy', '🎯', 'Silver'),
             # (The cross-game secret badge is seeded from the encrypted blob below, not here.)
         ]
         for b_id, b_name, b_desc, b_icon, b_rarity in badges:

@@ -236,6 +236,8 @@ def _resolve(room: dict, rd: dict, now: float) -> None:
             r["points"] = points(r["word"])
             room["scores"][uid] = room["scores"].get(uid, 0) + r["points"]
     rd.update(phase="reveal", results=results, best=best, corner=best_words(rd["letters"]), until=now + REVEAL_SECONDS)
+    from lib.economy import activity_badges
+    activity_badges.countdown_round(results)
     rd.pop("piles", None)
 
 

@@ -406,6 +406,8 @@ def record_practice(uid: int, body: dict) -> str:
         DatabaseManager.execute(
             "INSERT INTO kart_results (race_id, slot, user_id, name, car, place, finish_time, best_lap, payout, left_early) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)", (rid, slot, user, name, car, place, t, lap))
+    from lib.economy import activity_badges
+    activity_badges.kart_practice(uid, any(user and t is not None for _s, user, _n, _c, _p, t, _l in rows))
     return rid
 
 
@@ -495,6 +497,8 @@ def _settle(room: dict, now: float) -> None:
     except Exception:
         log.warning("couldn't log kart room %s", room["id"], exc_info=True)
     _record(room)
+    from lib.economy import activity_badges
+    activity_badges.kart_race(room)
     _emit("over", room)
     live = _live.get(room["id"])
     if live:
@@ -667,6 +671,10 @@ MAX_MESSAGE = 4096            # bytes: a page's update for itself and up to seve
 EVENTS_PER_SECOND = 30        # item throws and hits a page may pass on
 MAX_WATCHERS = 50             # people watching one race who aren't in it
 MAX_THINGS = 64               # cones and the like on the road, kept for a watcher who arrives mid-race
+# what on the road can get a kart, the tracks it's on and where round the lap (as src/kart/track.ts has it): a page
+# saying its kart was got by one is believed only if the bot had that kart near there at the time
+OUCH = {"sheep": {"village": (0.545,)}}
+OUCH_NEAR = 40.0             # metres either side
 
 _live: dict[str, "Live"] = {}
 
@@ -677,6 +685,19 @@ def _later(coro) -> None:
         asyncio.get_running_loop().create_task(coro)
     except RuntimeError:
         coro.close()
+
+
+def _near_hazard(r: dict, uid: str, what: str) -> bool:
+    prog = r.get("prog", {}).get(uid)
+    if not isinstance(prog, (int, float)):
+        return False
+    lap = _track(r)["length"]
+    s = prog % lap
+    for f in OUCH[what].get(r.get("track"), ()):
+        d = abs(s - f * lap)
+        if min(d, lap - d) <= OUCH_NEAR:
+            return True
+    return False
 
 
 class Live:
@@ -694,6 +715,7 @@ class Live:
         self.watchers: dict[int, object] = {}
         # what's on the road (thrown cones, hubcaps in flight), so someone who starts watching mid-race sees it too
         self.things: dict[int, dict] = {}
+        self.ouched: dict[int, float] = {}
         grid_len = race_length(room) / _track(room)["laps"]
         for g in room["grid"]:
             if g["cpu"]:
@@ -811,6 +833,15 @@ class Live:
                     self.states[kid] = state
                     if len(state) > 6 and isinstance(state[6], (int, float)):
                         r["prog"][kid] = round(float(state[6]), 1)
+        elif kind == "ouch":
+            # something on the road got their kart (the page says what): believed only if it's a thing on this
+            # track and their kart was where it is, and no more than once a second
+            what = str(msg.get("what") or "")
+            if what in OUCH and r.get("track") in OUCH[what] and not r.get("over") and uid not in r["left"] \
+                    and now - self.ouched.get(uid, 0) >= 1.0 and _near_hazard(r, str(uid), what):
+                self.ouched[uid] = now
+                from lib.economy import activity_badges
+                activity_badges.kart_ouch(r, uid, what)
         elif kind == "away":
             if msg.get("away"):
                 self.away.add(uid)

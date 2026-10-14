@@ -272,6 +272,7 @@ class Run:
     def __init__(self, seed: str, theme: str = "drizzle"):
         self.street = Street(seed, theme)
         self.stats = {k: 0 for k in STATS}
+        self.crashed_on = None              # what the run ended on, if it crashed
         self.street.ensure(200000)
         self.step = 0
         self.dist = 0
@@ -432,6 +433,7 @@ class Run:
                 self.stats["saves"] += 1
                 return
             self.over = True
+            self.crashed_on = o["kind"]
             return
 
     def _apply(self, code: int) -> None:
@@ -474,4 +476,5 @@ def replay(seed: str, inputs: list, max_steps: int, day: str | None = None, them
             run.input(todo[i][1])
             i += 1
         run.tick()
-    return {"score": run.score, "steps": run.step, "papers": run.papers, "crashed": run.over, "stats": dict(run.stats)}
+    return {"score": run.score, "steps": run.step, "papers": run.papers, "crashed": run.over, "stats": dict(run.stats),
+            "crashedOn": getattr(run, "crashed_on", None)}
