@@ -101,6 +101,8 @@ async def check_onboarding_selection(member, newly_assigned):
     Runs as a task rather than inline: working out who granted the roles means waiting for
     the audit log to catch up, and on_member_update shouldn't sit on that.
     """
+    if not ONBOARDING_WATCH_ENABLED:
+        return
     touched = newly_assigned & set(ONBOARDING_ROLES)
     if not touched:
         return

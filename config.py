@@ -864,6 +864,7 @@ FUNNEL_NEW_ACCOUNT_DAYS = 30                       # what counts as low-tenure
 ONBOARDING_INSTANT_SECONDS = 3
 ONBOARDING_INSTANT_MIN_ROLES = 3                   # one nation + one status is the normal path
 ONBOARDING_FLAG_TTL_HOURS = 6                      # one alert per member per window
+ONBOARDING_WATCH_ENABLED = False                   # paused 2026-10-14 by Oggers; True to report again
 
 
 # --- Mute Notifications ---
