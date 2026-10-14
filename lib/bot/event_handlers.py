@@ -281,6 +281,10 @@ async def on_member_update(before, after):
     if after_dm and not before_dm:
         asyncio.create_task(_report_unusual_dm_activity(after))
 
+    # Spayed put on or taken off by hand: keep ball_spays in step.
+    from lib.features.ball_spay import on_member_update as ball_spay_on_update
+    asyncio.create_task(ball_spay_on_update(before, after))
+
     newly_assigned_roles = {r.id for r in after.roles} - {r.id for r in before.roles}
     if newly_assigned_roles:
         asyncio.create_task(check_onboarding_selection(after, newly_assigned_roles))
@@ -1640,6 +1644,9 @@ async def on_member_join(member):
             register_join(member)
         except Exception:
             logger.debug("join-watch registration failed", exc_info=True)
+        # Left while spayed: the role goes straight back on (before the anti-raid return).
+        from lib.features.ball_spay import on_member_join as ball_spay_on_join
+        asyncio.create_task(ball_spay_on_join(member))
         role = member.guild.get_role(ROLES.MEMBER)
         anti_raid_outcome = await handle_new_member_roles(member, role)
         if anti_raid_outcome.protection_active:

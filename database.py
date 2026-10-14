@@ -874,6 +874,26 @@ def init_db():
                 seconds       REAL
             )
         ''')
+        # Everyone holding the Spayed role, and why (lib/features/ball_spay.py). Rows outlive
+        # a leave so the role goes straight back on a rejoin; 'auto' rows are the ones the
+        # bot may lift by itself, 'staff' ones were put on by hand and only come off by hand.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ball_spays (
+                user_id  TEXT PRIMARY KEY,
+                source   TEXT NOT NULL,
+                ts       INTEGER NOT NULL,
+                catches  INTEGER,
+                messages INTEGER
+            )
+        ''')
+        # Staff said this member is fine: never spayed automatically again.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS ball_spay_pardons (
+                user_id TEXT PRIMARY KEY,
+                ts      INTEGER NOT NULL,
+                by_id   TEXT
+            )
+        ''')
         # Anti-alt / anti-farm / anti-laundering detection (see lib/core/detection.py).
         #
         # Every observation lands here, not only the ones that tripped a rule: nearly every

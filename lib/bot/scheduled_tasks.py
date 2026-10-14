@@ -637,6 +637,13 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, _bump_reminder_tick, IntervalTrigger(minutes=1), args=[client],
                      id="bump_reminder_job", name="DISBOARD Bump Reminder")
 
+    # Spayed: bot-spam taken off BallsDex farmers, and given back once they chat. It only
+    # changes what's due, so the extra run a restart brings is harmless.
+    from lib.features.ball_spay import sweep as ball_spay_sweep
+    _add_process_job(scheduler, ball_spay_sweep, IntervalTrigger(hours=3), args=[client],
+                     id="ball_spay_sweep", name="Spay BallsDex farmers",
+                     next_run_time=discord.utils.utcnow() + timedelta(minutes=3))
+
     _register_pending_scheduled_predictions(client, scheduler)
 
 

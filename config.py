@@ -456,6 +456,18 @@ COUNTY_DEX_IMAGE_ENABLED = True    # /county-dex renders the full-roster graphic
 COUNTY_DEBUG_ANNOUNCE = True       # testing: after a spawn, post the answer (spoilered) in a
                                    # follow-up message - MUST be False for go-live
 COUNTY_STAT_BONUS_RANGE = 20       # each caught instance rolls +/- this % on Clout and Grit
+# --- Spayed (lib/features/ball_spay.py): bot-spam taken off people who only come for BallsDex.
+# Someone is spayed with BALL_SPAY_MIN_CATCHES+ catches in the window and fewer than
+# BALL_SPAY_MAX_MESSAGES counted messages anywhere else (counted the way XP is: one per two
+# minutes, 2+ characters or media). The role comes off by itself after BALL_SPAY_LIFT_MESSAGES
+# counted messages on BALL_SPAY_LIFT_DAYS different days since it went on.
+BALL_SPAY_ENABLED = True
+BALL_SPAY_LIVE = True              # False = the police station gets "would spay" and no roles move
+BALL_SPAY_WINDOW_DAYS = 30
+BALL_SPAY_MIN_CATCHES = 20
+BALL_SPAY_MAX_MESSAGES = 10
+BALL_SPAY_LIFT_MESSAGES = 30
+BALL_SPAY_LIFT_DAYS = 5
 # Fletcher bot posts the same message-link summary HMS does; auto-delete its duplicate.
 FLETCHER_DEDUPE_ENABLED = True
 FLETCHER_BOT_ID = None            # set to Fletcher's user id for an exact match (optional)
@@ -676,6 +688,7 @@ class ROLES:
     SERVER_BOOSTER = 959650957325635707
     VC_BAN = 1394034697738260500
     BALL_INSPECTOR = 1197712388493934692
+    SPAYED = 1427763687871217778          # was "ball ban": denies View Channel on bot-spam
     DONT_DM_WHEN_MESSAGE_BLOCKED = 1345805710000128000
     MEMBER = 1142491622563643442
     VIDEO_BAN = 1405300412352954388

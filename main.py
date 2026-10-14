@@ -113,6 +113,9 @@ class AClient(discord.Client):
             # before the last restart still works.
             from lib.features.voice_notes import ToggleButton, TranscribeButton
             self.add_dynamic_items(TranscribeButton, ToggleButton)
+            # Pardon on the police station's Spayed cards.
+            from lib.features.ball_spay import PardonButton
+            self.add_dynamic_items(PardonButton)
             self.add_dynamic_items(MassBanButton, BanClusterButton,
                                    QuarantineClusterButton, WatchAllButton, DismissButton,
                                    # Appeal buttons live in DMs indefinitely, so they must
