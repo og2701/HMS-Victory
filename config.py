@@ -464,7 +464,7 @@ COUNTY_STAT_BONUS_RANGE = 20       # each caught instance rolls +/- this % on Cl
 BALL_SPAY_ENABLED = True
 BALL_SPAY_LIVE = True              # False = the police station gets "would spay" and no roles move
 BALL_SPAY_WINDOW_DAYS = 30
-BALL_SPAY_MIN_CATCHES = 20
+BALL_SPAY_MIN_CATCHES = 10
 BALL_SPAY_MAX_MESSAGES = 10
 BALL_SPAY_LIFT_MESSAGES = 30
 BALL_SPAY_LIFT_DAYS = 5

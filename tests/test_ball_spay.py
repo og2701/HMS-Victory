@@ -79,7 +79,7 @@ class ContributionTest(unittest.TestCase):
 class PickTest(unittest.TestCase):
     def test_only_eligible_quiet_catchers_over_the_line(self):
         from collections import Counter
-        catches = Counter({1: 100, 2: 50, 3: 40, 4: 19, 5: 30})
+        catches = Counter({1: 100, 2: 50, 3: 40, 4: 9, 5: 30})
         recent = {1: (2, 1), 2: (10, 4), 3: (0, 0), 5: (0, 0)}
         picked = ball_spay.pick_spays(catches, recent, eligible={1, 2, 3, 4})
         # 2 talks enough, 4 is under the catch line, 5 isn't eligible (staff, pardoned...).
