@@ -16,6 +16,10 @@ Messages elsewhere are counted the way XP is (one every two minutes, at least tw
 characters or some media, nothing in bot-spam or its threads), so a burst of filler in
 #general barely moves the number.
 
+Spaying happens the moment BallsDex posts the catch that takes someone over the line
+(on_catch). The three-hourly sweep does the rest: lifting it from people who have started
+chatting, putting it back after a rejoin the bot missed, and anyone a restart skipped.
+
 ball_spays holds everyone wearing the role, whoever put it on, so leaving and rejoining
 brings it straight back. Only 'auto' rows are ever lifted by the bot. Staff taking an auto
 spay off by hand counts as a pardon, the same as the button, so the next sweep doesn't put
@@ -100,6 +104,18 @@ def catches_since(conn, since):
     return counts
 
 
+def catches_by(conn, user_id, since, skip_message_id=None):
+    """One member's catches since ``since``, leaving out ``skip_message_id``."""
+    n = 0
+    for (content,) in conn.execute(
+            "SELECT content FROM messages WHERE user_id = ? AND ts >= ? AND message_id != ? "
+            "AND content LIKE ?",
+            (USERS.COUNTRYBALL_BOT, since, skip_message_id or 0, f"%{user_id}>%")):
+        if catcher_of(content) == user_id:
+            n += 1
+    return n
+
+
 def contribution_since(conn, user_id, since):
     rows = conn.execute(
         "SELECT ts, local_day, msg_type, content, n_attachments, stickers, channel_id, parent_id "
@@ -126,6 +142,22 @@ def gather(now, lift_from, path=None):
     finally:
         conn.close()
     return catches, recent, lifts
+
+
+def check_one(user_id, now, catch_message_id, path=None):
+    """(catches, messages) in the window for one catcher, counting the catch just posted.
+
+    That catch is left out of the read and added back on, because the recorder queues
+    its writes and it may not be on disk yet; this way it counts once either way.
+    """
+    since = now - _cfg("BALL_SPAY_WINDOW_DAYS", 30) * 86400
+    conn = _connect(path)
+    try:
+        n = catches_by(conn, user_id, since, catch_message_id) + 1
+        msgs, _ = contribution_since(conn, user_id, since)
+    finally:
+        conn.close()
+    return n, msgs
 
 
 def pick_spays(catches, recent, eligible):
@@ -215,7 +247,7 @@ async def _remove_role(member, role, reason):
 
 async def sweep(client):
     """Spay the farmers, lift the reformed, and keep ball_spays in step with the role."""
-    if not _cfg("BALL_SPAY_ENABLED", False) or _sweep_lock.locked():
+    if not _cfg("BALL_SPAY_ENABLED", False):
         return
     async with _sweep_lock:
         try:
@@ -283,6 +315,39 @@ async def _sweep(client):
     if spayed or lifted:
         logger.info("Spayed sweep: %d spayed, %d lifted (live=%s)", len(spayed), len(lifted), live)
     await _report(client, spayed, lifted, live)
+
+
+async def on_catch(client, message):
+    """Spay a catcher the moment the catch that takes them over the line is posted."""
+    # Shadow mode leaves this to the sweep, or it would post "would spay" on every catch.
+    if not _cfg("BALL_SPAY_ENABLED", False) or not _cfg("BALL_SPAY_LIVE", False):
+        return
+    uid = catcher_of(message.content)
+    guild = message.guild
+    if uid is None or guild is None or guild.id != GUILD_ID:
+        return
+    role = guild.get_role(ROLES.SPAYED)
+    member = guild.get_member(uid)
+    if role is None or member is None or role in member.roles or _exempt(member):
+        return
+    try:
+        async with _sweep_lock:
+            if _row(uid) or uid in _pardoned():
+                return
+            now = int(time.time())
+            n, msgs = await asyncio.to_thread(check_one, uid, now, message.id)
+            if n < _cfg("BALL_SPAY_MIN_CATCHES", 20) or msgs >= _cfg("BALL_SPAY_MAX_MESSAGES", 10):
+                return
+            window = _cfg("BALL_SPAY_WINDOW_DAYS", 30)
+            _record(uid, "auto", now, n, msgs)
+            if not await _add_role(member, role, f"Spayed: {n} ball catches and {msgs} "
+                                                 f"messages elsewhere in {window} days"):
+                _forget(uid)
+                return
+        logger.info("Spayed %s on catch %d (%d messages elsewhere)", uid, n, msgs)
+        await _report(client, [(member, n, msgs)], [], True)
+    except Exception:
+        logger.error("Spayed: catch check failed for %s", uid, exc_info=True)
 
 
 # ----------------------------------------------------------------- police station cards

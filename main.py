@@ -388,6 +388,9 @@ class AClient(discord.Client):
 
             text_clean = " ".join(full_text.lower().split())
             logger.info("Ballsdex message received in channel %s: %r", message.channel.id, text_clean[:200])
+            # A catch: Spayed straight away if it takes the catcher over the line.
+            from lib.features.ball_spay import on_catch
+            asyncio.create_task(on_catch(self, message))
             
             # Check for spawn message trigger or image attachment / button spawn
             if ("countryball" in text_clean or "catch me" in text_clean) and ("appeared" in text_clean or "spawned" in text_clean or "wild" in text_clean or message.components):

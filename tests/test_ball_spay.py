@@ -22,6 +22,12 @@ SPAM = CHANNELS.BOT_SPAM
 GENERAL = CHANNELS.GENERAL
 NOW = int(datetime(2026, 10, 14, 12, tzinfo=timezone.utc).timestamp())
 
+# The tests pin their own rule, so tuning the live one in config doesn't break them.
+RULE = unittest.mock.patch.multiple(
+    ball_spay.config, BALL_SPAY_ENABLED=True, BALL_SPAY_LIVE=True, BALL_SPAY_WINDOW_DAYS=30,
+    BALL_SPAY_MIN_CATCHES=5, BALL_SPAY_MAX_MESSAGES=10, BALL_SPAY_LIFT_MESSAGES=30,
+    BALL_SPAY_LIFT_DAYS=5)
+
 
 def _catch(uid):
     return f"<@{uid}> You caught **Belize**! `(#76BD4B6, -8%/+1%)`"
@@ -76,10 +82,11 @@ class ContributionTest(unittest.TestCase):
         self.assertEqual(ball_spay.count_contribution(rows), (1, 1))
 
 
+@RULE
 class PickTest(unittest.TestCase):
     def test_only_eligible_quiet_catchers_over_the_line(self):
         from collections import Counter
-        catches = Counter({1: 100, 2: 50, 3: 40, 4: 9, 5: 30})
+        catches = Counter({1: 100, 2: 50, 3: 40, 4: 4, 5: 30})
         recent = {1: (2, 1), 2: (10, 4), 3: (0, 0), 5: (0, 0)}
         picked = ball_spay.pick_spays(catches, recent, eligible={1, 2, 3, 4})
         # 2 talks enough, 4 is under the catch line, 5 isn't eligible (staff, pardoned...).
@@ -113,12 +120,13 @@ class _Fixture(unittest.TestCase):
             database.DatabaseManager._connection.close()
             database.DatabaseManager._connection = None
 
-    def msg(self, uid, ts, content, channel=GENERAL, bot=False, day=None):
+    def msg(self, uid, ts, content, channel=GENERAL, bot=False, day=None, message_id=None):
         self._next_id += 1
         ChronicleDB.execute(
             "INSERT INTO messages (message_id, channel_id, user_id, is_bot, content, ts, "
             "local_day, msg_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'default')",
-            (self._next_id, channel, uid, int(bot), content, ts, day or f"d{ts // 86400}"))
+            (message_id or self._next_id, channel, uid, int(bot), content, ts,
+             day or f"d{ts // 86400}"))
 
     def catches(self, uid, n, ts=NOW - 86400):
         for i in range(n):
@@ -130,11 +138,12 @@ class _Fixture(unittest.TestCase):
             self.msg(uid, start + (i // per_day) * 86400 + (i % per_day) * 300, f"message {i}")
 
 
+@RULE
 class GatherTest(_Fixture):
     def test_reads_the_window_and_since_each_spay(self):
         self.catches(1, 25)
         self.catches(2, 25)
-        self.catches(3, 5)
+        self.catches(3, 4)
         self.catches(1, 50, ts=NOW - 40 * 86400)      # outside the window
         self.chat(2, 12, NOW - 5 * 86400)
         self.chat(9, 30, NOW - 10 * 86400, days=6)
@@ -196,6 +205,7 @@ class FakeChannel:
         self.sent.append(view or content)
 
 
+@RULE
 class SweepTest(_Fixture):
     def setUp(self):
         super().setUp()
@@ -262,6 +272,48 @@ class SweepTest(_Fixture):
         self.assertIsNone(ball_spay._row(1))
         self.assertEqual(len(self.police.sent), 1)
 
+    def catch_now(self, uid, message_id=999_999):
+        message = SimpleNamespace(id=message_id, content=_catch(uid), guild=self.guild)
+        with unittest.mock.patch.object(ball_spay.time, "time", return_value=NOW):
+            asyncio.run(ball_spay.on_catch(self.client, message))
+
+    def test_the_catch_that_crosses_the_line_spays_at_once(self):
+        member = self.guild.add(1)
+        self.catches(1, 4)
+        self.catch_now(1)
+        self.assertIn(self.guild.spayed, member.roles)
+        self.assertEqual(ball_spay._row(1)[0], "auto")
+        self.assertEqual(len(self.police.sent), 1)
+        self.catch_now(1, message_id=1_000_000)          # already spayed: nothing more
+        self.assertEqual(len(self.police.sent), 1)
+
+    def test_a_catch_already_on_disk_counts_once(self):
+        member = self.guild.add(1)
+        self.catches(1, 3)
+        self.msg(DEX, NOW - 60, _catch(1), channel=SPAM, bot=True, message_id=999_999)
+        self.catch_now(1)                                # 4 catches, not 5
+        self.assertNotIn(self.guild.spayed, member.roles)
+
+    def test_catches_by_chatters_and_staff_do_nothing(self):
+        chatter = self.guild.add(2)
+        staff = self.guild.add(3, roles=[self.guild.staff])
+        for uid in (2, 3):
+            self.catches(uid, 10)
+        self.chat(2, 15, NOW - 10 * 86400, days=5)
+        self.catch_now(2)
+        self.catch_now(3, message_id=1_000_001)
+        self.assertNotIn(self.guild.spayed, chatter.roles)
+        self.assertNotIn(self.guild.spayed, staff.roles)
+        self.assertEqual(self.police.sent, [])
+
+    def test_shadow_mode_leaves_catches_to_the_sweep(self):
+        member = self.guild.add(1)
+        self.catches(1, 10)
+        with unittest.mock.patch.object(ball_spay.config, "BALL_SPAY_LIVE", False):
+            self.catch_now(1)
+        self.assertNotIn(self.guild.spayed, member.roles)
+        self.assertEqual(self.police.sent, [])
+
     def test_rejoin_brings_the_role_back(self):
         ball_spay._record(1, "auto", NOW)
         member = self.guild.add(1)
@@ -285,6 +337,7 @@ class SweepTest(_Fixture):
         self.assertNotIn(1, ball_spay._pardoned())
 
 
+@RULE
 class CardTest(unittest.TestCase):
     def test_card_has_a_pardon_per_member_and_fits(self):
         async def build():
