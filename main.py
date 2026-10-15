@@ -700,6 +700,11 @@ class AClient(discord.Client):
     async def on_raw_message_edit(self, payload):
         if payload.cached_message is None:   # the cached path already logged this edit
             chronicle.record_raw_edit(payload)
+        # BallsDex posts each catch reply as a blank "thinking" message and edits the catch
+        # text in a moment later, so on_message only ever sees it empty: the catch is here.
+        if getattr(payload.message.author, "id", None) == USERS.COUNTRYBALL_BOT:
+            from lib.features.ball_spay import on_catch
+            asyncio.create_task(on_catch(self, payload.message))
         # Grow-a-Tree usually EDITS the tree message in place when someone waters (instead of
         # posting a new one), and that old message is often out of the cache - so use the RAW
         # edit event (fires regardless of cache) and fetch the current message. Dedup is by
