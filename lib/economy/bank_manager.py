@@ -61,6 +61,7 @@ class BankManager:
             amount if "Davy Jones' Locker" in description else 0,
             amount if "Plinko" in description else 0,
             amount if "Baccarat" in description else 0,
+            amount if "Bank Job" in description else 0,
         )
 
     @staticmethod
@@ -100,6 +101,7 @@ class BankManager:
                     total_pennyfalls_in = total_pennyfalls_in + ?,
                     total_plinko_in = total_plinko_in + ?,
                     total_baccarat_in = total_baccarat_in + ?,
+                    total_heist_in = total_heist_in + ?,
                     total_tax_collected = total_tax_collected + ?, last_updated = ?
                 WHERE id = 1
             ''', (new_balance, amount, *game_amounts, tax_add, now))
@@ -144,6 +146,7 @@ class BankManager:
                 total_pennyfalls_out = total_pennyfalls_out + ?,
                 total_plinko_out = total_plinko_out + ?,
                 total_baccarat_out = total_baccarat_out + ?,
+                total_heist_out = total_heist_out + ?,
                 last_updated = ?
             WHERE id = 1
         ''', (new_balance, *game_amounts, now))
@@ -521,23 +524,25 @@ class BankManager:
                 "total_glass_in, total_glass_out, "
                 "total_pennyfalls_in, total_pennyfalls_out, "
                 "total_plinko_in, total_plinko_out, "
-                "total_baccarat_in, total_baccarat_out")
+                "total_baccarat_in, total_baccarat_out, "
+                "total_heist_in, total_heist_out")
         result = DatabaseManager.fetch_one(f"SELECT {cols} FROM bank WHERE id = 1")
         if result:
             (tax, bj_in, bj_out, hl_in, hl_out, sl_in, sl_out,
              vp_in, vp_out, rd_in, rd_out, tcp_in, tcp_out, ro_in, ro_out,
              mi_in, mi_out, pen_in, pen_out, ch_in, ch_out, bl_in, bl_out, da_in, da_out,
-             gl_in, gl_out, pf_in, pf_out, pl_in, pl_out, ba_in, ba_out) = result
+             gl_in, gl_out, pf_in, pf_out, pl_in, pl_out, ba_in, ba_out, he_in, he_out) = result
         else:
             tax = bj_in = bj_out = hl_in = hl_out = sl_in = sl_out = 0
             vp_in = vp_out = rd_in = rd_out = tcp_in = tcp_out = ro_in = ro_out = 0
             mi_in = mi_out = pen_in = pen_out = ch_in = ch_out = bl_in = bl_out = 0
             da_in = da_out = gl_in = gl_out = pf_in = pf_out = pl_in = pl_out = ba_in = ba_out = 0
+            he_in = he_out = 0
 
         casino_in = (bj_in + hl_in + sl_in + vp_in + rd_in + tcp_in + ro_in + mi_in
-                     + pen_in + ch_in + bl_in + da_in + gl_in + pf_in + pl_in + ba_in)
+                     + pen_in + ch_in + bl_in + da_in + gl_in + pf_in + pl_in + ba_in + he_in)
         casino_out = (bj_out + hl_out + sl_out + vp_out + rd_out + tcp_out + ro_out + mi_out
-                      + pen_out + ch_out + bl_out + da_out + gl_out + pf_out + pl_out + ba_out)
+                      + pen_out + ch_out + bl_out + da_out + gl_out + pf_out + pl_out + ba_out + he_out)
         return {
             "tax_collected": tax,
             "blackjack_in": bj_in, "blackjack_out": bj_out, "blackjack_net": bj_in - bj_out,
@@ -556,6 +561,7 @@ class BankManager:
             "pennyfalls_in": pf_in, "pennyfalls_out": pf_out, "pennyfalls_net": pf_in - pf_out,
             "plinko_in": pl_in, "plinko_out": pl_out, "plinko_net": pl_in - pl_out,
             "baccarat_in": ba_in, "baccarat_out": ba_out, "baccarat_net": ba_in - ba_out,
+            "heist_in": he_in, "heist_out": he_out, "heist_net": he_in - he_out,
             "casino_in": casino_in, "casino_out": casino_out, "casino_net": casino_in - casino_out,
         }
 

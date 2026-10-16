@@ -33,8 +33,11 @@ _CASINO = {
     "blackjack", "blockade", "casino", "chest", "darts", "glassbridge",
     "higher-lower", "mines",
     "poker", "red-dog", "roulette", "slots", "three-card-poker", "video-poker",
-    "penalty",
+    "penalty", "heist",
 }
+# Games that only exist in the activity (no slash command of their own): their names are the ones
+# lib/activities/server._gate is asked about, so the same tiers block them there.
+ACTIVITY_GAMES = {"heist"}
 _PVP = {"battleship", "connect4", "rps", "wager", "bets"}
 _MARKET = {"shop", "bond", "lottery"}
 # Handouts straight from the bank. Someone under review for moving money around

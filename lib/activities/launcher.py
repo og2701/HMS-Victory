@@ -256,6 +256,44 @@ class KartPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:pla
         await _launch(interaction, "kart")
 
 
+class HeistJoin(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:heist:(?P<rid>[0-9a-f]+)"):
+    """Join on a Bank Job crew's post: opens the activity on Bank Job with that crew picked out. Signing up
+    (and the buy-in, once it goes in) happens in there."""
+
+    def __init__(self, rid: str):
+        super().__init__(discord.ui.Button(label="Join", style=discord.ButtonStyle.success,
+                                           custom_id=f"ukplace:heist:{rid}"))
+        self.rid = rid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["rid"])
+
+    async def callback(self, interaction: discord.Interaction):
+        from lib.activities import heist
+        r = heist.room_info(self.rid)
+        if r is None or r.get("over") or r.get("state") != "lobby":
+            await interaction.response.send_message(
+                "That crew's already gone in, or broken up. Open Bank Job to get your own together.", ephemeral=True)
+        else:
+            await _launch(interaction, f"heist:{self.rid}")
+
+
+class HeistPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:play:heist"):
+    """Play Bank Job: opens the activity on Bank Job's crews."""
+
+    def __init__(self):
+        super().__init__(discord.ui.Button(label="Play Bank Job", style=discord.ButtonStyle.secondary,
+                                           custom_id="ukplace:play:heist"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction):
+        await _launch(interaction, "heist")
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
@@ -272,7 +310,8 @@ class Launcher(discord.Client):
     async def setup_hook(self):
         for game in GAMES:
             self.add_view(PlayView(game))
-        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay, KartJoin, KartWatch, KartPlay)
+        self.add_dynamic_items(CasinoPlay, CasinoWatch, DuelAccept, DuelPlay, CountdownJoin, CountdownPlay, KartJoin, KartWatch, KartPlay,
+                               HeistJoin, HeistPlay)
 
 
 async def _call(session, method: str, url: str, **kw):

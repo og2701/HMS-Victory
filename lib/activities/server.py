@@ -27,6 +27,11 @@ mapping's prefix isn't worth betting the launch on:
     GET  /countdown           Countdown: your room and the rooms you could join
     POST /countdown/open {stake}, /countdown/join|leave|start {id}
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
+    GET  /heist               Bank Job: your crew, the crews you could join, the targets, the heat and the board
+    POST /heist/open {stake, target, role}, /heist/join {id, role?}, /heist/role {id, role},
+         /heist/target {id, target, stake?}, /heist/leave|start {id}
+    GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach}, /heist/room/<id>/play {...the puzzle's move},
+         /heist/room/<id>/leg, /heist/room/<id>/leave
     GET  /kart                UKP Kart: your race room and the ones you could join
     POST /kart/open {stake, car, track?}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
@@ -44,7 +49,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, countdown, crossword_api, duel, kart, wordle_api
+from lib.activities import auth, casino, countdown, crossword_api, duel, heist, kart, wordle_api
 from lib.activities.daily_score import GAMES as SCORE_GAMES
 from lib.activities.daily_score import Refuse as ScoreRefuse
 
@@ -55,6 +60,7 @@ _sweeper: asyncio.Task | None = None
 _duel_sweeper: asyncio.Task | None = None
 _countdown_sweeper: asyncio.Task | None = None
 _kart_sweeper: asyncio.Task | None = None
+_heist_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -154,7 +160,7 @@ def _game_for(uid: int, body: dict) -> str:
     button, else the one the page names (an activity link's custom_id), else Home."""
     from lib.activities import launcher
     asked = launcher.take_requested(uid) or str(body.get("game") or "")
-    if asked in _STATE or asked in ("home", "duel", "countdown", "skyrim", "kart") or asked.startswith(("duel:", "countdown:", "kart:")):
+    if asked in _STATE or asked in ("home", "duel", "countdown", "skyrim", "kart", "heist") or asked.startswith(("duel:", "countdown:", "kart:", "heist:")):
         return asked
     if asked.startswith("casino:") and casino.adapter(asked[7:]) is not None:
         return asked
@@ -195,6 +201,8 @@ def _gate_name(game: str) -> str:
         return countdown.GAME
     if game == "kart" or game.startswith("kart:"):
         return kart.GAME
+    if game == "heist" or game.startswith("heist:"):
+        return heist.GAME
     if game.startswith("casino:"):
         a = casino.adapter(game[7:])
         return a.command if a else "casino"
@@ -229,6 +237,11 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
             return {"game": "home", "home": _home(client, uid, channel)}
         # opened from a race's Join button: pick that room out
         return {"game": "kart", "kart": {**_kart_lobby(client, uid), "focus": game[5:] or None}}
+    if game == "heist" or game.startswith("heist:"):
+        if not _casino_open(channel) or not _heist_allowed(uid):
+            return {"game": "home", "home": _home(client, uid, channel)}
+        # opened from a crew's Join button: pick that crew out
+        return {"game": "heist", "heist": {**_heist_lobby(client, uid), "focus": game[6:] or None}}
     if game == "skyrim":
         # the town (or the class pick), like GET /skyrim; it's the bot's own engine, so no gate beyond the usual
         from lib.activities.skyrim_web import common as sk_common, core as sk_core
@@ -246,7 +259,7 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
     return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel),
-            "kart": _kart_allowed(uid)}
+            "kart": _kart_allowed(uid), "heist": _heist_allowed(uid)}
 
 
 def _skyrim_card(uid: int, channel) -> dict | None:
@@ -826,6 +839,89 @@ async def kart_ws(request):
     return await kart.ws(request, session, lambda u: _name(client, u))
 
 
+# ---- Bank Job --------------------------------------------------------------------------------
+
+def _heist_allowed(uid) -> bool:
+    """Everyone once Bank Job's live (config.HEIST_LIVE), until then only its testers."""
+    return bool(getattr(config, "HEIST_LIVE", False)) or int(uid or 0) in getattr(config, "HEIST_TESTERS", [])
+
+
+def _heist_request(request):
+    """Like _duel_request, and turns away anyone Bank Job isn't open to yet."""
+    who, err = _duel_request(request, heist.GAME)
+    if err is None and not _heist_allowed(who["uid"]):
+        return None, _error("Bank Job isn't open yet.", 403)
+    return who, err
+
+
+def _heist_lobby(client, uid: int) -> dict:
+    from lib.economy.economy_manager import get_bb
+    return heist.lobby(uid, lambda u: _name(client, u), get_bb(uid))
+
+
+async def heist_lobby(request):
+    who, err = _heist_request(request)
+    if err is not None:
+        return err
+    return _json(_heist_lobby(request.app[CLIENT], who["uid"]))
+
+
+async def heist_action(request):
+    """open / join / role / target / leave / start; answers with the lobby as it now stands."""
+    who, err = _heist_request(request)
+    if err is not None:
+        return err
+    body, action, uid = await _duel_body(request), request.match_info["action"], who["uid"]
+    rid = str(body.get("id") or "")
+    try:
+        if action == "open":
+            heist.open_room(uid, body.get("stake"), str(body.get("target") or "post"), channel=who["ch"],
+                            role=body.get("role"))
+        elif action == "join":
+            heist.join(uid, rid, body.get("role"))
+        elif action == "role":
+            heist.pick_role(uid, rid, str(body.get("role") or ""))
+        elif action == "target":
+            heist.pick_target(uid, rid, str(body.get("target") or ""), body.get("stake"))
+        elif action == "leave":
+            heist.leave(uid, rid)
+        elif action == "start":
+            heist.start(uid, rid)
+        else:
+            return _error("That isn't a Bank Job action.", 404)
+    except heist.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("heist %s failed", action, exc_info=True)
+        return _error("Something went wrong. Your buy-in is safe; try again.", 500)
+    return _json(_heist_lobby(request.app[CLIENT], uid))
+
+
+async def heist_room(request):
+    who, err = _heist_request(request)
+    if err is not None:
+        return err
+    client = request.app[CLIENT]
+    rid, action, uid = request.match_info["id"], request.match_info.get("action"), who["uid"]
+    try:
+        if action == "vote":
+            heist.vote(uid, rid, str((await _duel_body(request)).get("approach") or ""))
+        elif action == "play":
+            heist.play(uid, rid, await _duel_body(request))
+        elif action == "leg":
+            heist.leg_it(uid, rid)
+        elif action == "leave":
+            heist.leave(uid, rid)
+        elif action is not None:
+            return _error("That isn't a Bank Job action.", 404)
+        return _json(heist.room(uid, rid, lambda u: _name(client, u)))
+    except heist.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("heist room %s %s failed", rid, action, exc_info=True)
+        return _error("Something went wrong. Your buy-in is safe; try again.", 500)
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -874,6 +970,10 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/countdown/room/{{id}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/{{action}}", countdown_action)
+        app.router.add_get(f"{prefix}/heist", heist_lobby)
+        app.router.add_get(f"{prefix}/heist/room/{{id}}", heist_room)
+        app.router.add_post(f"{prefix}/heist/room/{{id}}/{{action}}", heist_room)
+        app.router.add_post(f"{prefix}/heist/{{action}}", heist_action)
         app.router.add_get(f"{prefix}/kart", kart_lobby)
         app.router.add_get(f"{prefix}/kart/ws", kart_ws)
         app.router.add_get(f"{prefix}/kart/room/{{id}}", kart_room)
@@ -928,6 +1028,10 @@ async def start(client) -> bool:
     from lib.activities import kart_posts
     if kart_posts.on_event not in kart.listeners:
         kart.listeners.append(kart_posts.on_event)
+    heist.CLIENT = client
+    from lib.activities import heist_posts
+    if heist_posts.on_event not in heist.listeners:
+        heist.listeners.append(heist_posts.on_event)
     _runner = web.AppRunner(build_app(client), access_log=None)
     await _runner.setup()
     port = int(getattr(config, "ACTIVITIES_API_PORT", 8787))
@@ -941,8 +1045,9 @@ async def start(client) -> bool:
     global _duel_sweeper, _countdown_sweeper
     _duel_sweeper = asyncio.create_task(duel.run_sweeper())
     _countdown_sweeper = asyncio.create_task(countdown.run_sweeper())
-    global _kart_sweeper
+    global _kart_sweeper, _heist_sweeper
     _kart_sweeper = asyncio.create_task(kart.run_sweeper())
+    _heist_sweeper = asyncio.create_task(heist.run_sweeper())
     return True
 
 
@@ -952,11 +1057,11 @@ async def stop() -> None:
     if _sweeper is not None:
         _sweeper.cancel()
         _sweeper = None
-    global _duel_sweeper, _countdown_sweeper, _kart_sweeper
-    for task in (_duel_sweeper, _countdown_sweeper, _kart_sweeper):
+    global _duel_sweeper, _countdown_sweeper, _kart_sweeper, _heist_sweeper
+    for task in (_duel_sweeper, _countdown_sweeper, _kart_sweeper, _heist_sweeper):
         if task is not None:
             task.cancel()
-    _duel_sweeper = _countdown_sweeper = _kart_sweeper = None
+    _duel_sweeper = _countdown_sweeper = _kart_sweeper = _heist_sweeper = None
     try:
         await casino.sessions.close_all()
     except Exception:

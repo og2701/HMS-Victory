@@ -35,6 +35,7 @@ GAME_LABELS = {
     "pennyfalls": "Davy Jones' Locker",
     "plinko": "Plinko",
     "baccarat": "Baccarat",
+    "heist": "Bank Job",
 }
 
 

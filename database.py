@@ -402,6 +402,8 @@ def init_db():
                 total_plinko_out INTEGER NOT NULL DEFAULT 0,
                 total_baccarat_in INTEGER NOT NULL DEFAULT 0,
                 total_baccarat_out INTEGER NOT NULL DEFAULT 0,
+                total_heist_in INTEGER NOT NULL DEFAULT 0,
+                total_heist_out INTEGER NOT NULL DEFAULT 0,
                 last_updated INTEGER NOT NULL DEFAULT 0
             )
         ''')
@@ -425,7 +427,8 @@ def init_db():
                      "total_darts_in", "total_darts_out",
                      "total_glass_in", "total_glass_out",
                      "total_plinko_in", "total_plinko_out",
-                     "total_baccarat_in", "total_baccarat_out"):
+                     "total_baccarat_in", "total_baccarat_out",
+                     "total_heist_in", "total_heist_out"):
             try:
                 c.execute(f"ALTER TABLE bank ADD COLUMN {_col} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
@@ -1445,6 +1448,11 @@ def init_db():
             ('kart_grand_slam', 'Grand Slam', 'Win a UKP Kart race on every track', '🌍', 'Silver'),
             ('paperboy_dogs', 'Who Let the Dogs Out', 'Get knocked off your bike by a dog in Paperboy', '🐕', 'Bronze'),
             ('countdown_nine', 'Nine-Letter Word', 'Find a nine-letter word in Countdown', '🔠', 'Gold'),
+            ('heist_first', 'First Job', 'Get out of a staked Bank Job with something', '🧤', 'Bronze'),
+            ('heist_clean', 'Clean Getaway', 'Rob the Bank of HMS Victory with a crew of three or more, every one of you out at 1.5x or better', '🚐', 'Silver'),
+            ('heist_mastermind', 'Criminal Mastermind', 'Be in a staked Bank Job crew of four or more whose job scores 90% or better', '🧠', 'Silver'),
+            ('heist_greedy', 'Greedy Git', 'Get out of a staked Bank Job at 8x or more', '💰', 'Gold'),
+            ('heist_banged_up', 'Banged Up', 'Get nicked in five staked Bank Jobs', '🚔', 'Bronze'),
             ('wordle_phew', 'Phew', 'Solve HMS Wordle on your sixth guess', '😮‍💨', 'Bronze'),
             ('crossword_no_peeking', 'No Peeking', 'Finish the HMS Crossword without revealing a letter', '🙈', 'Bronze'),
             ('all_rounder', 'All-Rounder', 'Play every daily game in one day: Wordle, the crossword, Climb, Spitfire and Paperboy', '🗓️', 'Silver'),

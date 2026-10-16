@@ -842,6 +842,11 @@ async def graceful_shutdown(client, sig_name):
             n += sum(1 for t in _rt.values() if getattr(t, "status", None) in ("betting", "spinning"))
         except Exception:
             pass
+        try:  # Bank Jobs under way: their clocks pause over a restart, but a crew mid-vault would rather finish
+            from lib.activities import heist as _heist
+            n += _heist.active()
+        except Exception:
+            pass
         try:  # single-player casino clicks mid-redraw — wait so the result lands
             from lib.economy.casino_drain import in_flight_actions
             n += in_flight_actions()

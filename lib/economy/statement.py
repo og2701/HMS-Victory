@@ -46,7 +46,7 @@ _CATEGORIES = [
                                "three-card", "tcp", "hold'em", "holdem", "poker", "higher",
                                "lower", "baccarat", "casino", "glass bridge", "mines bet",
                                "mines cashout", "penalty bet", "penalty cashout", "penalty five",
-                               "chest bet", "chest cashout", "blockade run", "darts"]),
+                               "chest bet", "chest cashout", "blockade run", "darts", "bank job"]),
     ("Games", "\U0001f3ae", ["connect 4", "battleship", "rock paper scissors"]),
     ("Predictions", "\U0001f52e", ["prediction", "wager"]),
     ("Lottery", "\U0001f3ab", ["lottery"]),

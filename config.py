@@ -529,6 +529,18 @@ SKYRIM_AS_ACTIVITY = True
 KART_LIVE = True
 KART_TESTERS = [404634271861571584]  # oggers
 KART_MAX_STAKE = 5000
+# Bank Job (lib/activities/heist.py, docs/heist.md): a heist for up to six in the activity's Together games. Each
+# of the crew plays a role's puzzle, then legs it from the vault before the police come. False while it's being
+# tried out: only HEIST_TESTERS see its tile on the home screen or can get into it, there's no /heist and crews
+# aren't posted anywhere; True gives it /heist and a tile under Together for everyone.
+HEIST_LIVE = False
+HEIST_TESTERS = [404634271861571584]  # oggers
+HEIST_MAX_STAKE = 1000           # the most any buy-in can be (each target has its own limit under this)
+HEIST_EXPOSURE_PCT = 0.15        # a full crew clearing a tipped vault can take at most this share of what the
+                                 # bank holds above RESERVE_FLOOR; buy-in limits shrink to fit (free only at the floor)
+HEIST_CLEAN_BONUS_PCT = 0.10     # a clean job (3+ crew, all out at 1.5x or better) pays this share of the buy-in...
+HEIST_CLEAN_BONUS_MAX = 75       # ...up to this, once per person per UK day, scaled down when reserves are low
+HEIST_BONUS_MIN_DAYS = 14        # and only to members who joined at least this long ago
 # The typed commands that open the activity, and which game each one opens it on
 # (lib/activities/launcher.py): command name -> (game, description). Any other typed command
 # the app has is deleted on boot.
@@ -542,6 +554,7 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     **({"skyrim": ("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")} if SKYRIM_AS_ACTIVITY
        else {"test-skyrim": ("skyrim", "Play Skyrim in the activity (testing)")}),
     **({"kart": ("kart", "UKP Kart - race the server round the village for UKPence")} if KART_LIVE else {}),
+    **({"heist": ("heist", "Bank Job - get a crew together and rob the bank for UKPence")} if HEIST_LIVE else {}),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
