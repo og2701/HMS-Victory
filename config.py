@@ -72,6 +72,12 @@ VIDEOPOKER_IMAGE_ENABLED = True
 VIDEOPOKER_MIN_BET = 5
 VIDEOPOKER_MAX_BET = 10_000
 
+# --- Baccarat (Punto Banco), only in the activity (lib/activities/casino/games/baccarat.py): bet on Player,
+# Banker or a tie; Banker pays less 5% commission, a tie 8:1, so the max bet scales to reserves ---
+BACCARAT_ENABLED = True
+BACCARAT_MIN_BET = 10
+BACCARAT_MAX_BET = 10_000
+
 # --- Red Dog / In-Between (vs-the-house) ---
 REDDOG_ENABLED = True
 REDDOG_IMAGE_ENABLED = True

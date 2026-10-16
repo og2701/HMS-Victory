@@ -54,14 +54,14 @@ CASINO_GAMES = {
     "blackjack": "blackjack", "higher_lower": "higherlower", "red_dog": "reddog", "roulette": "roulette",
     "slots": "slots", "video_poker": "videopoker", "three_card_poker": "tcp", "mines": "mines", "chest": "chest",
     "penalty": "penalty", "darts": "darts", "glass_bridge": "glass", "blockade": "blockade",
-    "plinko": "plinko", "penny_falls": "pennyfalls",
+    "plinko": "plinko", "penny_falls": "pennyfalls", "baccarat": "baccarat",
 }
 PVP_GAMES = {"connect4": "connect4", "battleship": "battleship", "rps": "rps"}
 GAME_LABELS = {
     "blackjack": "blackjack", "higher_lower": "higher or lower", "red_dog": "red dog", "roulette": "roulette",
     "slots": "slots", "video_poker": "video poker", "three_card_poker": "three card poker", "mines": "mines",
     "chest": "chest", "penalty": "penalty shootout", "darts": "darts", "glass_bridge": "glass bridge",
-    "blockade": "blockade", "plinko": "plinko", "penny_falls": "penny falls (Davy Jones' Locker)",
+    "blockade": "blockade", "plinko": "plinko", "penny_falls": "penny falls (Davy Jones' Locker)", "baccarat": "baccarat",
     "connect4": "Connect 4", "battleship": "Battleship", "rps": "rock paper scissors",
 }
 # The casino_results.game value -> its label, for naming the game a single round was played on.
@@ -73,7 +73,7 @@ _CASINO_LABEL_BY_DB = {db: GAME_LABELS[key] for key, db in CASINO_GAMES.items()}
 # reconstructed history (just "blackjack"), so the patterns are loose on purpose.
 _CASINO_PATTERNS = ["%lackjack%", "%igher%ower%", "%slots%", "%oulette%", "%ed dog%", "reddog%", "%ideo%oker%",
                     "tcp%", "%hree card%", "%ines %", "mines%", "%hest %", "chest%", "%enalty%", "%arts %", "darts%",
-                    "%lass%ridge%", "glass%", "%lockade%", "Plinko%", "Davy Jones%"]
+                    "%lass%ridge%", "glass%", "%lockade%", "Plinko%", "Davy Jones%", "Baccarat%"]
 SOURCES: Dict[str, Tuple[str, List[str]]] = {
     "chatting": ("chatting", ["Chatting activity reward%"]),
     "top_chatter": ("top chatter of the day", ["Top chatter daily reward%"]),

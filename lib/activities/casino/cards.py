@@ -38,6 +38,7 @@ GREEN, RED, GOLD, EVEN = "#23A55A", "#F23F43", "#E9C46A", "#4E5058"
 FELT = "radial-gradient(ellipse 100% 90% at 50% 45%, #1e7351 0%, #12503a 55%, #0a2e22 100%)"
 SCENE = {
     "blackjack": FELT, "higherlower": FELT, "videopoker": FELT, "reddog": FELT, "tcp": FELT, "roulette": FELT,
+    "baccarat": FELT,
     "mines": "linear-gradient(180deg, #0a1530 0%, #102650 55%, #0b1b3a 100%)",
     "slots": "radial-gradient(ellipse 120% 80% at 50% 40%, #2a4fa8 0%, #1a3580 50%, #0f2257 100%)",
     "chest": "radial-gradient(ellipse 90% 80% at 50% 50%, #6a4618 0%, #2b1a0b 60%, #140c06 100%)",
@@ -193,6 +194,8 @@ def art(key: str) -> str:
         return f'<div class="row sm">{_card("4C")}{_card(None)}{_card("JH")}</div>'
     if key == "tcp":
         return f'<div class="row sm">{_card(None)}{_card(None)}{_card(None)}</div>'
+    if key == "baccarat":
+        return f'<div class="fan">{_card("4H", "l")}{_card("5S", "r")}</div>'
     if key == "roulette":
         return f'<div class="icon">{WHEEL}</div>'
     if key == "slots":
@@ -289,6 +292,11 @@ def board_html(key: str, v: dict) -> str:
         cap = "A pair" if v.get("pair") else "Consecutive" if v.get("consecutive") else f"Spread of {spread}" if spread is not None else ""
         return (f'<div class="stack"><div class="row">{_card(v.get("first"))}{_card(v.get("third"), "big")}{_card(v.get("second"))}</div>'
                 f'<div class="caption">{esc(cap)}</div></div>')
+    if key == "baccarat":
+        won = v.get("winner")
+        tag = lambda side: " · WINS" if won == side else " · TIE" if won == "tie" else ""
+        return (f'<div class="stack">{_who("BANKER" + tag("banker"), v.get("bankerTotal"))}<div class="row">{_cards(v.get("banker", []))}</div>'
+                f'{_who("PLAYER" + tag("player"), v.get("playerTotal"))}<div class="row">{_cards(v.get("player", []))}</div></div>')
     if key == "tcp":
         return (f'<div class="stack">{_who("DEALER", v.get("dealerHand"))}<div class="row">{_cards(v.get("dealer", []))}</div>'
                 f'{_who("PLAYER", v.get("playerHand"))}<div class="row">{_cards(v.get("player", []))}</div></div>')

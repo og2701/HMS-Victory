@@ -287,6 +287,8 @@ def test_every_game_has_a_final_board_and_a_summary():
         "penalty": {"goals": 2, "shots": 5},
         "pennyfalls": {"dropped": 40, "won": 31},
         "plinko": {"risk": "high", "path": [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1], "slot": 10, "mult": 8},
+        "baccarat": {"player": ["4H", "5S"], "banker": ["KC", "7D", "2S"], "playerTotal": 9, "bankerTotal": 9,
+                     "winner": "tie", "side": "tie"},
     }
     assert set(tables) == set(casino.ORDER)
     for key, table in tables.items():

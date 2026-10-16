@@ -293,7 +293,7 @@ def test_penny_falls_counts_in_the_banks_figures(em, pf):
     play("pennyfalls", "cashout", {"dropped": 5, "won": 4})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["pennyfalls_in"], ledger["pennyfalls_out"], ledger["pennyfalls_net"]) == (200, 190, 10)
-    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-2] == 100
+    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-3] == 100
 
 
 def test_the_bank_backfills_penny_falls_from_the_ledger_once(em):
@@ -473,7 +473,7 @@ def test_plinko_counts_in_the_banks_figures(em, monkeypatch):
     play("plinko", "deal", {"bet": 10, "risk": "low"})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["plinko_in"], ledger["plinko_out"], ledger["plinko_net"]) == (10, 80, -70)
-    assert BankManager._game_amounts(100, "Plinko bet")[-1] == 100
+    assert BankManager._game_amounts(100, "Plinko bet")[-2] == 100
     assert sum(BankManager._game_amounts(100, "Plinko win")) == 100
 
 
@@ -483,6 +483,101 @@ def test_plinko_only_posts_the_far_edges_as_big_wins():
     assert sessions.is_big(Round(100, 800, "8x"), "slots")
     assert sessions.is_big(Round(100, 2200, "22x"), "plinko")
     assert sessions.is_big(Round(1000, 8000, "8x"), "plinko")            # but a big enough sum still is
+
+
+# --- Baccarat -------------------------------------------------------------------------------
+def _shoe(monkeypatch, *cards):
+    """The next hand dealt from these cards, in the order they go out: P, B, P, B, then any thirds."""
+    from lib.activities.casino.games import baccarat as B
+    monkeypatch.setattr(B, "shoe", lambda: ["2C"] * 4 + list(reversed(cards)))
+
+
+def test_baccarat_a_natural_stands_and_pays_the_player_even_money(em, monkeypatch):
+    _shoe(monkeypatch, "4H", "3C", "5S", "4D")                         # Player 9, Banker 7: both stand
+    out = play("baccarat", "deal", {"bet": 100, "side": "player"})
+    t = out["table"]
+    assert (t["playerTotal"], t["bankerTotal"], t["winner"], t["natural"]) == (9, 7, "player", True)
+    assert t["order"] == ["player", "banker", "player", "banker"] and (t["payout"], t["net"]) == (200, 100)
+    assert em.get_bb(UID) == 10_100 and not out["inPlay"]
+    assert rows() == [("baccarat", 100, 200, "player player 9-7")]
+    assert reasons()[-2:] == ["Baccarat bet", "Baccarat win"]
+
+
+def test_baccarat_banker_wins_pay_less_five_per_cent(em, monkeypatch):
+    _shoe(monkeypatch, "KH", "4C", "TS", "4D", "7H", "3C")            # P 0 draws 7, B 8 draws? no: B is 8, a natural
+    out = play("baccarat", "deal", {"bet": 100, "side": "banker"})
+    t = out["table"]
+    assert (t["playerTotal"], t["bankerTotal"], t["winner"]) == (0, 8, "banker") and t["natural"]
+    assert (t["payout"], t["net"]) == (195, 95) and em.get_bb(UID) == 10_095
+
+
+def test_baccarat_a_tie_pays_eight_to_one_and_hands_other_bets_back(em, monkeypatch):
+    _shoe(monkeypatch, "4H", "KC", "4S", "8D")                         # 8 and 8: a tie on naturals
+    out = play("baccarat", "deal", {"bet": 100, "side": "tie"})
+    assert (out["table"]["winner"], out["table"]["payout"]) == ("tie", 900)
+    _shoe(monkeypatch, "4H", "KC", "4S", "8D")
+    out = play("baccarat", "deal", {"bet": 100, "side": "banker"})
+    assert (out["table"]["outcome"], out["table"]["payout"], out["table"]["net"]) == ("push", 100, 0)
+    assert em.get_bb(UID) == 10_000 + 800 and reasons()[-1] == "Baccarat push (bet returned)"
+
+
+def test_baccarat_draws_to_the_tableau(em, monkeypatch):
+    from lib.activities.casino.games import baccarat as B
+    # Player 5 draws a 8; Banker 3 stands on a Player third card of 8
+    _shoe(monkeypatch, "2H", "AC", "3S", "2D", "8H", "9C")
+    t = play("baccarat", "deal", {"bet": 10, "side": "player"})["table"]
+    assert t["player"] == ["2H", "3S", "8H"] and t["banker"] == ["AC", "2D"] and t["order"][-1] == "player"
+    # Player stands on 6; Banker on 5 then draws (the Player didn't draw)
+    _shoe(monkeypatch, "3H", "2C", "3S", "3D", "4H")
+    t = play("baccarat", "deal", {"bet": 10, "side": "player"})["table"]
+    assert t["player"] == ["3H", "3S"] and t["banker"] == ["2C", "3D", "4H"] and t["bankerTotal"] == 9
+    # the Banker's whole table
+    want = {3: set(range(10)) - {8}, 4: set(range(2, 8)), 5: set(range(4, 8)), 6: {6, 7}, 7: set()}
+    for b in range(10):
+        for third in range(10):
+            expect = True if b <= 2 else (third in want[b] if b <= 7 else False)
+            assert B.banker_draws(b, third) is expect, (b, third)
+        assert B.banker_draws(b, None) is (b <= 5)
+    assert [B.points(c) for c in ("AS", "9H", "TD", "JC", "QS", "KH")] == [1, 9, 0, 0, 0, 0]
+
+
+def test_baccarat_keeps_the_usual_edges():
+    """Worked out over an endless shoe: Banker about 1.06%, Player 1.24%, Tie 14.4% for the house."""
+    from lib.activities.casino.games import baccarat as B
+    odds = [4 / 13] + [1 / 13] * 9                                     # 0 (tens and faces), then 1 to 9
+    win = {"player": 0.0, "banker": 0.0, "tie": 0.0}
+    for p1 in range(10):
+        for b1 in range(10):
+            for p2 in range(10):
+                for b2 in range(10):
+                    w = odds[p1] * odds[b1] * odds[p2] * odds[b2]
+                    p, b = (p1 + p2) % 10, (b1 + b2) % 10
+                    if p >= 8 or b >= 8:
+                        win["player" if p > b else "banker" if b > p else "tie"] += w
+                        continue
+                    for p3 in (range(10) if p <= 5 else [None]):
+                        w3 = w * (odds[p3] if p3 is not None else 1)
+                        pp = (p + p3) % 10 if p3 is not None else p
+                        for b3 in (range(10) if B.banker_draws(b, p3) else [None]):
+                            w4 = w3 * (odds[b3] if b3 is not None else 1)
+                            bb = (b + b3) % 10 if b3 is not None else b
+                            win["player" if pp > bb else "banker" if bb > pp else "tie"] += w4
+    banker = win["banker"] * 0.95 - win["player"]
+    player = win["player"] - win["banker"]
+    tie = win["tie"] * B.TIE_PAYS - (1 - win["tie"])
+    assert -0.0110 < banker < -0.0100 and -0.0128 < player < -0.0120 and -0.15 < tie < -0.14
+
+
+def test_baccarat_refuses_no_side_and_counts_in_the_banks_figures(em, monkeypatch):
+    from lib.economy.bank_manager import BankManager
+    with pytest.raises(casino.Refuse, match="Player, Banker or Tie"):
+        play("baccarat", "deal", {"bet": 100})
+    assert em.get_bb(UID) == 10_000 and rows() == []
+    _shoe(monkeypatch, "4H", "3C", "5S", "4D")
+    play("baccarat", "deal", {"bet": 100, "side": "banker"})
+    ledger = BankManager.get_ledger_stats()
+    assert (ledger["baccarat_in"], ledger["baccarat_out"], ledger["baccarat_net"]) == (100, 0, 100)
+    assert BankManager._game_amounts(100, "Baccarat bet")[-1] == 100
 
 
 def test_every_game_has_rules_and_a_label(em):

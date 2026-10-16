@@ -100,6 +100,11 @@ def _d_reddog(v):
             "consecutive": bool(v.get("consecutive")), "outcome": v.get("outcome"), "odds": v.get("odds")}
 
 
+def _d_baccarat(v):
+    return {"player": list(v["player"]), "banker": list(v["banker"]), "p": int(v["playerTotal"]), "b": int(v["bankerTotal"]),
+            "side": v.get("side"), "winner": v.get("winner"), "natural": bool(v.get("natural"))}
+
+
 def _d_tcp(v):
     return {"player": list(v["player"]), "dealer": [c for c in v.get("dealer", []) if c], "hand": v.get("playerHand", ""),
             "outcome": v.get("outcome"), "bonus": int(v.get("bonus") or 0)}
@@ -109,7 +114,7 @@ DIGESTS = {
     "plinko": _d_plinko, "glass": _d_glass, "mines": _d_mines, "chest": _d_chest, "blockade": _d_blockade,
     "darts": _d_darts, "penalty": _d_penalty, "pennyfalls": _d_pennyfalls, "roulette": _d_roulette,
     "slots": _d_slots, "blackjack": _d_blackjack, "higherlower": _d_higherlower, "videopoker": _d_videopoker,
-    "reddog": _d_reddog, "tcp": _d_tcp,
+    "reddog": _d_reddog, "tcp": _d_tcp, "baccarat": _d_baccarat,
 }
 
 
@@ -990,6 +995,31 @@ def _tcp(st: _Sitting) -> tuple[str, str]:
     return css, body
 
 
+def _baccarat(st: _Sitting) -> tuple[str, str]:
+    best = st.best()
+    bd = best["d"]
+    won = bd["winner"]
+    head = ("TIE" if won == "tie" else f"{won.upper()} WINS") + f" {bd['p']}-{bd['b']}" + (" · A NATURAL" if bd["natural"] else "")
+    tally = Counter(h["d"]["winner"] for h in st.rounds)
+    cells = "".join(f'<div><b style="{"color:#E2BE78" if k == won else ""}">{tally[k]}</b><span>{k.upper()}</span></div>'
+                    for k in ("player", "banker", "tie"))
+    backed = Counter(h["d"]["side"] for h in st.rounds).most_common(1)[0][0]
+    css = _FELT + """.bc{display:flex;gap:34px;justify-content:center;align-items:flex-end} .bc .s2{display:flex;flex-direction:column;align-items:center;gap:10px}
+.bc em{font:700 14px 'Josefin Sans',sans-serif;font-style:normal;letter-spacing:.18em;color:#9FC7B4} .bc em b{color:#E2BE78;margin-left:6px}
+.tally{display:flex;gap:10px;margin-top:20px} .tally div{flex:1;padding:12px;border-radius:12px;background:rgba(0,0,0,.2);text-align:center}
+.tally b{display:block;font:400 30px 'DM Serif Display',SerifLocal,serif} .tally span{font:700 13px 'Josefin Sans',sans-serif;letter-spacing:.14em;color:#9FC7B4}"""
+    hand = lambda label, cards, n: (f'<div class="s2"><em>{label}<b>{n}</b></em>'
+                                    f'<div class="hand">{"".join(pc(c, 88) for c in cards)}</div></div>')
+    body = (f'<div class="card"><div class="head"><div class="t1">Baccarat<small>THE HAND THAT PAID BEST</small></div><div class="who">{st.who}</div></div>'
+            f'{_net(st.net, "#7CE0A0", "#FF8A8A")}<div class="felt"><div class="lab"><span>{esc(head)}</span><span>{sgn(int(best["net"]))}</span></div>'
+            f'<div class="bc">{hand("PLAYER", bd["player"], bd["p"])}{hand("BANKER", bd["banker"], bd["b"])}</div>'
+            f'<div class="tally">{cells}</div></div><div class="stats">'
+            + _stat("BACKED MOST", esc(backed.title()), "")
+            + _stat("WON", f"{st.won} of {len(st.all)}", "hands")
+            + _stat("WAGERED", f"{st.wagered:,}", "UKP") + "</div></div>")
+    return css, body
+
+
 _VP_ROWS = [(9, "ROYAL FLUSH"), (8, "STRAIGHT FLUSH"), (7, "FOUR OF A KIND"), (6, "FULL HOUSE"), (5, "FLUSH"),
             (4, "STRAIGHT"), (3, "THREE OF A KIND"), (2, "TWO PAIR"), (1, "JACKS OR BETTER")]
 
@@ -1029,7 +1059,7 @@ def _videopoker(st: _Sitting) -> tuple[str, str]:
 BUILDERS = {
     "plinko": _plinko, "glass": _glass, "mines": _mines, "chest": _chest, "blockade": _blockade, "darts": _darts,
     "penalty": _penalty, "pennyfalls": _pennyfalls, "roulette": _roulette, "slots": _slots, "blackjack": _blackjack,
-    "higherlower": _higherlower, "reddog": _reddog, "tcp": _tcp, "videopoker": _videopoker,
+    "higherlower": _higherlower, "reddog": _reddog, "tcp": _tcp, "videopoker": _videopoker, "baccarat": _baccarat,
 }
 
 

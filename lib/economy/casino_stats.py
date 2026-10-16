@@ -34,6 +34,7 @@ GAME_LABELS = {
     "darts": "Darts",
     "pennyfalls": "Davy Jones' Locker",
     "plinko": "Plinko",
+    "baccarat": "Baccarat",
 }
 
 

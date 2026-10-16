@@ -276,9 +276,9 @@ def test_the_bank_routes_the_reason_to_the_glass_columns():
     from lib.economy.bank_manager import BankManager
     amounts = BankManager._game_amounts(500, "Glass Bridge bet")
     assert sum(amounts) == 500, "the stake was not attributed to exactly one game"
-    assert amounts[-3] == 500, "it did not land in the glass column"     # Davy Jones' Locker and Plinko come after it
+    assert amounts[-4] == 500, "it did not land in the glass column"     # Davy Jones' Locker, Plinko and Baccarat come after it
     # and nothing else claims it
-    assert BankManager._game_amounts(500, "Chest bet")[-3] == 0
+    assert BankManager._game_amounts(500, "Chest bet")[-4] == 0
 
 
 def _run_all():

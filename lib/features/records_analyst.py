@@ -107,7 +107,7 @@ CASINO_GAME_NAMES = {
     "blackjack": "blackjack", "higherlower": "higher or lower", "reddog": "red dog", "roulette": "roulette",
     "slots": "slots", "videopoker": "video poker", "tcp": "three card poker", "mines": "mines", "chest": "chest",
     "penalty": "penalty shootout", "darts": "darts", "glass": "glass bridge", "blockade": "blockade run",
-    "plinko": "plinko", "pennyfalls": "penny falls (Davy Jones' Locker)",
+    "plinko": "plinko", "pennyfalls": "penny falls (Davy Jones' Locker)", "baccarat": "baccarat",
 }
 
 # JSON data files the model may read, by config attribute, with what they hold.
