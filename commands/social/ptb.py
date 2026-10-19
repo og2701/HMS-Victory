@@ -109,6 +109,7 @@ SONGS: list[Song] = [
     # Checked against a transcript of the recording: the singing lands ~0.4s before LRCLIB's times.
     Song("spice", "Spice Up Your Life", "🌶️", discord.ButtonStyle.success, "spice.mp3",
          lrclib_id=37172069, lyrics_offset=-0.4),
+    Song("ready", "Ready or Not", "🙈", discord.ButtonStyle.secondary, "ready.mp3", lrclib_id=34334522),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
