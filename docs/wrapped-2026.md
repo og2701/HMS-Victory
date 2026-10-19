@@ -6,7 +6,8 @@ replay was.
 
 This repo is public, so this file holds the plan and the ideas only. Anything with member names
 attached (the first-pass findings, who won what) lives locally in `scratch/wrapped-2026/`, which
-is gitignored.
+is gitignored. Since 19 October 2026 that's a symlink to `~/Desktop/UKPlace Wrapped 2026/` (the songs,
+cue sheets, picks file and year-end notes, with a README), so a `git clean` can't take them.
 
 ## Last year's video (2025)
 
