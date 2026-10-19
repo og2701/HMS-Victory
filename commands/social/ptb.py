@@ -121,6 +121,9 @@ SONGS: list[Song] = [
          lrclib_id=37148279, lyrics_offset=-0.4),
     Song("talkingbody", "Talking Body", "💋", discord.ButtonStyle.danger, "talkingbody.mp3", lrclib_id=37467113),
     Song("girls", "Girls", "💃", discord.ButtonStyle.primary, "girls.mp3", lrclib_id=37228854),
+    # The Shrek 2 version, sung by Jennifer Saunders; ~0.4s ahead of LRCLIB like Super Freak.
+    Song("hero", "Holding Out for a Hero", "🧚", discord.ButtonStyle.success, "hero.mp3",
+         lrclib_id=3382511, lyrics_offset=-0.4),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
