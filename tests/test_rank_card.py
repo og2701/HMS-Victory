@@ -1,6 +1,10 @@
 import unittest
 
-from lib.features.rank_card import build_rank_card_html, fit_badge_cell, name_size, tier_progress
+from unittest.mock import patch
+
+from lib.features.rank_card import (
+    background_position, build_rank_card_html, fit_badge_cell, name_size, tier_progress,
+)
 
 LADDER = [(1000, 1), (2500, 2), (500_000, 3), (750_000, 4)]
 
@@ -78,6 +82,23 @@ class RankCardHtmlTests(unittest.TestCase):
         page = build_rank_card_html(_card(current_role=None, badges=[]))
         self.assertIn("No peerage yet", page)
         self.assertIn("0 badges", page)
+
+    def test_banner_is_centred_unless_re_aimed(self):
+        self.assertIn("background-position:center\"", build_rank_card_html(_card()))
+        page = build_rank_card_html(_card(background_position="center 75%"))
+        self.assertIn("background-position:center 75%\"", page)
+
+
+class BackgroundPositionTests(unittest.TestCase):
+    @patch.dict("lib.features.rank_card.RANK_BG_POSITION", {"42": "center 75%"}, clear=True)
+    def test_only_the_members_own_upload_moves(self):
+        self.assertEqual(background_position("42", "custom_bg_42_1760000000.png"), "center 75%")
+        self.assertEqual(background_position(42, "custom_bg_42_1760000000.jpg"), "center 75%")
+        # A shop background they equip, someone else's upload, or no file at all stays centred.
+        self.assertEqual(background_position("42", "rank_bg_lofi.png"), "center")
+        self.assertEqual(background_position("42", "custom_bg_420_1760000000.png"), "center")
+        self.assertEqual(background_position("7", "custom_bg_7_1760000000.png"), "center")
+        self.assertEqual(background_position("42", None), "center")
 
 
 if __name__ == "__main__":

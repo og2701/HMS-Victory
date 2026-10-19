@@ -19,6 +19,13 @@ CUSTOM_RANK_BACKGROUNDS = {
     "1204435534416580679": "gunner.png"
 }
 
+# Where a member's own uploaded background sits in the rank-card banner (a CSS background-position),
+# for uploads whose subject is off-centre. Only applies to their custom_bg_<id>_ upload, so a shop
+# background they equip later stays centred.
+RANK_BG_POSITION = {
+    "235505165321502731": "center 70%",  # Dmze: tall church photo, aimed at the altar not the windows
+}
+
 # --- Flag to Language Mappings for Translation ---
 FLAG_LANGUAGE_MAPPINGS = {
     "🏴󠁧󠁢󠁥󠁮󠁧󠁿": "British English", "🏴󠁧󠁢󠁷󠁬󠁳󠁿": "Welsh", "🇺🇸": "Over the top american yank speak",

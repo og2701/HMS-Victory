@@ -20,6 +20,7 @@ from database import DatabaseManager
 from lib.core.constants import CHAT_LEVEL_ROLE_THRESHOLDS, CUSTOM_RANK_BACKGROUNDS
 from lib.core.file_operations import read_html_template
 from lib.core.image_processing import encode_image_to_data_uri, get_avatar_data_uri, screenshot_html
+from lib.features.rank_card import background_position
 from lib.features.summary_html import AVATAR_COLOURS, MEDAL, esc, fmt, rgba, signed
 
 CARD_W = 1000
@@ -103,7 +104,7 @@ def _custom_row_style(person: dict) -> str:
         return ""
     return (' style="background-image:linear-gradient(90deg, rgba(30,31,34,0.96) 0%, '
             'rgba(30,31,34,0.82) 55%, rgba(30,31,34,0.9) 100%), '
-            f"url('{bg}')\"")
+            f"url('{bg}');background-position:{esc(person.get('background_position') or 'center')}\"")
 
 
 def _header(title: str, sub: str, page: int, pages: int) -> str:
@@ -377,7 +378,8 @@ async def _prefetch_members(guild, user_ids):
 
 
 def _customisations(user_ids) -> dict:
-    """{user_id: {"title": str|None, "background": data URI|None}} from the rank-card shop."""
+    """{user_id: {"title": str|None, "background": data URI|None, "background_position": str}}
+    from the rank-card shop."""
     rows = []
     if user_ids:
         placeholders = ",".join("?" * len(user_ids))
@@ -394,7 +396,8 @@ def _customisations(user_ids) -> dict:
             path = os.path.join(BASE_DIR, "data", "rank_cards", bg_file)
             if os.path.exists(path):
                 background = encode_image_to_data_uri(path)
-        out[uid] = {"title": title or None, "background": background}
+        out[uid] = {"title": title or None, "background": background,
+                    "background_position": background_position(uid, bg_file)}
     return out
 
 

@@ -74,7 +74,7 @@ def _safe_colour(value, default):
 
 
 async def generate_rank_card(interaction: discord.Interaction, member: discord.Member) -> discord.File:
-    from lib.features.rank_card import build_rank_card_html, tier_progress
+    from lib.features.rank_card import background_position, build_rank_card_html, tier_progress
     logger.info(f"Initiating rank card generation for {member.display_name} (ID: {member.id})")
     try:
         if not hasattr(interaction.client, "xp_system"):
@@ -147,6 +147,7 @@ async def generate_rank_card(interaction: discord.Interaction, member: discord.M
             "shutcoin_icon": encode_image_to_data_uri(os.path.join(BASE_DIR, "data", "shutcoin.png")),
             "avatar_url": member.display_avatar.with_size(256).with_static_format("png").url,
             "background": encode_image_to_data_uri(background_path),
+            "background_position": background_position(user_id_str, os.path.basename(background_path)),
             "primary": primary_color,
             "secondary": secondary_color,
             "tertiary": tertiary_color,

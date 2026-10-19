@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 
+from lib.core.constants import RANK_BG_POSITION
 from lib.core.file_operations import read_html_template
 
 BADGE_BOX_W = 928          # lower panel width inside its padding
@@ -54,6 +55,15 @@ def fit_badge_cell(count: int, box_w: int = BADGE_BOX_W, box_h: int = BADGE_BOX_
     return min_cell
 
 
+def background_position(user_id, bg_file: str) -> str:
+    """CSS background-position for a member's banner: centred, unless their own upload has been
+    re-aimed in RANK_BG_POSITION."""
+    position = RANK_BG_POSITION.get(str(user_id))
+    if position and (bg_file or "").startswith(f"custom_bg_{user_id}_"):
+        return position
+    return "center"
+
+
 def name_size(name: str) -> int:
     n = len(name)
     return 42 if n <= 12 else 36 if n <= 18 else 30 if n <= 24 else 26
@@ -70,7 +80,8 @@ def _badge(b: dict) -> str:
 def build_rank_card_html(card: dict) -> str:
     """card keys: username, title, rank_label, xp, current_role, next_role, to_next, progress,
     ukpence, shutcoins (None hides it), ukpence_icon, shutcoin_icon, avatar_url, background,
-    primary, secondary, tertiary, badges [{src, rarity, name}]."""
+    background_position (optional, default centre), primary, secondary, tertiary,
+    badges [{src, rarity, name}]."""
     badges = sorted(card.get("badges", []), key=lambda b: RARITY_ORDER.get(b.get("rarity"), 3))
     cell = fit_badge_cell(len(badges))
 
@@ -92,7 +103,8 @@ def build_rank_card_html(card: dict) -> str:
     body = (
         '<div class="card">'
         f'<div class="banner" style="background-image:linear-gradient(180deg, rgba(17,18,20,0) 50%, '
-        f"rgba(17,18,20,0.65) 100%), url('{card['background']}')\">"
+        f"rgba(17,18,20,0.65) 100%), url('{card['background']}');"
+        f"background-position:{esc(card.get('background_position') or 'center')}\">"
         f'<div class="banner-row"><div class="chip rank-chip num">{esc(card["rank_label"])}</div>'
         f'<div class="coins">{"".join(coins)}</div></div>'
         f'<div class="banner-row bottom"><div class="chip tier current">{esc(current)}</div>{right}</div>'

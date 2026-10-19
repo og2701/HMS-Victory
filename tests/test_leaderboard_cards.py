@@ -91,7 +91,9 @@ class XpCardTests(unittest.TestCase):
         people[3]["name"] = "<b>{{body}}</b>"
         people[3]["title"] = "Ship's <i>Rat</i>"
         people[3]["background"] = "data:image/png;base64,AAAA"
+        people[3]["background_position"] = "center 75%"
         page = self._html(1, people)
+        self.assertIn("background-position:center 75%", page)
         self.assertIn("&lt;b&gt;{{body}}&lt;/b&gt;", page)
         self.assertIn("Ship&#x27;s &lt;i&gt;Rat&lt;/i&gt;", page)
         self.assertIn('class="row custom"', page)
