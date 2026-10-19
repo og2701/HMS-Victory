@@ -120,6 +120,7 @@ SONGS: list[Song] = [
     Song("superfreak", "Super Freak", "🕺", discord.ButtonStyle.secondary, "superfreak.mp3",
          lrclib_id=37148279, lyrics_offset=-0.4),
     Song("talkingbody", "Talking Body", "💋", discord.ButtonStyle.danger, "talkingbody.mp3", lrclib_id=37467113),
+    Song("girls", "Girls", "💃", discord.ButtonStyle.primary, "girls.mp3", lrclib_id=37228854),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
