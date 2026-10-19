@@ -1,23 +1,22 @@
+import asyncio
 import os
 import random
 from discord import File
-from PIL import Image, ImageDraw, ImageFont
-import json
+from PIL import Image
 from config import *
-from lib.core.image_processing import random_color_excluding_blue_and_dark, get_text_position
+from lib.core.image_processing import random_color_excluding_blue_and_dark
+from lib.features.iceberg_layout import LEVEL_BOUNDS, draw_entries, lay_out
 
 ICEBERG_IMAGE_PATH = "data/image.png"
 ICEBERG_CACHE_PATH = "data/iceberg_cache.png"
 from database import DatabaseManager
-FONT_PATH = "data/fluff.ttf"
-LEVEL_BOUNDS = {
-    1: ((4, 2), (404, 81)),
-    2: ((4, 89), (404, 163)),
-    3: ((4, 174), (404, 266)),
-    4: ((7, 276), (402, 353)),
-    5: ((5, 364), (404, 446)),
-    6: ((4, 456), (402, 525)),
-}
+
+
+def _iceberg_rows(where: str = "", params: tuple = ()):
+    rows = DatabaseManager.fetch_all(
+        f"SELECT id, text, level, x, y, color, rotation FROM iceberg WHERE x IS NOT NULL {where}", params)
+    keys = ("id", "text", "level", "x", "y", "color", "rotation")
+    return [dict(zip(keys, row)) for row in rows or []]
 
 async def add_iceberg_text(interaction, text: str, level: int, show_image: bool = True):
     if level not in LEVEL_BOUNDS:
@@ -27,55 +26,28 @@ async def add_iceberg_text(interaction, text: str, level: int, show_image: bool 
             await interaction.response.send_message("Invalid level. Please choose a level between 1 and 6.", ephemeral=True)
         return False
 
-    # 1. Fetch all existing entries to find a non-overlapping position
-    rows = DatabaseManager.fetch_all("SELECT x, y, text, level FROM iceberg WHERE x IS NOT NULL")
-    existing_positions = []
-    
-    # We need a font to calculate dimensions for current entries
-    font_size = 14
-    try:
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except IOError:
-        font = ImageFont.load_default()
-
-    for x, y, t, l in rows:
-        text_bbox = font.getbbox(t)
-        w = text_bbox[2] - text_bbox[0]
-        h = text_bbox[3] - text_bbox[1]
-        # Account for shadow (2px) and general padding (5px) in collision detection
-        existing_positions.append((x - 2, y - 2, x + w + 7, y + h + 7))
-
-    # 2. Calculate attributes for the NEW entry - retry with smaller padding if crowded
-    bounds = LEVEL_BOUNDS[level]
-    pos = None
-    for padding in [10, 5, 2, 0]:
-        pos = get_text_position(font, text, bounds, existing_positions, padding=padding)
-        if pos:
-            break
-
-    # Last resort: place randomly within bounds even if it overlaps
-    if not pos:
-        text_bbox = font.getbbox(text)
-        tw = text_bbox[2] - text_bbox[0]
-        th = text_bbox[3] - text_bbox[1]
-        x = random.randint(bounds[0][0], max(bounds[0][0], bounds[1][0] - tw))
-        y = random.randint(bounds[0][1], max(bounds[0][1], bounds[1][1] - th))
-        pos = (x, y)
+    # 1. Pick a random spot and tilt, then let the layout move it to the nearest free spot
+    # in its tier (shrinking the tier's text if it's full) - the same layout the render uses.
+    (x0, y0), (x1, y1) = LEVEL_BOUNDS[level]
+    rotation = random.randint(-5, 5)
+    new = {"id": float("inf"), "text": text, "level": level, "x": random.randint(x0, x1),
+           "y": random.randint(y0, y1), "rotation": rotation, "color": None}
+    laid = await asyncio.to_thread(lay_out, _iceberg_rows("AND level = ?", (level,)) + [new])
+    pos = next((e["x"], e["y"]) for e in laid if e["id"] == new["id"])
 
     color_tuple = random_color_excluding_blue_and_dark()
     color_hex = '#%02x%02x%02x' % color_tuple
-    rotation = random.randint(-5, 5)
 
-    # 3. Store in database
+    # 2. Store in database
     DatabaseManager.execute(
         "INSERT INTO iceberg (text, level, x, y, color, rotation) VALUES (?, ?, ?, ?, ?, ?)",
         (text, level, pos[0], pos[1], color_hex, rotation)
     )
 
-    # 4. Render the master cache image
+    # 3. Render the master cache image
     await render_iceberg_cache()
 
-    # 5. Optionally send the file
+    # 4. Optionally send the file
     if show_image:
         if os.path.exists(ICEBERG_CACHE_PATH):
             file = File(ICEBERG_CACHE_PATH, filename="iceberg.png")
@@ -90,45 +62,12 @@ async def render_iceberg_cache():
     if not os.path.exists(ICEBERG_IMAGE_PATH):
         return
 
-    img = Image.open(ICEBERG_IMAGE_PATH).convert("RGBA")
-    font_size = 14
-    try:
-        font = ImageFont.truetype(FONT_PATH, font_size)
-    except IOError:
-        font = ImageFont.load_default()
+    rows = _iceberg_rows()
 
-    rows = DatabaseManager.fetch_all("SELECT text, x, y, color, rotation FROM iceberg WHERE x IS NOT NULL")
-    shadow_offset = (2, 2)
-    
-    for text, x, y, color, rotation in rows:
-        # Create a temporary transparent layer for the rotated text
-        text_bbox = font.getbbox(text)
-        txt_w = text_bbox[2] - text_bbox[0]
-        txt_h = text_bbox[3] - text_bbox[1]
-        
-        # Buffer for rotation to avoid clipping
-        buffer = 20
-        w = txt_w + buffer * 2
-        h = txt_h + buffer * 2
-        
-        # Shadow
-        txt_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        d = ImageDraw.Draw(txt_img)
-        d.text((buffer, buffer), text, font=font, fill="black")
-        rot_shadow = txt_img.rotate(rotation, resample=Image.BICUBIC, expand=1)
-        
-        # Color text
-        txt_img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        d = ImageDraw.Draw(txt_img)
-        d.text((buffer, buffer), text, font=font, fill=color)
-        rot_text = txt_img.rotate(rotation, resample=Image.BICUBIC, expand=1)
-        
-        # Paste shadow then text
-        # Subtract the rotation expansion/shift to align (buffer, buffer) to (x, y)
-        shift_x = (rot_text.width - w) // 2 + buffer
-        shift_y = (rot_text.height - h) // 2 + buffer
-        
-        img.paste(rot_shadow, (x - shift_x + shadow_offset[0], y - shift_y + shadow_offset[1]), rot_shadow)
-        img.paste(rot_text, (x - shift_x, y - shift_y), rot_text)
+    def render():
+        img = Image.open(ICEBERG_IMAGE_PATH).convert("RGBA")
+        draw_entries(img, lay_out(rows))
+        img.save(ICEBERG_CACHE_PATH)
 
-    img.save(ICEBERG_CACHE_PATH)
+    # Laying out a crowded tier can take a moment, so keep it off the event loop.
+    await asyncio.to_thread(render)

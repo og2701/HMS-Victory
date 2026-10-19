@@ -9,6 +9,7 @@ ICEBERG_IMAGE_PATH = "data/image.png"
 ICEBERG_CACHE_PATH = "data/iceberg_cache.png"
 from database import DatabaseManager
 from .add_to_iceberg import render_iceberg_cache
+from lib.features import iceberg_layout
 FONT_PATH = "data/fluff.ttf"
 LEVEL_BOUNDS = {
     1: ((4, 2), (404, 81)),
@@ -20,8 +21,10 @@ LEVEL_BOUNDS = {
 }
 
 async def show_iceberg(interaction):
-    # 1. If cache doesn't exist, try to render it
-    if not os.path.exists(ICEBERG_CACHE_PATH):
+    # 1. Render the cache if it's missing, or older than the layout code (a deploy that
+    # changes how entries are placed should show up without waiting for the next entry).
+    if (not os.path.exists(ICEBERG_CACHE_PATH)
+            or os.path.getmtime(ICEBERG_CACHE_PATH) < os.path.getmtime(iceberg_layout.__file__)):
         await render_iceberg_cache()
 
     # 2. Serve the cache if it exists
