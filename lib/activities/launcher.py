@@ -27,6 +27,7 @@ from lib.activities import auth
 log = logging.getLogger(__name__)
 
 _client: "Launcher | None" = None
+_register_task: "asyncio.Task | None" = None
 _requested: dict[int, tuple[str, float]] = {}
 REQUEST_TTL = 120   # seconds between asking for a game and the page signing in
 GAMES = ("wordle", "crossword", "climb", "spitfire", "paperboy")
@@ -291,22 +292,37 @@ async def _call(session, method: str, url: str, **kw):
 
 async def _register(session) -> None:
     """Create or update each typed command and delete any the config no longer lists
-    (the /test- ones, say), leaving the Entry Point command alone."""
+    (the /test- ones, say), leaving the Entry Point command alone. Commands Discord already
+    has exactly as listed are left as they are, so a plain restart sends nothing."""
     app_id = auth._env("ACTIVITIES_CLIENT_ID")
     base = f"{auth.API}/applications/{app_id}/commands"
     headers = {"Authorization": f"Bot {auth._env('ACTIVITIES_BOT_TOKEN')}"}
     wanted = _commands()
+    status, existing = await _call(session, "GET", base, headers=headers)
+    typed = {c.get("name"): c for c in (existing if status == 200 and isinstance(existing, list) else [])
+             if c.get("type") == 1}
     for name, (_game, description) in wanted.items():
         body = {"name": name, "description": description, "type": 1,
                 "integration_types": [0],   # installed to a server
                 "contexts": [0]}            # used in a server channel
+        have = typed.get(name)
+        if have and all(have.get(k) == body[k] for k in ("description", "integration_types", "contexts")):
+            continue
         status, _ = await _call(session, "POST", base, json=body, headers=headers)
         log.info("activity launch command /%s registered (%s)", name, status)
-    status, existing = await _call(session, "GET", base, headers=headers)
-    for c in (existing if status == 200 and isinstance(existing, list) else []):
-        if c.get("type") == 1 and c.get("name") not in wanted:
+    for c in typed.values():
+        if c.get("name") not in wanted:
             status, _ = await _call(session, "DELETE", f"{base}/{c['id']}", headers=headers)
             log.info("old activity command /%s removed (%s)", c.get("name"), status)
+
+
+async def _register_quietly(session) -> None:
+    try:
+        await _register(session)
+    except Exception:
+        log.warning("couldn't register the activity launch commands", exc_info=True)
+
+
 
 
 async def announce(channel_id: int, text: str, game: str = "wordle") -> None:
@@ -375,15 +391,15 @@ async def delete_message(channel_id: int, message_id: int) -> None:
 
 
 async def start(session) -> None:
-    global _client
+    global _client, _register_task
     if _client is not None or not auth.configured():
         return
-    try:
-        await _register(session)
-    except Exception:
-        log.warning("couldn't register the activity launch commands", exc_info=True)
+    # Log in first and register alongside: the commands already exist from the last boot, so the
+    # bot can answer them at once. Registering first (rate-limited, ~15s) left /games and the
+    # rest answering "The application did not respond" for that long after every restart.
     _client = Launcher()
     asyncio.create_task(_client.start(auth._env("ACTIVITIES_BOT_TOKEN")))
+    _register_task = asyncio.create_task(_register_quietly(session))
 
 
 async def stop() -> None:

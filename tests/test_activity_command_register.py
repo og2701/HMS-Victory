@@ -47,3 +47,28 @@ def test_rate_limited_registrations_are_retried(monkeypatch):
     asyncio.run(launcher._register(s))
     assert s.created == list(wanted)                 # every command made it, the limited ones on a retry
     assert len(s.limited) >= 2 and s.deleted == ["9"]   # the stale typed command goes; the Entry Point stays
+
+
+def test_commands_discord_already_has_are_not_sent_again(monkeypatch):
+    """A plain restart shouldn't spend Discord's rate limit re-sending identical commands."""
+    monkeypatch.setattr(auth, "_env", lambda k: "x")
+    monkeypatch.setattr(launcher, "_commands", lambda: {"games": ("home", "Open HMS Games"),
+                                                         "wordle": ("wordle", "Play Wordle")})
+
+    class Session(FakeSession):
+        def request(self, method, url, **kw):
+            if method == "GET":
+                self.calls.append(method)
+                return FakeResp(200, [
+                    {"id": "1", "type": 1, "name": "games", "description": "Open HMS Games",
+                     "integration_types": [0], "contexts": [0]},
+                    {"id": "2", "type": 1, "name": "wordle", "description": "An old description",
+                     "integration_types": [0], "contexts": [0]},
+                    {"id": "3", "type": 4, "name": "launch"},
+                ])
+            return super().request(method, url, **kw)
+
+    s = Session()
+    asyncio.run(launcher._register(s))
+    assert s.created == ["wordle"]      # only the one whose description changed
+    assert s.deleted == []              # nothing stale, and the Entry Point stays
