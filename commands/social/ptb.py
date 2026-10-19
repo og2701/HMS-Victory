@@ -1,17 +1,27 @@
 import asyncio
 import logging
 import os
+import re
 import time
+from dataclasses import dataclass
+
+import aiohttp
 import discord
 from config import BASE_DIR, USERS
 
 logger = logging.getLogger(__name__)
 
-PTB_AUDIO_PATH = os.path.join(BASE_DIR, "data", "audio", "ptb.mp3")
+AUDIO_DIR = os.path.join(BASE_DIR, "data", "audio")
 PTB_ALLOWED_USER_IDS = {USERS.OGGERS, USERS.CHIN}
 
 # How many seconds before a line is sung to advance/display it so people can sing along.
 LYRIC_LEAD_SECONDS = 1.2
+
+LRCLIB_URL = "https://lrclib.net/api/get/{id}"
+LRCLIB_HEADERS = {"User-Agent": "HMS-Victory /ptb (Discord bot)"}
+
+# How long the song picker stays up before it deletes itself.
+PICKER_TIMEOUT_SECONDS = 60
 
 # Synced lyrics (timestamp in seconds, lyric line) for Sugababes - Push the Button.
 PTB_LYRICS: list[tuple[float, str]] = [
@@ -73,18 +83,110 @@ PTB_LYRICS: list[tuple[float, str]] = [
     (210.26, "Miss the freak that I control"),
 ]
 
-# Group lyrics into 2-line cues so people can read ahead and sing along smoothly,
-# while staying comfortably within Discord's channel send rate limits.
-PTB_CUES: list[tuple[float, str, str | None]] = [
-    (
-        PTB_LYRICS[i][0],
-        PTB_LYRICS[i][1],
-        PTB_LYRICS[i + 1][1] if i + 1 < len(PTB_LYRICS) else None,
-    )
-    for i in range(0, len(PTB_LYRICS), 2)
+
+# The other songs' synced lyrics come from LRCLIB (a free synced-lyrics database) when they're
+# played, rather than living in this file. Each id pins the entry whose timings match the
+# recording in data/audio, and lyrics_offset shifts them if a recording starts later.
+@dataclass(frozen=True)
+class Song:
+    key: str
+    label: str
+    emoji: str
+    style: discord.ButtonStyle
+    audio_file: str
+    lyrics: list[tuple[float, str]] | None = None
+    lrclib_id: int | None = None
+    lyrics_offset: float = 0.0
+
+    @property
+    def audio_path(self) -> str:
+        return os.path.join(AUDIO_DIR, self.audio_file)
+
+
+SONGS: list[Song] = [
+    Song("ptb", "Push the Button", "🔴", discord.ButtonStyle.danger, "ptb.mp3", lyrics=PTB_LYRICS),
+    Song("dream", "I Dreamed a Dream", "💭", discord.ButtonStyle.primary, "dream.mp3", lrclib_id=1275159),
+    # Checked against a transcript of the recording: the singing lands ~0.4s before LRCLIB's times.
+    Song("spice", "Spice Up Your Life", "🌶️", discord.ButtonStyle.success, "spice.mp3",
+         lrclib_id=37172069, lyrics_offset=-0.4),
 ]
 
+_LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
+_lyrics_loads: dict[str, asyncio.Task] = {}
 _active_lyrics_task: asyncio.Task | None = None
+
+
+def parse_lrc(text: str, offset: float = 0.0) -> list[tuple[float, str]]:
+    """Turn LRC text ("[mm:ss.xx] line", sometimes several tags on one line) into sorted
+    (seconds, line) pairs, dropping the blank lines LRC uses to mark instrumental gaps."""
+    lines = []
+    for raw in text.splitlines():
+        rest = raw.strip()
+        stamps = []
+        while match := _LRC_TAG.match(rest):
+            stamps.append(int(match.group(1)) * 60 + float(match.group(2)))
+            rest = rest[match.end():].lstrip()
+        if rest:
+            lines.extend((stamp + offset, rest) for stamp in stamps)
+    return sorted(lines, key=lambda line: line[0])
+
+
+async def _fetch_lrclib(lrclib_id: int) -> str | None:
+    # LRCLIB answers about a third of requests with a 503, so keep trying for a few seconds.
+    url = LRCLIB_URL.format(id=lrclib_id)
+    timeout = aiohttp.ClientTimeout(total=6)
+    for attempt in range(4):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout, headers=LRCLIB_HEADERS) as session:
+                async with session.get(url) as resp:
+                    resp.raise_for_status()
+                    return (await resp.json()).get("syncedLyrics")
+        except Exception as e:
+            logger.info("LRCLIB fetch for %s failed (try %d): %s", lrclib_id, attempt + 1, e)
+            await asyncio.sleep(0.5 * (attempt + 1))
+    logger.warning("Gave up fetching LRCLIB lyrics %s", lrclib_id)
+    return None
+
+
+async def load_lyrics(song: Song) -> list[tuple[float, str]]:
+    if song.lyrics is not None:
+        return song.lyrics
+    if song.lrclib_id is None:
+        return []
+
+    # Each fetched entry is kept next to the audio, so a song needs LRCLIB up only once.
+    cache_path = os.path.join(AUDIO_DIR, f"{song.key}-{song.lrclib_id}.lrc")
+    if os.path.isfile(cache_path):
+        with open(cache_path, encoding="utf-8") as f:
+            synced = f.read()
+    else:
+        synced = await _fetch_lrclib(song.lrclib_id)
+        if synced:
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(synced)
+            except OSError:
+                logger.debug("Could not cache /ptb lyrics", exc_info=True)
+    return parse_lrc(synced or "", song.lyrics_offset)
+
+
+def lyrics_for(song: Song) -> asyncio.Task:
+    """One shared lyrics load per song, started when the picker opens so it's usually done
+    by the time a button is pressed. A load that came back empty is retried next time."""
+    task = _lyrics_loads.get(song.key)
+    if task is None or (task.done() and (task.cancelled() or task.exception() or not task.result())):
+        task = asyncio.create_task(load_lyrics(song))
+        _lyrics_loads[song.key] = task
+    return task
+
+
+def build_cues(lyrics: list[tuple[float, str]]) -> list[tuple[float, str, str | None]]:
+    # Group lyrics into 2-line cues so people can read ahead and sing along smoothly,
+    # while staying comfortably within Discord's channel send rate limits.
+    return [
+        (lyrics[i][0], lyrics[i][1], lyrics[i + 1][1] if i + 1 < len(lyrics) else None)
+        for i in range(0, len(lyrics), 2)
+    ]
 
 
 def format_lyric_cue(line1: str, line2: str | None = None, next_line: str | None = None) -> str:
@@ -100,12 +202,16 @@ async def _stream_lyrics(
     voice_client: discord.VoiceClient,
     dest_channel,
     stop_event: asyncio.Event,
+    lyrics,
+    started_at: float,
 ):
-    start = time.monotonic()
     try:
-        for idx, (ts, line1, line2) in enumerate(PTB_CUES):
+        # Shielded so stopping this stream doesn't cancel the shared lyrics load.
+        cues = build_cues(await asyncio.shield(lyrics))
+        for idx, (ts, line1, line2) in enumerate(cues):
+            following = cues[idx + 1] if idx + 1 < len(cues) else None
             target_elapsed = max(0.0, ts - LYRIC_LEAD_SECONDS)
-            now_elapsed = time.monotonic() - start
+            now_elapsed = time.monotonic() - started_at
             wait_sec = target_elapsed - now_elapsed
             if wait_sec > 0:
                 try:
@@ -113,12 +219,14 @@ async def _stream_lyrics(
                     return
                 except asyncio.TimeoutError:
                     pass
+            elif following and following[0] - LYRIC_LEAD_SECONDS <= now_elapsed:
+                # The lyrics arrived late, so skip cues the song has already moved past.
+                continue
 
             if stop_event.is_set() or not voice_client.is_connected():
                 return
 
-            next_line = PTB_CUES[idx + 1][1] if idx + 1 < len(PTB_CUES) else None
-            text = format_lyric_cue(line1, line2, next_line)
+            text = format_lyric_cue(line1, line2, following[1] if following else None)
             try:
                 await dest_channel.send(text)
             except Exception:
@@ -128,9 +236,49 @@ async def _stream_lyrics(
         return
 
 
-async def handle_ptb_command(interaction: discord.Interaction):
-    global _active_lyrics_task
+def _voice_channel_of(interaction: discord.Interaction):
+    member = interaction.user
+    if not isinstance(member, discord.Member):
+        member = interaction.guild.get_member(interaction.user.id)
+    voice_state = getattr(member, "voice", None)
+    return getattr(voice_state, "channel", None)
 
+
+class SongPicker(discord.ui.View):
+    """The ephemeral row of song buttons /ptb opens. Picking one deletes it and starts the song."""
+
+    def __init__(self, origin: discord.Interaction):
+        super().__init__(timeout=PICKER_TIMEOUT_SECONDS)
+        self.origin = origin
+        self.picked = False
+        for song in SONGS:
+            button = discord.ui.Button(label=song.label, emoji=song.emoji, style=song.style)
+            button.callback = self._picker_for(song)
+            self.add_item(button)
+
+    def _picker_for(self, song: Song):
+        async def callback(interaction: discord.Interaction):
+            await interaction.response.defer()
+            if self.picked:
+                return
+            self.picked = True
+            self.stop()
+            try:
+                await interaction.delete_original_response()
+            except discord.HTTPException:
+                logger.debug("Could not delete the /ptb picker", exc_info=True)
+            await play_song(interaction, song)
+
+        return callback
+
+    async def on_timeout(self):
+        try:
+            await self.origin.delete_original_response()
+        except discord.HTTPException:
+            pass
+
+
+async def handle_ptb_command(interaction: discord.Interaction):
     if interaction.user.id not in PTB_ALLOWED_USER_IDS:
         await interaction.response.send_message(
             "You do not have permission to push the button.", ephemeral=True
@@ -143,28 +291,40 @@ async def handle_ptb_command(interaction: discord.Interaction):
         )
         return
 
-    member = interaction.user
-    if not isinstance(member, discord.Member):
-        member = interaction.guild.get_member(interaction.user.id)
-
-    voice_state = getattr(member, "voice", None)
-    channel = getattr(voice_state, "channel", None)
+    channel = _voice_channel_of(interaction)
     if channel is None:
         await interaction.response.send_message(
             "You need to be in a voice channel first!", ephemeral=True
         )
         return
 
-    if not os.path.isfile(PTB_AUDIO_PATH):
-        await interaction.response.send_message(
-            "Audio file is missing on the server.", ephemeral=True
-        )
+    for song in SONGS:
+        lyrics_for(song)
+    await interaction.response.send_message(
+        f"🎤 Pick a song for {channel.mention}", view=SongPicker(interaction), ephemeral=True
+    )
+
+
+async def play_song(interaction: discord.Interaction, song: Song):
+    """Join the picker's voice channel, play the song and stream its lyrics into the channel's
+    chat. Runs after the button press has been deferred, so problems go out as followups."""
+    global _active_lyrics_task
+
+    channel = _voice_channel_of(interaction)
+    if channel is None:
+        await interaction.followup.send("You need to be in a voice channel first!", ephemeral=True)
         return
 
-    await interaction.response.defer(ephemeral=True)
+    if not os.path.isfile(song.audio_path):
+        await interaction.followup.send("Audio file is missing on the server.", ephemeral=True)
+        return
 
     if _active_lyrics_task and not _active_lyrics_task.done():
         _active_lyrics_task.cancel()
+
+    # Usually already loaded by the picker; if not, it finishes while we join, since every
+    # song's first line is several seconds in.
+    lyrics = lyrics_for(song)
 
     voice_client: discord.VoiceClient = interaction.guild.voice_client
     try:
@@ -204,7 +364,7 @@ async def handle_ptb_command(interaction: discord.Interaction):
         asyncio.run_coroutine_threadsafe(_disconnect_when_done(voice_client, error), loop)
 
     try:
-        source = discord.FFmpegPCMAudio(PTB_AUDIO_PATH)
+        source = discord.FFmpegPCMAudio(song.audio_path)
         voice_client.play(source, after=_after_play)
     except Exception as e:
         stop_event.set()
@@ -217,14 +377,11 @@ async def handle_ptb_command(interaction: discord.Interaction):
             f"Joined {channel.mention}, but failed to play audio: `{e}`", ephemeral=True
         )
         return
+    started_at = time.monotonic()
 
     # Prefer the voice channel itself (its built-in text chat) or fallback to interaction.channel
     lyrics_channel = channel if hasattr(channel, "send") else interaction.channel
     if lyrics_channel is not None:
         _active_lyrics_task = asyncio.create_task(
-            _stream_lyrics(voice_client, lyrics_channel, stop_event)
+            _stream_lyrics(voice_client, lyrics_channel, stop_event, lyrics, started_at)
         )
-
-    await interaction.followup.send(
-        f"🔴 Pushing the button in {channel.mention}!", ephemeral=True
-    )
