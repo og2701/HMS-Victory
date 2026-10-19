@@ -113,6 +113,7 @@ SONGS: list[Song] = [
     # Also checked against a transcript: Celine comes in ~0.9s before LRCLIB's times.
     Song("heart", "My Heart Will Go On", "🚢", discord.ButtonStyle.primary, "heart.mp3",
          lrclib_id=36975441, lyrics_offset=-0.9),
+    Song("party", "We Like to Party", "🚌", discord.ButtonStyle.success, "party.mp3", lrclib_id=37169387),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
