@@ -116,6 +116,9 @@ SONGS: list[Song] = [
          lrclib_id=36975441, lyrics_offset=-0.9),
     Song("party", "We Like to Party", "🚌", discord.ButtonStyle.success, "party.mp3", lrclib_id=37169387),
     Song("brightside", "Mr. Brightside", "🌗", discord.ButtonStyle.danger, "brightside.mp3", lrclib_id=36963370),
+    # Rick James comes in ~0.4s before LRCLIB's times, like Spice.
+    Song("superfreak", "Super Freak", "🕺", discord.ButtonStyle.secondary, "superfreak.mp3",
+         lrclib_id=37148279, lyrics_offset=-0.4),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
