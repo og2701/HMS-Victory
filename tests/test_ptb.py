@@ -67,6 +67,14 @@ def test_ptb_allows_chin():
     assert "voice channel" in args[0]
 
 
+def test_ptb_allows_cabinet():
+    interaction = _make_interaction(user_id=123456, channel=None)
+    interaction.user.roles = [SimpleNamespace(id=ptb.ROLES.CABINET)]
+    asyncio.run(ptb.handle_ptb_command(interaction))
+    args, _ = interaction.response.send_message.await_args
+    assert "voice channel" in args[0]
+
+
 def test_ptb_requires_voice_channel():
     interaction = _make_interaction(user_id=USERS.OGGERS, channel=None)
     asyncio.run(ptb.handle_ptb_command(interaction))

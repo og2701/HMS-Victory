@@ -7,12 +7,13 @@ from dataclasses import dataclass
 
 import aiohttp
 import discord
-from config import BASE_DIR, USERS
+from config import BASE_DIR, ROLES, USERS
 
 logger = logging.getLogger(__name__)
 
 AUDIO_DIR = os.path.join(BASE_DIR, "data", "audio")
 PTB_ALLOWED_USER_IDS = {USERS.OGGERS, USERS.CHIN}
+PTB_ALLOWED_ROLE_IDS = {ROLES.CABINET}
 
 # How many seconds before a line is sung to advance/display it so people can sing along.
 LYRIC_LEAD_SECONDS = 1.2
@@ -241,6 +242,12 @@ async def _stream_lyrics(
         return
 
 
+def can_use_ptb(user) -> bool:
+    return user.id in PTB_ALLOWED_USER_IDS or any(
+        role.id in PTB_ALLOWED_ROLE_IDS for role in getattr(user, "roles", None) or []
+    )
+
+
 def _voice_channel_of(interaction: discord.Interaction):
     member = interaction.user
     if not isinstance(member, discord.Member):
@@ -284,7 +291,7 @@ class SongPicker(discord.ui.View):
 
 
 async def handle_ptb_command(interaction: discord.Interaction):
-    if interaction.user.id not in PTB_ALLOWED_USER_IDS:
+    if not can_use_ptb(interaction.user):
         await interaction.response.send_message(
             "You do not have permission to push the button.", ephemeral=True
         )

@@ -229,7 +229,8 @@ def define_commands(tree, client):
     async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await glaze(interaction, channel, user)
 
-    @command("ptb", "Pick a sing-along song to play in your voice channel", checks=[lambda i: i.user.id in (USERS.OGGERS, USERS.CHIN)])
+    # handle_ptb_command checks who can use it (Oggers, Chin and Cabinet).
+    @command("ptb", "Pick a sing-along song to play in your voice channel")
     async def ptb_command(interaction: Interaction):
         from commands.social.ptb import handle_ptb_command
         await handle_ptb_command(interaction)
