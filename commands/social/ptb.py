@@ -115,6 +115,7 @@ SONGS: list[Song] = [
     Song("heart", "My Heart Will Go On", "🚢", discord.ButtonStyle.primary, "heart.mp3",
          lrclib_id=36975441, lyrics_offset=-0.9),
     Song("party", "We Like to Party", "🚌", discord.ButtonStyle.success, "party.mp3", lrclib_id=37169387),
+    Song("brightside", "Mr. Brightside", "🌗", discord.ButtonStyle.danger, "brightside.mp3", lrclib_id=36963370),
 ]
 
 _LRC_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
