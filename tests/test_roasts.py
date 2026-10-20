@@ -34,11 +34,15 @@ def message(mid, text="I am unbeatable at chess", *, author=TARGET, reply=None, 
     )
 
 
+POSTABLE = types.SimpleNamespace(send_messages=True, send_messages_in_threads=True)
+
+
 class Channel:
     id = 10
 
-    def __init__(self, messages=()):
+    def __init__(self, messages=(), *, readable=True):
         self.messages = messages
+        self.readable = readable
         self.send = AsyncMock()
         self.history_calls = []
         self.yielded = 0
@@ -48,6 +52,9 @@ class Channel:
         for msg in self.messages[:kwargs["limit"]]:
             self.yielded += 1
             yield msg
+
+    def permissions_for(self, member):
+        return types.SimpleNamespace(view_channel=self.readable, read_message_history=self.readable)
 
 
 def attachment(aid=1, *, data=None, content_type="image/png", size=100):
@@ -196,6 +203,91 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertGreater(result.getpixel((0, 0))[2], 200)
 
 
+class ChronicleEvidenceTests(unittest.IsolatedAsyncioTestCase):
+    """Evidence read from chronicle.db, so a busy channel no longer costs a 4000-message history scan."""
+
+    def setUp(self):
+        import tempfile
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.path = str(Path(folder.name) / "chronicle.db")
+        self.db = sqlite3.connect(self.path)
+        self.addCleanup(self.db.close)
+        # The columns evidence reads, as lib/chronicle/db.py defines them (importing it needs pytz).
+        self.db.executescript("""
+            CREATE TABLE messages (message_id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL, is_bot INTEGER NOT NULL DEFAULT 0, content TEXT, ts INTEGER NOT NULL,
+                reply_to INTEGER, attachments TEXT, deleted_ts INTEGER, msg_type TEXT);
+            CREATE TABLE reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL, emoji TEXT NOT NULL, action TEXT NOT NULL, ts INTEGER NOT NULL);
+        """)
+        restore = patch.object(C, "CHRONICLE_DB_FILE", self.path)
+        restore.start()
+        self.addCleanup(restore.stop)
+        self.picture = attachment()
+        self.channel = Channel([message(99, "from the live scan")])
+        self.channel.guild = types.SimpleNamespace(get_member=lambda uid: {1: TARGET, 2: OTHER}.get(uid))
+        self.channel.fetch_message = AsyncMock(return_value=types.SimpleNamespace(
+            attachments=[types.SimpleNamespace(filename="other.png", read=AsyncMock()),
+                         types.SimpleNamespace(filename="screenshot.png", read=self.picture.read)]))
+
+    def add(self, mid, text, *, user=1, minutes=None, channel=10, reply=None, msg_type="default",
+            deleted=False, bot=False, files=None):
+        ts = int((NOW - timedelta(minutes=mid if minutes is None else minutes)).timestamp())
+        self.db.execute(
+            "INSERT INTO messages (message_id, channel_id, user_id, is_bot, content, ts, reply_to, msg_type, "
+            "attachments, deleted_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (mid, channel, user, int(bot), text, ts, reply, msg_type, json.dumps(files) if files else None,
+             ts if deleted else None))
+        self.db.commit()
+
+    def react(self, mid, user, emoji, action="add"):
+        self.db.execute("INSERT INTO reactions (message_id, user_id, emoji, action, ts) VALUES (?, ?, ?, ?, 0)",
+                        (mid, user, emoji, action))
+        self.db.commit()
+
+    async def test_reads_live_messages_replies_and_reactions_without_a_history_scan(self):
+        self.add(30, "I beat you yesterday", user=2)
+        self.add(1, "Not again", user=2, reply=2, msg_type="reply")
+        self.add(2, "I never lose", reply=30, msg_type="reply")
+        self.add(3, "I said something regrettable", deleted=True)
+        self.add(4, "Posting in another channel", channel=11)
+        self.add(5, "Ancient boast", minutes=60 * 24 * 31)
+        self.add(6, "Pinned it", user=2, reply=2, msg_type="pins_add")
+        for user, emoji, action in [(2, "🔥", "add"), (4, "🔥", "add"), (5, "🔥", "add"), (5, "🔥", "remove"), (2, "😂", "add")]:
+            self.react(2, user, emoji, action)
+        result, images = await C.collect_evidence(self.channel, TARGET, now=NOW)
+        self.assertEqual(self.channel.history_calls, [])
+        self.assertEqual([row["message_id"] for row in result["target_messages"]], ["2"])
+        row = result["target_messages"][0]
+        self.assertEqual((row["display_name"], row["reply_to_message_id"]), ("Alice", "30"))
+        self.assertEqual([(r["emoji"], r["count"]) for r in row["reactions"]], [("🔥", 2), ("😂", 1)])
+        self.assertEqual([(r["message_id"], r["display_name"]) for r in result["other_member_replies"]],
+                         [("30", "Bob"), ("1", "Bob")])
+        self.assertEqual(images, [])
+
+    async def test_images_are_refetched_because_stored_links_expire(self):
+        self.add(1, "Look at this", files=[{"url": "https://cdn.example/expired", "filename": "screenshot.png",
+                                            "size": 100, "content_type": "image/png"}])
+        result, images = await C.collect_evidence(self.channel, TARGET, now=NOW)
+        self.channel.fetch_message.assert_awaited_once_with(1)
+        self.picture.read.assert_awaited_once()
+        self.assertEqual(result["target_messages"][0]["image_labels"], ["image_1"])
+        self.assertEqual(len(images), 1)
+
+    async def test_falls_back_to_history_when_the_chronicle_lacks_the_target_or_fails(self):
+        self.add(1, "Someone else talking", user=2)
+        result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW)
+        self.assertEqual([row["text"] for row in result["target_messages"]], ["from the live scan"])
+        self.add(2, "I never lose")
+        self.db.execute("DROP TABLE reactions")
+        self.db.commit()
+        with self.assertLogs(C.logger, level="WARNING"):
+            result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW)
+        self.assertEqual([row["text"] for row in result["target_messages"]], ["from the live scan"])
+        self.assertEqual(len(self.channel.history_calls), 2)
+
+
 class SelectionTests(unittest.TestCase):
     def test_selected_candidate_only_and_real_target_evidence(self):
         result = drafts(selected=2)
@@ -313,7 +405,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.interaction = types.SimpleNamespace(
-            user=REQUESTER, channel=Channel(), guild_id=10,
+            user=REQUESTER, channel=Channel(), guild_id=10, permissions=POSTABLE,
             guild=types.SimpleNamespace(get_member=lambda uid: OTHER if uid == 2 else None),
             client=object(), response=types.SimpleNamespace(
                 defer=AsyncMock(), send_message=AsyncMock(), is_done=Mock(return_value=True)),
@@ -343,6 +435,13 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(R.load_memory(10, TARGET.id)["personal"]), 1)
         self.api.assert_awaited_once()
         self.interaction.followup.send.assert_not_awaited()
+
+    async def test_unreadable_source_channel_is_refused_before_usage_or_history(self):
+        await self.command.roast(self.interaction, channel=Channel(readable=False), user=TARGET)
+        self.assertTrue(self.interaction.response.send_message.call_args.kwargs["ephemeral"])
+        self.assertEqual(self.usage(), 0)
+        self.collect.assert_not_awaited()
+        self.api.assert_not_awaited()
 
     async def test_empty_history_refunds_and_does_not_call_model(self):
         self.collect.return_value = ({**evidence(), "target_messages": []}, [])

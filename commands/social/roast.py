@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 from config import ROAST_DAILY_LIMIT, USERS
 from database import DatabaseManager
 from lib.features import roasts
+from lib.features.member_context import channel_problem
 
 
 client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
@@ -23,6 +24,10 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
     delivered = False
 
     try:
+        problem = channel_problem(interaction, source_channel)
+        if problem:
+            await interaction.response.send_message(problem, ephemeral=True)
+            return
         if interaction.user.id != USERS.OGGERS:
             # Reserve atomically so concurrent requests cannot exceed the daily limit.
             reserved = DatabaseManager.execute(

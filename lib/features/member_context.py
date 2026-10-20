@@ -7,7 +7,14 @@ import logging
 import mimetypes
 import re
 from datetime import datetime, timedelta, timezone
+import os
+import sqlite3
+import types
 from io import BytesIO
+
+from discord import Thread
+
+from config import CHRONICLE_DB_FILE
 
 HISTORY_DAYS = 30
 TARGET_MESSAGE_LIMIT = 80
@@ -15,10 +22,23 @@ CONTEXT_MESSAGE_LIMIT = 12
 HISTORY_CHAR_LIMIT = 48000
 IMAGE_LIMIT = 4
 IMAGE_BYTE_LIMIT = 8 * 1024 * 1024
+CHRONICLE_ROW_LIMIT = 1000
+CHRONICLE_TIMEOUT = 10
 
 logger = logging.getLogger(__name__)
 _FILLER = {"lol", "lmao", "lmfao", "ok", "okay", "yeah", "yep", "haha", "hahaha", "xd", "kk"}
 _DECORATION = re.compile(r"https?://\S+|<a?:\w+:\d+>|<[@#][!&]?\d+>")
+
+
+def channel_problem(interaction, source):
+    """Why the requester may not quote `source` into this channel, or None when they may."""
+    perms = source.permissions_for(interaction.user)
+    if not (perms.view_channel and perms.read_message_history):
+        return "You can only use channels you can read."
+    here = interaction.permissions
+    if not (here.send_messages_in_threads if isinstance(interaction.channel, Thread) else here.send_messages):
+        return "You can't post in this channel, so neither can I."
+    return None
 
 
 def _clean_content(content):
@@ -77,13 +97,111 @@ async def _load_image(attachment):
         return None
 
 
+class _ChronicleAttachment:
+    """An image the chronicle recorded. Its stored CDN link expires, so reading it refetches the message."""
+
+    def __init__(self, channel, message_id, meta):
+        self.id = f"{message_id}/{meta.get('filename')}"
+        self.filename = meta.get("filename") or ""
+        self.content_type = meta.get("content_type")
+        self.size = int(meta.get("size") or 0)
+        self._channel, self._message_id = channel, message_id
+
+    async def read(self):
+        message = await self._channel.fetch_message(self._message_id)
+        return await next(a for a in message.attachments if a.filename == self.filename).read()
+
+
+def _in_chunks(conn, sql, ids, *extra):
+    rows = []
+    for i in range(0, len(ids), 500):       # stay under SQLite's parameter limit
+        chunk = ids[i:i + 500]
+        rows += conn.execute(sql.format(",".join("?" * len(chunk))), (*chunk, *extra)).fetchall()
+    return rows
+
+
+def _chronicle_messages(channel, target_id, cutoff):
+    """The target's live messages here, the messages around them and their reactions, newest first."""
+    if not os.path.exists(CHRONICLE_DB_FILE):
+        return []
+    columns = "message_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments"
+    conn = sqlite3.connect(f"file:{CHRONICLE_DB_FILE}?mode=ro", uri=True, timeout=5)
+    # The unary + keeps SQLite off idx_messages_channel_ts: walking a busy channel's whole history
+    # takes seconds, while the user, reply and primary-key indexes answer in milliseconds.
+    try:
+        own = conn.execute(
+            f"SELECT {columns} FROM messages WHERE user_id = ? AND +channel_id = ? AND ts >= ? "
+            "AND deleted_ts IS NULL ORDER BY ts DESC LIMIT ?",
+            (target_id, channel.id, int(cutoff.timestamp()), CHRONICLE_ROW_LIMIT),
+        ).fetchall()
+        if not own:
+            return []
+        own_ids = [row[0] for row in own]
+        # Pins, forwards and thread starters carry a reference too; only real replies count.
+        parent_ids = sorted({row[5] for row in own if row[5] and row[6] in ("reply", None)})
+        around = _in_chunks(conn, f"SELECT {columns} FROM messages WHERE reply_to IN ({{}}) "
+                                  "AND deleted_ts IS NULL AND +channel_id = ? AND +user_id != ?",
+                            own_ids, channel.id, target_id)
+        around += _in_chunks(conn, f"SELECT {columns} FROM messages WHERE message_id IN ({{}}) "
+                                   "AND deleted_ts IS NULL AND +channel_id = ? AND +user_id != ?",
+                             parent_ids, channel.id, target_id)
+        # Latest action per reacting member, so removals and backfilled duplicates cancel out.
+        reactions = _in_chunks(conn, "SELECT message_id, emoji, COUNT(*) FROM (SELECT message_id, emoji, action, "
+                                     "MAX(id) FROM reactions WHERE message_id IN ({}) GROUP BY message_id, emoji, "
+                                     "user_id) WHERE action = 'add' GROUP BY message_id, emoji", own_ids)
+    finally:
+        conn.close()
+
+    counts = {}
+    for message_id, emoji, count in reactions:
+        counts.setdefault(message_id, []).append(types.SimpleNamespace(emoji=emoji, count=count))
+    guild = getattr(channel, "guild", None)
+    messages = {}
+    for message_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments in [*own, *around]:
+        member = guild.get_member(user_id) if guild is not None else None
+        try:
+            files = json.loads(attachments) if attachments else []
+        except ValueError:
+            files = []
+        messages[message_id] = types.SimpleNamespace(
+            id=message_id, content=content or "", channel=channel,
+            created_at=datetime.fromtimestamp(ts, timezone.utc),
+            author=types.SimpleNamespace(id=user_id, bot=bool(is_bot), display_name=(
+                member.display_name if member else "Unknown member")),
+            reactions=sorted(counts.get(message_id, []), key=lambda r: -r.count),
+            attachments=[_ChronicleAttachment(channel, message_id, meta) for meta in files if isinstance(meta, dict)],
+            reference=types.SimpleNamespace(message_id=reply_to, resolved=None)
+            if reply_to and msg_type in ("reply", None) else None,
+        )
+    for message in messages.values():
+        if message.reference:
+            message.reference.resolved = messages.get(message.reference.message_id)
+    return sorted(messages.values(), key=lambda m: m.id, reverse=True)
+
+
+async def _recent_messages(channel, target, cutoff):
+    """Newest first from the chronicle when it has the target here; otherwise a slow live history scan."""
+    try:
+        recorded = await asyncio.wait_for(
+            asyncio.to_thread(_chronicle_messages, channel, target.id, cutoff), timeout=CHRONICLE_TIMEOUT)
+    except Exception:
+        logger.warning("Chronicle evidence unavailable; scanning channel history", exc_info=True)
+        recorded = []
+    if recorded:
+        for message in recorded:
+            yield message
+        return
+    async for message in channel.history(limit=4000, after=cutoff, oldest_first=False):
+        yield message
+
+
 async def collect_evidence(channel, target, *, now=None):
     """Collect a bounded recent history; images never trigger a separate history scan."""
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=HISTORY_DAYS)
     scanned, duplicates = {}, {}
     targets, image_jobs = [], []
     used_chars = 0
-    async for message in channel.history(limit=4000, after=cutoff, oldest_first=False):
+    async for message in _recent_messages(channel, target, cutoff):
         if message.created_at < cutoff:
             continue
         scanned[message.id] = message

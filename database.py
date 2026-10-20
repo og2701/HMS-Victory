@@ -1253,8 +1253,20 @@ def init_db():
                 created_at REAL NOT NULL
             )
         """)
+        c.execute("PRAGMA table_info(recent_glazes)")
+        if "form" not in {row[1] for row in c.fetchall()}:
+            c.execute("ALTER TABLE recent_glazes ADD COLUMN form TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS idx_glazes_guild ON recent_glazes(guild_id, id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_glazes_target ON recent_glazes(guild_id, target_id, id)")
+        # Per-user, per-(UTC)-day glaze usage, so the daily limit survives restarts.
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS glaze_usage (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
 
         c.execute('''
             CREATE TABLE IF NOT EXISTS scheduled_predictions (

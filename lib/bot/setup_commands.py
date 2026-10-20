@@ -18,8 +18,9 @@ from lib.features.summary import post_summary
 from lib.economy.economy_manager import get_shutcoins, set_shutcoins
 from lib.economy.prediction_system import PredAdminView, PredSelectView, PredictionCreateModal, PredictionScheduleModal
 from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
-from typing import Optional
+from typing import Literal, Optional
 from commands.economy.shop import handle_shop_command
+from lib.features.glazes import STYLE_CHOICES as GLAZE_STYLES
 from commands.economy.bank_commands import (
     handle_bank_status_command
 )
@@ -225,9 +226,21 @@ def define_commands(tree, client):
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await roast(interaction, channel, user)
 
-    @command("glaze", "Overly praise a user based on recent messages (Oggers only)", checks=[lambda i: i.user.id == USERS.OGGERS])
-    async def glaze_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
-        await glaze(interaction, channel, user)
+    def has_glaze_access(interaction):
+        return interaction.user.id == USERS.OGGERS or has_role(interaction, ROLES.SERVER_BOOSTER)
+
+    GlazeStyle = Literal[tuple(GLAZE_STYLES)]
+
+    @app_commands.describe(
+        user="Who to glaze (you, if left empty)",
+        about="Something to glaze them for, like a win or a big day",
+        style="How the glaze is written (picked for you if left empty)",
+        channel="Where to read their messages from (this channel, if left empty)",
+    )
+    @command("glaze", "Shamelessly over-praise someone based on their recent messages (boosters)", checks=[has_glaze_access])
+    async def glaze_command(interaction: Interaction, user: Member = None, about: app_commands.Range[str, 1, 150] = None,
+                            style: GlazeStyle = None, channel: TextChannel = None):
+        await glaze(interaction, channel, user, about, style)
 
     # handle_ptb_command checks who can use it (Oggers, Chin and Cabinet).
     @command("ptb", "Pick a sing-along song to play in your voice channel")
