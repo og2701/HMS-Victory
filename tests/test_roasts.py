@@ -423,6 +423,11 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         row = database.DatabaseManager.fetch_one("SELECT SUM(count) FROM roast_usage WHERE user_id = ?", (str(REQUESTER.id),))
         return row[0] or 0
 
+    async def test_note_replaces_the_request_line(self):
+        await self.command.roast(self.interaction, user=TARGET, note="Alice tried to glaze Bob")
+        self.assertTrue(self.interaction.channel.send.call_args.args[0].startswith(
+            "🔥 <@1> 🔥\n-# Alice tried to glaze Bob\n\n"))
+
     async def test_success_posts_only_winner_and_preserves_mentions_badges_and_memory(self):
         await self.command.roast(self.interaction, user=TARGET)
         self.assertEqual(self.usage(), 1)

@@ -226,9 +226,6 @@ def define_commands(tree, client):
     async def roast_command(interaction: Interaction, channel: TextChannel = None, user: Member = None):
         await roast(interaction, channel, user)
 
-    def has_glaze_access(interaction):
-        return interaction.user.id == USERS.OGGERS or has_role(interaction, ROLES.SERVER_BOOSTER)
-
     GlazeStyle = Literal[tuple(GLAZE_STYLES)]
 
     @app_commands.describe(
@@ -237,7 +234,8 @@ def define_commands(tree, client):
         style="How the glaze is written (picked for you if left empty)",
         channel="Where to read their messages from (this channel, if left empty)",
     )
-    @command("glaze", "Shamelessly over-praise someone based on their recent messages (boosters)", checks=[has_glaze_access])
+    # Anyone can run it; glaze() roasts the requester instead unless they're a booster or staff.
+    @command("glaze", "Shamelessly over-praise someone based on their recent messages (boosters and staff)")
     async def glaze_command(interaction: Interaction, user: Member = None, about: app_commands.Range[str, 1, 150] = None,
                             style: GlazeStyle = None, channel: TextChannel = None):
         await glaze(interaction, channel, user, about, style)

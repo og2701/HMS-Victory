@@ -15,7 +15,7 @@ client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0
 logger = logging.getLogger(__name__)
 
 
-async def roast(interaction, channel: TextChannel = None, user: Member = None):
+async def roast(interaction, channel: TextChannel = None, user: Member = None, *, note: str = None):
     source_channel = channel or interaction.channel
     user = user or interaction.user
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -75,8 +75,8 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None):
             )
             return
 
-        header = (f"🔥 {user.mention} 🔥\n"
-                  f"-# roasted at {interaction.user.display_name}'s request\n\n")
+        note = note or f"roasted at {interaction.user.display_name}'s request"
+        header = f"🔥 {user.mention} 🔥\n-# {note}\n\n"
         await interaction.channel.send(
             header + candidate["text"],
             allowed_mentions=AllowedMentions(users=[user], everyone=False, roles=False, replied_user=False),

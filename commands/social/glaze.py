@@ -5,7 +5,8 @@ from os import getenv
 from discord import AllowedMentions, Member, TextChannel
 from openai import AsyncOpenAI
 
-from config import GLAZE_DAILY_LIMIT, USERS
+from commands.social.roast import roast
+from config import GLAZE_DAILY_LIMIT, ROLES, USERS
 from database import DatabaseManager
 from lib.features import glazes
 from lib.features.member_context import channel_problem
@@ -13,9 +14,22 @@ from lib.features.member_context import channel_problem
 
 client = AsyncOpenAI(api_key=getenv("OPENAI_TOKEN"), max_retries=5, timeout=60.0)
 logger = logging.getLogger(__name__)
+# Boosters and staff get the glaze; anyone else who asks for one is roasted instead.
+GLAZE_ROLES = {ROLES.SERVER_BOOSTER, ROLES.DEPUTY_PM, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO}
+
+
+def can_glaze(member):
+    return member.id == USERS.OGGERS or any(role.id in GLAZE_ROLES for role in getattr(member, "roles", ()))
 
 
 async def glaze(interaction, channel: TextChannel = None, user: Member = None, about: str = None, style: str = None):
+    if not can_glaze(interaction.user):
+        name = interaction.user.display_name
+        wanted = "themselves" if user is None or user.id == interaction.user.id else user.display_name
+        await roast(interaction, channel, interaction.user,
+                    note=f"{name} tried to glaze {wanted}. Glazes are for boosters, so {name} gets roasted instead")
+        return
+
     source_channel = channel or interaction.channel
     user = user or interaction.user
     about = " ".join((about or "").split())[:glazes.ABOUT_LIMIT] or None

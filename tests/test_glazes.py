@@ -198,8 +198,37 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         await self.command.glaze(self.interaction, user=TARGET)
         self.assert_refused_before_history()
 
-    async def test_daily_limit_applies_to_everyone_but_oggers_and_failures_refund(self):
+    def booster(self, role=None):
         self.command.USERS = types.SimpleNamespace(OGGERS=999)
+        role = role or self.command.ROLES.SERVER_BOOSTER
+        self.interaction.user = types.SimpleNamespace(**vars(REQUESTER), roles=[types.SimpleNamespace(id=role)])
+
+    async def test_anyone_else_who_asks_for_a_glaze_is_roasted_instead(self):
+        self.command.USERS = types.SimpleNamespace(OGGERS=999)
+        roast = AsyncMock()
+        with patch.object(self.command, "roast", roast):
+            await self.command.glaze(self.interaction, user=TARGET, about="being lovely", style="Ode")
+            await self.command.glaze(self.interaction)
+        first, second = roast.await_args_list
+        self.assertEqual(first.args, (self.interaction, None, REQUESTER))
+        self.assertEqual(first.kwargs["note"], "Charlie tried to glaze Alice. Glazes are for boosters, so Charlie gets roasted instead")
+        self.assertIn("Charlie tried to glaze themselves.", second.kwargs["note"])
+        self.collect.assert_not_awaited()
+        self.api.assert_not_awaited()
+        self.assertEqual(self.usage(), 0)
+
+    async def test_boosters_and_staff_get_the_glaze(self):
+        roles = self.command.ROLES
+        for role in [roles.SERVER_BOOSTER, roles.DEPUTY_PM, roles.CABINET, roles.BORDER_FORCE, roles.PCSO]:
+            with self.subTest(role=role), patch.object(self.command, "roast", AsyncMock()) as roast:
+                self.booster(role)
+                self.api.reset_mock()
+                await self.command.glaze(self.interaction, user=TARGET)
+                roast.assert_not_awaited()
+                self.api.assert_awaited_once()
+
+    async def test_daily_limit_applies_to_everyone_but_oggers_and_failures_refund(self):
+        self.booster()
         # Each delivered glaze rotates the offered forms, so answer in whichever forms were offered.
         offered = lambda **kwargs: self.response(json.dumps(drafts(
             forms=kwargs["response_format"]["json_schema"]["schema"]["properties"]["candidates"]["items"]["properties"]["form"]["enum"])))
@@ -223,6 +252,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.usage(), 0)
 
         self.command.USERS = types.SimpleNamespace(OGGERS=REQUESTER.id)
+        self.interaction.user = REQUESTER
         self.api.side_effect = offered
         self.interaction.channel.send.reset_mock()
         await self.command.glaze(self.interaction, user=TARGET)
