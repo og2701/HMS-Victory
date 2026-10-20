@@ -321,6 +321,37 @@ class SelectionTests(unittest.TestCase):
         unrelated["other_member_replies"][0]["target_message_id"] = "99"
         self.assertIsNone(R.select_roast(json.dumps(drafts(stray=True)), unrelated, ["2"])["stray_user_id"])
 
+    def test_clean_runner_up_beats_a_winner_using_a_worn_out_pattern(self):
+        for worn in ["Pathetic little prick.", "You absolute goblin.", "You don't play chess, you lose at it."]:
+            with self.subTest(worn=worn):
+                result = drafts(selected=1)
+                result["candidates"][1]["text"] += f" {worn}"
+                self.assertEqual(R.select_roast(json.dumps(result), evidence(), [])["text"], result["candidates"][0]["text"])
+        result = drafts()
+        for candidate in result["candidates"]:
+            candidate["text"] += " Sad little man."
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), [])["text"], result["candidates"][0]["text"])
+
+    def test_a_clean_stray_draft_wins_after_a_run_without_strays(self):
+        result = drafts(stray=True, selected=2)
+        result["selected_index"] = 0
+        self.assertIsNone(R.select_roast(json.dumps(result), evidence(), ["2"])["stray_user_id"])
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), ["2"], want_stray=True)["stray_user_id"], "2")
+        result["candidates"][2]["text"] += " Sad little man."
+        self.assertIsNone(R.select_roast(json.dumps(result), evidence(), ["2"], want_stray=True)["stray_user_id"])
+
+    def test_wants_a_stray_only_after_a_gap(self):
+        row = lambda stray: {"stray_user_id": stray}
+        self.assertTrue(R.wants_stray({"server": []}))
+        self.assertTrue(R.wants_stray({"server": [row(None)] * R.STRAY_GAP + [row("2")]}))
+        self.assertFalse(R.wants_stray({"server": [row(None)] * (R.STRAY_GAP - 1) + [row("2")]}))
+
+    def test_dashes_are_normalised(self):
+        result = drafts()
+        result["candidates"][0]["text"] = "You lost again—and blamed the board – twice."
+        self.assertEqual(R.select_roast(json.dumps(result), evidence(), [])["text"],
+                         "You lost again - and blamed the board - twice.")
+
     def test_invalid_unselected_draft_does_not_block_valid_winner(self):
         result = drafts()
         result["candidates"][2]["evidence_message_ids"] = ["999"]

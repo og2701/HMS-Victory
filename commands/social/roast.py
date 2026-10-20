@@ -67,7 +67,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None, *
         choice = response.choices[0]
         if choice.finish_reason != "stop" or choice.message.refusal or not choice.message.content:
             raise ValueError("Roast generation was refused, empty or incomplete")
-        candidate = roasts.select_roast(choice.message.content, evidence, stray_ids)
+        candidate = roasts.select_roast(choice.message.content, evidence, stray_ids, roasts.wants_stray(memory))
         if candidate is None:
             await interaction.followup.send(
                 "There's not enough usable material for a decent roast yet. Try another channel.",

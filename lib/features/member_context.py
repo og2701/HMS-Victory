@@ -28,6 +28,17 @@ CHRONICLE_TIMEOUT = 10
 logger = logging.getLogger(__name__)
 _FILLER = {"lol", "lmao", "lmfao", "ok", "okay", "yeah", "yep", "haha", "hahaha", "xd", "kk"}
 _DECORATION = re.compile(r"https?://\S+|<a?:\w+:\d+>|<[@#][!&]?\d+>")
+# The "not X, it's Y" reframe both writers keep reaching for, even when told not to.
+REFRAME = re.compile(
+    r"(?:\bnot|n't)\s+(?:just\s+|merely\s+|simply\s+|only\s+)?[^.!?\n,;]{1,80}[,;.:]\s*(?:but\s+)?"
+    r"(?:you|he|she|they|it|that|this|i|we)(?:'re|'s|'m|\s+are|\s+is|\s+was|\s+were|\s+am|\s+did)?\b",
+    re.IGNORECASE,
+)
+
+
+def undashed(text):
+    """House style has no em or en dashes."""
+    return re.sub(r"\s*[\u2014\u2013]\s*", " - ", text)
 
 
 def channel_problem(interaction, source):

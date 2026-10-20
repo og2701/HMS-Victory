@@ -47,13 +47,6 @@ STYLE_CHOICES = {label: key for key, (_, label, _) in FORMS.items()}
 # lines that never builds), so they only run when asked for instead of wasting a draft.
 REQUEST_ONLY_FORMS = {"ode", "trailer"}
 
-# The "not X, it's Y" reframe the model keeps reaching for, even when told not to.
-_REFRAME = re.compile(
-    r"(?:\bnot|n't)\s+(?:just\s+|merely\s+|simply\s+|only\s+)?[^.!?\n,;]{1,80}[,;.:]\s*(?:but\s+)?"
-    r"(?:you|he|she|they|it|that|this|i|we)(?:'re|'s|'m|\s+are|\s+is|\s+was|\s+were|\s+am|\s+did)?\b",
-    re.IGNORECASE,
-)
-
 SYSTEM_PROMPT = """Write an outrageously flattering glaze of one member of a British
 Discord server. The comedy is how shamelessly far you will go to celebrate something
 they actually said, did or posted, treating an ordinary moment as a triumph. Be funny,
@@ -193,8 +186,8 @@ def model_content(evidence, images, memory, about=None):
 
 
 def _tidy(text):
-    # House style has no em or en dashes; markdown headings and quote blocks would hijack the layout.
-    text = re.sub(r"\s*[—–]\s*", " - ", text)
+    # Markdown headings and quote blocks would hijack the layout.
+    text = member_context.undashed(text)
     lines = [re.sub(r"^[#>\s]+", "", line).strip() for line in text.splitlines()]
     return "\n".join(line for line in lines if line)
 
@@ -230,7 +223,7 @@ def select_glaze(content, evidence, forms):
     if not valid:
         raise ValueError("No valid glaze candidate has supported evidence and valid text")
     # A runner-up without the reframe beats a winner built on it.
-    return next((draft for draft in valid if not _REFRAME.search(draft["text"])), valid[0])
+    return next((draft for draft in valid if not member_context.REFRAME.search(draft["text"])), valid[0])
 
 
 def header(target, requester, form):
