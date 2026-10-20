@@ -5,6 +5,10 @@ and what they've earned.
 
 Rendered as HTML by the same headless Chrome as the casino cards; portrait with big type, so it
 stays readable when Discord shrinks it on a phone.
+
+At Halloween (17 to 31 October on the UK calendar, as the games themselves: ukplace-activities
+src/halloween.ts) Spitfire's and Climb's pictures dress up to match: the Pumpkin Patrol under a harvest
+moon, and the Skeleton Crew under a green crescent (SPOOKY).
 """
 
 from __future__ import annotations
@@ -14,7 +18,9 @@ import html
 import io
 import logging
 import math
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +73,12 @@ def _bunting() -> str:
             '<rect x="12.5" width="3" height="16" fill="#C8102E"/><rect y="6.5" width="28" height="3" fill="#C8102E"/></g>')
     return ('<svg class="bunting" viewBox="0 -8 390 68"><path d="M-10 10Q195 42 400 10" stroke="#111" stroke-width="1.5" '
             f'fill="none"/>{"".join(flags)}</svg>')
+
+
+def halloween(now: datetime | None = None) -> bool:
+    """17 to 31 October in the UK, as the games go by."""
+    d = (now or datetime.now(ZoneInfo("Europe/London"))).astimezone(ZoneInfo("Europe/London"))
+    return d.month == 10 and 17 <= d.day <= 31
 
 
 def _ordinal(n: int) -> str:
@@ -213,6 +225,108 @@ STYLES = {
 }
 
 
+# ---- Halloween ----------------------------------------------------------------------------------
+
+def _pennants() -> str:
+    """Climb's bunting at Halloween: orange, black and purple pennants."""
+    flags = []
+    for n, x in enumerate(range(24, 390, 43)):
+        t = (x + 10) / 410
+        y = (1 - t) ** 2 * 10 + 2 * (1 - t) * t * 42 + t * t * 10
+        tilt = math.degrees(math.atan((2 * (1 - t) * 32 - 2 * t * 32) / 410))
+        flags.append(f'<g transform="translate({x} {y:.1f}) rotate({tilt:.1f})"><path d="M-12 0H12L0 21Z" '
+                     f'fill="{("#FF8A1E", "#1B1720", "#7B3FA0")[n % 3]}" stroke="#111" stroke-width=".9" stroke-linejoin="round"/></g>')
+    return ('<svg class="bunting" viewBox="0 -8 390 68"><path d="M-10 10Q195 42 400 10" stroke="#111" stroke-width="1.5" '
+            f'fill="none"/>{"".join(flags)}</svg>')
+
+
+# the sailor in his skeleton suit and skull face paint, as in the game at Halloween
+SKELETON = """<svg class="sailor" viewBox="0 0 120 130">
+  <rect x="20" y="96" width="76" height="9" rx="4.5" fill="#a3937a"/><circle cx="21" cy="98" r="4" fill="#f1e9d2"/><circle cx="21" cy="104" r="4" fill="#f1e9d2"/>
+  <circle cx="95" cy="98" r="4" fill="#f1e9d2"/><circle cx="95" cy="104" r="4" fill="#f1e9d2"/>
+  <g transform="translate(60 60)"><rect x="-9" y="-3" width="18" height="19" rx="5" fill="#17171d"/>
+  <path d="M0 -1 V14 M-1 2 Q-6 0 -8 4 M1 2 Q6 0 8 4 M-1 6 Q-6 4 -8 8 M1 6 Q6 4 8 8 M-1 10 Q-6 8 -8 12 M1 10 Q6 8 8 12" stroke="#efeadb" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <circle cy="-12" r="9" fill="#efeadb"/><circle cx="3.5" cy="-13.5" r="2.6" fill="#1a1a1a"/><circle cx="-3" cy="-13.5" r="2.2" fill="#1a1a1a"/>
+  <path d="M-3 -7 H5 M-2 -8.5 V-5.5 M0.5 -8.5 V-5.5 M3 -8.5 V-5.5" stroke="#1a1a1a" stroke-width="1"/>
+  <ellipse cy="-20" rx="10" ry="3.6" fill="#fff"/><rect x="-8" y="-21.5" width="16" height="2.4" fill="#1a1a2a"/>
+  <path d="M-8 0 L-15 -14 M8 0 L15 -14" stroke="#17171d" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M-8 0 L-15 -14 M8 0 L15 -14" stroke="#efeadb" stroke-width="1.4" stroke-linecap="round"/>
+  <rect x="-8" y="16" width="7" height="15" rx="2" fill="#17171d"/><rect x="1" y="16" width="7" height="12" rx="2" fill="#17171d"/>
+  <rect x="-5.5" y="17" width="2" height="12" fill="#efeadb"/><rect x="3.5" y="17" width="2" height="9" fill="#efeadb"/></g></svg>"""
+
+CRESCENT = '<svg class="crescent" viewBox="0 0 60 60"><path d="M38 6 A24 24 0 1 0 54 44 A19 19 0 1 1 38 6 Z" fill="#d8f59a"/></svg>'
+
+BAT = ('<svg class="bat {cls}" viewBox="-18 -10 36 20"><path d="M-2 -1Q-8 -7-17 -4Q-14.5 -1.5-12.5 1Q-10 -1-7.5 2.5Q-5 .5-2 3Z'
+       'M2 -1Q8 -7 17 -4Q14.5 -1.5 12.5 1Q10 -1 7.5 2.5Q5 .5 2 3Z"/><ellipse rx="3" ry="4.4"/>'
+       '<path d="M-2.5 -3L-1.7 -7.5-.4 -3.8ZM2.5 -3L1.7 -7.5.4 -3.8Z"/></svg>')
+
+# a jack-o'-lantern balloon on its cable, as the barrage is at Halloween
+PUMPKIN = """<svg class="pumpkin" viewBox="0 0 90 130">
+  <path d="M42 56 L42 130" stroke="#111" stroke-width="3"/>
+  <path d="M38 14 Q37 7 43 5 L48 7 Q44 9 45 14 Z" fill="#5E7F2E" stroke="#111" stroke-width="2.2" stroke-linejoin="round"/>
+  <ellipse cx="42" cy="35" rx="36" ry="21" fill="#F28C28" stroke="#111" stroke-width="3.2"/>
+  <ellipse cx="42" cy="35" rx="12" ry="20.5" fill="none" stroke="#B4501A" stroke-width="1.8"/>
+  <ellipse cx="42" cy="35" rx="25" ry="20.5" fill="none" stroke="#B4501A" stroke-width="1.8"/>
+  <path d="M20 33 L27 23 L34 33 Z M50 33 L57 23 L64 33 Z M39.5 36 L42 32 L44.5 36 Z M19 39 Q42 60 65 39 Q42 46 19 39 Z"
+    fill="#FFD84A" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/>
+</svg>"""
+
+SMALL_PUMPKIN = ('<svg class="unit" viewBox="0 0 30 20"><path d="M13.5 4.5 Q13 1.5 15.5 0.8 L17.5 1.6 Q16 2.8 16.4 4.5 Z" fill="#5E7F2E" '
+                 'stroke="#111" stroke-width="1.2" stroke-linejoin="round"/><ellipse cx="15" cy="11.5" rx="13.5" ry="7.6" fill="#F28C28" '
+                 'stroke="#111" stroke-width="1.7"/><path d="M7.5 10 L10 6.8 L12.4 10 Z M17.6 10 L20 6.8 L22.5 10 Z M8 12.6 Q15 19 22 12.6 '
+                 'Q15 15 8 12.6 Z" fill="#FFD84A" stroke="#111" stroke-width=".8" stroke-linejoin="round"/></svg>')
+
+
+def _spooky_caption() -> str:
+    return '<div class="head"><div class="caption">Meanwhile, on All Hallows\' Eve…</div></div>'
+
+
+def _patrol_art(day: dict | None = None) -> str:
+    """Spitfire at Halloween: a harvest moon with bats, a jack-o'-lantern balloon, a dark sea, "Trick or treat!"."""
+    bubble = ('<svg class="bubble" viewBox="0 0 170 92"><path d="M3 3 H151 Q167 3 167 19 V47 Q167 63 151 63 H72 L42 89 L50 63 H19 '
+              'Q3 63 3 47 V19 Q3 3 19 3 Z" fill="#fff" stroke="#111" stroke-width="3.5" stroke-linejoin="round"/>'
+              '<text x="85" y="44" text-anchor="middle" fill="#111" font-size="21">TRICK OR TREAT!</text></svg>')
+    sea = ('<svg class="sea" viewBox="0 0 800 120" preserveAspectRatio="none"><rect y="20" width="800" height="100" fill="#16424E"/>'
+           '<path d="M0 20 H800" stroke="#111" stroke-width="5"/><path d="M30 56 q14 -10 28 0 M150 50 q14 -10 28 0 M290 60 q14 -10 28 0 '
+           'M420 52 q14 -10 28 0 M560 58 q14 -10 28 0 M690 50 q14 -10 28 0 M90 88 q14 -10 28 0 M360 92 q14 -10 28 0 M620 90 q14 -10 28 0" '
+           'stroke="rgba(255,255,255,.75)" stroke-width="5" fill="none" stroke-linecap="round"/></svg>')
+    bats = "".join(BAT.format(cls=c) for c in ("bt1", "bt2", "bt3"))
+    return f'<div class="moon"></div>{bats}{PUMPKIN}{sea}<img class="plane" src="file://{PLANE_ART}">{bubble}'
+
+
+SPOOKY_SPITFIRE_CSS = SPITFIRE_CSS + """
+.caption { font-size: 34px; }
+.moon { position: absolute; right: 70px; top: 120px; width: 300px; height: 300px; border-radius: 50%;
+        background: radial-gradient(circle at 38% 36%, #FFC067 0%, #F2A03E 55%, #E07A2A 100%);
+        box-shadow: 0 0 60px 20px rgba(255, 170, 80, .35); }
+.bat { position: absolute; width: 64px; height: 36px; fill: #111; }
+.bt1 { right: 156px; top: 252px; } .bt2 { right: 66px; top: 266px; width: 42px; height: 24px; } .bt3 { right: 330px; top: 422px; width: 50px; height: 28px; }
+.pumpkin { position: absolute; right: 26px; top: 384px; width: 96px; height: 139px; }
+.unit { width: 40px; height: 27px; }
+"""
+
+SPOOKY_CLIMB_CSS = """
+.mast { background: rgba(40, 26, 20, .45); }
+.crescent { position: absolute; right: 190px; top: 118px; width: 74px; height: 74px; filter: drop-shadow(0 0 16px rgba(210, 245, 150, .7)); }
+.top h4 { color: #7B3FA0; }
+.badge.pay { background: #FF8A1E; }
+.word i { color: #FF8A1E; }
+"""
+
+SPOOKY = {
+    "climb": {
+        **STYLES["climb"],
+        "sky": "linear-gradient(180deg, #2a1f50 0%, #4a6e52 55%, #7fae6a 100%)",
+        "art": lambda day=None: f'<div class="mast"></div>{CRESCENT}{SKELETON}', "head": _pennants, "css": SPOOKY_CLIMB_CSS,
+    },
+    "spitfire": {
+        **STYLES["spitfire"],
+        "sky": "linear-gradient(180deg, #3A2468 0%, #8E3E6E 55%, #E0703A 100%)",
+        "unit": "PUMPKINS", "unit_row": SMALL_PUMPKIN, "art": _patrol_art, "head": _spooky_caption, "css": SPOOKY_SPITFIRE_CSS,
+    },
+}
+
+
 def _score_px(text: str, unit: str) -> int:
     """How big the score can be and still fit its box with its unit beside it: the box has 700px inside, and
     in Archivo at full weight a digit is about 0.6 of the type size across, a comma a quarter, and a letter of
@@ -222,9 +336,12 @@ def _score_px(text: str, unit: str) -> int:
 
 
 def card_html(game: str, name: str, avatar: bytes | None, score: int, rank: int, players: int, paid: int,
-              top: list[tuple[str, int, bool]], day: dict | None = None) -> str:
-    """top: today's leaders as (name, score, is_this_player); day: Paperboy's theme and multiplier."""
-    st = STYLES[game]
+              top: list[tuple[str, int, bool]], day: dict | None = None, spooky: bool | None = None) -> str:
+    """top: today's leaders as (name, score, is_this_player); day: Paperboy's theme and multiplier; spooky:
+    the Halloween look (by default, whenever it's Halloween)."""
+    if spooky is None:
+        spooky = halloween()
+    st = SPOOKY[game] if spooky and game in SPOOKY else STYLES[game]
     shown = f"{score:,}"
     esc = html.escape
     face = (f'<img class="avatar" src="data:image/png;base64,{base64.b64encode(avatar).decode()}">' if avatar

@@ -254,6 +254,30 @@ def test_the_post_pictures_draw():
         assert "Pooja" in html and daily_card.STYLES[key]["big"] in html
 
 
+def test_the_post_pictures_dress_up_for_halloween():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from lib.activities import daily_card
+    london = ZoneInfo("Europe/London")
+    # 17 to 31 October on the UK's calendar, as the games themselves go by
+    assert not daily_card.halloween(datetime(2026, 10, 16, 23, 59, tzinfo=london))
+    assert daily_card.halloween(datetime(2026, 10, 17, 0, 1, tzinfo=london))
+    assert daily_card.halloween(datetime(2026, 10, 31, 23, 59, tzinfo=london))
+    assert not daily_card.halloween(datetime(2026, 11, 1, 0, 1, tzinfo=london))
+    assert daily_card.halloween(datetime(2026, 10, 31, 23, 30, tzinfo=ZoneInfo("UTC")))       # (23:30 GMT, still the 31st)
+    kw = dict(name="Pooja", avatar=None, score=23, rank=1, players=4, paid=43, top=[("Pooja", 23, True)])
+    spooky = daily_card.card_html("spitfire", **kw, spooky=True)
+    plain = daily_card.card_html("spitfire", **kw, spooky=False)
+    assert "PUMPKINS" in spooky and "All Hallows" in spooky and "TRICK OR TREAT" in spooky
+    assert "BALLOONS" in plain and "PUMPKINS" not in plain and "over the Channel" in plain
+    spooky = daily_card.card_html("climb", **kw, spooky=True)
+    assert 'class="crescent"' in spooky and "#7B3FA0" in spooky and "HMS VICTORY" in spooky
+    assert 'class="crescent"' not in daily_card.card_html("climb", **kw, spooky=False)
+    # Paperboy isn't dressed up
+    assert "PUMPKINS" not in daily_card.card_html("paperboy", **kw, spooky=True)
+
+
 def _deliveries(seed: str, secs: float) -> list[list[int]]:
     """Moves that get round the first few things in the road, from the bot's own copy: change lane
     away from anything in the way, a little before it, and hop anything low that's still in the way."""
