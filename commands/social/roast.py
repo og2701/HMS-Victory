@@ -44,7 +44,7 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None, *
                 return
 
         await interaction.response.defer(ephemeral=True)
-        evidence, images = await roasts.collect_evidence(source_channel, user)
+        evidence, images = await roasts.collect_evidence(source_channel, user, requester=interaction.user)
         if not evidence["target_messages"]:
             await interaction.followup.send(
                 f"{user.display_name} hasn't posted enough to roast in this channel lately!",

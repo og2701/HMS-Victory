@@ -22,7 +22,10 @@ CONTEXT_MESSAGE_LIMIT = 12
 HISTORY_CHAR_LIMIT = 48000
 IMAGE_LIMIT = 4
 IMAGE_BYTE_LIMIT = 8 * 1024 * 1024
-CHRONICLE_ROW_LIMIT = 1000
+# A month of the busiest poster in #general is ~11k rows, which loads in well under a second.
+CHRONICLE_ROW_LIMIT = 20000
+RECENT_KEEP = 20       # the latest messages always make it in, for what's going on right now
+QUIET_THRESHOLD = 30   # fewer usable messages than this here, and other public channels top them up
 CHRONICLE_TIMEOUT = 10
 
 logger = logging.getLogger(__name__)
@@ -131,31 +134,60 @@ def _in_chunks(conn, sql, ids, *extra):
     return rows
 
 
-def _chronicle_messages(channel, target_id, cutoff):
-    """The target's live messages here, the messages around them and their reactions, newest first."""
+def _score(message, replies):
+    # What the chat noticed: reactions, replies from others, and anything they posted a picture with.
+    return sum(r.count for r in message.reactions) + 2 * replies.get(message.id, 0) + bool(message.attachments)
+
+
+def _spread(own, replies):
+    """The latest messages first, then the rest of the month a day at a time, the most noticed first."""
+    usable = [m for m in own if _clean_content(m.content) is not None or m.attachments]
+    newest = sorted(usable, key=lambda m: m.created_at, reverse=True)
+    days = {}
+    for message in newest[RECENT_KEEP:]:
+        days.setdefault(message.created_at.date(), []).append(message)
+    for messages in days.values():
+        messages.sort(key=lambda m: (-_score(m, replies), -m.created_at.timestamp()))
+    queues = sorted(days.values(), key=lambda messages: -_score(messages[0], replies))
+    spread = []
+    while any(queues):
+        spread.extend(queue.pop(0) for queue in queues if queue)
+    return newest[:RECENT_KEEP] + spread
+
+
+def _chronicle_messages(channel, target_id, cutoff, others):
+    """Context first, then the target's live messages in priority order.
+
+    `others` maps the ids of other public channels to their objects. They only count when the
+    target is quiet here, and then only messages with something to say.
+    """
     if not os.path.exists(CHRONICLE_DB_FILE):
         return []
-    columns = "message_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments"
+    channels = {channel.id: channel, **others}
+    ids = list(channels)
+    columns = "message_id, channel_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments"
     conn = sqlite3.connect(f"file:{CHRONICLE_DB_FILE}?mode=ro", uri=True, timeout=5)
     # The unary + keeps SQLite off idx_messages_channel_ts: walking a busy channel's whole history
     # takes seconds, while the user, reply and primary-key indexes answer in milliseconds.
     try:
-        own = conn.execute(
-            f"SELECT {columns} FROM messages WHERE user_id = ? AND +channel_id = ? AND ts >= ? "
-            "AND deleted_ts IS NULL ORDER BY ts DESC LIMIT ?",
-            (target_id, channel.id, int(cutoff.timestamp()), CHRONICLE_ROW_LIMIT),
-        ).fetchall()
-        if not own:
+        own = _in_chunks(conn, f"SELECT {columns} FROM messages WHERE +channel_id IN ({{}}) AND user_id = ? "
+                               "AND ts >= ? AND deleted_ts IS NULL ORDER BY ts DESC LIMIT ?",
+                         ids, target_id, int(cutoff.timestamp()), CHRONICLE_ROW_LIMIT)
+        here = [row for row in own if row[1] == channel.id]
+        if sum(_clean_content(row[4]) is not None or bool(row[8]) for row in here) >= QUIET_THRESHOLD:
+            own = here
+        else:
+            own = here + [row for row in own if row[1] != channel.id and len((row[4] or "").split()) >= 3]
+        if not here:
             return []
         own_ids = [row[0] for row in own]
         # Pins, forwards and thread starters carry a reference too; only real replies count.
-        parent_ids = sorted({row[5] for row in own if row[5] and row[6] in ("reply", None)})
-        around = _in_chunks(conn, f"SELECT {columns} FROM messages WHERE reply_to IN ({{}}) "
-                                  "AND deleted_ts IS NULL AND +channel_id = ? AND +user_id != ?",
-                            own_ids, channel.id, target_id)
-        around += _in_chunks(conn, f"SELECT {columns} FROM messages WHERE message_id IN ({{}}) "
-                                   "AND deleted_ts IS NULL AND +channel_id = ? AND +user_id != ?",
-                             parent_ids, channel.id, target_id)
+        parent_ids = sorted({row[6] for row in own if row[6] and row[7] in ("reply", None)})
+        in_reach = ",".join("?" * len(ids))
+        around = _in_chunks(conn, f"SELECT {columns} FROM messages WHERE reply_to IN ({{}}) AND deleted_ts IS NULL "
+                                  f"AND +channel_id IN ({in_reach}) AND +user_id != ?", own_ids, *ids, target_id)
+        around += _in_chunks(conn, f"SELECT {columns} FROM messages WHERE message_id IN ({{}}) AND deleted_ts IS NULL "
+                                   f"AND +channel_id IN ({in_reach}) AND +user_id != ?", parent_ids, *ids, target_id)
         # Latest action per reacting member, so removals and backfilled duplicates cancel out.
         reactions = _in_chunks(conn, "SELECT message_id, emoji, COUNT(*) FROM (SELECT message_id, emoji, action, "
                                      "MAX(id) FROM reactions WHERE message_id IN ({}) GROUP BY message_id, emoji, "
@@ -168,33 +200,57 @@ def _chronicle_messages(channel, target_id, cutoff):
         counts.setdefault(message_id, []).append(types.SimpleNamespace(emoji=emoji, count=count))
     guild = getattr(channel, "guild", None)
     messages = {}
-    for message_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments in [*own, *around]:
+    for message_id, channel_id, user_id, is_bot, content, ts, reply_to, msg_type, attachments in [*own, *around]:
         member = guild.get_member(user_id) if guild is not None else None
+        where = channels[channel_id]
         try:
             files = json.loads(attachments) if attachments else []
         except ValueError:
             files = []
         messages[message_id] = types.SimpleNamespace(
-            id=message_id, content=content or "", channel=channel,
+            id=message_id, content=content or "", channel=where,
             created_at=datetime.fromtimestamp(ts, timezone.utc),
             author=types.SimpleNamespace(id=user_id, bot=bool(is_bot), display_name=(
                 member.display_name if member else "Unknown member")),
             reactions=sorted(counts.get(message_id, []), key=lambda r: -r.count),
-            attachments=[_ChronicleAttachment(channel, message_id, meta) for meta in files if isinstance(meta, dict)],
+            attachments=[_ChronicleAttachment(where, message_id, meta) for meta in files if isinstance(meta, dict)],
             reference=types.SimpleNamespace(message_id=reply_to, resolved=None)
             if reply_to and msg_type in ("reply", None) else None,
         )
     for message in messages.values():
         if message.reference:
             message.reference.resolved = messages.get(message.reference.message_id)
-    return sorted(messages.values(), key=lambda m: m.id, reverse=True)
+    replies = {}
+    for row in around:
+        if row[6] in messages:
+            replies[row[6]] = replies.get(row[6], 0) + 1
+    # Context comes first so the evidence loop has seen every reply before it stops taking messages.
+    context = [messages[row[0]] for row in around]
+    return context + _spread([messages[row[0]] for row in own], replies)
 
 
-async def _recent_messages(channel, target, cutoff):
-    """Newest first from the chronicle when it has the target here; otherwise a slow live history scan."""
+def _public_channels(channel, requester):
+    """Other text channels everyone can read and the requester can too: never staff or private ones."""
+    guild = getattr(channel, "guild", None)
+    if guild is None or requester is None:
+        return {}
+    everyone = guild.default_role
+    found = {}
+    for other in guild.text_channels:
+        if other.id == channel.id or other.is_nsfw():
+            continue
+        public, theirs = other.permissions_for(everyone), other.permissions_for(requester)
+        if public.view_channel and public.read_message_history and theirs.view_channel and theirs.read_message_history:
+            found[other.id] = other
+    return found
+
+
+async def _recent_messages(channel, target, cutoff, requester):
+    """From the chronicle when it has the target here; otherwise a slow live history scan, newest first."""
     try:
-        recorded = await asyncio.wait_for(
-            asyncio.to_thread(_chronicle_messages, channel, target.id, cutoff), timeout=CHRONICLE_TIMEOUT)
+        recorded = await asyncio.wait_for(asyncio.to_thread(
+            _chronicle_messages, channel, target.id, cutoff, _public_channels(channel, requester)),
+            timeout=CHRONICLE_TIMEOUT)
     except Exception:
         logger.warning("Chronicle evidence unavailable; scanning channel history", exc_info=True)
         recorded = []
@@ -206,13 +262,16 @@ async def _recent_messages(channel, target, cutoff):
         yield message
 
 
-async def collect_evidence(channel, target, *, now=None):
-    """Collect a bounded recent history; images never trigger a separate history scan."""
+async def collect_evidence(channel, target, *, now=None, requester=None):
+    """Collect a bounded recent history; images never trigger a separate history scan.
+
+    With a requester, a target who is quiet in `channel` is topped up from public channels they can read.
+    """
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=HISTORY_DAYS)
     scanned, duplicates = {}, {}
     targets, image_jobs = [], []
     used_chars = 0
-    async for message in _recent_messages(channel, target, cutoff):
+    async for message in _recent_messages(channel, target, cutoff, requester):
         if message.created_at < cutoff:
             continue
         scanned[message.id] = message
@@ -227,6 +286,8 @@ async def collect_evidence(channel, target, *, now=None):
             duplicates[key]["occurrences"] += 1
             continue
         record = _message_record(message, text or "")
+        if message.channel.id != channel.id:
+            record["channel"] = getattr(message.channel, "name", None)
         record["occurrences"] = 1
         record["image_labels"] = []
         size = len(json.dumps(record, ensure_ascii=False))
@@ -251,12 +312,13 @@ async def collect_evidence(channel, target, *, now=None):
     targets = [record for record in targets if record["text"] or record["image_labels"]]
     context = {}
     target_ids = {record["message_id"] for record in targets}
+    reach = {channel.id} | {scanned[int(record["message_id"])].channel.id for record in targets}
 
     def add_reply(message, target_message_id):
         if message is None or not hasattr(message, "author"):
             return
         if (message.author.bot or message.author.id == target.id
-                or message.channel.id != channel.id or message.created_at < cutoff):
+                or message.channel.id not in reach or message.created_at < cutoff):
             return
         if len(context) >= CONTEXT_MESSAGE_LIMIT or message.id in context:
             return
@@ -280,7 +342,7 @@ async def collect_evidence(channel, target, *, now=None):
     evidence = {
         "target": {"user_id": str(target.id), "display_name": target.display_name},
         "since": cutoff.isoformat(),
-        "target_messages": list(reversed(targets)),
+        "target_messages": sorted(targets, key=lambda row: row["created_at"]),
         "other_member_replies": sorted(context.values(), key=lambda row: row["created_at"]),
     }
     return evidence, images

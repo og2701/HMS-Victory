@@ -275,6 +275,51 @@ class ChronicleEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["target_messages"][0]["image_labels"], ["image_1"])
         self.assertEqual(len(images), 1)
 
+    async def test_evidence_keeps_the_latest_then_the_most_noticed_message_of_each_day(self):
+        day = 24 * 60
+        self.add(1, "the latest thing I said", minutes=1)
+        # NOW is midnight, so these pairs share a calendar day.
+        self.add(10, "a boring take", minutes=2 * day - 30)
+        self.add(11, "the famous take", minutes=2 * day - 60)
+        self.add(20, "another dull one", minutes=5 * day - 30)
+        self.add(21, "something people answered", minutes=5 * day - 60)
+        self.add(22, "you what", user=2, reply=21, msg_type="reply", minutes=5 * day - 50)
+        self.add(30, "the only thing that day", minutes=9 * day - 60)
+        for user in (2, 4, 5):
+            self.react(11, user, "💀")
+        with patch.object(C, "TARGET_MESSAGE_LIMIT", 4), patch.object(C, "RECENT_KEEP", 1):
+            result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW)
+        self.assertEqual([row["message_id"] for row in result["target_messages"]], ["30", "21", "11", "1"])
+        self.assertEqual([row["message_id"] for row in result["other_member_replies"]], ["22"])
+
+    def public_channels(self):
+        everyone = types.SimpleNamespace(id=0)
+
+        def room(cid, name, *, public=True, nsfw=False):
+            access = lambda who: types.SimpleNamespace(view_channel=public or who is not everyone,
+                                                       read_message_history=public or who is not everyone)
+            return types.SimpleNamespace(id=cid, name=name, is_nsfw=lambda: nsfw, permissions_for=access,
+                                         fetch_message=AsyncMock())
+        self.channel.guild.default_role = everyone
+        self.channel.guild.text_channels = [self.channel, room(11, "gaming"), room(12, "cabinet", public=False),
+                                            room(13, "spicy", nsfw=True)]
+
+    async def test_a_quiet_target_is_topped_up_from_public_channels_only(self):
+        self.public_channels()
+        self.add(1, "I never lose at anything")
+        self.add(2, "I carried the whole team tonight", channel=11)
+        self.add(3, "gg", channel=11)
+        self.add(4, "staff only business here", channel=12)
+        self.add(5, "something not for here", channel=13)
+        self.add(6, "you were carried mate", user=2, channel=11, reply=2, msg_type="reply")
+        result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW, requester=REQUESTER)
+        self.assertEqual([(row["text"], row.get("channel")) for row in result["target_messages"]],
+                         [("I carried the whole team tonight", "gaming"), ("I never lose at anything", None)])
+        self.assertEqual([row["message_id"] for row in result["other_member_replies"]], ["6"])
+        with patch.object(C, "QUIET_THRESHOLD", 1):
+            result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW, requester=REQUESTER)
+        self.assertEqual([row["text"] for row in result["target_messages"]], ["I never lose at anything"])
+
     async def test_falls_back_to_history_when_the_chronicle_lacks_the_target_or_fails(self):
         self.add(1, "Someone else talking", user=2)
         result, _ = await C.collect_evidence(self.channel, TARGET, now=NOW)

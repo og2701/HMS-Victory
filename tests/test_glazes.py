@@ -264,14 +264,14 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         picture = attachment()
         source = Channel([message(11, "I can confirm", author=OTHER, reply=10),
                           message(10, "I never lose", attachments=[picture])])
-        async def collect(channel, target):
-            return await C.collect_evidence(channel, target, now=NOW)
+        async def collect(channel, target, requester=None):
+            return await C.collect_evidence(channel, target, now=NOW, requester=requester)
         self.collect.side_effect = collect
         # The remembered commentary glaze sends commentary to the back of the queue.
         offered = ["hype", "documentary", "bulletin"]
         self.api.return_value = self.response(json.dumps(drafts(2, forms=offered)))
         await self.command.glaze(self.interaction, channel=source, user=TARGET)
-        self.collect.assert_awaited_once_with(source, TARGET)
+        self.collect.assert_awaited_once_with(source, TARGET, requester=REQUESTER)
         self.interaction.response.defer.assert_awaited_once_with(ephemeral=True)
         sent = self.interaction.channel.send.call_args
         self.assertTrue(sent.args[0].startswith("📰 <@1> 📰"))
@@ -316,7 +316,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_channel_and_target(self):
         await self.command.glaze(self.interaction)
-        self.collect.assert_awaited_once_with(self.interaction.channel, REQUESTER)
+        self.collect.assert_awaited_once_with(self.interaction.channel, REQUESTER, requester=REQUESTER)
 
     async def test_empty_history_is_private_and_skips_api(self):
         self.collect.return_value = ({**evidence(), "target_messages": []}, [])

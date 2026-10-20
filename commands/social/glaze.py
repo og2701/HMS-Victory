@@ -60,7 +60,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None, a
                 return
 
         await interaction.response.defer(ephemeral=True)
-        evidence, images = await glazes.collect_evidence(source_channel, user)
+        evidence, images = await glazes.collect_evidence(source_channel, user, requester=interaction.user)
         if not evidence["target_messages"]:
             await interaction.followup.send(
                 f"{user.display_name} hasn't posted enough to glaze in this channel lately!",
