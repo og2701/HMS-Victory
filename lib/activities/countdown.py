@@ -44,6 +44,7 @@ CONSONANTS = {"b": 2, "c": 3, "d": 6, "f": 2, "g": 3, "h": 2, "j": 1, "k": 1, "l
               "q": 1, "r": 9, "s": 9, "t": 9, "v": 1, "w": 1, "x": 1, "y": 1, "z": 1}
 WORDS_FILE = Path(__file__).resolve().parents[2] / "data" / "words" / "countdown.txt"
 COMMON_FILE = WORDS_FILE.with_name("countdown-common.txt")     # everyday words, shown first in the corner
+EXTRA_FILE = WORDS_FILE.with_name("countdown-extra.txt")       # real words the dictionary lacks (slang, newer words)
 
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_countdown.json")
 _rooms: dict[str, dict] = {}
@@ -71,6 +72,11 @@ def words() -> set[str]:
     if _words is None:
         with open(WORDS_FILE) as f:
             _words = {w.strip() for w in f if w.strip()}
+        try:
+            with open(EXTRA_FILE) as f:
+                _words.update(w for w in (line.strip().lower() for line in f) if w.isalpha() and w.isascii())
+        except FileNotFoundError:
+            pass
         try:
             with open(COMMON_FILE) as f:
                 _common.update(w.strip() for w in f if w.strip())

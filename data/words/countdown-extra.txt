@@ -1,0 +1,12 @@
+# Real words Countdown's dictionary (countdown.txt, from SCOWL) doesn't have: slang and newer words people
+# play. One a line, lowercase; lines starting # are notes. Add to it whenever a real word gets turned down.
+bae
+baes
+chode
+chodes
+spork
+sporks
+yeet
+yeets
+yeeted
+yeeting

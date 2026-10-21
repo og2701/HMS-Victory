@@ -1,13 +1,13 @@
-The Countdown word list (countdown.txt) is drawn from SCOWL (http://wordlist.aspell.net),
-British spellings with -ise and -ize, size 70, variants up to "acceptable" (so alternative
-forms like speeded and abided count), lowercase a-z words of 2 to 9 letters.
-Its notice follows.
+The Countdown word list (countdown.txt) is drawn from SCOWL (https://wordlist.aspell.net), size 85
+(huge+), every English spelling (US, GB with -ise and -ize, Canadian, Australian), variants up to
+"archaic", so it takes the rare and old words a big dictionary has; lowercase a-z words of 2 to 9
+letters. countdown-extra.txt adds real words it still lacks (slang, newer words). Its notice follows.
 
 Custom wordlist generated from https://app.aspell.net/create using
 the English Speller Database (ESDB) with parameters:
-  Size: 70 (large)
-  Spelling: GB
-  Variant Level: 6 *acceptable*
+  Size: 85 (huge+)
+  Spelling: US GB CA AU
+  Variant Level: 7 (archaic)
   Special: hacker
   Diacritics: strip
 
@@ -39,3 +39,28 @@ are in the Public Domain, but Alan Beale <biljir@pobox.com> deserves special
 credit as he is the author of 12dicts and a major contributor to ENABLE2K.  In
 addition, he gave me an incredible amount of feedback and created a number of
 special lists in order to help improve the overall quality of ESDB.
+
+The initial information for Australian English comes from Benjamin Titze:
+
+  Copyright 2016 by Benjamin Titze
+
+  Permission to use, copy, modify, distribute and sell this array, the
+  associated software, and its documentation for any purpose is hereby
+  granted without fee, provided that the above copyright notice appears
+  in all copies and that both that copyright notice and this permission
+  notice appear in supporting documentation. Benjamin Titze makes no
+  representations about the suitability of this array for any
+  purpose. It is provided "as is" without express or implied warranty.
+
+Some words used come from the UK Advanced Cryptics Dictionary:
+
+  Copyright (c) J Ross Beresford 1993-1999. All Rights Reserved.
+
+  The following restriction is placed on the use of this publication:
+  if The UK Advanced Cryptics Dictionary is used in a software package
+  or redistributed in any form, the copyright notice must be
+  prominently displayed and the text of this document must be included
+  verbatim.
+
+  There are no other restrictions: I would like to see the list
+  distributed as widely as possible.

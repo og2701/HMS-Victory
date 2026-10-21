@@ -64,6 +64,10 @@ def game(em, players=(A, B), stake=100):
 
 def test_the_dictionary_and_the_board():
     assert {"colour", "realise", "realize", "islander"} <= C.words()
+    # every real word: rare ones, American spellings, and the extras (2026-10-21, "penne" and "chode" were turned down)
+    assert {"penne", "nene", "color", "aluminum", "mnemonist", "chode", "spork", "yeet"} <= C.words()
+    # but not names, nor what that game's other players made up
+    assert not {"dane", "hende", "deach", "tidle", "deeped", "cloft", "nift"} & C.words()
     assert C.fits("island", list("satirendl")) and not C.fits("sass", list("satirendl"))
     best = C.best_words(list("satirendl"))
     assert len(best) == 3 and all(len(w) == 8 for w in best) and "detrains" not in best   # everyday words first
