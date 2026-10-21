@@ -1362,6 +1362,13 @@ async def on_message(client, message):
     except Exception:
         logger.debug("yaris chain hook failed", exc_info=True)
 
+    # "Who is oggers?" gets a silent DM with a random UK coordinate.
+    try:
+        from lib.features.who_is_oggers import handle_who_is_oggers
+        asyncio.create_task(handle_who_is_oggers(client, message))
+    except Exception:
+        logger.debug("who-is-oggers hook failed", exc_info=True)
+
     # Instagram reels and X links, neither of which Discord previews properly: the reel is
     # posted as playable media, the tweet re-posted on fxtwitter. Fire-and-forget, since it
     # waits on kkinstagram and then on a download and nothing else should sit behind that.
