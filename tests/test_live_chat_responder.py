@@ -112,7 +112,6 @@ from lib.features.chat_responder import (
     build_system_prompt,
     parse_duration_str,
     resolve_channel_input,
-    ChatbotWakeModal,
     ChatbotDashboardView,
     ChatbotDirectPauseButton,
     ONE_OFF_SYSTEM_PROMPT,
@@ -372,11 +371,6 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Standard Mode", embed_cleared.fields[5].value)
 
         mgr.stop()
-
-    def test_chatbot_wake_modal_defaults(self):
-        modal = ChatbotWakeModal(default_channel="vip-lounge", default_target_user="111222333")
-        self.assertEqual(modal.channel_input.default, "vip-lounge")
-        self.assertEqual(modal.target_user_input.default, "111222333")
 
     def test_chatbot_dashboard_view_components_v2(self):
         view = ChatbotDashboardView()

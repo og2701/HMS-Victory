@@ -70,7 +70,8 @@ def get_caller_identity(user_id: Optional[int], user_name: Optional[str] = None)
         return (user_name or "Hadidas", "deputy prime minister")
     if user_id == johnny_id:
         return (user_name or "Johnny", "server leadership")
-    return (user_name or "Server Leadership", "server leadership")
+    # Anyone else got here through access Oggers handed out on the controller card.
+    return (user_name or "Member", "a member Oggers has given access to")
 
 
 def build_one_off_system_prompt(caller_name: str = "Oggers", caller_role: str = "server leadership") -> str:
@@ -2198,6 +2199,50 @@ def save_chatbot_config(data: dict) -> None:
         atomic_write_json(CHATBOT_CONFIG_FILE, data, indent=2)
     except Exception as e:
         logger.error("Failed to persist chatbot config: %s", e)
+
+
+def direct_access_grants(now: Optional[float] = None) -> Dict[int, Optional[int]]:
+    """Who besides Oggers Vic answers on a direct @mention: user id -> expiry (epoch seconds),
+    or None for permanent. Managed from the controller card; until the first change there it
+    starts from DIRECT_MENTION_ALLOWED_USERS. Expired grants are dropped as they're read."""
+    raw = load_chatbot_config().get("direct_access")
+    if not isinstance(raw, dict):
+        raw = {str(uid): None for uid in DIRECT_MENTION_ALLOWED_USERS if uid != USERS.OGGERS}
+    now = time.time() if now is None else now
+    grants = {}
+    for uid, expires_at in raw.items():
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if expires_at is None or expires_at > now:
+            grants[uid] = int(expires_at) if expires_at is not None else None
+    return grants
+
+
+def has_direct_access(user_id: int) -> bool:
+    return user_id == USERS.OGGERS or user_id in direct_access_grants()
+
+
+def _save_direct_access(grants: Dict[int, Optional[int]]) -> None:
+    cfg = load_chatbot_config()
+    cfg["direct_access"] = {str(uid): expires_at for uid, expires_at in grants.items()}
+    save_chatbot_config(cfg)
+
+
+def grant_direct_access(user_id: int, expires_at: Optional[int] = None) -> None:
+    grants = direct_access_grants()
+    grants[user_id] = expires_at
+    _save_direct_access(grants)
+
+
+def revoke_direct_access(user_id: int) -> bool:
+    grants = direct_access_grants()
+    if user_id not in grants:
+        return False
+    del grants[user_id]
+    _save_direct_access(grants)
+    return True
 
 
 def generate_ai_reply(
@@ -6382,11 +6427,11 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
-    # 2. If message is from authorized leadership (Oggers, Roshy, Hadidas) and explicitly @mentions the bot:
-    # Always respond as a one-off anywhere on the server UNLESS paused!
+    # 2. If message is from Oggers or someone he's given access to on the controller card, and
+    # explicitly @mentions the bot: always respond as a one-off anywhere on the server UNLESS paused!
     # Only a real @mention counts here. Name-drops like "I'll get vic to dm her" or replies to the
     # bot's messages must not summon it; those looser matches are only used by the live chat mode.
-    if message.author.id in DIRECT_MENTION_ALLOWED_USERS and is_bot_explicitly_mentioned(client, message):
+    if is_bot_explicitly_mentioned(client, message) and has_direct_access(message.author.id):
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
@@ -6397,115 +6442,6 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
         return await live_chat_manager.handle_message(client, message)
 
     return False
-
-
-class ChatbotWakeModal(discord.ui.Modal, title="Wake Up HMS Victory"):
-    channel_input = discord.ui.TextInput(
-        label="Target Channel (or select on card)",
-        placeholder="Leave blank to use channel selected on card",
-        default="general",
-        max_length=60,
-        required=False,
-    )
-    duration_input = discord.ui.TextInput(
-        label="Auto-Stop Timer (Optional)",
-        placeholder="e.g. 15m, 30m, 1h, 2h (leave blank for unlimited)",
-        max_length=20,
-        required=False,
-    )
-    target_user_input = discord.ui.TextInput(
-        label="Troll/Defence Target ID (Optional)",
-        placeholder="User ID or @mention (Vic will target & roast every message they send)",
-        max_length=60,
-        required=False,
-    )
-    topic_input = discord.ui.TextInput(
-        label="Starting Context / Hint (Optional)",
-        placeholder="e.g. Chin pub quiz, a Discord message link, or leave blank for natural chat",
-        style=discord.TextStyle.paragraph,
-        max_length=400,
-        required=False,
-    )
-
-    def __init__(self, default_channel: Optional[str] = None, default_target_user: Optional[str] = None):
-        super().__init__()
-        if default_channel:
-            self.channel_input.default = default_channel
-        if default_target_user is not None:
-            self.target_user_input.default = default_target_user
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if interaction.user.id != USERS.OGGERS:
-            await interaction.response.send_message("Only Oggers can control this.", ephemeral=True)
-            return
-
-        # Defer immediately to allow time for scraping & AI context formulation
-        await interaction.response.defer(ephemeral=True)
-
-        channel_val = self.channel_input.value.strip() if self.channel_input.value else ""
-        if channel_val:
-            cid, cname = resolve_channel_input(channel_val)
-        elif live_chat_manager.target_channel_id:
-            cid, cname = live_chat_manager.target_channel_id, live_chat_manager.target_channel_name
-        else:
-            cid, cname = resolve_channel_input("general")
-
-        dur = parse_duration_str(self.duration_input.value)
-        target_uid = parse_user_id(self.target_user_input.value)
-        raw_topic = self.topic_input.value.strip() if self.topic_input.value else ""
-
-        final_topic = None
-        f_prompt_tokens = 0
-        f_comp_tokens = 0
-        if raw_topic:
-            final_topic = raw_topic
-            try:
-                scraped_data = await scrape_server_context(
-                    client=interaction.client,
-                    guild=interaction.guild,
-                    target_channel_id=cid,
-                    user_input=raw_topic,
-                )
-                if scraped_data:
-                    formulated, f_prompt_tokens, f_comp_tokens = await asyncio.to_thread(
-                        formulate_starting_context,
-                        user_input=raw_topic,
-                        scraped_data=scraped_data,
-                        return_usage=True,
-                    )
-                    if formulated:
-                        final_topic = formulated
-            except Exception as e:
-                logger.warning("Failed to scrape/formulate starting topic: %s", e, exc_info=True)
-
-        if interaction.message:
-            live_chat_manager.set_dashboard(interaction.client, interaction.message)
-
-        live_chat_manager.start(
-            channel_id=cid,
-            channel_name=cname,
-            duration_seconds=dur,
-            topic=final_topic,
-            target_user_id=target_uid,
-            client=interaction.client,
-        )
-
-        if f_prompt_tokens or f_comp_tokens:
-            live_chat_manager.record_usage("gpt-4o-mini", f_prompt_tokens, f_comp_tokens, is_reply=False)
-
-        view = ChatbotDashboardView()
-        try:
-            if interaction.message:
-                await interaction.message.edit(content=None, embed=None, view=view)
-        except Exception:
-            pass
-
-        msg = f"✅ **HMS Victory is awake in <#{cid}>!**"
-        if target_uid:
-            msg += f"\n🛡️ **Troll/Defence target:** <@{target_uid}> (Roasting every message)"
-        if final_topic:
-            msg += f"\n**Formulated Starting Context:**\n> {final_topic}"
-        await interaction.followup.send(msg, ephemeral=True)
 
 
 class ChatbotTargetModal(discord.ui.Modal, title="Set Troll/Defence Target"):
@@ -6538,82 +6474,6 @@ class ChatbotTargetModal(discord.ui.Modal, title="Set Troll/Defence Target"):
             live_chat_manager.set_dashboard(interaction.client, interaction.message)
         await live_chat_manager.update_dashboard()
         await interaction.response.send_message(msg, ephemeral=True)
-
-
-class ChatbotChannelSelect(discord.ui.ChannelSelect):
-    def __init__(self):
-        super().__init__(
-            channel_types=[discord.ChannelType.text],
-            placeholder="🔍 Choose target channel (searchable)...",
-            custom_id="vic_live_channel_select",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != USERS.OGGERS:
-            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
-            return
-
-        if not self.values:
-            await interaction.response.send_message("No channel selected.", ephemeral=True)
-            return
-
-        selected_channel = self.values[0]
-        cid = getattr(selected_channel, "id", None) or int(str(selected_channel))
-        cname = getattr(selected_channel, "name", f"Channel {cid}")
-
-        live_chat_manager.target_channel_id = cid
-        live_chat_manager.target_channel_name = cname
-
-        if interaction.message:
-            live_chat_manager.set_dashboard(interaction.client, interaction.message)
-
-        view = ChatbotDashboardView()
-        await interaction.response.edit_message(content=None, embed=None, view=view)
-
-        if live_chat_manager.active:
-            await interaction.followup.send(f"🎯 Switched live chat target to <#{cid}>!", ephemeral=True)
-        else:
-            await interaction.followup.send(f"🎯 Target channel set to <#{cid}>. Click **Wake Up Vic** to launch!", ephemeral=True)
-
-
-class ChatbotWakeButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Wake Up Vic",
-            style=discord.ButtonStyle.success,
-            emoji="🟢",
-            custom_id="vic_live_wake_up",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != USERS.OGGERS:
-            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
-            return
-        default_channel = "general"
-        if live_chat_manager.target_channel_id:
-            default_channel = live_chat_manager.target_channel_name or str(live_chat_manager.target_channel_id)
-        default_target = str(live_chat_manager.target_user_id) if live_chat_manager.target_user_id else ""
-        await interaction.response.send_modal(ChatbotWakeModal(default_channel=default_channel, default_target_user=default_target))
-
-
-class ChatbotSleepButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Put to Sleep",
-            style=discord.ButtonStyle.danger,
-            emoji="🔴",
-            custom_id="vic_live_sleep",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != USERS.OGGERS:
-            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
-            return
-        if interaction.message:
-            live_chat_manager.set_dashboard(interaction.client, interaction.message)
-        live_chat_manager.stop(clear_target=True)
-        view = ChatbotDashboardView()
-        await interaction.response.edit_message(content=None, embed=None, view=view)
 
 
 class ChatbotRefreshButton(discord.ui.Button):
@@ -6675,6 +6535,124 @@ class ChatbotDirectPauseButton(discord.ui.Button):
         await interaction.response.edit_message(content=None, embed=None, view=view)
 
 
+def _refresh_dashboard_at(expires_at: int) -> None:
+    """Redraw the card when a timed grant runs out, so it stops listing them."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    delay = max(0.0, expires_at - time.time()) + 2
+    loop.call_later(delay, lambda: asyncio.ensure_future(live_chat_manager.update_dashboard()))
+
+
+class ChatbotGrantAccessModal(discord.ui.Modal):
+    """Give someone direct replies from Vic, for good or for a set time."""
+
+    def __init__(self):
+        super().__init__(title="Give Direct Reply Access")
+        self.member = discord.ui.UserSelect(placeholder="Search for a member", min_values=1, max_values=1)
+        self.duration = discord.ui.TextInput(placeholder="e.g. 30m, 24h, 7d", max_length=10, required=False)
+        self.add_item(discord.ui.Label(text="Who", component=self.member))
+        self.add_item(discord.ui.Label(
+            text="For how long",
+            description="Leave blank for permanent. A bare number counts as hours.",
+            component=self.duration,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
+        member = self.member.values[0] if self.member.values else None
+        if member is None:
+            await interaction.response.send_message("❌ Pick someone first.", ephemeral=True)
+            return
+        if member.id == USERS.OGGERS:
+            await interaction.response.send_message("You always have access.", ephemeral=True)
+            return
+        if getattr(member, "bot", False):
+            await interaction.response.send_message("❌ Vic doesn't take orders from bots.", ephemeral=True)
+            return
+
+        raw = (self.duration.value or "").strip().lower()
+        seconds = float(raw) * 3600 if raw.isdigit() else parse_duration_str(raw)
+        if raw and seconds <= 0:
+            await interaction.response.send_message("❌ Couldn't read that time. Try 30m, 24h or 7d.", ephemeral=True)
+            return
+
+        expires_at = int(time.time() + seconds) if seconds else None
+        grant_direct_access(member.id, expires_at)
+        if expires_at:
+            _refresh_dashboard_at(expires_at)
+            until = f"until <t:{expires_at}:f> (<t:{expires_at}:R>)"
+        else:
+            until = "permanently"
+        logger.info("Direct reply access for %s (%s) granted %s", member, member.id, until)
+
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+        await interaction.response.edit_message(view=ChatbotDashboardView())
+        await interaction.followup.send(f"✅ {member.mention} can @ Vic for direct replies {until}.", ephemeral=True)
+
+
+class ChatbotRevokeAccessModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Remove Direct Reply Access")
+        self.member = discord.ui.UserSelect(placeholder="Search for a member", min_values=1, max_values=1)
+        self.add_item(discord.ui.Label(text="Who", component=self.member))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
+        member = self.member.values[0] if self.member.values else None
+        if member is None:
+            await interaction.response.send_message("❌ Pick someone first.", ephemeral=True)
+            return
+        if not revoke_direct_access(member.id):
+            note = "You can't remove yourself." if member.id == USERS.OGGERS else f"{member.mention} didn't have access."
+            await interaction.response.send_message(note, ephemeral=True)
+            return
+        logger.info("Direct reply access for %s (%s) removed", member, member.id)
+
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+        await interaction.response.edit_message(view=ChatbotDashboardView())
+        await interaction.followup.send(f"🚫 {member.mention} no longer gets direct replies.", ephemeral=True)
+
+
+class ChatbotGrantAccessButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Add Access",
+            style=discord.ButtonStyle.success,
+            emoji="➕",
+            custom_id="vic_access_grant",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
+        await interaction.response.send_modal(ChatbotGrantAccessModal())
+
+
+class ChatbotRevokeAccessButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Remove Access",
+            style=discord.ButtonStyle.danger,
+            emoji="➖",
+            custom_id="vic_access_revoke",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != USERS.OGGERS:
+            await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
+            return
+        await interaction.response.send_modal(ChatbotRevokeAccessModal())
+
+
 class ChatbotDashboardView(discord.ui.LayoutView):
     """Components V2 persistent dashboard controller view."""
 
@@ -6689,93 +6667,56 @@ class ChatbotDashboardView(discord.ui.LayoutView):
         return True
 
     def build_ui(self):
-        accent = 0x2ECC71 if live_chat_manager.active else (0xE67E22 if live_chat_manager.target_user_id else 0xE74C3C)
+        paused = live_chat_manager.owner_mentions_paused
+        accent = 0xE74C3C if paused else (0xE67E22 if live_chat_manager.target_user_id else 0x2ECC71)
         card = discord.ui.Container(accent_colour=accent)
 
         # Header
         card.add_item(
             discord.ui.TextDisplay(
-                "## 🤖 HMS Victory — Live Chatbot Controller\n"
-                "Real-time control centre for Vic's live conversational responder across server channels."
+                "## 🤖 HMS Victory · Direct Replies\n"
+                "Vic answers anyone on the list below when they @ it, anywhere on the server."
             )
         )
         card.add_item(discord.ui.Separator(visible=True))
 
-        # Status & Target Channel
-        if live_chat_manager.active:
-            status_line = "🟢 **Status:** **Active & Responding**"
-            ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
-            if live_chat_manager.end_time:
-                remaining = max(0, int(live_chat_manager.end_time - time.time()))
-                mins = remaining // 60
-                secs = remaining % 60
-                timer_str = f"<t:{int(live_chat_manager.end_time)}:t> ({mins}m {secs:02d}s remaining)"
-            else:
-                timer_str = "Unlimited *(manual stop)*"
-            sub_line = "-# ⚡ Live updating every 5s"
-        elif live_chat_manager.target_user_id:
-            status_line = "🎯 **Status:** **Troll Hunter ACTIVE**"
-            if live_chat_manager.target_channel_id:
-                ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
-            else:
-                ch_str = "All Server Channels *(Everywhere target speaks)*"
-            timer_str = "None *(Continuous until cleared)*"
-            sub_line = f"-# 🚨 Actively hunting & roasting <@{live_chat_manager.target_user_id}>"
+        # Status & Troll/Defence Target
+        direct_str = "⏸️ **Paused** *(ignoring direct tags)*" if paused else "✅ **Active** *(responding to direct tags)*"
+        if live_chat_manager.target_user_id:
+            target_str = f"🎯 <@{live_chat_manager.target_user_id}> (`{live_chat_manager.target_user_id}`)\n> 🚨 **Defence Mode ACTIVE:** Retaliating and roasting every message they send."
         else:
-            status_line = "🔴 **Status:** **Offline / Asleep**"
-            if live_chat_manager.target_channel_id:
-                ch_str = f"<#{live_chat_manager.target_channel_id}> (`{live_chat_manager.target_channel_name}`)"
-            else:
-                ch_str = "*None (Select from dropdown below)*"
-            timer_str = "None"
-            sub_line = "-# 💤 Responder is currently sleeping"
-
-        direct_str = "⏸️ **Paused** *(ignoring direct tags)*" if live_chat_manager.owner_mentions_paused else "✅ **Active** *(responding to direct tags)*"
-
+            target_str = "None"
         card.add_item(
             discord.ui.TextDisplay(
-                f"{status_line}\n"
-                f"📍 **Target Channel:** {ch_str}\n"
-                f"⏱️ **Auto-Stop Timer:** {timer_str}\n"
-                f"🏷️ **Direct Mentions:** {direct_str}\n"
-                f"{sub_line}"
+                f"🏷️ **Direct Replies:** {direct_str}\n"
+                f"🛡️ **Troll / Defence Target:** {target_str}"
             )
         )
+        card.add_item(discord.ui.Separator(visible=True))
+
+        # Access list: permanent grants first, then timed ones by when they run out
+        lines = [f"- <@{USERS.OGGERS}> · always"]
+        grants = sorted(direct_access_grants().items(), key=lambda g: (g[1] is not None, g[1] or 0))
+        for uid, expires_at in grants:
+            when = "permanent" if expires_at is None else f"until <t:{expires_at}:f> (<t:{expires_at}:R>)"
+            lines.append(f"- <@{uid}> · {when}")
+        card.add_item(discord.ui.TextDisplay("### 👥 Who Vic Answers\n" + "\n".join(lines)))
         card.add_item(discord.ui.Separator(visible=True))
 
         # Metrics
-        cost_title = "Live Session Cost" if live_chat_manager.active else "Last Session Cost"
         metrics_text = (
             "### 📊 Usage & Cost Metrics\n"
-            f"- **💰 {cost_title}:** **`${live_chat_manager.session_cost_usd:.4f}`** · `{live_chat_manager.total_tokens:,}` tokens · `{live_chat_manager.session_replies_count}` replies\n"
+            f"- **💰 Since Restart:** **`${live_chat_manager.session_cost_usd:.4f}`** · `{live_chat_manager.total_tokens:,}` tokens · `{live_chat_manager.session_replies_count}` replies\n"
             f"- **📈 Total Cost (All-Time):** **`${live_chat_manager.all_time_cost_usd:.4f}`** · `{live_chat_manager.all_time_tokens:,}` tokens · `{live_chat_manager.all_time_replies_count}` replies"
         )
         card.add_item(discord.ui.TextDisplay(metrics_text))
         card.add_item(discord.ui.Separator(visible=True))
 
-        # Troll/Defence Target & Context
-        if live_chat_manager.target_user_id:
-            target_str = f"🎯 <@{live_chat_manager.target_user_id}> (`{live_chat_manager.target_user_id}`)\n> 🚨 **Defence Mode ACTIVE:** Retaliating and roasting every message they send."
-        else:
-            target_str = "None *(Standard Mode — replies only when mentioned or called)*"
-
-        topic_str = f"_{live_chat_manager.topic}_" if live_chat_manager.topic else "None *(Natural conversation / auto-scraped)*"
-
-        config_text = (
-            f"🛡️ **Troll / Defence Target:** {target_str}\n\n"
-            f"💬 **Starting Context / Hint:** {topic_str}"
-        )
-        card.add_item(discord.ui.TextDisplay(config_text))
-        card.add_item(discord.ui.Separator(visible=True))
-
-        # Channel Select dropdown
-        card.add_item(discord.ui.ActionRow(ChatbotChannelSelect()))
-
         # Action buttons
         card.add_item(
             discord.ui.ActionRow(
-                ChatbotWakeButton(),
-                ChatbotSleepButton(),
+                ChatbotGrantAccessButton(),
+                ChatbotRevokeAccessButton(),
                 ChatbotDirectPauseButton(),
                 ChatbotTargetButton(),
                 ChatbotRefreshButton(),
@@ -6819,10 +6760,10 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
                     await dashboard_msg.delete()
                 except Exception:
                     pass
-                dashboard_msg = await thread.send(view=view)
+                dashboard_msg = await thread.send(view=view, allowed_mentions=discord.AllowedMentions.none())
                 logger.info("Recreated chatbot dashboard message with Components V2 (%s) in thread %s", dashboard_msg.id, thread_id)
         else:
-            dashboard_msg = await thread.send(view=view)
+            dashboard_msg = await thread.send(view=view, allowed_mentions=discord.AllowedMentions.none())
             logger.info("Posted initial chatbot dashboard message (%s) with Components V2 in thread %s", dashboard_msg.id, thread_id)
 
         live_chat_manager.set_dashboard(client, dashboard_msg)
