@@ -369,6 +369,11 @@ class AClient(discord.Client):
         # would otherwise punch a hole in the year-in-review stats.
         chronicle.record_message(message)
 
+        # Vic's own chat answers are remembered so a reply-ping to one carries the chat on.
+        if self.user and message.author.id == self.user.id:
+            from lib.features.chat_responder import note_own_message
+            note_own_message(message)
+
         if message.author.id == USERS.COUNTRYBALL_BOT:
             # Gather all text from content, embeds, and component labels
             full_text = message.content or ""

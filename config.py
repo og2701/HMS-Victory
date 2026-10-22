@@ -657,6 +657,7 @@ JOIN_WATCH_JEV_SHADOW_FILE = os.path.join(JSON_DATA_DIR, "join_watch_jev_shadow.
 TOWN_CRIER_TRACKING_FILE = os.path.join(JSON_DATA_DIR, "town_crier_tracking.json")
 CHATBOT_USAGE_FILE = os.path.join(JSON_DATA_DIR, "chatbot_usage.json")
 CHATBOT_CONFIG_FILE = os.path.join(JSON_DATA_DIR, "chatbot_config.json")
+CHATBOT_REPLIES_FILE = os.path.join(JSON_DATA_DIR, "chatbot_replies.json")
 IMAGE_GEN_USAGE_FILE = os.path.join(JSON_DATA_DIR, "image_gen_usage.json")
 IMAGE_GEN_DAILY_LIMIT = 10
 IMAGE_GEN_MODEL = "gpt-image-2.5-flare"

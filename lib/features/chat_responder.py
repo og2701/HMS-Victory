@@ -20,7 +20,7 @@ from typing import List, Dict, Optional, Tuple, Any, Union
 
 import discord
 from config import (
-    CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE,
+    CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE, CHATBOT_REPLIES_FILE,
     DIRECT_MENTION_ALLOWED_USERS, IMAGE_GEN_USAGE_FILE, IMAGE_GEN_DAILY_LIMIT,
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
@@ -2245,6 +2245,59 @@ def revoke_direct_access(user_id: int) -> bool:
     return True
 
 
+# Vic's answers to direct @mentions. A reply-ping to one of these carries the conversation on;
+# a reply-ping to anything else Vic posted (a command's output, a game, an announcement) doesn't.
+_CHAT_REPLY_LIMIT = 5000
+_answering: Dict[int, float] = {}
+_chat_reply_ids: Optional[List[int]] = None
+
+
+def _chat_replies() -> List[int]:
+    global _chat_reply_ids
+    if _chat_reply_ids is None:
+        try:
+            raw = load_json_file(CHATBOT_REPLIES_FILE)
+            _chat_reply_ids = [int(i) for i in raw] if isinstance(raw, list) else []
+        except Exception as e:
+            logger.debug("Failed to load chatbot reply ids: %s", e)
+            _chat_reply_ids = []
+    return _chat_reply_ids
+
+
+def note_answering(message_id: int) -> None:
+    """Vic is about to answer this message, so whatever it posts in reply is a chat answer."""
+    now = time.time()
+    for mid in [m for m, ts in _answering.items() if now - ts > 900]:
+        del _answering[mid]
+    _answering[message_id] = now
+
+
+def note_own_message(message: discord.Message) -> None:
+    """Called for every message Vic posts. Keeps the ones replying to a direct @mention."""
+    ref_id = getattr(getattr(message, "reference", None), "message_id", None)
+    if ref_id not in _answering:
+        return
+    ids = _chat_replies()
+    ids.append(message.id)
+    del ids[:-_CHAT_REPLY_LIMIT]
+    try:
+        atomic_write_json(CHATBOT_REPLIES_FILE, ids)
+    except Exception as e:
+        logger.error("Failed to persist chatbot reply ids: %s", e)
+
+
+def addresses_vic(client: discord.Client, message: discord.Message) -> bool:
+    """A typed @Vic always counts. A reply-ping only counts when it replies to one of Vic's
+    chat answers, not to a command's output or anything else Vic posted."""
+    content = message.content or ""
+    if f"<@{client.user.id}>" in content or f"<@!{client.user.id}>" in content:
+        return True
+    ref_id = getattr(getattr(message, "reference", None), "message_id", None)
+    if not isinstance(ref_id, int):
+        return True
+    return ref_id in _chat_replies()
+
+
 def generate_ai_reply(
     user_name: str,
     user_content: str,
@@ -2547,7 +2600,8 @@ def parse_user_id(val: Optional[str]) -> Optional[int]:
     except ValueError:
         return None
 def is_bot_explicitly_mentioned(client: discord.Client, message: discord.Message) -> bool:
-    """True only when the message actually @mentions HMS Victory (<@ID> / <@!ID>), not a reply or a name-drop."""
+    """True only when the message actually @mentions HMS Victory: a typed <@ID> / <@!ID>, or a
+    reply with the ping left on. A name-drop or a ping-off reply doesn't count."""
     if not client.user:
         return False
     content = (message.content or "").strip()
@@ -6432,9 +6486,13 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     # Only a real @mention counts here. Name-drops like "I'll get vic to dm her" or replies to the
     # bot's messages must not summon it; those looser matches are only used by the live chat mode.
     if is_bot_explicitly_mentioned(client, message) and has_direct_access(message.author.id):
+        if not addresses_vic(client, message):
+            logger.info("Reply-ping from %s (%s) ignored: it replies to a bot message that isn't a chat answer.", message.author, message.author.id)
+            return False
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
+        note_answering(message.id)
         return await handle_one_off_owner_mention(client, message)
 
     # 3. Standard live chat responder if currently active
@@ -6703,15 +6761,6 @@ class ChatbotDashboardView(discord.ui.LayoutView):
         card.add_item(discord.ui.TextDisplay("### 👥 Who Vic Answers\n" + "\n".join(lines)))
         card.add_item(discord.ui.Separator(visible=True))
 
-        # Metrics
-        metrics_text = (
-            "### 📊 Usage & Cost Metrics\n"
-            f"- **💰 Since Restart:** **`${live_chat_manager.session_cost_usd:.4f}`** · `{live_chat_manager.total_tokens:,}` tokens · `{live_chat_manager.session_replies_count}` replies\n"
-            f"- **📈 Total Cost (All-Time):** **`${live_chat_manager.all_time_cost_usd:.4f}`** · `{live_chat_manager.all_time_tokens:,}` tokens · `{live_chat_manager.all_time_replies_count}` replies"
-        )
-        card.add_item(discord.ui.TextDisplay(metrics_text))
-        card.add_item(discord.ui.Separator(visible=True))
-
         # Action buttons
         card.add_item(
             discord.ui.ActionRow(
@@ -6723,8 +6772,11 @@ class ChatbotDashboardView(discord.ui.LayoutView):
             )
         )
 
-        # Footer
-        card.add_item(discord.ui.TextDisplay("-# HMS Victory • Persistent Controller • Oggers Only • Components V2"))
+        # All-time usage
+        card.add_item(discord.ui.TextDisplay(
+            f"-# 📈 All-time: ${live_chat_manager.all_time_cost_usd:.2f} · "
+            f"{live_chat_manager.all_time_tokens:,} tokens · {live_chat_manager.all_time_replies_count:,} replies"
+        ))
 
         self.add_item(card)
 
