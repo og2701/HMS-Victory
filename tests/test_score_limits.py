@@ -37,3 +37,6 @@ def test_climb_allows_the_best_real_climbs_but_not_much_more():
     assert 900 < L.climb_max(SEED, 178) < 1400
     assert 1300 < L.climb_max(SEED, 248) < 1900
     assert L.climb_max(SEED, 60) < 60 * 9 + 40                 # tighter than the old 9 m a second
+    # and climbs past 2,000 m count (2,185 m in 494 s on 2026-10-22 was cut to the old 2,000 m ceiling)
+    assert L.climb_max(SEED, 494) > 2185
+    assert L.climb_max(SEED, 3600) > 9000                      # the rigging's worked out far enough up

@@ -89,7 +89,8 @@ def spitfire_max(seed: str, seconds: float) -> int:
 PER_METRE = 50
 GRAVITY = 1900
 JUMP, SPRING, BOOST, BOOST_TIME = 930, 1480, 2100, 1.25
-CLIMB_TOP = 2000 * PER_METRE        # the score ceiling, in world units
+CLIMB_TOP = 20000 * PER_METRE       # the score ceiling, in world units (config.CLIMB_MAX_HEIGHT); real climbs
+                                    # have gone past 2,000 m (2,185 m on 2026-10-22)
 
 
 def climb_footholds(seed: str, up_to: float = CLIMB_TOP + 4000) -> list[tuple[float, str]]:

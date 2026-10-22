@@ -437,7 +437,7 @@ class ScoreGame:
 
 CLIMB = ScoreGame(
     key="climb", label="Climb HMS Victory", prefix="CLIMB", days="climb_days", runs="climb_runs",
-    score_col="height", count_col="bounces", rate=0.5, cap=150, max_rate=9.0, max_score=2000, slack=40,
+    score_col="height", count_col="bounces", rate=0.5, cap=150, max_rate=9.0, max_score=20000, slack=40,
     post="climbed **HMS Victory** to **{score} m**", emoji="⚓", limit=score_limits.climb_max)
 
 SPITFIRE = ScoreGame(

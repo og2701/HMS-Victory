@@ -493,7 +493,8 @@ CLIMB_ENABLED = True
 CLIMB_RATE = 0.5
 CLIMB_CAP = 150
 CLIMB_MAX_SPEED = 9.0
-CLIMB_MAX_HEIGHT = 2_000                       # no climb counts for more than this (well past the hardest rigging)
+CLIMB_MAX_HEIGHT = 20_000                      # no climb counts for more than this: only a backstop, the time and the
+                                               # day's rigging (score_limits.climb_max) are what hold a climb to what's possible
 # Spitfire (the activity's Flappy Bird style flight through the barrage balloons): the same
 # rules as the climb, a point for each gap passed. It speeds up forever but never past 1.25 gaps
 # a second, so SPITFIRE_MAX_SPEED (points a second, with room to spare) bounds a score by the time taken.
