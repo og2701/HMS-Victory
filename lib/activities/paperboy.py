@@ -298,15 +298,16 @@ def kit(uid: int) -> dict:
     return {"balance": balance(uid), "owned": sorted(set(FREE) | set(owned)),
             "wearing": {**WEARING, **{s: k for s, k in wearing.items() if k in WARDROBE}},
             "catalogue": [{"id": k, "slot": v[0], "name": v[1], "cost": v[2], "look": v[3]} for k, v in WARDROBE.items()],
-            "upgrades": levels(uid), "upgradeCosts": list(UPGRADE_COSTS)}
+            "upgrades": levels(uid), "upgradeCosts": {k: list(v) for k, v in UPGRADE_COSTS.items()}}
 
 
 # ---- power-up upgrades -------------------------------------------------------------------------
-# Bought with papers in the wardrobe, five levels each (UPGRADE_COSTS, the same for each power-up): the magnet and
+# Bought with papers in the wardrobe, five levels each (UPGRADE_COSTS; the helmet's last, two knocks, costs most): the magnet and
 # double papers last 2 s longer a level (10 s to 20 s, 15 s to 25 s), the helmet keeps you safe longer after a
 # knock, and at the top level takes two knocks (paperboy_sim, and the page's src/paperboy/sim.ts). A round replays
 # at the levels the page played it at, up to what's owned (daily_score.PaperboyGame.replay_ups).
-UPGRADE_COSTS = (500, 1500, 4000, 9000, 20000)
+UPGRADE_COSTS = {"magnet": (500, 1500, 4000, 9000, 20000), "double": (500, 1500, 4000, 9000, 20000),
+                 "helmet": (500, 1500, 4000, 9000, 40000)}
 
 
 def levels(uid: int) -> dict[str, int]:
@@ -323,7 +324,7 @@ def upgrade(uid: int, power: str) -> dict:
     now = levels(uid)
     if now[power] >= paperboy_sim.UP_MAX:
         raise WardrobeRefuse("That's as good as it gets.")
-    cost = UPGRADE_COSTS[now[power]]
+    cost = UPGRADE_COSTS[power][now[power]]
     if balance(uid) < cost:
         raise WardrobeRefuse(f"You need {cost - balance(uid):,} more papers for that.")
     now[power] += 1

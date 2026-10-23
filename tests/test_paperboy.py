@@ -163,7 +163,8 @@ def test_power_ups_upgrade_with_papers_five_levels_each(clock):
     from database import DatabaseManager
     from lib.activities import paperboy
     k = paperboy.kit(UID)
-    assert k["upgrades"] == {"magnet": 0, "double": 0, "helmet": 0} and k["upgradeCosts"] == [500, 1500, 4000, 9000, 20000]
+    assert k["upgrades"] == {"magnet": 0, "double": 0, "helmet": 0}
+    assert k["upgradeCosts"]["magnet"] == [500, 1500, 4000, 9000, 20000] and k["upgradeCosts"]["helmet"][-1] == 40000   # two knocks costs most
     with pytest.raises(paperboy.WardrobeRefuse):
         paperboy.upgrade(UID, "magnet")                                 # no papers yet
     DatabaseManager.execute(
