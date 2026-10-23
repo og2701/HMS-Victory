@@ -5475,11 +5475,49 @@ SHUT_SECONDS = 30
 _SHUT_WORDS_RE = re.compile(r"\b(?:shut|time\s*(?:them\s+|him\s+|her\s+)?out|timeout|mute|silence)", re.IGNORECASE)
 
 
+SHUT_PICK_INSTRUCTIONS = """You are HMS Victory, the dry, deadpan British flagship bot of a UK Discord server. Someone with authority has asked you to "shut" a member: a 30-second timeout. You get their request, the people you may choose from, and the last half hour of chat (oldest first, each line tagged with the speaker's id).
+
+Pick the one person whose recent messages most deserve a shut: annoying, smug, spammy, cringe, contrarian for the sake of it, or talking rubbish. If the request says who or what to shut them for, follow it. If nobody stands out, pick whoever said the silliest thing. If only one person is allowed, they are the one.
+
+Then give the reason in ONE short sentence (under 20 words), dry and deadpan, pointing at something they actually said. Never touch on protected characteristics, never use slurs, never @mention anyone.
+
+Reply as JSON: {"user_id": "<one id from the allowed list>", "reason": "<the sentence>"}"""
+
+
+async def _pick_shut_victim(request: str, chat_lines: List[str], allowed: Dict[int, str]) -> Tuple[Optional[int], Optional[str]]:
+    """gpt-4o reads the recent chat and names who to shut and why. (None, None) when it can't, so the
+    caller falls back to a random pick with no reason rather than not shutting anyone."""
+    api_key = os.getenv("OPENAI_TOKEN")
+    if not api_key or not allowed:
+        return None, None
+    payload = (
+        f"REQUEST: {request or 'shut someone'}\n\n"
+        "ALLOWED (id: name):\n" + "\n".join(f"{uid}: {name}" for uid, name in allowed.items()) + "\n\n"
+        "RECENT CHAT:\n" + ("\n".join(chat_lines) or "[nothing in the last half hour]")
+    )
+    try:
+        parsed, p_tok, c_tok = await asyncio.to_thread(
+            _chat_completion_json, SHUT_PICK_INSTRUCTIONS, payload, api_key,
+            model="gpt-4o", max_tokens=120, temperature=0.7, timeout=20, what="Shut pick",
+        )
+        live_chat_manager.record_usage("gpt-4o", p_tok, c_tok, is_reply=True)
+    except Exception as e:
+        logger.warning("Shut pick failed, falling back to random: %s", e)
+        return None, None
+    try:
+        uid = int(str(parsed.get("user_id", "")).strip())
+    except ValueError:
+        uid = None
+    reason = str(parsed.get("reason") or "").strip() or None
+    return (uid if uid in allowed else None), reason
+
+
 async def handle_shut_request(client: discord.Client, message: discord.Message, other_mentions: List[Any],
-                              ref_msg: Any, bot_id: Optional[int]) -> None:
+                              ref_msg: Any, bot_id: Optional[int], request: str = "") -> None:
     """Someone on Vic's list asked for a shut: 30 seconds for whoever they tagged or replied to, or for
-    a random person from the last half hour of the channel, answered with the Shut sticker. The same
-    staff protection as the :Shut: reaction applies unless the caller is Oggers or senior staff."""
+    whoever in the last half hour of the channel most deserves it, answered with a one-line reason and
+    the Shut sticker. The same staff protection as the :Shut: reaction applies unless the caller is
+    Oggers or senior staff."""
     from lib.bot.event_handlers import SHUT_STICKER_ID, award_badge_with_notify, save_shut_count, track_warden
     guild, caller = message.guild, message.author
     if guild is None:
@@ -5493,6 +5531,10 @@ async def handle_shut_request(client: discord.Client, message: discord.Message, 
             return False
         return senior or not any(r.id in protected for r in member.roles)
 
+    since = discord.utils.utcnow() - timedelta(minutes=30)
+    recent = [m async for m in message.channel.history(limit=100, after=since) if not m.author.bot and m.id != message.id]
+    chat_lines = [f"[{m.author.id}] {_member_display_name(m.author)}: {(m.content or '[attachment]')[:200]}" for m in recent[-60:]]
+
     named = other_mentions[0] if other_mentions else None
     if named is None and ref_msg is not None and getattr(ref_msg.author, "id", None) not in (bot_id, caller.id):
         named = ref_msg.author
@@ -5501,31 +5543,39 @@ async def handle_shut_request(client: discord.Client, message: discord.Message, 
         if not shuttable(member):
             await message.reply("Can't shut them.", mention_author=False)
             return
-        candidates = [member]
+        _uid, reason = await _pick_shut_victim(request, chat_lines, {member.id: _member_display_name(member)})
+        candidates, picked = [member], member.id
     else:
-        ids = await asyncio.to_thread(fetch_channel_recent_posters, message.channel.id, 30, 25, [caller.id, bot_id])
-        candidates = [m for m in (guild.get_member(uid) for uid in ids) if shuttable(m)]
-        random.shuffle(candidates)
-        if not candidates:
+        pool = {}
+        for m in recent:
+            member = guild.get_member(m.author.id)
+            if member is not None and member.id not in pool and shuttable(member):
+                pool[member.id] = member
+        if not pool:
             await message.reply("Nobody about to shut.", mention_author=False)
             return
+        picked, reason = await _pick_shut_victim(request, chat_lines, {uid: _member_display_name(mm) for uid, mm in pool.items()})
+        candidates = list(pool.values())
+        random.shuffle(candidates)
+        if picked in pool:
+            candidates.remove(pool[picked])
+            candidates.insert(0, pool[picked])
 
     for victim in candidates[:5]:
         try:
             await victim.timeout(timedelta(seconds=SHUT_SECONDS), reason=f"Shut by HMS Victory at {caller}'s request")
         except discord.HTTPException:   # above the bot, or an admin: try the next one
             continue
-        logger.info("Vic shut %s (%s) for %ss at %s's request", victim, victim.id, SHUT_SECONDS, caller)
-        their_msg = None
-        async for m in message.channel.history(limit=50):
-            if m.author.id == victim.id:
-                their_msg = m
-                break
+        why = reason if victim.id == picked else None
+        logger.info("Vic shut %s (%s) for %ss at %s's request: %s", victim, victim.id, SHUT_SECONDS, caller, why)
+        their_msg = next((m for m in reversed(recent) if m.author.id == victim.id), None)
         sticker = [discord.Object(id=SHUT_STICKER_ID)]
+        quiet = discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True)
         if their_msg is not None:
-            await their_msg.reply(stickers=sticker)
+            await their_msg.reply(why, stickers=sticker, allowed_mentions=quiet)
         else:
-            await message.reply(victim.mention, stickers=sticker)
+            await message.reply(f"{victim.mention} {why or ''}".strip(), stickers=sticker,
+                                allowed_mentions=discord.AllowedMentions(users=[victim]))
         save_shut_count(victim.id)
         await award_badge_with_notify(client, victim.id, "shut_victim")
         if track_warden(caller.id, victim.id) >= 10:
@@ -5632,7 +5682,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, signals.input_tokens, signals.output_tokens)
 
         if signals is not None and signals.says("shut_request") and _SHUT_WORDS_RE.search(clean_prompt):
-            await handle_shut_request(client, message, other_mentions, ref_msg, bot_id)
+            await handle_shut_request(client, message, other_mentions, ref_msg, bot_id, request=clean_prompt)
             return True
 
         if ref_msg is not None:
