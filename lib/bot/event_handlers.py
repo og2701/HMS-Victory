@@ -2001,7 +2001,7 @@ async def handle_shut_reaction(reaction, user):
             if has_role:
                 duration = timedelta(minutes=5)
                 await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
-                sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
+                sticker_message = await reaction.message.reply(stickers=[discord.Object(id=SHUT_STICKER_ID)])
                 sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
                 logger.info(f"User {message_author} timed out for {duration} by {user} (Shutcoin disabled).")
                 save_shut_count(message_author.id)
@@ -2016,7 +2016,7 @@ async def handle_shut_reaction(reaction, user):
                 return
             duration = timedelta(seconds=30)
         await message_author.timeout(discord.utils.utcnow() + duration, reason=reason)
-        sticker_message = await reaction.message.reply(stickers=[discord.Object(id=1298758779428536361)])
+        sticker_message = await reaction.message.reply(stickers=[discord.Object(id=SHUT_STICKER_ID)])
         sticker_messages[reaction.message.id] = (sticker_message.id, user.id)
         logger.info(f"User {message_author} was timed out for {duration} due to ':Shut:' reaction by {user}.")
         save_shut_count(message_author.id)
@@ -2062,6 +2062,9 @@ async def handle_bedtime_reaction(reaction, user):
         await award_badge_with_notify(client, message_author.id, 'shut_victim')
     except Exception as e:
         logger.error(f"Failed to bedtime user {message_author}: {e}")
+
+
+SHUT_STICKER_ID = 1298758779428536361
 
 
 # :oggersglare: reaction - a 30-second 'shut' with its own sticker. Cabinet/Border Force only.

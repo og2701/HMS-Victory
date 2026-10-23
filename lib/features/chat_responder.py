@@ -14,13 +14,13 @@ import socket
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from collections import deque
 from typing import List, Dict, Optional, Tuple, Any, Union
 
 import discord
 from config import (
-    CHANNELS, BOT_ID, USERS, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE, CHATBOT_REPLIES_FILE,
+    CHANNELS, BOT_ID, USERS, ROLES, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE, CHATBOT_REPLIES_FILE,
     DIRECT_MENTION_ALLOWED_USERS, IMAGE_GEN_USAGE_FILE, IMAGE_GEN_DAILY_LIMIT,
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
@@ -5471,6 +5471,69 @@ async def answer_data_query(
     return True
 
 
+SHUT_SECONDS = 30
+_SHUT_WORDS_RE = re.compile(r"\b(?:shut|time\s*(?:them\s+|him\s+|her\s+)?out|timeout|mute|silence)", re.IGNORECASE)
+
+
+async def handle_shut_request(client: discord.Client, message: discord.Message, other_mentions: List[Any],
+                              ref_msg: Any, bot_id: Optional[int]) -> None:
+    """Someone on Vic's list asked for a shut: 30 seconds for whoever they tagged or replied to, or for
+    a random person from the last half hour of the channel, answered with the Shut sticker. The same
+    staff protection as the :Shut: reaction applies unless the caller is Oggers or senior staff."""
+    from lib.bot.event_handlers import SHUT_STICKER_ID, award_badge_with_notify, save_shut_count, track_warden
+    guild, caller = message.guild, message.author
+    if guild is None:
+        await message.reply("Shuts only work in the server.", mention_author=False)
+        return
+    senior = caller.id == USERS.OGGERS or any(r.id in (ROLES.CABINET, ROLES.BORDER_FORCE) for r in getattr(caller, "roles", []))
+    protected = {ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
+
+    def shuttable(member) -> bool:
+        if member is None or member.bot or member.id in (caller.id, bot_id) or member.is_timed_out():
+            return False
+        return senior or not any(r.id in protected for r in member.roles)
+
+    named = other_mentions[0] if other_mentions else None
+    if named is None and ref_msg is not None and getattr(ref_msg.author, "id", None) not in (bot_id, caller.id):
+        named = ref_msg.author
+    if named is not None:
+        member = guild.get_member(named.id)
+        if not shuttable(member):
+            await message.reply("Can't shut them.", mention_author=False)
+            return
+        candidates = [member]
+    else:
+        ids = await asyncio.to_thread(fetch_channel_recent_posters, message.channel.id, 30, 25, [caller.id, bot_id])
+        candidates = [m for m in (guild.get_member(uid) for uid in ids) if shuttable(m)]
+        random.shuffle(candidates)
+        if not candidates:
+            await message.reply("Nobody about to shut.", mention_author=False)
+            return
+
+    for victim in candidates[:5]:
+        try:
+            await victim.timeout(timedelta(seconds=SHUT_SECONDS), reason=f"Shut by HMS Victory at {caller}'s request")
+        except discord.HTTPException:   # above the bot, or an admin: try the next one
+            continue
+        logger.info("Vic shut %s (%s) for %ss at %s's request", victim, victim.id, SHUT_SECONDS, caller)
+        their_msg = None
+        async for m in message.channel.history(limit=50):
+            if m.author.id == victim.id:
+                their_msg = m
+                break
+        sticker = [discord.Object(id=SHUT_STICKER_ID)]
+        if their_msg is not None:
+            await their_msg.reply(stickers=sticker)
+        else:
+            await message.reply(victim.mention, stickers=sticker)
+        save_shut_count(victim.id)
+        await award_badge_with_notify(client, victim.id, "shut_victim")
+        if track_warden(caller.id, victim.id) >= 10:
+            await award_badge_with_notify(client, caller.id, "warden")
+        return
+    await message.reply("Couldn't shut them.", mention_author=False)
+
+
 async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
     """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying."""
     if message.id in _handled_one_off_message_ids:
@@ -5567,6 +5630,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             logger.warning("Jev judgment failed, continuing without it: %s", e)
         if signals is not None and (signals.input_tokens or signals.output_tokens):
             live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, signals.input_tokens, signals.output_tokens)
+
+        if signals is not None and signals.says("shut_request") and _SHUT_WORDS_RE.search(clean_prompt):
+            await handle_shut_request(client, message, other_mentions, ref_msg, bot_id)
+            return True
 
         if ref_msg is not None:
             if is_delegation_prompt(clean_prompt) or (signals is not None and signals.says("delegation")):

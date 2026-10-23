@@ -170,6 +170,14 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
             "false": {"what": "A specific person, several people, or nobody in particular"},
         },
     },
+    "shut_request": {
+        "type": "noul",
+        "instructions": "Does `message.text` ask the bot to shut someone: give a member this server's short timeout (a 'shut'), whether they name them, tag them, reply to them or want one picked at random?",
+        "criteria": {
+            "true": {"examples": ["shut him", "shut @dave", "choose one person to shut", "pick someone to shut", "give rin a shut", "time out a random person", "shut this guy up"]},
+            "false": {"what": "Telling the bot itself to shut up, talking about shuts or shutcoins, asking who got shut, or anything else"},
+        },
+    },
     "group": {
         "type": "noul",
         "instructions": "Is the picture asked for in `message.text` of SEVERAL people or the community as a whole, rather than one named person?",
@@ -335,7 +343,7 @@ QUESTIONS.update({
     },
 })
 
-_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion", "data_multi", "server_records")
+_NOUL_KEYS = ("text_creation", "delegation", "attachment_modification", "bot_self", "random_pick", "group", "follow_up_image", "live_query", "data_lowest", "stats_opinion", "data_multi", "server_records", "shut_request")
 ACTIONS = ("generate", "edit", "reply")
 DATA_SHAPES = SHAPES + ("none",)
 DATA_SUBJECTS = ("caller", "mentioned_user", "someone_named", "not_applicable")
@@ -372,6 +380,7 @@ class MentionSignals:
     data_list: str = "none"
     data_list_confidence: float = 0.0
     data_source: Optional[str] = None
+    shut_request: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
 
