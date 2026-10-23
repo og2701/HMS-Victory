@@ -9,6 +9,10 @@ The bot picks the spots (pick_day): on land in the UK (data/guessr/uk-land.json,
 scripts/guessr-map.py from Natural Earth's public-domain map), half near a city and half anywhere, each a recent
 Mapillary 360° photo, and spread out round the country. Today's and tomorrow's photos are kept on disk
 (photo_dir); older days' are deleted, while the spots and everyone's guesses stay in the database.
+
+The map players pin on is OpenStreetMap's, from OpenFreeMap (free, no key). Inside Discord the page can't reach
+other sites, so it asks the bot for each of the map's files (map_file): fetched once, then served from a copy on
+disk that's trimmed back to MAP_CACHE_MB, least used first.
 """
 
 from __future__ import annotations
@@ -20,10 +24,12 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import time
 from datetime import date as _date, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import config
 from database import DatabaseManager
@@ -38,6 +44,16 @@ LAND_FILE = Path(__file__).resolve().parents[2] / "data" / "guessr" / "uk-land.j
 API = "https://graph.mapillary.com/images"
 FIELDS = "id,computed_geometry,geometry,thumb_2048_url,captured_at,creator,is_pano"
 OLDEST_MS = 1451606400000      # photos from 2016 on, so the streets look like today's
+MAP_HOST = "https://tiles.openfreemap.org/"
+MAP_CACHE_MB = 1000
+_MAP_FILE = re.compile(
+    r"styles/liberty|planet"                                    # these two change, so they're fetched again daily
+    r"|planet/\d{8}_\d{6}_pt/\d{1,2}/\d{1,6}/\d{1,6}\.pbf"
+    r"|fonts/[A-Za-z0-9 ,_-]{1,80}/\d{1,5}-\d{1,5}\.pbf"
+    r"|sprites/[a-z0-9_]{1,40}/ofm(@2x)?\.(json|png)"
+    r"|natural_earth/ne2sr/\d{1,2}/\d{1,6}/\d{1,6}\.png")
+_map_fetching: dict[str, asyncio.Task] = {}
+_map_session = None
 _picking: dict[str, asyncio.Task] = {}
 
 
@@ -253,6 +269,7 @@ async def run_sweeper(today) -> None:
                 if spots(iso) is None:
                     await pick_day(iso)
             tidy(d.isoformat())
+            await asyncio.to_thread(trim_map)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -360,6 +377,89 @@ def photo(viewer: int, date: _date, iso: str, n: int) -> Path | None:
         return None
     path = photo_dir() / iso / f"{n}.jpg"
     return path if path.exists() else None
+
+
+# ---- the map's files ------------------------------------------------------------------------------------
+
+def map_dir() -> Path:
+    return Path(config.JSON_DATA_DIR) / "guessr-map"
+
+
+def map_type(path: str) -> str:
+    return {".pbf": "application/x-protobuf", ".png": "image/png"}.get(Path(path).suffix, "application/json")
+
+
+async def map_file(path: str) -> Path | None:
+    """One of OpenFreeMap's files (`path` under MAP_HOST) from the bot's copy, fetched the first time it's asked
+    for. An empty file is a tile with nothing on it; None if OpenFreeMap couldn't be reached. Raises ValueError
+    for anything that isn't one of the map's files."""
+    if not _MAP_FILE.fullmatch(path):
+        raise ValueError(path)
+    changes = path in ("planet", "styles/liberty")
+    dest = map_dir() / (path + ".json" if changes else path)
+    if dest.exists():
+        age = time.time() - dest.stat().st_mtime
+        if not changes:
+            if age > 86400:
+                os.utime(dest)                 # still in use: it's trimmed last
+            return dest
+        if age < 86400:
+            return dest
+    task = _map_fetching.get(path)
+    if task is None:
+        task = _map_fetching[path] = asyncio.get_running_loop().create_task(_fetch_map(path, dest))
+        task.add_done_callback(lambda _: _map_fetching.pop(path, None))
+    return await asyncio.shield(task)
+
+
+async def _fetch_map(path: str, dest: Path) -> Path | None:
+    import aiohttp
+    global _map_session
+    if _map_session is None or _map_session.closed:
+        _map_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
+                                             headers={"User-Agent": "HMS-Victory UKGuessr (Discord activity)"})
+    try:
+        async with _map_session.get(MAP_HOST + quote(path, safe="/,@")) as r:
+            if r.status in (204, 404):
+                body = b""
+            elif r.status != 200:
+                log.warning("UKGuessr's map: %s for %s", r.status, path)
+                return dest if dest.exists() else None
+            else:
+                body = await r.read()
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        log.warning("UKGuessr's map: couldn't fetch %s", path, exc_info=True)
+        return dest if dest.exists() else None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    part.write_bytes(body)
+    os.replace(part, dest)
+    return dest
+
+
+def trim_map(limit_mb: int = MAP_CACHE_MB) -> None:
+    """Keep the map's copy under limit_mb, deleting what was used longest ago."""
+    base = map_dir()
+    if not base.exists():
+        return
+    files = []
+    for p in base.rglob("*"):
+        if p.is_file():
+            st = p.stat()
+            files.append((st.st_mtime, st.st_size, p))
+    total = sum(size for _, size, _ in files)
+    for _, size, p in sorted(files):
+        if total <= limit_mb * 1024 * 1024:
+            break
+        p.unlink(missing_ok=True)
+        total -= size
+
+
+async def close_map() -> None:
+    global _map_session
+    if _map_session is not None and not _map_session.closed:
+        await _map_session.close()
+    _map_session = None
 
 
 def home_card(uid: int, date: _date) -> dict:

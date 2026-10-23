@@ -17,6 +17,7 @@ data/json/*.jsonl
 !data/guessr/uk-land.json
 # UKGuessr's daily photos (lib/activities/guessr.py keeps today's and tomorrow's)
 data/json/guessr/
+data/json/guessr-map/
 database.db*
 remote_database.db*
 *.db

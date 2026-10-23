@@ -123,3 +123,48 @@ def test_without_a_token_a_test_day_is_made_for_developing(tmp_path, monkeypatch
     (tmp_path / "guessr" / "2026-10-20").mkdir()
     guessr.tidy("2026-10-24")
     assert not (tmp_path / "guessr" / "2026-10-20").exists() and (tmp_path / "guessr" / "2026-10-24").exists()
+
+
+def test_the_map_passes_on_only_the_maps_own_files_and_keeps_a_copy(tmp_path, monkeypatch):
+    import asyncio
+    import config
+    monkeypatch.setattr(config, "JSON_DATA_DIR", str(tmp_path))
+    from lib.activities import guessr
+    fetched = []
+
+    async def fetch(path, dest):
+        fetched.append(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"" if path.endswith("/0/0.pbf") else b"tile")
+        return dest
+    monkeypatch.setattr(guessr, "_fetch_map", fetch)
+
+    async def run():
+        for bad in ("../database.db", "planet/../../x", "styles/other", "planet/20261018_080001_pt/8/1/2.png"):
+            with pytest.raises(ValueError):
+                await guessr.map_file(bad)
+        tile = "planet/20261018_080001_pt/8/127/84.pbf"
+        a = await guessr.map_file(tile)
+        b = await guessr.map_file(tile)
+        assert a == b and a.read_bytes() == b"tile" and fetched == [tile]
+        sea = await guessr.map_file("planet/20261018_080001_pt/8/0/0.pbf")
+        assert sea.stat().st_size == 0
+        style = await guessr.map_file("styles/liberty")
+        assert style.name == "liberty.json"
+        assert (await guessr.map_file("fonts/Noto Sans Regular/0-255.pbf")).exists()
+        # the tilejson changes, so a day-old copy is fetched again
+        old = guessr.map_dir() / "planet.json"
+        await guessr.map_file("planet")
+        os.utime(old, (0, 0))
+        await guessr.map_file("planet")
+        assert fetched.count("planet") == 2
+    asyncio.run(run())
+
+    # trimmed back to the limit, least used first
+    for i, age in enumerate((300, 200, 100)):
+        p = guessr.map_dir() / "planet" / f"big{i}.pbf"
+        p.write_bytes(b"x" * 600_000)
+        os.utime(p, (p.stat().st_mtime - age,) * 2)
+    guessr.trim_map(limit_mb=1)
+    left = sorted(p.name for p in (guessr.map_dir() / "planet").glob("big*"))
+    assert left == ["big2.pbf"]

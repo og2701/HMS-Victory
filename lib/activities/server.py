@@ -433,6 +433,22 @@ async def guessr_photo(request):
     return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
 
 
+async def guessr_map(request):
+    """OpenFreeMap's files for UKGuessr's map, passed on (the page can't reach other sites inside Discord)."""
+    if _player(request) is None:
+        return _error("Sign in again.", 401)
+    path = request.match_info["path"]
+    try:
+        f = await guessr.map_file(path)
+    except ValueError:
+        return _error("Not part of the map.", 404)
+    if f is None:
+        return _error("Couldn't load the map. Try again.", 502)
+    if not f.stat().st_size:
+        return web.Response(status=204)
+    return web.FileResponse(f, headers={"Content-Type": guessr.map_type(path), "Cache-Control": "private, max-age=86400"})
+
+
 async def crossword_state(request):
     who = _player(request)
     if who is None:
@@ -929,6 +945,7 @@ def build_app(client) -> web.Application:
         app.router.add_get(f"{prefix}/guessr/pins/{{round}}", guessr_pins)
         app.router.add_get(f"{prefix}/guessr/board", guessr_board)
         app.router.add_get(f"{prefix}/guessr/photo/{{date}}/{{n}}", guessr_photo)
+        app.router.add_get(f"{prefix}/guessr/map/{{path:.+}}", guessr_map)
         for key in SCORE_GAMES:
             app.router.add_get(f"{prefix}/{key}", score_state)
             app.router.add_get(f"{prefix}/{key}/board", score_board)
@@ -1031,6 +1048,7 @@ async def stop() -> None:
         if task is not None:
             task.cancel()
     _duel_sweeper = _countdown_sweeper = _kart_sweeper = _guessr_sweeper = None
+    await guessr.close_map()
     try:
         await casino.sessions.close_all()
     except Exception:
