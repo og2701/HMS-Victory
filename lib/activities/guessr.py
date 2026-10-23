@@ -445,24 +445,32 @@ def _pay(uid: int, iso: str) -> None:
 
 
 def pins(viewer: int, date: _date, n: int, name) -> list[dict]:
-    """Everyone's guesses on a round so far, once the viewer has guessed it themselves."""
+    """Everyone's guesses on a round so far, once the viewer has guessed it themselves (leaving out anyone who's left
+    the server: `name` finds nobody for them)."""
     iso = date.isoformat()
     if n not in _guesses(viewer, iso):
         raise Refuse("Guess this one yourself first.")
     rows = DatabaseManager.fetch_all(
         "SELECT user_id, lat, lon, km, score FROM guessr_guesses WHERE date = ? AND round = ? AND km >= 0 ORDER BY score DESC",
         (iso, n))
-    return [{"uid": r[0], "name": "You" if r[0] == str(viewer) else (name(int(r[0])) or "Someone"), "lat": r[1], "lon": r[2],
-             "km": round(float(r[3]), 1), "score": int(r[4]), "me": r[0] == str(viewer)} for r in rows or []]
+    out = []
+    for r in rows or []:
+        me = r[0] == str(viewer)
+        called = "You" if me else name(int(r[0]))
+        if called:
+            out.append({"uid": r[0], "name": called, "lat": r[1], "lon": r[2], "km": round(float(r[3]), 1), "score": int(r[4]), "me": me})
+    return out
 
 
 def board(viewer: int, date: _date, name, top: int = 10) -> dict:
-    """Today's leaderboard (the day's totals, finished or not) and the all-time one (every day's added up)."""
+    """Today's leaderboard (the day's totals, finished or not) and the all-time one (every day's added up). Anyone
+    who's left the server (`name` finds nobody) is left off while they're gone, and back on if they rejoin."""
     iso = date.isoformat()
     def rows(sql: str, args: tuple) -> dict:
         got = DatabaseManager.fetch_all(sql, args) or []
-        ranked = [{"uid": r[0], "name": "You" if r[0] == str(viewer) else (name(int(r[0])) or "Someone"), "score": int(r[1]),
-                   "rank": i + 1, "me": r[0] == str(viewer)} for i, r in enumerate(got)]
+        here = [(r[0], "You" if r[0] == str(viewer) else name(int(r[0])), int(r[1])) for r in got]
+        ranked = [{"uid": u, "name": called, "score": score, "rank": i + 1, "me": u == str(viewer)}
+                  for i, (u, called, score) in enumerate(x for x in here if x[1])]
         you = next((x for x in ranked if x["me"]), None)
         return {"rows": ranked[:top], "you": you, "players": len(ranked)}
     return {
@@ -488,6 +496,14 @@ def photo(viewer: int, date: _date, iso: str, n: int) -> Path | None:
     return path
 
 
+def forget(uid: int) -> None:
+    """Wipe someone's UKGuessr history (they've been banned or kicked): every pin, so they're off both leaderboards
+    and everyone's maps. What they were paid stays on record, so a day can't be paid twice if they come back."""
+    for table in ("guessr_guesses", "guessr_starts"):
+        DatabaseManager.execute(f"DELETE FROM {table} WHERE user_id = ?", (str(uid),))
+    log.info("UKGuessr history wiped for %s", uid)
+
+
 # ---- telling the channel ------------------------------------------------------------------------------
 
 def post_day(uid: int, channel_id: int, date: _date) -> None:
@@ -499,9 +515,9 @@ def post_day(uid: int, channel_id: int, date: _date) -> None:
         s = state(uid, date)
         if not s["done"]:
             return
-        today = DatabaseManager.fetch_all(
+        today = [r for r in DatabaseManager.fetch_all(
             "SELECT user_id, SUM(score) AS s FROM guessr_guesses WHERE date = ? GROUP BY user_id ORDER BY s DESC, user_id",
-            (date.isoformat(),)) or []
+            (date.isoformat(),)) or [] if r[0] == str(uid) or _member(int(r[0])) is not None]
         rank = next((i + 1 for i, r in enumerate(today) if r[0] == str(uid)), len(today))
         member = _member(uid)
         avatar = None

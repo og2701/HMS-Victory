@@ -335,3 +335,20 @@ def test_the_page_running_out_with_nothing_pinned_scores_nothing(day):
     s = guessr.guess(A, DAY, 1, None, None)
     assert s["rounds"][0]["guess"]["score"] == 0 and s["rounds"][0]["guess"]["late"]
     assert s["rounds"][1]["photo"] is not None                # on to the next one
+
+
+def test_the_banned_and_kicked_are_wiped_and_leavers_hidden_while_gone(day):
+    guessr, _ = day
+    C = 1003
+    for uid in (A, B, C):
+        for n, s in enumerate(SPOTS, 1):
+            guessr.guess(uid, DAY, n, s["lat"] + 0.1 * (uid - A), s["lon"])
+    gone = {B}                                            # B has left the server
+    name = lambda u: None if u in gone else f"p{u}"
+    board = guessr.board(A, DAY, name)
+    assert [r["uid"] for r in board["today"]["rows"]] == [str(A), str(C)] and board["today"]["players"] == 2
+    assert [p["uid"] for p in guessr.pins(A, DAY, 1, name)] == [str(A), str(C)]
+    gone.clear()                                          # B's back
+    assert guessr.board(A, DAY, name)["allTime"]["players"] == 3
+    guessr.forget(C)                                      # C is banned
+    assert guessr.board(A, DAY, name)["allTime"]["players"] == 2 and guessr.state(C, DAY)["total"] == 0

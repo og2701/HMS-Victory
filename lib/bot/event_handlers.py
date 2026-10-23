@@ -1684,7 +1684,39 @@ def _client_for(member):
     return state._get_client() if state else None
 
 
+async def _was_kicked(member) -> bool:
+    """Whether a member's leaving was a kick: the audit log has the entry a moment after the event."""
+    try:
+        await asyncio.sleep(2)
+        cutoff = discord.utils.utcnow() - timedelta(seconds=30)
+        async for entry in member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=5):
+            if entry.created_at < cutoff:
+                break
+            if entry.target and entry.target.id == member.id:
+                return True
+    except discord.Forbidden:
+        logger.debug("No audit log access, cannot tell a kick from a leave")
+    except Exception:
+        logger.debug("Kick lookup failed", exc_info=True)
+    return False
+
+
+def _wipe_game_history(user_id: int) -> None:
+    """Someone banned or kicked comes off the activity games' leaderboards for good."""
+    try:
+        from lib.activities import guessr
+        guessr.forget(user_id)
+    except Exception:
+        logger.error(f"Could not wipe the game history of {user_id}", exc_info=True)
+
+
+async def _wipe_if_kicked(member) -> None:
+    if await _was_kicked(member):
+        _wipe_game_history(member.id)
+
+
 async def on_member_remove(member):
+    asyncio.create_task(_wipe_if_kicked(member))
     # If they are named on the live join-cluster report, cross them off it. A batch
     # emptying itself is worth seeing, and the card used to only learn about it when a
     # staff member pressed a button and got a failure back.
@@ -1712,7 +1744,7 @@ async def on_member_remove(member):
 
 
 async def on_member_ban(guild, user):
-    pass
+    _wipe_game_history(user.id)
 
 
 async def find_message_deleter(message, *, wait=1.5, window=20):
