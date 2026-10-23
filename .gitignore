@@ -14,6 +14,9 @@ data/json/*.jsonl
 # ...but the crossword puzzle set is shipped game content, not runtime state - it sits
 # alongside the Wordle word lists and the bot can't run the feature without it.
 !data/words/crosswords.json
+!data/guessr/uk-land.json
+# UKGuessr's daily photos (lib/activities/guessr.py keeps today's and tomorrow's)
+data/json/guessr/
 database.db*
 remote_database.db*
 *.db

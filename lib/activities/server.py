@@ -44,7 +44,7 @@ import time
 from aiohttp import web
 
 import config
-from lib.activities import auth, casino, countdown, crossword_api, duel, kart, wordle_api
+from lib.activities import auth, casino, countdown, crossword_api, duel, guessr, kart, wordle_api
 from lib.activities.daily_score import GAMES as SCORE_GAMES
 from lib.activities.daily_score import Refuse as ScoreRefuse
 
@@ -55,6 +55,7 @@ _sweeper: asyncio.Task | None = None
 _duel_sweeper: asyncio.Task | None = None
 _countdown_sweeper: asyncio.Task | None = None
 _kart_sweeper: asyncio.Task | None = None
+_guessr_sweeper: asyncio.Task | None = None
 CLIENT = web.AppKey("client", object)
 _last_guess: dict[int, float] = {}
 _token_hits: dict[str, list[float]] = {}
@@ -146,7 +147,7 @@ async def token(request):
                   **_opening(client, uid, game, channel)})
 
 
-_STATE = {"wordle": wordle_api, "crossword": crossword_api, **SCORE_GAMES}
+_STATE = {"wordle": wordle_api, "crossword": crossword_api, "guessr": guessr, **SCORE_GAMES}
 
 
 def _game_for(uid: int, body: dict) -> str:
@@ -364,6 +365,72 @@ def _slow_down(uid: int):
         return _error("Slow down a little.", 429)
     _last_guess[uid] = now
     return None
+
+
+# ---- UKGuessr (lib/activities/guessr.py) ----------------------------------------------------------------
+
+async def guessr_state(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    gated = _gate(request.app[CLIENT], who["uid"], "guessr")
+    if gated is not None:
+        return gated
+    return _json(guessr.state(who["uid"], _today()))
+
+
+async def guessr_guess(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    gated = _gate(client, who["uid"], "guessr") or _slow_down(who["uid"])
+    if gated is not None:
+        return gated
+    try:
+        body = await request.json()
+        n = int(body.get("round") or 0)
+        s = guessr.guess(who["uid"], _today(), n, body.get("lat"), body.get("lon"))
+    except guessr.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        return _error("Bad request.", 400)
+    return _json({**s, "pins": guessr.pins(who["uid"], _today(), n, lambda u: _name(client, u))})
+
+
+async def guessr_pins(request):
+    """Everyone's pins on a round so far (the page asks again now and then, to fill in new ones)."""
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    try:
+        return _json({"pins": guessr.pins(who["uid"], _today(), int(request.match_info["round"]), lambda u: _name(client, u))})
+    except guessr.Refuse as e:
+        return _error(str(e), 403)
+    except ValueError:
+        return _error("Bad request.", 400)
+
+
+async def guessr_board(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    client = request.app[CLIENT]
+    return _json(guessr.board(who["uid"], _today(), lambda u: _name(client, u)))
+
+
+async def guessr_photo(request):
+    who = _player(request)
+    if who is None:
+        return _error("Sign in again.", 401)
+    try:
+        path = guessr.photo(who["uid"], _today(), request.match_info["date"], int(request.match_info["n"]))
+    except ValueError:
+        path = None
+    if path is None:
+        return _error("Not yet.", 404)
+    return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
 
 
 async def crossword_state(request):
@@ -857,6 +924,11 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/crossword/answer", crossword_answer)
         app.router.add_post(f"{prefix}/crossword/hint", crossword_hint)
         app.router.add_get(f"{prefix}/home", home_state)
+        app.router.add_get(f"{prefix}/guessr", guessr_state)
+        app.router.add_post(f"{prefix}/guessr/guess", guessr_guess)
+        app.router.add_get(f"{prefix}/guessr/pins/{{round}}", guessr_pins)
+        app.router.add_get(f"{prefix}/guessr/board", guessr_board)
+        app.router.add_get(f"{prefix}/guessr/photo/{{date}}/{{n}}", guessr_photo)
         for key in SCORE_GAMES:
             app.router.add_get(f"{prefix}/{key}", score_state)
             app.router.add_get(f"{prefix}/{key}/board", score_board)
@@ -943,6 +1015,8 @@ async def start(client) -> bool:
     _countdown_sweeper = asyncio.create_task(countdown.run_sweeper())
     global _kart_sweeper
     _kart_sweeper = asyncio.create_task(kart.run_sweeper())
+    global _guessr_sweeper
+    _guessr_sweeper = asyncio.create_task(guessr.run_sweeper(_today))      # today's and tomorrow's spots, picked ahead
     return True
 
 
@@ -952,11 +1026,11 @@ async def stop() -> None:
     if _sweeper is not None:
         _sweeper.cancel()
         _sweeper = None
-    global _duel_sweeper, _countdown_sweeper, _kart_sweeper
-    for task in (_duel_sweeper, _countdown_sweeper, _kart_sweeper):
+    global _duel_sweeper, _countdown_sweeper, _kart_sweeper, _guessr_sweeper
+    for task in (_duel_sweeper, _countdown_sweeper, _kart_sweeper, _guessr_sweeper):
         if task is not None:
             task.cancel()
-    _duel_sweeper = _countdown_sweeper = _kart_sweeper = None
+    _duel_sweeper = _countdown_sweeper = _kart_sweeper = _guessr_sweeper = None
     try:
         await casino.sessions.close_all()
     except Exception:

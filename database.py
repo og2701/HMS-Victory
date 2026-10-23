@@ -685,6 +685,35 @@ def init_db():
                 PRIMARY KEY (day, user_id)
             )
         ''')
+        # UKGuessr (lib/activities/guessr.py): each day's three spots (JSON), everyone's pins, and who's been paid
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS guessr_days (
+                date TEXT PRIMARY KEY,
+                spots TEXT NOT NULL
+            )
+        ''')
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS guessr_guesses (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                km REAL NOT NULL,
+                score INTEGER NOT NULL,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (user_id, date, round)
+            )
+        ''')
+        c.execute("CREATE INDEX IF NOT EXISTS idx_guessr_guesses_day ON guessr_guesses(date, round)")
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS guessr_paid (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                paid INTEGER NOT NULL,
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
         # and their wardrobe: what they own and wear (JSON), papers spent, and papers won from jobs
         c.execute('''
             CREATE TABLE IF NOT EXISTS paperboy_kit (

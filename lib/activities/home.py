@@ -47,6 +47,19 @@ def _score_card(key: str, uid: int, date) -> dict | None:
         return None
 
 
+def _guessr(uid: int, date) -> dict | None:
+    """UKGuessr's tile: rounds pinned today, the score so far, and the reward (None while it's switched off)."""
+    if not getattr(config, "GUESSR_ENABLED", True):
+        return None
+    from lib.activities import guessr
+    try:
+        return guessr.home_card(uid, date)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("couldn't build UKGuessr's home card for %s", uid, exc_info=True)
+        return None
+
+
 def _casino(uid: int) -> list[dict]:
     from lib.activities import casino
     from lib.activities.casino import base
@@ -89,5 +102,6 @@ def state(client, uid: int) -> dict:
         "climb": _score_card("climb", uid, date),
         "spitfire": _score_card("spitfire", uid, date),
         "paperboy": _score_card("paperboy", uid, date),
+        "guessr": _guessr(uid, date),
         "casino": _casino(uid),
     }
