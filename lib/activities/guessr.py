@@ -195,7 +195,9 @@ def spots(iso: str) -> list[dict] | None:
 
 
 async def pick_day(iso: str) -> list[dict] | None:
-    """Pick (once) the day's three spots and save their photos."""
+    """Pick (once) the day's three spots and save their photos (through ensure, so it's never picked twice at once).
+    Mapillary can be slow, so it asks about six points at a time. The photos go into a folder of their own and only
+    become the day's once its spots are stored, so a day's photos always match its spots."""
     have = spots(iso)
     if have is not None:
         return have
@@ -204,25 +206,33 @@ async def pick_day(iso: str) -> list[dict] | None:
     import aiohttp
     r = random.Random(f"guessr:{iso}:{time.time()}")
     chosen: list[dict] = []
-    async with aiohttp.ClientSession() as session:
-        for _ in range(80):
-            if len(chosen) == ROUNDS:
-                break
-            lat, lon = _sample(r)
-            if any(km_between(lat, lon, s["lat"], s["lon"]) < MIN_APART_KM for s in chosen):
-                continue
-            found = await _find(session, lat, lon, r)
-            if not found or any(km_between(found["lat"], found["lon"], s["lat"], s["lon"]) < MIN_APART_KM for s in chosen):
-                continue
-            n = len(chosen) + 1
-            if await _save(session, found.pop("url"), photo_dir() / iso / f"{n}.jpg"):
-                chosen.append({"n": n, **found})
-    if len(chosen) < ROUNDS:
-        log.error("UKGuessr couldn't find %s spots for %s (found %s)", ROUNDS, iso, len(chosen))
-        return None
-    DatabaseManager.execute("INSERT OR IGNORE INTO guessr_days (date, spots) VALUES (?, ?)", (iso, json.dumps(chosen)))
-    log.info("UKGuessr picked %s: %s", iso, ", ".join(f"{s['lat']:.3f},{s['lon']:.3f}" for s in chosen))
-    return spots(iso)
+    far = lambda lat, lon: all(km_between(lat, lon, s["lat"], s["lon"]) >= MIN_APART_KM for s in chosen)
+    work = photo_dir() / f"{iso}.part-{os.getpid()}-{time.time_ns()}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            for _ in range(14):                                   # up to 84 points, six at a time
+                if len(chosen) == ROUNDS:
+                    break
+                points = [p for p in (_sample(r) for _ in range(6)) if far(*p)]
+                for found in await asyncio.gather(*(_find(session, lat, lon, r) for lat, lon in points)):
+                    if len(chosen) == ROUNDS or not found or not far(found["lat"], found["lon"]):
+                        continue
+                    n = len(chosen) + 1
+                    if await _save(session, found.pop("url"), work / f"{n}.jpg"):
+                        chosen.append({"n": n, **found})
+        if len(chosen) < ROUNDS:
+            log.error("UKGuessr couldn't find %s spots for %s (found %s)", ROUNDS, iso, len(chosen))
+            return None
+        DatabaseManager.execute("INSERT OR IGNORE INTO guessr_days (date, spots) VALUES (?, ?)", (iso, json.dumps(chosen)))
+        stored = spots(iso)
+        if stored == chosen:
+            dest = photo_dir() / iso
+            shutil.rmtree(dest, ignore_errors=True)
+            work.rename(dest)
+            log.info("UKGuessr picked %s: %s", iso, ", ".join(f"{s['lat']:.3f},{s['lon']:.3f}" for s in chosen))
+        return stored
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def _test_day(iso: str) -> list[dict]:
@@ -258,14 +268,18 @@ def tidy(today: str) -> None:
             shutil.rmtree(d, ignore_errors=True)
 
 
-def ensure(iso: str) -> None:
-    """Start picking a day's spots if nobody has yet (it takes a little while: the screen says it's on its way)."""
-    if spots(iso) is not None or (iso in _picking and not _picking[iso].done()):
-        return
-    try:
-        _picking[iso] = asyncio.get_running_loop().create_task(pick_day(iso))
-    except RuntimeError:
-        pass
+def ensure(iso: str) -> asyncio.Task | None:
+    """Start picking a day's spots if they aren't picked and nobody's picking them yet, and return the picking (the
+    sweeper waits on it; the screen says the spots are on their way)."""
+    if spots(iso) is not None:
+        return None
+    task = _picking.get(iso)
+    if task is None or task.done():
+        try:
+            task = _picking[iso] = asyncio.get_running_loop().create_task(pick_day(iso))
+        except RuntimeError:
+            return None
+    return task
 
 
 async def run_sweeper(today) -> None:
@@ -274,8 +288,9 @@ async def run_sweeper(today) -> None:
         try:
             d = today()
             for iso in (d.isoformat(), (d + timedelta(days=1)).isoformat()):
-                if spots(iso) is None:
-                    await pick_day(iso)
+                task = ensure(iso)
+                if task is not None:
+                    await asyncio.shield(task)
             tidy(d.isoformat())
             await asyncio.to_thread(trim_map)
         except asyncio.CancelledError:

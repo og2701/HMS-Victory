@@ -223,3 +223,40 @@ def test_spots_are_looked_for_in_towns_and_cities_not_fields():
     for _ in range(300):
         lat, lon = guessr._sample(r)
         assert min(guessr.km_between(lat, lon, c["lat"], c["lon"]) for c in cities) <= 6.01
+
+
+def test_a_day_is_picked_once_however_many_ask_and_its_photos_match_its_spots(tmp_path, monkeypatch):
+    import asyncio
+    import config
+    import database
+    if database.DatabaseManager._connection is not None:
+        database.DatabaseManager._connection.close()
+        database.DatabaseManager._connection = None
+    monkeypatch.setattr(database, "DB_FILE", str(tmp_path / "test.db"))
+    database.init_db()
+    monkeypatch.setattr(config, "JSON_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MAPILLARY_TOKEN", "MLY|test")
+    from lib.activities import guessr
+    asked = []
+
+    async def find(session, lat, lon, r):
+        asked.append((lat, lon))
+        await asyncio.sleep(0)
+        return {"id": f"m{len(asked)}", "lat": lat, "lon": lon, "url": f"photo m{len(asked)}", "by": "someone", "at": 0}
+
+    async def save(session, url, dest):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(url)
+        return True
+    monkeypatch.setattr(guessr, "_find", find)
+    monkeypatch.setattr(guessr, "_save", save)
+
+    async def run():
+        a, b = guessr.ensure("2026-10-30"), guessr.ensure("2026-10-30")
+        assert a is b
+        await a
+    asyncio.run(run())
+    day = guessr.spots("2026-10-30")
+    folder = guessr.photo_dir() / "2026-10-30"
+    assert [(folder / f"{s['n']}.jpg").read_text() for s in day] == [f"photo {s['id']}" for s in day]
+    assert [p.name for p in guessr.photo_dir().iterdir()] == ["2026-10-30"]       # no half-made folders left
