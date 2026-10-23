@@ -302,3 +302,36 @@ def test_photos_kept_small_are_swapped_for_full_size_ones_once(day, monkeypatch)
     assert len(asked) == 2                                    # the third was full size already
     asyncio.run(guessr.sharpen(DAY.isoformat()))
     assert len(asked) == 2                                    # and it's only done once
+
+
+def test_a_round_has_a_minute_from_its_photo_and_runs_out_without_a_pin(day, monkeypatch):
+    guessr, paid = day
+    now = [1_000_000.0]
+    monkeypatch.setattr(guessr.time, "time", lambda: now[0])
+    iso = DAY.isoformat()
+    # round 1: the photo starts the clock, and a reload doesn't start it again
+    assert guessr.photo(A, DAY, iso, 1) is not None
+    now[0] += 20
+    guessr.photo(A, DAY, iso, 1)
+    assert guessr.state(A, DAY)["rounds"][0]["left"] == guessr.ROUND_SECONDS + guessr.GRACE - 3 - 20
+    s = guessr.guess(A, DAY, 1, SPOTS[0]["lat"], SPOTS[0]["lon"])
+    assert s["rounds"][0]["guess"]["score"] == 5000
+    # round 2: pinned too late scores nothing, and there's no pin to show
+    guessr.photo(A, DAY, iso, 2)
+    now[0] += guessr.ROUND_SECONDS + guessr.GRACE + 1
+    s = guessr.guess(A, DAY, 2, SPOTS[1]["lat"], SPOTS[1]["lon"])
+    assert s["rounds"][1]["guess"] == {"lat": None, "lon": None, "km": None, "score": 0, "late": True}
+    assert s["rounds"][1]["answer"] is not None
+    assert guessr.pins(A, DAY, 2, lambda u: "x") == []
+    # round 3: left mid-round, it runs out by itself, and the day still pays
+    guessr.photo(A, DAY, iso, 3)
+    now[0] += guessr.ROUND_SECONDS + guessr.GRACE + 1
+    s = guessr.state(A, DAY)
+    assert s["done"] and s["total"] == 5000 and s["rounds"][2]["guess"]["late"] and paid == [(A, 10)]
+
+
+def test_the_page_running_out_with_nothing_pinned_scores_nothing(day):
+    guessr, _ = day
+    s = guessr.guess(A, DAY, 1, None, None)
+    assert s["rounds"][0]["guess"]["score"] == 0 and s["rounds"][0]["guess"]["late"]
+    assert s["rounds"][1]["photo"] is not None                # on to the next one

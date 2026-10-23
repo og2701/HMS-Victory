@@ -706,6 +706,16 @@ def init_db():
             )
         ''')
         c.execute("CREATE INDEX IF NOT EXISTS idx_guessr_guesses_day ON guessr_guesses(date, round)")
+        # when each round's clock started: the first time its photo went to that player
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS guessr_starts (
+                user_id TEXT NOT NULL,
+                date TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                at REAL NOT NULL,
+                PRIMARY KEY (user_id, date, round)
+            )
+        ''')
         c.execute('''
             CREATE TABLE IF NOT EXISTS guessr_paid (
                 user_id TEXT NOT NULL,

@@ -1,7 +1,9 @@
 """UKGuessr: three spots somewhere in the UK each day, the same for everyone. Each is a 360° street photo from
 Mapillary (openly licensed, CC BY-SA, so the bot keeps the day's three and serves them itself rather than every
 player fetching them), and you drop a pin on a map of the UK for where you think it is. A round scores up to
-5,000, less the further off the pin is; once you've guessed, the map shows where it was and where everyone else
+5,000, less the further off the pin is, and there's ROUND_SECONDS to pin it: the clock starts the first time the bot
+sends that player the round's photo (GRACE more allowed for the photo coming down and the guess going back), and
+a round not pinned in time scores nothing. Once you've guessed, the map shows where it was and where everyone else
 has guessed so far. The day's total goes on today's leaderboard and on the all-time one, which adds up every
 day's; finishing all three pays a flat GUESSR_REWARD UKP and posts the day's card (guessr_card) in the channel the
 game was opened in.
@@ -43,6 +45,9 @@ ROUNDS = 3
 MAX_SCORE = 5000
 SCALE_KM = 130                 # a pin this far off scores MAX_SCORE / e; 10 km off still scores ~4,600
 MIN_APART_KM = 120             # the day's spots are spread out this far at least
+ROUND_SECONDS = 60             # to pin a round, from when its photo's sent
+GRACE = 15                     # seconds more the bot allows: the photo coming down, the guess going back
+LATE_KM = -1                   # a round run out of time is kept with no pin: km this, lat and lon 0, scoring 0
 LAND_FILE = Path(__file__).resolve().parents[2] / "data" / "guessr" / "uk-land.json"
 API = "https://graph.mapillary.com/images"
 FIELDS = "id,computed_geometry,geometry,thumb_2048_url,thumb_original_url,captured_at,creator,is_pano"
@@ -340,7 +345,33 @@ async def run_sweeper(today) -> None:
 def _guesses(uid: int, iso: str) -> dict[int, dict]:
     rows = DatabaseManager.fetch_all(
         "SELECT round, lat, lon, km, score FROM guessr_guesses WHERE user_id = ? AND date = ? ORDER BY round", (str(uid), iso))
-    return {int(r[0]): {"lat": r[1], "lon": r[2], "km": round(float(r[3]), 1), "score": int(r[4])} for r in rows or []}
+    return {int(r[0]): ({"lat": None, "lon": None, "km": None, "score": 0, "late": True} if r[3] < 0 else
+                        {"lat": r[1], "lon": r[2], "km": round(float(r[3]), 1), "score": int(r[4])}) for r in rows or []}
+
+
+def _started(uid: int, iso: str, n: int) -> float | None:
+    row = DatabaseManager.fetch_one("SELECT at FROM guessr_starts WHERE user_id = ? AND date = ? AND round = ?", (str(uid), iso, n))
+    return float(row[0]) if row else None
+
+
+def _late(uid: int, iso: str, n: int) -> None:
+    DatabaseManager.execute(
+        "INSERT OR IGNORE INTO guessr_guesses (user_id, date, round, lat, lon, km, score, at) VALUES (?, ?, ?, 0, 0, ?, 0, ?)",
+        (str(uid), iso, n, LATE_KM, int(time.time())))
+    if n == ROUNDS:
+        _pay(uid, iso)
+
+
+def _run_out(uid: int, iso: str) -> dict[int, dict]:
+    """The player's guesses, after marking the round they're on as run out of time if its clock's gone (they left
+    mid-round, say). Only the round they're on can have a clock going: the next one's photo isn't sent till then."""
+    mine = _guesses(uid, iso)
+    n = len(mine) + 1
+    at = _started(uid, iso, n) if n <= ROUNDS else None
+    if at is not None and time.time() > at + ROUND_SECONDS + GRACE:
+        _late(uid, iso, n)
+        mine = _guesses(uid, iso)
+    return mine
 
 
 def opened(client, uid: int, date: _date) -> None:
@@ -352,7 +383,7 @@ def state(uid: int, date: _date) -> dict:
     day = spots(iso)
     if day is None:
         ensure(iso)
-    mine = _guesses(uid, iso)
+    mine = _run_out(uid, iso)
     rounds = []
     for n in range(1, ROUNDS + 1):
         g = mine.get(n)
@@ -361,25 +392,34 @@ def state(uid: int, date: _date) -> dict:
         # the photo's address changes with the spot and the size it's kept at (by a hash, so it can't be looked up on
         # Mapillary), so a browser never shows a copy it kept of a spot picked again, or of a smaller photo
         photo = f"guessr/photo/{iso}/{n}?v={hashlib.sha1(f"{s['id']}:{PHOTO_W}".encode()).hexdigest()[:10]}" if seen else None
-        rounds.append({"n": n, "photo": photo, "guess": g,
+        # the round they're on, if its clock's going: how long it has left (less a little, so the page's own
+        # count runs out, and sends what's pinned, before the bot stops taking it)
+        at = _started(uid, iso, n) if seen and g is None else None
+        left = max(0, round(at + ROUND_SECONDS + GRACE - 3 - time.time())) if at is not None else None
+        rounds.append({"n": n, "photo": photo, "guess": g, "left": left,
                        "answer": {"lat": s["lat"], "lon": s["lon"], "by": s["by"], "id": s["id"]} if g and s else None})
     total = sum(g["score"] for g in mine.values())
     paid = DatabaseManager.fetch_one("SELECT 1 FROM guessr_paid WHERE user_id = ? AND date = ?", (str(uid), iso)) is not None
     played = DatabaseManager.fetch_one("SELECT COUNT(DISTINCT user_id) FROM guessr_guesses WHERE date = ?", (iso,))
     return {"game": "guessr", "date": iso, "dateLabel": f"{date:%A} {date.day} {date:%B}", "ready": day is not None,
-            "rounds": rounds, "total": total, "max": ROUNDS * MAX_SCORE, "done": len(mine) >= ROUNDS,
+            "rounds": rounds, "total": total, "max": ROUNDS * MAX_SCORE, "done": len(mine) >= ROUNDS, "seconds": ROUND_SECONDS,
             "reward": reward(), "paid": paid, "players": int(played[0]) if played else 0}
 
 
-def guess(uid: int, date: _date, n: int, lat: float, lon: float) -> dict:
-    """Pin a round: the score, and the day paid for once all three are in."""
+def guess(uid: int, date: _date, n: int, lat: float | None, lon: float | None) -> dict:
+    """Pin a round: the score, and the day paid for once all three are in. No pin (lat and lon None: the page's
+    clock ran out with nothing pinned), or a pin after the round's time, scores nothing."""
     iso = date.isoformat()
     day = spots(iso)
     if day is None:
         raise Refuse("Today's spots aren't ready yet. Give it a minute.")
-    mine = _guesses(uid, iso)
+    mine = _guesses(uid, iso)                     # (a round that's run out is marked so just below, not refused)
     if n != len(mine) + 1 or n > ROUNDS:
         raise Refuse("That round's already been guessed." if n in mine else "Guess the rounds in order.")
+    at = _started(uid, iso, n)
+    if (lat is None and lon is None) or (at is not None and time.time() > at + ROUND_SECONDS + GRACE):
+        _late(uid, iso, n)
+        return state(uid, date)
     try:
         lat, lon = float(lat), float(lon)
     except (TypeError, ValueError):
@@ -410,7 +450,8 @@ def pins(viewer: int, date: _date, n: int, name) -> list[dict]:
     if n not in _guesses(viewer, iso):
         raise Refuse("Guess this one yourself first.")
     rows = DatabaseManager.fetch_all(
-        "SELECT user_id, lat, lon, km, score FROM guessr_guesses WHERE date = ? AND round = ? ORDER BY score DESC", (iso, n))
+        "SELECT user_id, lat, lon, km, score FROM guessr_guesses WHERE date = ? AND round = ? AND km >= 0 ORDER BY score DESC",
+        (iso, n))
     return [{"uid": r[0], "name": "You" if r[0] == str(viewer) else (name(int(r[0])) or "Someone"), "lat": r[1], "lon": r[2],
              "km": round(float(r[3]), 1), "score": int(r[4]), "me": r[0] == str(viewer)} for r in rows or []]
 
@@ -434,10 +475,17 @@ def photo(viewer: int, date: _date, iso: str, n: int) -> Path | None:
     """A round's photo, for someone who's got to that round today (not before, so nobody can peek ahead)."""
     if iso != date.isoformat() or not 1 <= n <= ROUNDS or spots(iso) is None:
         return None
-    if n > len(_guesses(viewer, iso)) + 1:
+    mine = _guesses(viewer, iso)
+    if n > len(mine) + 1:
         return None
     path = photo_dir() / iso / f"{n}.jpg"
-    return path if path.exists() else None
+    if not path.exists():
+        return None
+    if n not in mine:
+        # the round's clock starts the first time its photo goes out (a reload doesn't start it again)
+        DatabaseManager.execute("INSERT OR IGNORE INTO guessr_starts (user_id, date, round, at) VALUES (?, ?, ?, ?)",
+                                (str(viewer), iso, n, time.time()))
+    return path
 
 
 # ---- telling the channel ------------------------------------------------------------------------------

@@ -23,7 +23,9 @@ PIN = ('<svg class="pin" viewBox="-15 -40 30 41"><path d="M0 0C-4 -9 -13 -15 -13
        'fill="#E0352B" stroke="#111" stroke-width="3"/><circle cy="-24" r="5" fill="#fff"/></svg>')
 
 
-def _km(km: float) -> str:
+def _km(km: float | None) -> str:
+    if km is None:
+        return "TIME UP"
     return "SPOT ON" if km < 0.05 else f"{km:,.1f} KM" if km < 10 else f"{round(km):,} KM"
 
 
