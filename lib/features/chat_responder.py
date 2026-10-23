@@ -5472,6 +5472,17 @@ async def answer_data_query(
 
 
 SHUT_SECONDS = 30
+# "choose someone else" straight after a shut has no shut word in it, so a recent shut by the same
+# caller in the same channel stands in for one, and the last victim sits the next pick out.
+SHUT_FOLLOW_UP_SECONDS = 300
+_last_shuts: Dict[Tuple[int, int], Tuple[float, int]] = {}
+
+
+def _recent_shut_victim(channel_id: int, caller_id: int) -> Optional[int]:
+    hit = _last_shuts.get((channel_id, caller_id))
+    if hit and time.time() - hit[0] <= SHUT_FOLLOW_UP_SECONDS:
+        return hit[1]
+    return None
 _SHUT_WORDS_RE = re.compile(r"\b(?:shut|time\s*(?:them\s+|him\s+|her\s+)?out|timeout|mute|silence)", re.IGNORECASE)
 
 
@@ -5547,9 +5558,10 @@ async def handle_shut_request(client: discord.Client, message: discord.Message, 
         candidates, picked = [member], member.id
     else:
         pool = {}
+        previous = _recent_shut_victim(message.channel.id, caller.id)
         for m in recent:
             member = guild.get_member(m.author.id)
-            if member is not None and member.id not in pool and shuttable(member):
+            if member is not None and member.id not in pool and member.id != previous and shuttable(member):
                 pool[member.id] = member
         if not pool:
             await message.reply("Nobody about to shut.", mention_author=False)
@@ -5576,6 +5588,10 @@ async def handle_shut_request(client: discord.Client, message: discord.Message, 
         else:
             await message.reply(f"{victim.mention} {why or ''}".strip(), stickers=sticker,
                                 allowed_mentions=discord.AllowedMentions(users=[victim]))
+        _last_shuts[(message.channel.id, caller.id)] = (time.time(), victim.id)
+        live_chat_manager.conversation_history.append({"role": "user", "speaker": _member_display_name(caller), "content": request})
+        live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory",
+                                                       "content": f"[Shut {_member_display_name(victim)} for {SHUT_SECONDS}s: {why or 'no reason given'}]"})
         save_shut_count(victim.id)
         await award_badge_with_notify(client, victim.id, "shut_victim")
         if track_warden(caller.id, victim.id) >= 10:
@@ -5681,7 +5697,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         if signals is not None and (signals.input_tokens or signals.output_tokens):
             live_chat_manager.record_usage(MENTION_SIGNALS_MODEL, signals.input_tokens, signals.output_tokens)
 
-        if signals is not None and signals.says("shut_request") and _SHUT_WORDS_RE.search(clean_prompt):
+        if signals is not None and signals.says("shut_request") and (
+                _SHUT_WORDS_RE.search(clean_prompt) or _recent_shut_victim(message.channel.id, caller_id) is not None):
             await handle_shut_request(client, message, other_mentions, ref_msg, bot_id, request=clean_prompt)
             return True
 

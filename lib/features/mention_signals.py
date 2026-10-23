@@ -172,9 +172,9 @@ QUESTIONS: Dict[str, Dict[str, Any]] = {
     },
     "shut_request": {
         "type": "noul",
-        "instructions": "Does `message.text` ask the bot to shut someone: give a member this server's short timeout (a 'shut'), whether they name them, tag them, reply to them or want one picked at random?",
+        "instructions": "Does `message.text` ask the bot to shut someone: give a member this server's short timeout (a 'shut'), whether they name them, tag them, reply to them or want one picked at random? A follow-up counts too: when `recent_chat` shows the bot just shut someone, 'someone else', 'another one', 'again' or 'now do dave' asks for another shut.",
         "criteria": {
-            "true": {"examples": ["shut him", "shut @dave", "choose one person to shut", "pick someone to shut", "give rin a shut", "time out a random person", "shut this guy up"]},
+            "true": {"examples": ["shut him", "shut @dave", "choose one person to shut", "pick someone to shut", "give rin a shut", "time out a random person", "shut this guy up", "choose someone else (right after a shut)", "another one (right after a shut)"]},
             "false": {"what": "Telling the bot itself to shut up, talking about shuts or shutcoins, asking who got shut, or anything else"},
         },
     },
