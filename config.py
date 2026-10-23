@@ -490,10 +490,10 @@ WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to s
 # bot saw allows, at CLIMB_MAX_SPEED metres a second (a strong run averages about 6). A new best
 # is posted in the channel straight away, and that post is updated if it's beaten within 30 minutes.
 # UKGuessr (lib/activities/guessr.py): three UK spots a day from Mapillary's 360° photos (MAPILLARY_TOKEN in .env, a
-# free client token), a pin on the map for each; a flat GUESSR_REWARD UKP for finishing the day's three. False
-# GUESSR_LIVE while it's being tried out: only GUESSR_TESTERS see its tile or can get into it.
+# free client token), a pin on the map for each; a flat GUESSR_REWARD UKP for finishing the day's three. GUESSR_LIVE
+# opens it to everyone, with /guessr; False while it's being tried out: only GUESSR_TESTERS see its tile or can get in.
 GUESSR_ENABLED = True
-GUESSR_LIVE = False
+GUESSR_LIVE = True
 GUESSR_TESTERS = [404634271861571584]  # oggers
 GUESSR_REWARD = 10
 CLIMB_ENABLED = True
@@ -551,6 +551,7 @@ ACTIVITIES_LAUNCH_COMMANDS = {
     **({"skyrim": ("skyrim", "Adventure in Skyrim - delve ruins, level up, slay dragons")} if SKYRIM_AS_ACTIVITY
        else {"test-skyrim": ("skyrim", "Play Skyrim in the activity (testing)")}),
     **({"kart": ("kart", "UKP Kart - race the server round the village for UKPence")} if KART_LIVE else {}),
+    **({"guessr": ("guessr", "Play today's UKGuessr - pin three UK street spots on the map for UKPence")} if GUESSR_LIVE else {}),
 } if PUZZLES_AS_ACTIVITY else {
     "test-wordle": ("wordle", "Play HMS Wordle as an activity (testing)"),
     "test-crossword": ("crossword", "Play HMS Crossword as an activity (testing)"),
