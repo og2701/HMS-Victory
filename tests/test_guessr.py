@@ -260,3 +260,45 @@ def test_a_day_is_picked_once_however_many_ask_and_its_photos_match_its_spots(tm
     folder = guessr.photo_dir() / "2026-10-30"
     assert [(folder / f"{s['n']}.jpg").read_text() for s in day] == [f"photo {s['id']}" for s in day]
     assert [p.name for p in guessr.photo_dir().iterdir()] == ["2026-10-30"]       # no half-made folders left
+
+
+def test_photos_kept_small_are_swapped_for_full_size_ones_once(day, monkeypatch):
+    import asyncio
+    import aiohttp
+    from PIL import Image
+    guessr, _ = day
+    monkeypatch.setenv("MAPILLARY_TOKEN", "MLY|test")
+    folder = guessr.photo_dir() / DAY.isoformat()
+    for n in (1, 2, 3):
+        Image.new("RGB", (2048 if n < 3 else guessr.PHOTO_W, 16)).save(folder / f"{n}.jpg")
+    asked = []
+
+    class Reply:
+        status = 200
+        async def json(self):
+            return {"thumb_original_url": "https://example.test/full.jpg"}
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+
+    class Session:
+        def __init__(self, *a, **kw): pass
+        def get(self, url, **kw):
+            asked.append(url)
+            return Reply()
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+
+    async def save(session, url, dest):
+        Image.new("RGB", (guessr.PHOTO_W, 16)).save(dest, "JPEG")
+        return True
+    monkeypatch.setattr(aiohttp, "ClientSession", Session)
+    monkeypatch.setattr(guessr, "_save", save)
+    asyncio.run(guessr.sharpen(DAY.isoformat()))
+    assert [Image.open(folder / f"{n}.jpg").width for n in (1, 2, 3)] == [guessr.PHOTO_W] * 3
+    assert len(asked) == 2                                    # the third was full size already
+    asyncio.run(guessr.sharpen(DAY.isoformat()))
+    assert len(asked) == 2                                    # and it's only done once

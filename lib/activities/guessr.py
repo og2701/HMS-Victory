@@ -45,7 +45,9 @@ SCALE_KM = 130                 # a pin this far off scores MAX_SCORE / e; 10 km 
 MIN_APART_KM = 120             # the day's spots are spread out this far at least
 LAND_FILE = Path(__file__).resolve().parents[2] / "data" / "guessr" / "uk-land.json"
 API = "https://graph.mapillary.com/images"
-FIELDS = "id,computed_geometry,geometry,thumb_2048_url,captured_at,creator,is_pano"
+FIELDS = "id,computed_geometry,geometry,thumb_2048_url,thumb_original_url,captured_at,creator,is_pano"
+PHOTO_W = 4096                 # a photo's kept this wide (from Mapillary's full size, 5,760 to 8,000 across): twice
+                               # the detail of their 2,048 one, and as big as any phone's graphics can take
 OLDEST_MS = 1451606400000      # photos from 2016 on, so the streets look like today's
 MAP_HOST = "https://tiles.openfreemap.org/"
 MAP_CACHE_MB = 1000
@@ -162,7 +164,8 @@ async def _find(session, lat: float, lon: float, r: random.Random) -> dict | Non
                 continue
             plon, plat = float(geo[0]), float(geo[1])
             if on_land(plat, plon):
-                found.append({"id": str(im["id"]), "lat": round(plat, 6), "lon": round(plon, 6), "url": im["thumb_2048_url"],
+                found.append({"id": str(im["id"]), "lat": round(plat, 6), "lon": round(plon, 6),
+                              "url": im.get("thumb_original_url") or im["thumb_2048_url"],
                               "by": (im.get("creator") or {}).get("username") or "a Mapillary contributor",
                               "at": int(im.get("captured_at") or 0)})
         if found:
@@ -179,10 +182,10 @@ async def _save(session, url: str, dest: Path) -> bool:
             raw = await resp.read()
         from PIL import Image
         im = Image.open(io.BytesIO(raw)).convert("RGB")
-        if im.width > 2048:
-            im = im.resize((2048, round(im.height * 2048 / im.width)))
+        if im.width > PHOTO_W:
+            im = im.resize((PHOTO_W, round(im.height * PHOTO_W / im.width)), Image.LANCZOS)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        im.save(dest, "JPEG", quality=84)
+        im.save(dest, "JPEG", quality=86)
         return True
     except Exception:
         log.warning("couldn't save a Mapillary photo", exc_info=True)
@@ -258,6 +261,37 @@ def _test_day(iso: str) -> list[dict]:
     return out
 
 
+async def sharpen(iso: str) -> None:
+    """Swap a day's photos that were kept at Mapillary's 2,048 across (picked before they were kept bigger) for full
+    size ones. A marker beside each says it's been done, so a photo that's small to begin with isn't asked about again."""
+    day, folder = spots(iso), photo_dir() / iso
+    if not day or not token() or not folder.exists():
+        return
+    import aiohttp
+    from PIL import Image
+    async with aiohttp.ClientSession() as session:
+        for s in day:
+            path, mark = folder / f"{s['n']}.jpg", folder / f"{s['n']}.full"
+            if mark.exists() or not path.exists():
+                continue
+            with Image.open(path) as im:
+                small = im.width < PHOTO_W
+            if small and not s["id"].startswith("test"):
+                try:
+                    async with session.get(f"https://graph.mapillary.com/{s['id']}", params={"fields": "thumb_original_url"},
+                                           headers={"Authorization": f"OAuth {token()}"}, timeout=20) as resp:
+                        url = (await resp.json()).get("thumb_original_url") if resp.status == 200 else None
+                except Exception:
+                    log.warning("couldn't ask Mapillary for %s's full size photo", s["id"], exc_info=True)
+                    continue
+                part = path.with_name(f"{s['n']}.part.jpg")
+                if not url or not await _save(session, url, part):
+                    continue
+                os.replace(part, path)
+                log.info("UKGuessr %s round %s: full size photo", iso, s["n"])
+            mark.touch()
+
+
 def tidy(today: str) -> None:
     """Delete the photos of days before today (tomorrow's are kept, picked ahead)."""
     base = photo_dir()
@@ -291,6 +325,7 @@ async def run_sweeper(today) -> None:
                 task = ensure(iso)
                 if task is not None:
                     await asyncio.shield(task)
+                await sharpen(iso)
             tidy(d.isoformat())
             await asyncio.to_thread(trim_map)
         except asyncio.CancelledError:
@@ -323,9 +358,9 @@ def state(uid: int, date: _date) -> dict:
         g = mine.get(n)
         s = day[n - 1] if day else None
         seen = day is not None and (g is not None or n == len(mine) + 1)
-        # the photo's address changes with the spot (by a hash, so it can't be looked up on Mapillary), so a browser
-        # never shows a copy it kept of a spot that's since been picked again
-        photo = f"guessr/photo/{iso}/{n}?v={hashlib.sha1(s['id'].encode()).hexdigest()[:10]}" if seen else None
+        # the photo's address changes with the spot and the size it's kept at (by a hash, so it can't be looked up on
+        # Mapillary), so a browser never shows a copy it kept of a spot picked again, or of a smaller photo
+        photo = f"guessr/photo/{iso}/{n}?v={hashlib.sha1(f"{s['id']}:{PHOTO_W}".encode()).hexdigest()[:10]}" if seen else None
         rounds.append({"n": n, "photo": photo, "guess": g,
                        "answer": {"lat": s["lat"], "lon": s["lon"], "by": s["by"], "id": s["id"]} if g and s else None})
     total = sum(g["score"] for g in mine.values())
