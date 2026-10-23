@@ -171,10 +171,31 @@ async def handle_tree_watering(client, message):
         await message.channel.send(
             f"\U0001f333 <@{waterer_id}> earned **{pay_amt:,} UKPence** for watering the tree!",
             allowed_mentions=discord.AllowedMentions(users=True),
-            delete_after=600,  # self-destruct after 10 minutes to keep the channel tidy
+            delete_after=TREE_PAYOUT_TTL,  # self-destruct to keep the channel tidy
         )
     except Exception:
         log.debug("tree watering message failed", exc_info=True)
+
+
+TREE_PAYOUT_TTL = 600
+_TREE_PAYOUT_RE = re.compile(r"earned \*\*[\d,]+ UKPence\*\* for watering the tree!")
+
+
+async def clear_stale_tree_payouts(client):
+    """delete_after only lives in the bot's memory, so a restart inside those 10 minutes leaves
+    the payout line behind for good - and an old one sitting there makes the latest waterer
+    think they weren't paid. On startup, finish the job: delete the ones past their 10
+    minutes and re-arm the timer on the rest."""
+    try:
+        channel = client.get_channel(config.TREE_CHANNEL_ID) or await client.fetch_channel(config.TREE_CHANNEL_ID)
+        now = discord.utils.utcnow()
+        async for m in channel.history(limit=100):
+            if m.author.id != client.user.id or not _TREE_PAYOUT_RE.search(m.content or ""):
+                continue
+            left = TREE_PAYOUT_TTL - (now - m.created_at).total_seconds()
+            await m.delete(delay=max(0.0, left))
+    except Exception:
+        log.warning("couldn't clear stale tree payout messages", exc_info=True)
 
 
 # ---------------------------------------------------------------------------

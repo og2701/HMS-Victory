@@ -276,6 +276,10 @@ class AClient(discord.Client):
         except Exception:
             logger.exception("could not ensure chatbot controller dashboard message")
 
+        # Tree payout lines whose 10-minute self-delete was lost to a restart.
+        from lib.features.ukp_rewards import clear_stale_tree_payouts
+        asyncio.create_task(clear_stale_tree_payouts(self))
+
         if getattr(config, "BIG_BROTHER_ENABLED", False):
             try:
                 from lib.features.big_brother import ensure_panels
