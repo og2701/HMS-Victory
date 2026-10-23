@@ -213,3 +213,13 @@ def test_finishing_the_day_posts_its_card_without_giving_the_spots_away(day, mon
     # nothing on the card says where the spots were
     html = guessr_card.card_html(**kw)
     assert "51.50" not in html and "Westminster" not in html and "someone" not in html
+
+
+def test_spots_are_looked_for_in_towns_and_cities_not_fields():
+    import random
+    from lib.activities import guessr
+    cities = guessr._load()["cities"]
+    r = random.Random(7)
+    for _ in range(300):
+        lat, lon = guessr._sample(r)
+        assert min(guessr.km_between(lat, lon, c["lat"], c["lon"]) for c in cities) <= 6.01

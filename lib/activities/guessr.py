@@ -7,7 +7,8 @@ day's; finishing all three pays a flat GUESSR_REWARD UKP and posts the day's car
 game was opened in.
 
 The bot picks the spots (pick_day): on land in the UK (data/guessr/uk-land.json, made by ukplace-activities
-scripts/guessr-map.py from Natural Earth's public-domain map), half near a city and half anywhere, each a recent
+scripts/guessr-map.py from Natural Earth's public-domain map), each in a town or city, so there are streets and
+buildings to go on rather than a field, and each a recent
 Mapillary 360° photo, and spread out round the country. Today's and tomorrow's photos are kept on disk
 (photo_dir); older days' are deleted, while the spots and everyone's guesses stay in the database.
 
@@ -126,25 +127,21 @@ def score_for(km: float) -> int:
 
 
 def _sample(r: random.Random) -> tuple[float, float]:
-    """A point to look for a photo near: half the time near a city (the bigger, the likelier), else anywhere."""
-    land = _load()
-    if r.random() < 0.5:
-        cities = land["cities"]
-        c = r.choices(cities, weights=[math.sqrt(max(1, x["pop"])) for x in cities])[0]
-        d, a = 15 * math.sqrt(r.random()), r.random() * 2 * math.pi
-        return c["lat"] + d * math.sin(a) / 111.0, c["lon"] + d * math.cos(a) / (111.0 * math.cos(math.radians(c["lat"])))
-    for _ in range(200):
-        lat, lon = r.uniform(49.9, 60.9), r.uniform(-8.2, 1.8)
-        if on_land(lat, lon):
-            return lat, lon
-    return 52.48, -1.9
+    """A point to look for a photo near: somewhere in a town or city (the bigger, the likelier, though Wick and
+    Penzance still come up), no further out from the middle than its streets go: about 1.5 km for a small town, up
+    to 6 km for London."""
+    cities = _load()["cities"]
+    c = r.choices(cities, weights=[max(1, x["pop"]) ** 0.4 for x in cities])[0]
+    reach = max(1.5, min(6.0, 1.5 + c["pop"] / 1_500_000))
+    d, a = reach * math.sqrt(r.random()), r.random() * 2 * math.pi
+    return c["lat"] + d * math.sin(a) / 111.0, c["lon"] + d * math.cos(a) / (111.0 * math.cos(math.radians(c["lat"])))
 
 
 # ---- picking the day's spots -------------------------------------------------------------------------
 
 async def _find(session, lat: float, lon: float, r: random.Random) -> dict | None:
     """A recent 360° photo near a point, on UK land, if Mapillary has one."""
-    for half in (0.02, 0.05):
+    for half in (0.008, 0.02):                  # about 1 km round the point, then 2 km
         bbox = f"{lon - half * 1.7:.5f},{lat - half:.5f},{lon + half * 1.7:.5f},{lat + half:.5f}"
         params = {"fields": FIELDS, "bbox": bbox, "is_pano": "true", "limit": "40"}
         try:
