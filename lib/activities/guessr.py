@@ -20,6 +20,7 @@ disk that's trimmed back to MAP_CACHE_MB, least used first.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -307,7 +308,10 @@ def state(uid: int, date: _date) -> dict:
         g = mine.get(n)
         s = day[n - 1] if day else None
         seen = day is not None and (g is not None or n == len(mine) + 1)
-        rounds.append({"n": n, "photo": f"guessr/photo/{iso}/{n}" if seen else None, "guess": g,
+        # the photo's address changes with the spot (by a hash, so it can't be looked up on Mapillary), so a browser
+        # never shows a copy it kept of a spot that's since been picked again
+        photo = f"guessr/photo/{iso}/{n}?v={hashlib.sha1(s['id'].encode()).hexdigest()[:10]}" if seen else None
+        rounds.append({"n": n, "photo": photo, "guess": g,
                        "answer": {"lat": s["lat"], "lon": s["lon"], "by": s["by"], "id": s["id"]} if g and s else None})
     total = sum(g["score"] for g in mine.values())
     paid = DatabaseManager.fetch_one("SELECT 1 FROM guessr_paid WHERE user_id = ? AND date = ?", (str(uid), iso)) is not None
