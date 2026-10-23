@@ -31,6 +31,23 @@ JUMP_TOP = 420
 MAGNET = 1200
 DOUBLE = 1800
 SAFE = 90
+# The power-up upgrades bought in the wardrobe (paperboy.py), 0 to UP_MAX each: the magnet and double papers last
+# UP_STEP longer a level, the helmet keeps you safe longer after a knock (SAFE_AT), and at the top level takes two.
+UP_MAX = 5
+UP_STEP = 240
+SAFE_AT = (90, 120, 150, 180, 210, 210)
+POWERS = ("magnet", "double", "helmet")
+
+
+def levels(ups: dict | None) -> dict[str, int]:
+    """Upgrade levels, whole and within range (anything missing is 0)."""
+    out = {}
+    for k in POWERS:
+        try:
+            out[k] = max(0, min(UP_MAX, int((ups or {}).get(k) or 0)))
+        except (TypeError, ValueError):
+            out[k] = 0
+    return out
 LEFT, RIGHT, UP, DOWN = 1, 2, 3, 4
 MAX_INPUTS = 100_000   # the moves a replay reads; a three-hour run at full tilt makes ~30,000
 
@@ -269,7 +286,8 @@ class Street:
 
 
 class Run:
-    def __init__(self, seed: str, theme: str = "drizzle"):
+    def __init__(self, seed: str, theme: str = "drizzle", ups: dict | None = None):
+        self.ups = levels(ups)
         self.street = Street(seed, theme)
         self.stats = {k: 0 for k in STATS}
         self.crashed_on = None              # what the run ended on, if it crashed
@@ -283,6 +301,7 @@ class Run:
         self.jump_from = -1
         self.papers = 0
         self.helmet = False
+        self.knocks = 0                     # knocks the helmet has left in it (two, fully upgraded)
         self.magnet_to = -1
         self.double_to = -1
         self.safe_to = -1
@@ -386,13 +405,14 @@ class Run:
                 continue
             pw["taken"] = True
             if pw["kind"] == "magnet":
-                self.magnet_to = self.step + MAGNET
+                self.magnet_to = self.step + MAGNET + UP_STEP * self.ups["magnet"]
                 self.stats["magnets"] += 1
             elif pw["kind"] == "double":
-                self.double_to = self.step + DOUBLE
+                self.double_to = self.step + DOUBLE + UP_STEP * self.ups["double"]
                 self.stats["doubles"] += 1
             else:
                 self.helmet = True
+                self.knocks = 2 if self.ups["helmet"] >= UP_MAX else 1
                 self.stats["helmets"] += 1
         pull, times = self.step <= self.magnet_to, 2 if self.step <= self.double_to else 1
         for p in self._near_papers:
@@ -427,9 +447,10 @@ class Run:
                     self.stats["ducks"] += 1
                 continue
             if self.helmet:
-                self.helmet = False
+                self.knocks -= 1
+                self.helmet = self.knocks > 0
                 o["hit"] = True
-                self.safe_to = self.step + SAFE
+                self.safe_to = self.step + SAFE_AT[self.ups["helmet"]]
                 self.stats["saves"] += 1
                 return
             self.over = True
@@ -465,10 +486,11 @@ def clean_inputs(raw) -> list[list[int]]:
     return out
 
 
-def replay(seed: str, inputs: list, max_steps: int, day: str | None = None, theme: str | None = None) -> dict:
-    """Play a recorded run up to a crash or `max_steps`, on the day's theme: its score, how long it
-    lasted, its papers, and what it did (for the day's jobs)."""
-    run = Run(seed, theme or (theme_of(day) if day else "drizzle"))
+def replay(seed: str, inputs: list, max_steps: int, day: str | None = None, theme: str | None = None,
+           ups: dict | None = None) -> dict:
+    """Play a recorded run up to a crash or `max_steps`, on the day's theme and at the power-up upgrade levels
+    it was played at: its score, how long it lasted, its papers, and what it did (for the day's jobs)."""
+    run = Run(seed, theme or (theme_of(day) if day else "drizzle"), ups)
     todo = sorted(clean_inputs(inputs), key=lambda p: p[0])
     i = 0
     while not run.over and run.step < max_steps:

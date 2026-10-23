@@ -129,7 +129,7 @@ def test_a_long_paperboy_run_is_replayed_in_full(paperboy, monkeypatch):
     from lib.activities import daily_score
     asked = []
 
-    def replay(seed, inputs, steps, day):
+    def replay(seed, inputs, steps, day, ups=None):
         asked.append(steps)
         return {"score": 900, "steps": steps, "papers": 50, "stats": {}}
     monkeypatch.setattr(paperboy, "replay", replay)
@@ -146,7 +146,7 @@ def test_a_run_sent_again_while_its_still_being_counted_counts_once(paperboy, mo
     import threading
     gate = threading.Event()
 
-    def replay(seed, inputs, steps, day):
+    def replay(seed, inputs, steps, day, ups=None):
         gate.wait(5)
         return {"score": 400, "steps": steps, "papers": 10, "stats": {}}
     monkeypatch.setattr(paperboy, "replay", replay)

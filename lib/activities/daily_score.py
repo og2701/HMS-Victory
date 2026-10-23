@@ -314,7 +314,11 @@ class ScoreGame:
             except Exception:
                 log.error("couldn't work out the %s limit; going by the clock alone", self.key, exc_info=True)
         return {"uid": uid, "run": run, "reported": reported, "said_time": said_time, "count": count,
-                "now": now, "elapsed": elapsed, "allowed": allowed, "inputs": body.get("inputs")}
+                "now": now, "elapsed": elapsed, "allowed": allowed, "inputs": body.get("inputs"), "ups": self.replay_ups(uid, body)}
+
+    def replay_ups(self, uid: int, body: dict) -> dict | None:
+        """Anything beyond the inputs the replay needs from the finish (Paperboy: the upgrade levels played at)."""
+        return None
 
     def _play(self, job: dict) -> dict | None:
         """The rules play the run again from the inputs the page recorded, for no longer than the
@@ -325,7 +329,8 @@ class ScoreGame:
         run = job["run"]
         try:
             return self.replay(run["seed"], job["inputs"],
-                               int(min(job["elapsed"] + GRACE, job["said_time"] + 5, REPLAY_MAX) * 120), run["date"])
+                               int(min(job["elapsed"] + GRACE, job["said_time"] + 5, REPLAY_MAX) * 120), run["date"],
+                               **({"ups": job["ups"]} if job.get("ups") is not None else {}))
         except Exception:
             log.error("couldn't replay a %s run for %s", self.key, job["uid"], exc_info=True)
             return None
@@ -467,11 +472,21 @@ class PaperboyGame(ScoreGame):
         from lib.activities import paperboy
         return {"theme": paperboy.theme(iso)["name"], "mult": paperboy.mult(uid, iso), "looks": paperboy.looks(uid)}
 
+    def replay_ups(self, uid: int, body: dict) -> dict | None:
+        # the power-up upgrade levels the round played at, never above what they own (an upgrade bought during a
+        # round doesn't count in it, and claiming one not owned only makes the replay go differently)
+        from lib.activities import paperboy
+        sent, owned = paperboy_sim.levels(body.get("ups") if isinstance(body.get("ups"), dict) else None), paperboy.levels(uid)
+        return {k: min(sent[k], owned[k]) for k in sent}
+
     def act(self, uid: int, date, action: str, body: dict) -> dict:
         from lib.activities import paperboy
-        item = str(body.get("item") or "")
         try:
-            paperboy.buy(uid, item) if action == "buy" else paperboy.wear(uid, item)
+            if action == "upgrade":
+                paperboy.upgrade(uid, str(body.get("power") or ""))
+            else:
+                item = str(body.get("item") or "")
+                paperboy.buy(uid, item) if action == "buy" else paperboy.wear(uid, item)
         except paperboy.WardrobeRefuse as e:
             raise Refuse(str(e))
         return self.state(uid, date)
@@ -481,6 +496,6 @@ PAPERBOY = PaperboyGame(
     key="paperboy", label="Paperboy", prefix="PAPERBOY", days="paperboy_days", runs="paperboy_runs",
     score_col="score", count_col="papers", rate=0.03, cap=150, max_rate=10.0, max_score=5000, slack=10,
     post="did the paper round for **{score} points**", emoji="📰", nobody="A paperboy", replay=paperboy_sim.replay,
-    acts=("buy", "wear"))
+    acts=("buy", "wear", "upgrade"))
 
 GAMES = {g.key: g for g in (CLIMB, SPITFIRE, PAPERBOY)}

@@ -157,3 +157,42 @@ def test_buying_the_birkin_earns_its_badge(clock, monkeypatch):
     assert awarded == [(UID, "paperboy_birkin")]
     row = DatabaseManager.fetch_one("SELECT name, rarity FROM badges WHERE id = 'paperboy_birkin'")
     assert row == ("Arm Candy", "Silver")
+
+
+def test_power_ups_upgrade_with_papers_five_levels_each(clock):
+    from database import DatabaseManager
+    from lib.activities import paperboy
+    k = paperboy.kit(UID)
+    assert k["upgrades"] == {"magnet": 0, "double": 0, "helmet": 0} and k["upgradeCosts"] == [500, 1500, 4000, 9000, 20000]
+    with pytest.raises(paperboy.WardrobeRefuse):
+        paperboy.upgrade(UID, "magnet")                                 # no papers yet
+    DatabaseManager.execute(
+        "INSERT INTO paperboy_runs (user_id, date, started, ended, score, reported, game_time, papers, earned, trimmed) "
+        "VALUES (?, ?, 1, 2, 10, 10, 1.0, 40000, 0, 0)", (str(UID), DAY.isoformat()))
+    for n in range(5):
+        k = paperboy.upgrade(UID, "magnet")
+    assert k["upgrades"]["magnet"] == 5 and k["balance"] == 40000 - 35000
+    with pytest.raises(paperboy.WardrobeRefuse):
+        paperboy.upgrade(UID, "magnet")                                 # as good as it gets
+    with pytest.raises(paperboy.WardrobeRefuse):
+        paperboy.upgrade(UID, "rocket")
+    k = paperboy.upgrade(UID, "helmet")
+    assert k["upgrades"] == {"magnet": 5, "double": 0, "helmet": 1} and k["balance"] == 4500
+    paperboy.upgrade(UID, "double")
+    paperboy.upgrade(UID, "double")                                     # 4,500 - 500 - 1,500 = 2,500 left
+    with pytest.raises(paperboy.WardrobeRefuse):
+        paperboy.upgrade(UID, "double")                                 # and the third costs 4,000
+
+
+def test_a_round_replays_at_the_levels_it_played_at_but_never_above_what_is_owned(clock):
+    from database import DatabaseManager
+    from lib.activities import paperboy
+    from lib.activities.daily_score import PAPERBOY
+    DatabaseManager.execute(
+        "INSERT INTO paperboy_runs (user_id, date, started, ended, score, reported, game_time, papers, earned, trimmed) "
+        "VALUES (?, ?, 1, 2, 10, 10, 1.0, 2000, 0, 0)", (str(UID), DAY.isoformat()))
+    paperboy.upgrade(UID, "magnet")
+    paperboy.upgrade(UID, "magnet")                                     # magnet 2 (500 + 1,500)
+    assert PAPERBOY.replay_ups(UID, {"ups": {"magnet": 5, "double": 1, "helmet": "x"}}) == {"magnet": 2, "double": 0, "helmet": 0}
+    assert PAPERBOY.replay_ups(UID, {"ups": {"magnet": 1}}) == {"magnet": 1, "double": 0, "helmet": 0}   # bought mid-round
+    assert PAPERBOY.replay_ups(UID, {}) == {"magnet": 0, "double": 0, "helmet": 0}                     # an old page

@@ -297,7 +297,39 @@ def kit(uid: int) -> dict:
     owned, wearing, _, _ = _kit_row(uid)
     return {"balance": balance(uid), "owned": sorted(set(FREE) | set(owned)),
             "wearing": {**WEARING, **{s: k for s, k in wearing.items() if k in WARDROBE}},
-            "catalogue": [{"id": k, "slot": v[0], "name": v[1], "cost": v[2], "look": v[3]} for k, v in WARDROBE.items()]}
+            "catalogue": [{"id": k, "slot": v[0], "name": v[1], "cost": v[2], "look": v[3]} for k, v in WARDROBE.items()],
+            "upgrades": levels(uid), "upgradeCosts": list(UPGRADE_COSTS)}
+
+
+# ---- power-up upgrades -------------------------------------------------------------------------
+# Bought with papers in the wardrobe, five levels each (UPGRADE_COSTS, the same for each power-up): the magnet and
+# double papers last 2 s longer a level (10 s to 20 s, 15 s to 25 s), the helmet keeps you safe longer after a
+# knock, and at the top level takes two knocks (paperboy_sim, and the page's src/paperboy/sim.ts). A round replays
+# at the levels the page played it at, up to what's owned (daily_score.PaperboyGame.replay_ups).
+UPGRADE_COSTS = (500, 1500, 4000, 9000, 20000)
+
+
+def levels(uid: int) -> dict[str, int]:
+    """The power-up upgrade levels a player owns."""
+    _kit_row(uid)                                        # (makes their row if they've none yet)
+    row = DatabaseManager.fetch_one("SELECT upgrades FROM paperboy_kit WHERE user_id = ?", (str(uid),))
+    return paperboy_sim.levels(json.loads(row[0] or "{}") if row else {})
+
+
+def upgrade(uid: int, power: str) -> dict:
+    """Buy the next level of a power-up."""
+    if power not in paperboy_sim.POWERS:
+        raise WardrobeRefuse("That's not a power-up.")
+    now = levels(uid)
+    if now[power] >= paperboy_sim.UP_MAX:
+        raise WardrobeRefuse("That's as good as it gets.")
+    cost = UPGRADE_COSTS[now[power]]
+    if balance(uid) < cost:
+        raise WardrobeRefuse(f"You need {cost - balance(uid):,} more papers for that.")
+    now[power] += 1
+    DatabaseManager.execute("UPDATE paperboy_kit SET upgrades = ?, spent = spent + ? WHERE user_id = ?",
+                            (json.dumps(now), cost, str(uid)))
+    return kit(uid)
 
 
 # wardrobe items that come with a server badge (seeded in database.py)

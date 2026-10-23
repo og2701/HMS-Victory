@@ -695,6 +695,10 @@ def init_db():
                 bonus INTEGER NOT NULL
             )
         ''')
+        # the power-up upgrade levels bought (JSON), which came later
+        c.execute("PRAGMA table_info(paperboy_kit)")
+        if "upgrades" not in {row[1] for row in c.fetchall()}:
+            c.execute("ALTER TABLE paperboy_kit ADD COLUMN upgrades TEXT NOT NULL DEFAULT '{}'")
         c.execute('''
             CREATE TABLE IF NOT EXISTS pennyfalls_boards (
                 user_id TEXT PRIMARY KEY,

@@ -18,7 +18,7 @@ def test_the_bot_replays_runs_exactly_as_the_page_played_them():
     assert len(runs) >= 9
     for v in runs:
         # (what a crash was into is the bot's own addition, for a badge: the page doesn't say)
-        out = S.replay(v["seed"], v["inputs"], v["maxSteps"], theme=v["theme"])
+        out = S.replay(v["seed"], v["inputs"], v["maxSteps"], theme=v["theme"], ups=v.get("ups"))
         out.pop("crashedOn", None)
         assert out == v["result"], (v["seed"], v["theme"])
 
