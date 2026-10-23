@@ -373,6 +373,8 @@ async def guessr_state(request):
     who = _player(request)
     if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     gated = _gate(request.app[CLIENT], who["uid"], "guessr")
     if gated is not None:
         return gated
@@ -383,6 +385,8 @@ async def guessr_guess(request):
     who = _player(request)
     if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     client = request.app[CLIENT]
     gated = _gate(client, who["uid"], "guessr") or _slow_down(who["uid"])
     if gated is not None:
@@ -403,6 +407,8 @@ async def guessr_pins(request):
     who = _player(request)
     if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     client = request.app[CLIENT]
     try:
         return _json({"pins": guessr.pins(who["uid"], _today(), int(request.match_info["round"]), lambda u: _name(client, u))})
@@ -416,6 +422,8 @@ async def guessr_board(request):
     who = _player(request)
     if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     client = request.app[CLIENT]
     return _json(guessr.board(who["uid"], _today(), lambda u: _name(client, u)))
 
@@ -424,6 +432,8 @@ async def guessr_photo(request):
     who = _player(request)
     if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     try:
         path = guessr.photo(who["uid"], _today(), request.match_info["date"], int(request.match_info["n"]))
     except ValueError:
@@ -435,8 +445,11 @@ async def guessr_photo(request):
 
 async def guessr_map(request):
     """OpenFreeMap's files for UKGuessr's map, passed on (the page can't reach other sites inside Discord)."""
-    if _player(request) is None:
+    who = _player(request)
+    if who is None:
         return _error("Sign in again.", 401)
+    if not guessr.allowed(who["uid"]):
+        return _error("UKGuessr isn't open yet.", 404)
     path = request.match_info["path"]
     try:
         f = await guessr.map_file(path)

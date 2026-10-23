@@ -49,9 +49,9 @@ def _score_card(key: str, uid: int, date) -> dict | None:
 
 def _guessr(uid: int, date) -> dict | None:
     """UKGuessr's tile: rounds pinned today, the score so far, and the reward (None while it's switched off)."""
-    if not getattr(config, "GUESSR_ENABLED", True):
-        return None
     from lib.activities import guessr
+    if not guessr.allowed(uid):
+        return None
     try:
         return guessr.home_card(uid, date)
     except Exception:

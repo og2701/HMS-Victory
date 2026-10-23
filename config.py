@@ -490,8 +490,11 @@ WORDLE_REWARDS = [200, 140, 100, 70, 45, 25]  # payout by number of guesses to s
 # bot saw allows, at CLIMB_MAX_SPEED metres a second (a strong run averages about 6). A new best
 # is posted in the channel straight away, and that post is updated if it's beaten within 30 minutes.
 # UKGuessr (lib/activities/guessr.py): three UK spots a day from Mapillary's 360° photos (MAPILLARY_TOKEN in .env, a
-# free client token), a pin on the map for each; a flat GUESSR_REWARD UKP for finishing the day's three.
+# free client token), a pin on the map for each; a flat GUESSR_REWARD UKP for finishing the day's three. False
+# GUESSR_LIVE while it's being tried out: only GUESSR_TESTERS see its tile or can get into it.
 GUESSR_ENABLED = True
+GUESSR_LIVE = False
+GUESSR_TESTERS = [404634271861571584]  # oggers
 GUESSR_REWARD = 10
 CLIMB_ENABLED = True
 CLIMB_RATE = 0.5

@@ -168,3 +168,17 @@ def test_the_map_passes_on_only_the_maps_own_files_and_keeps_a_copy(tmp_path, mo
     guessr.trim_map(limit_mb=1)
     left = sorted(p.name for p in (guessr.map_dir() / "planet").glob("big*"))
     assert left == ["big2.pbf"]
+
+
+def test_only_testers_get_in_until_it_goes_live(day, monkeypatch):
+    import config
+    from lib.activities import home
+    guessr, _ = day
+    monkeypatch.setattr(config, "GUESSR_LIVE", False)
+    monkeypatch.setattr(config, "GUESSR_TESTERS", [A])
+    assert guessr.allowed(A) and not guessr.allowed(B)
+    assert home._guessr(A, DAY) is not None and home._guessr(B, DAY) is None
+    monkeypatch.setattr(config, "GUESSR_LIVE", True)
+    assert guessr.allowed(B)
+    monkeypatch.setattr(config, "GUESSR_ENABLED", False)
+    assert not guessr.allowed(A)

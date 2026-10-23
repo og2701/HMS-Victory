@@ -65,6 +65,13 @@ def reward() -> int:
     return int(getattr(config, "GUESSR_REWARD", 10))
 
 
+def allowed(uid) -> bool:
+    """Everyone once UKGuessr's live (config.GUESSR_LIVE), until then only its testers."""
+    if not getattr(config, "GUESSR_ENABLED", True):
+        return False
+    return bool(getattr(config, "GUESSR_LIVE", False)) or int(uid or 0) in getattr(config, "GUESSR_TESTERS", [])
+
+
 def token() -> str:
     return os.getenv("MAPILLARY_TOKEN") or str(getattr(config, "MAPILLARY_TOKEN", "") or "")
 

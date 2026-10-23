@@ -74,6 +74,7 @@ def main(port: int) -> None:
     config.PERSISTENT_VIEWS_FILE = os.path.join(tmp, "persistent_views.json")
     # the stand-in players all try UKP Kart while it's only open to its testers
     config.KART_TESTERS = [*getattr(config, "KART_TESTERS", []), PLAYER, RIVAL, THIRD]
+    config.GUESSR_TESTERS = [*getattr(config, "GUESSR_TESTERS", []), PLAYER, RIVAL, THIRD]
     config.GUESSR_TEST_SPOTS = True         # UKGuessr: three known spots with test panoramas, without a Mapillary token
     # Skyrim's saves too, so playing it here never touches this checkout's data/json
     for name in ("PROFILES", "DAILY", "GRAVEYARD", "WORLDBOSS"):
