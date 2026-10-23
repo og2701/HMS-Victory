@@ -3,7 +3,8 @@ Mapillary (openly licensed, CC BY-SA, so the bot keeps the day's three and serve
 player fetching them), and you drop a pin on a map of the UK for where you think it is. A round scores up to
 5,000, less the further off the pin is; once you've guessed, the map shows where it was and where everyone else
 has guessed so far. The day's total goes on today's leaderboard and on the all-time one, which adds up every
-day's; finishing all three pays a flat GUESSR_REWARD UKP.
+day's; finishing all three pays a flat GUESSR_REWARD UKP and posts the day's card (guessr_card) in the channel the
+game was opened in.
 
 The bot picks the spots (pick_day): on land in the UK (data/guessr/uk-land.json, made by ukplace-activities
 scripts/guessr-map.py from Natural Earth's public-domain map), half near a city and half anywhere, each a recent
@@ -53,6 +54,7 @@ _MAP_FILE = re.compile(
     r"|sprites/[a-z0-9_]{1,40}/ofm(@2x)?\.(json|png)"
     r"|natural_earth/ne2sr/\d{1,2}/\d{1,6}/\d{1,6}\.png")
 _map_fetching: dict[str, asyncio.Task] = {}
+_posting: set[asyncio.Task] = set()
 _map_session = None
 _picking: dict[str, asyncio.Task] = {}
 
@@ -385,6 +387,44 @@ def photo(viewer: int, date: _date, iso: str, n: int) -> Path | None:
         return None
     path = photo_dir() / iso / f"{n}.jpg"
     return path if path.exists() else None
+
+
+# ---- telling the channel ------------------------------------------------------------------------------
+
+def post_day(uid: int, channel_id: int, date: _date) -> None:
+    """Once someone's pinned all three, say so in the channel the game was opened in: a line with a Play button
+    and the day's card (which never shows where the spots were). In the background, and best-effort."""
+    async def send():
+        from lib.activities import guessr_card, launcher
+        from lib.activities.daily_score import _member, ordinal
+        s = state(uid, date)
+        if not s["done"]:
+            return
+        today = DatabaseManager.fetch_all(
+            "SELECT user_id, SUM(score) AS s FROM guessr_guesses WHERE date = ? GROUP BY user_id ORDER BY s DESC, user_id",
+            (date.isoformat(),)) or []
+        rank = next((i + 1 for i, r in enumerate(today) if r[0] == str(uid)), len(today))
+        member = _member(uid)
+        avatar = None
+        if member is not None:
+            try:
+                avatar = await member.display_avatar.replace(size=256, format="png").read()
+            except Exception:
+                avatar = None
+        called = lambda u: getattr(_member(int(u)), "display_name", None) or "A guesser"
+        paid = s["reward"] if s["paid"] else 0
+        png = await guessr_card.card_png(
+            name=called(uid), avatar=avatar, date_label=s["dateLabel"], total=s["total"], most=s["max"],
+            rounds=[(r["guess"]["score"], r["guess"]["km"]) for r in s["rounds"]], rank=rank, players=len(today),
+            paid=paid, top=[(called(u), int(t), u == str(uid)) for u, t in today[:3]])
+        text = (f"🗺️ <@{uid}> scored **{s['total']:,}** on today's **UKGuessr** ({ordinal(rank)} today)"
+                + (f" · +{paid} UKP" if paid else ""))
+        if await launcher.announce_or_edit(channel_id, text, "guessr", png=png):
+            log.info("UKGuessr day posted for %s in %s (%s)", uid, channel_id, s["total"])
+
+    task = asyncio.get_running_loop().create_task(send())
+    _posting.add(task)
+    task.add_done_callback(_posting.discard)
 
 
 # ---- the map's files ------------------------------------------------------------------------------------

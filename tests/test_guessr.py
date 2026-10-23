@@ -182,3 +182,34 @@ def test_only_testers_get_in_until_it_goes_live(day, monkeypatch):
     assert guessr.allowed(B)
     monkeypatch.setattr(config, "GUESSR_ENABLED", False)
     assert not guessr.allowed(A)
+
+
+def test_finishing_the_day_posts_its_card_without_giving_the_spots_away(day, monkeypatch):
+    import asyncio
+    from lib.activities import guessr_card, launcher
+    guessr, _ = day
+    posted, drawn = [], []
+
+    async def announce(channel_id, text, game, message_id=None, png=None):
+        posted.append((channel_id, text, game, png))
+        return 1
+
+    async def card(**kw):
+        drawn.append(kw)
+        return b"png"
+    monkeypatch.setattr(launcher, "announce_or_edit", announce)
+    monkeypatch.setattr(guessr_card, "card_png", card)
+    for n, s in enumerate(SPOTS, 1):
+        guessr.guess(A, DAY, n, s["lat"] + 0.1, s["lon"])
+
+    async def run():
+        guessr.post_day(A, 555, DAY)
+        await asyncio.gather(*guessr._posting)
+    asyncio.run(run())
+    (ch, text, game, png), = posted
+    assert ch == 555 and game == "guessr" and png == b"png" and f"<@{A}>" in text and "+10 UKP" in text
+    kw = drawn[0]
+    assert kw["rank"] == 1 and kw["players"] == 1 and kw["paid"] == 10 and len(kw["rounds"]) == 3
+    # nothing on the card says where the spots were
+    html = guessr_card.card_html(**kw)
+    assert "51.50" not in html and "Westminster" not in html and "someone" not in html

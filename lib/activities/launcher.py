@@ -30,7 +30,7 @@ _client: "Launcher | None" = None
 _register_task: "asyncio.Task | None" = None
 _requested: dict[int, tuple[str, float]] = {}
 REQUEST_TTL = 120   # seconds between asking for a game and the page signing in
-GAMES = ("wordle", "crossword", "climb", "spitfire", "paperboy")
+GAMES = ("wordle", "crossword", "climb", "spitfire", "paperboy", "guessr")
 
 
 def _commands() -> dict:

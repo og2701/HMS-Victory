@@ -399,6 +399,8 @@ async def guessr_guess(request):
         return _error(str(e), 422)
     except Exception:
         return _error("Bad request.", 400)
+    if s["done"] and n == guessr.ROUNDS and who.get("ch"):
+        guessr.post_day(who["uid"], int(who["ch"]), _today())        # that was the last of the day's three
     return _json({**s, "pins": guessr.pins(who["uid"], _today(), n, lambda u: _name(client, u))})
 
 
