@@ -137,9 +137,10 @@ async def _find(session, lat: float, lon: float, r: random.Random) -> dict | Non
     """A recent 360° photo near a point, on UK land, if Mapillary has one."""
     for half in (0.02, 0.05):
         bbox = f"{lon - half * 1.7:.5f},{lat - half:.5f},{lon + half * 1.7:.5f},{lat + half:.5f}"
-        params = {"access_token": token(), "fields": FIELDS, "bbox": bbox, "is_pano": "true", "limit": "40"}
+        params = {"fields": FIELDS, "bbox": bbox, "is_pano": "true", "limit": "40"}
         try:
-            async with session.get(API, params=params, timeout=20) as resp:
+            # the token in a header, not the URL, so it never turns up in a logged error
+            async with session.get(API, params=params, headers={"Authorization": f"OAuth {token()}"}, timeout=20) as resp:
                 if resp.status != 200:
                     log.warning("Mapillary said %s near %.3f,%.3f", resp.status, lat, lon)
                     return None
