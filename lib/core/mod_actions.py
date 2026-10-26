@@ -74,7 +74,14 @@ HATE_FILTER = Kind(
     "meaning and it does get things wrong. Appeal below and a person will read what you "
     "actually wrote.")
 
-KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH, HATE_FILTER)}
+EE_CODES = Kind(
+    "eecodes",
+    "Asked for EE codes",
+    "### You have been removed from UK Place\n"
+    "You were asking members for EE / Call of Duty codes, which is against the server rules.\n\n"
+    "If you believe this was an error, you can submit an appeal below.")
+
+KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH, HATE_FILTER, EE_CODES)}
 _FALLBACK = Kind("unknown", "Automated moderation report", DM_SPAM.ban_dm)
 
 

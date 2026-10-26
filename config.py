@@ -427,8 +427,10 @@ TREE_WATER_FILE = os.path.join(JSON_DATA_DIR, "tree_water_rewards.json")
 BUMP_REWARD_FILE = os.path.join(JSON_DATA_DIR, "bump_rewards.json")
 # Call of Duty x EE promotions send people from abroad into UK servers asking for EE codes. While this
 # is on, the first time someone asks, Vic answers with a playful "none here, and asking is against the
-# rules" (lib/features/ee_codes.py). Switch it off once the promotion is over.
+# rules", times them out and reports it to the police station (lib/features/ee_codes.py). Switch it off
+# once the promotion is over.
 EE_CODE_REPLIES_ENABLED = True
+EE_CODE_TIMEOUT_MINUTES = 60  # askers are also timed out, with a Remove timeout button in the police station
 EE_CODE_REPLIES_FILE = os.path.join(JSON_DATA_DIR, "ee_code_replies.json")  # who has already had the reply
 WELCOME_REPUTATION_FILE = os.path.join(JSON_DATA_DIR, "welcome_reputation.json")  # per-member welcome outcomes
 DM_SPAM_FLAG_FILE = os.path.join(JSON_DATA_DIR, "dm_spam_flags.json")  # members carrying Discord's unusual-DM flag, so we only report each one once

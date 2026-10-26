@@ -2,8 +2,8 @@
 
 Call of Duty runs promotions where EE customers unlock exclusive in-game items with a code, and
 people from abroad turn up in UK servers asking for one. Asking for codes is against the rules
-here, so the first time someone asks, Vic answers with one of these lines instead of staff having
-to. Only actual requests count ("anyone got ee", "ee codes", "who has EE"), not someone saying
+here, so the first time someone asks, Vic answers with one of these lines, times them out and
+drops a short note in the police station with a Remove timeout button. Only actual requests count ("anyone got ee", "ee codes", "who has EE"), not someone saying
 they're on EE. One reply per person, ever; staff and bots are left alone. Gated on
 config.EE_CODE_REPLIES_ENABLED so it can be switched off when the promotion ends.
 
@@ -21,7 +21,7 @@ from datetime import timedelta
 import discord
 
 import config
-from config import ROLES
+from config import CHANNELS, ROLES
 from lib.core.file_operations import load_json_file, save_json_file
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ JEV_THRESHOLD = 0.6
 _jev_checked: dict[int, int] = {}   # member id -> messages Jev has read; in memory, a restart only grants a few more
 
 
-async def _jev_says_ee_ask(text: str) -> bool:
+async def _jev_ee_ask(text: str) -> float | None:
     from lib.features.mention_signals import judge_yes_no
     p = await judge_yes_no(
         text,
@@ -93,7 +93,7 @@ async def _jev_says_ee_ask(text: str) -> bool:
         context={"server": "a UK community Discord server",
                  "promotion": "EE customers can claim exclusive Call of Duty items by code, so people from abroad ask UK members for them"},
     )
-    return p is not None and p >= JEV_THRESHOLD
+    return p
 
 
 def _new_joiner(member) -> bool:
@@ -109,14 +109,17 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
     seen = load_json_file(config.EE_CODE_REPLIES_FILE) or {}
     if str(message.author.id) in seen:
         return
+    how = "the EE patterns"
     if not asks_for_ee_code(message.content):
         text = (message.content or "").strip()
         uid = message.author.id
         if len(text) < 4 or not _new_joiner(message.author) or _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
             return
         _jev_checked[uid] = _jev_checked.get(uid, 0) + 1
-        if not await _jev_says_ee_ask(text):
+        p = await _jev_ee_ask(text)
+        if p is None or p < JEV_THRESHOLD:
             return
+        how = f"Jev ({p:.2f}, new joiner)"
     seen[str(message.author.id)] = int(message.created_at.timestamp())
     save_json_file(config.EE_CODE_REPLIES_FILE, seen)
     log.info("EE code ask from %s (%s): %r", message.author, message.author.id, (message.content or "")[:120])
@@ -124,3 +127,33 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
         await message.reply(random.choice(REPLIES), allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException:
         log.debug("EE code reply failed", exc_info=True)
+
+    minutes = getattr(config, "EE_CODE_TIMEOUT_MINUTES", 60)
+    try:
+        await message.author.timeout(timedelta(minutes=minutes), reason="Asked for EE codes")
+        timed_out = True
+    except discord.HTTPException:
+        log.warning("couldn't time out EE code asker %s", message.author.id, exc_info=True)
+        timed_out = False
+    await _report(message, how, minutes if timed_out else None)
+
+
+async def _report(message: discord.Message, how: str, minutes: int | None) -> None:
+    """A short note in the police station, with a Remove timeout button for the false positives."""
+    from lib.core.mod_actions import EE_CODES, ModUntimeoutButton, action_view
+    channel = message.guild.get_channel(CHANNELS.POLICE_STATION)
+    if channel is None:
+        return
+    snippet = (message.content or "").replace("\n", " ")[:200]
+    done = f"Timed out for {minutes} min" if minutes else "Timeout FAILED"
+    embed = discord.Embed(
+        title="🎮 EE code ask",
+        description=(f"{message.author.mention} (`{message.author.id}`) in {message.channel.mention}\n"
+                     f"> {snippet}\n{done} · caught by {how} · [jump]({message.jump_url})"),
+        colour=0xE67E22,
+    )
+    try:
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none(),
+                           view=action_view(EE_CODES, message.author.id, only=(ModUntimeoutButton,)) if minutes else None)
+    except discord.HTTPException:
+        log.warning("couldn't post the EE code report", exc_info=True)
