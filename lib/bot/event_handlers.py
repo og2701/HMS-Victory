@@ -1369,6 +1369,13 @@ async def on_message(client, message):
     except Exception:
         logger.debug("who-is-oggers hook failed", exc_info=True)
 
+    # Temporary, while a Call of Duty x EE promotion is on: one playful "no EE codes here" reply.
+    try:
+        from lib.features.ee_codes import handle_ee_code_ask
+        asyncio.create_task(handle_ee_code_ask(message))
+    except Exception:
+        logger.debug("EE code hook failed", exc_info=True)
+
     # Instagram reels and X links, neither of which Discord previews properly: the reel is
     # posted as playable media, the tweet re-posted on fxtwitter. Fire-and-forget, since it
     # waits on kkinstagram and then on a download and nothing else should sit behind that.
