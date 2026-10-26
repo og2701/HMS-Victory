@@ -150,8 +150,9 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
 
 
 async def _report(message: discord.Message, how: str, minutes: int | None) -> None:
-    """A short note in the police station, with a Remove timeout button for the false positives."""
-    from lib.core.mod_actions import EE_CODES, ModUntimeoutButton, action_view
+    """A short note in the police station: Remove timeout for the false positives, Ban (which DMs the
+    appeal first) for the ones who mean it."""
+    from lib.core.mod_actions import EE_CODES, ModBanButton, ModUntimeoutButton, action_view
     channel = message.guild.get_channel(CHANNELS.POLICE_STATION)
     if channel is None:
         return
@@ -164,7 +165,8 @@ async def _report(message: discord.Message, how: str, minutes: int | None) -> No
         colour=0xE67E22,
     )
     try:
+        buttons = (ModUntimeoutButton, ModBanButton) if minutes else (ModBanButton,)
         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none(),
-                           view=action_view(EE_CODES, message.author.id, only=(ModUntimeoutButton,)) if minutes else None)
+                           view=action_view(EE_CODES, message.author.id, only=buttons))
     except discord.HTTPException:
         log.warning("couldn't post the EE code report", exc_info=True)
