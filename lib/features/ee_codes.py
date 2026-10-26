@@ -6,11 +6,17 @@ here, so the first time someone asks, Vic answers with one of these lines instea
 to. Only actual requests count ("anyone got ee", "ee codes", "who has EE"), not someone saying
 they're on EE. One reply per person, ever; staff and bots are left alone. Gated on
 config.EE_CODE_REPLIES_ENABLED so it can be switched off when the promotion ends.
+
+Two checks. The patterns below run on everyone and cost nothing. Members who joined in the last
+week also get their first few messages read by Jev, which catches the asks that never say "EE"
+("any UK lads able to get me the new cod skin?"). That's where the code-hunters are, and it keeps
+the Jev calls to a few dozen a day rather than one per message on the server.
 """
 
 import logging
 import random
 import re
+from datetime import timedelta
 
 import discord
 
@@ -68,16 +74,49 @@ def asks_for_ee_code(content: str) -> bool:
     return bool(content) and bool(_ASKS_FOR_EE.search(content))
 
 
+NEW_JOINER_DAYS = 7
+NEW_JOINER_MESSAGES = 10
+JEV_THRESHOLD = 0.6
+_jev_checked: dict[int, int] = {}   # member id -> messages Jev has read; in memory, a restart only grants a few more
+
+
+async def _jev_says_ee_ask(text: str) -> bool:
+    from lib.features.mention_signals import judge_yes_no
+    p = await judge_yes_no(
+        text,
+        instructions=("Is `message` asking for a Call of Duty x EE promotional code, or for someone with an EE phone "
+                      "contract or account to claim the in-game reward for them?"),
+        true_examples=["anyone got an ee code", "any uk lads able to get me the new cod skin?", "does anyone here have ee mobile",
+                       "need someone with a uk phone contract for the cod promo, will pay", "can someone claim the operator skin for me",
+                       "american looking for a euro with EE"],
+        false_what="Anything else: greetings, chatting about EE as a phone network, Call of Duty in general, other games",
+        context={"server": "a UK community Discord server",
+                 "promotion": "EE customers can claim exclusive Call of Duty items by code, so people from abroad ask UK members for them"},
+    )
+    return p is not None and p >= JEV_THRESHOLD
+
+
+def _new_joiner(member) -> bool:
+    joined = getattr(member, "joined_at", None)
+    return joined is not None and discord.utils.utcnow() - joined <= timedelta(days=NEW_JOINER_DAYS)
+
+
 async def handle_ee_code_ask(message: discord.Message) -> None:
     if not getattr(config, "EE_CODE_REPLIES_ENABLED", False) or message.author.bot or message.guild is None:
-        return
-    if not asks_for_ee_code(message.content):
         return
     if any(r.id in _STAFF_ROLES for r in getattr(message.author, "roles", [])):
         return
     seen = load_json_file(config.EE_CODE_REPLIES_FILE) or {}
     if str(message.author.id) in seen:
         return
+    if not asks_for_ee_code(message.content):
+        text = (message.content or "").strip()
+        uid = message.author.id
+        if len(text) < 4 or not _new_joiner(message.author) or _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
+            return
+        _jev_checked[uid] = _jev_checked.get(uid, 0) + 1
+        if not await _jev_says_ee_ask(text):
+            return
     seen[str(message.author.id)] = int(message.created_at.timestamp())
     save_json_file(config.EE_CODE_REPLIES_FILE, seen)
     log.info("EE code ask from %s (%s): %r", message.author, message.author.id, (message.content or "")[:120])

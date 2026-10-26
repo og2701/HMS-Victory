@@ -775,6 +775,36 @@ async def judge_pick(
     )
 
 
+async def judge_yes_no(
+    text: str,
+    *,
+    instructions: str,
+    true_examples: List[str],
+    false_what: str,
+    context: Optional[Dict[str, Any]] = None,
+    api_key: Optional[str] = None,
+    session: Optional[aiohttp.ClientSession] = None,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
+) -> Optional[float]:
+    """One standalone Noul about a piece of text: the probability of yes, or None when Jev can't answer."""
+    key = api_key or os.getenv("TYPESAFE_API_KEY")
+    if not key or not (text or "").strip():
+        return None
+    state: Dict[str, Any] = {"message": (text or "").strip()[:1000]}
+    state.update(context or {})
+    payload = {
+        "model": MENTION_SIGNALS_MODEL,
+        "state": state,
+        "questions": {"answer": {"type": "noul", "instructions": instructions,
+                                 "criteria": {"true": {"examples": true_examples}, "false": {"what": false_what}}}},
+    }
+    body = await _post(payload, key, session=session, timeout=timeout)
+    try:
+        return float(body["answers"]["answer"]["noul"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 async def _post(payload: Dict[str, Any], key: str, *, session: Optional[aiohttp.ClientSession], timeout: float) -> Any:
     """One System One request with a single retry on a blip. Returns the JSON body or None."""
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
