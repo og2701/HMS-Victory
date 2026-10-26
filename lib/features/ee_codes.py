@@ -67,7 +67,48 @@ REPLIES = (
     "A noble quest, but the EE code is not in this kingdom. Asking for one is against the rules.",
     "Hold your horses, we don't hand out EE codes. Asking for them is against the server rules.",
     "We've had a few of you today. Still no EE codes, and asking for them is still against the rules.",
+    "Ah, you must be here for the legendary EE code. Legend is all it is, I'm afraid, and asking is against the rules.",
+    'We checked behind the sofa. No EE codes, just crumbs. Asking for them is against the rules, by the way.',
+    'The EE code department is closed for refurbishment, indefinitely. Asking for one is against the rules.',
+    "Sorry, the last EE code was spotted in 2019 and hasn't been seen since. Asking for one is against the rules.",
+    "If I had an EE code, I'd keep it myself. I don't, and asking for one is against the rules.",
+    "You're the third person this hour hunting EE codes. The prize is still nothing, and asking is against the rules.",
+    'Our EE code reserves are at zero, much like your chances here. Asking for one is against the rules.',
+    "An EE code? In this economy? We've none, and asking for them is against the rules.",
+    'This server runs on tea and complaining about the weather, not EE codes. Asking for them is against the rules.',
+    "The EE code you're after has left the building. Asking for one here is against the rules.",
+    "Brave of you to ask for an EE code in a room full of people who can't help. It's also against the rules.",
+    "Somewhere out there is an EE code with your name on it. It isn't here, and asking for it is against the rules.",
+    'We consulted the tea leaves. They say no EE codes, and that asking for them is against the rules.',
+    "I've asked around. Nobody has an EE code, and everybody agrees asking for one is against the rules.",
+    "You've reached the EE code helpline. All our operators are pretending they didn't see this. Asking is against the rules.",
+    'Unfortunately the EE code was eaten by the server cat. Asking for one is against the rules anyway.',
+    'No EE codes, no Call of Duty skins, no dice. Asking for them is against the server rules.',
+    'Plenty of chat, plenty of tea, zero EE codes. Asking for them is against the rules.',
+    "We're a UK server, not a UK phone shop. No EE codes here, and asking for them is against the rules.",
+    "That EE code isn't going to find itself, and it won't be found here either. Asking is against the rules.",
+    "Kindly put the EE code request back where you found it. It's against the rules here.",
+    'The EE code lottery has no winners today. Or ever. Asking for one is against the rules.',
+    'One does not simply walk into this server and get an EE code. Asking for one is against the rules.',
+    "I'd love to help, but I'm a bot with no phone contract. No EE codes here, and asking is against the rules.",
+    'Ask not what the server can do for your EE code. The answer is nothing, and asking is against the rules.',
+    "Sadly there's no EE code raffle, giveaway or secret handshake here. Asking for codes is against the rules.",
+    "We've searched every channel. The EE code isn't hiding in any of them. Asking for one is against the rules.",
+    'Bad news: no EE codes. Worse news: asking for them is against the rules.',
+    "You've come a long way for an EE code, and it ends here, empty-handed. Asking is against the rules.",
+    'The EE code ship has sailed, sunk and been forgotten. Asking for one here is against the rules.',
 )
+
+
+def _next_reply(store: dict) -> str:
+    """Deal the lines like a shuffled deck, so nobody watching sees a repeat until all of them are used."""
+    deck = [i for i in store.get("_deck", []) if isinstance(i, int) and 0 <= i < len(REPLIES)]
+    if not deck:
+        deck = list(range(len(REPLIES)))
+        random.shuffle(deck)
+    i = deck.pop()
+    store["_deck"] = deck
+    return REPLIES[i]
 
 
 def asks_for_ee_code(content: str) -> bool:
@@ -131,11 +172,12 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
         if p is None or p < JEV_THRESHOLD:
             return
         how = f"Jev ({p:.2f}, new joiner)"
+    line = _next_reply(seen)
     seen[str(message.author.id)] = int(message.created_at.timestamp())
     save_json_file(config.EE_CODE_REPLIES_FILE, seen)
     log.info("EE code ask from %s (%s): %r", message.author, message.author.id, (message.content or "")[:120])
     try:
-        await message.reply(random.choice(REPLIES), allowed_mentions=discord.AllowedMentions.none())
+        await message.reply(line, allowed_mentions=discord.AllowedMentions.none())
     except discord.HTTPException:
         log.debug("EE code reply failed", exc_info=True)
 
