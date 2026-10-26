@@ -76,7 +76,16 @@ def asks_for_ee_code(content: str) -> bool:
 
 NEW_JOINER_DAYS = 7
 NEW_JOINER_MESSAGES = 10
-JEV_THRESHOLD = 0.6
+JEV_THRESHOLD = 0.7
+# Jev only reads a new joiner's message once it's plausibly about this at all. A bare link with
+# "then your this" in front scored 0.64 and got someone timed out, so links are stripped and the
+# words left over have to touch the topic: EE, codes, skins, CoD, phones, or the UK.
+_URL_RE = re.compile(r"https?://\S+")
+_ON_TOPIC = re.compile(
+    r"\b(?:ee|codes?|promo\w*|skins?|operators?|rewards?|cod|call\s+of\s+duty|mw\s?4|warzone|black\s+ops|"
+    r"phones?|contracts?|network|sim|mobile|uk|brits?|british|england|english|euros?|claim)\b",
+    re.IGNORECASE,
+)
 _jev_checked: dict[int, int] = {}   # member id -> messages Jev has read; in memory, a restart only grants a few more
 
 
@@ -111,9 +120,11 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
         return
     how = "the EE patterns"
     if not asks_for_ee_code(message.content):
-        text = (message.content or "").strip()
+        text = _URL_RE.sub("", message.content or "").strip()
         uid = message.author.id
-        if len(text) < 4 or not _new_joiner(message.author) or _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
+        if len(text.split()) < 3 or not _ON_TOPIC.search(text):
+            return
+        if not _new_joiner(message.author) or _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
             return
         _jev_checked[uid] = _jev_checked.get(uid, 0) + 1
         p = await _jev_ee_ask(text)
