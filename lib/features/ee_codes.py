@@ -2,8 +2,8 @@
 
 Call of Duty runs promotions where EE customers unlock exclusive in-game items with a code, and
 people from abroad turn up in UK servers asking for one. Asking for codes is against the rules
-here, so the first time someone asks, Vic answers with one of these lines, times them out and
-drops a short note in the police station with a Remove timeout button. Only actual requests count ("anyone got ee", "ee codes", "who has EE"), not someone saying
+here, so the first time someone asks, Vic deletes it, answers them by name with one of these lines,
+times them out and drops a short note in the police station with Remove timeout and Ban buttons. Only actual requests count ("anyone got ee", "ee codes", "who has EE"), not someone saying
 they're on EE. One reply per person, ever; staff and bots are left alone. Gated on
 config.EE_CODE_REPLIES_ENABLED so it can be switched off when the promotion ends.
 
@@ -176,8 +176,16 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
     seen[str(message.author.id)] = int(message.created_at.timestamp())
     save_json_file(config.EE_CODE_REPLIES_FILE, seen)
     log.info("EE code ask from %s (%s): %r", message.author, message.author.id, (message.content or "")[:120])
+    # The ask goes, so the line can't be a reply to it: it names them in the channel instead.
     try:
-        await message.reply(line, allowed_mentions=discord.AllowedMentions.none())
+        await message.delete()
+        deleted = True
+    except discord.HTTPException:
+        log.debug("couldn't delete EE code ask", exc_info=True)
+        deleted = False
+    try:
+        await message.channel.send(f"{message.author.mention} {line}",
+                                   allowed_mentions=discord.AllowedMentions(users=[message.author]))
     except discord.HTTPException:
         log.debug("EE code reply failed", exc_info=True)
 
@@ -188,22 +196,27 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
     except discord.HTTPException:
         log.warning("couldn't time out EE code asker %s", message.author.id, exc_info=True)
         timed_out = False
-    await _report(message, how, minutes if timed_out else None)
+    await _report(message, how, minutes if timed_out else None, deleted)
 
 
-async def _report(message: discord.Message, how: str, minutes: int | None) -> None:
+async def _report(message: discord.Message, how: str, minutes: int | None, deleted: bool) -> None:
     """A short note in the police station: Remove timeout for the false positives, Ban (which DMs the
     appeal first) for the ones who mean it."""
     from lib.core.mod_actions import EE_CODES, ModBanButton, ModUntimeoutButton, action_view
     channel = message.guild.get_channel(CHANNELS.POLICE_STATION)
     if channel is None:
         return
-    snippet = (message.content or "").replace("\n", " ")[:200]
+    # The original is deleted by now, so this quote is the only copy staff will see.
+    said = (message.content or "").strip()[:1500] or "[no text]"
+    quote = "\n".join(f"> {line}" for line in said.splitlines())
+    files = ", ".join(a.filename for a in message.attachments)
+    if files:
+        quote += f"\n> 📎 {files}"
     done = f"Timed out for {minutes} min" if minutes else "Timeout FAILED"
     embed = discord.Embed(
         title="🎮 EE code ask",
         description=(f"{message.author.mention} (`{message.author.id}`) in {message.channel.mention}\n"
-                     f"> {snippet}\n{done} · caught by {how} · [jump]({message.jump_url})"),
+                     f"{quote}\n{done} · {'message deleted' if deleted else 'delete FAILED'} · caught by {how}"),
         colour=0xE67E22,
     )
     try:
