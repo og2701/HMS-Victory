@@ -716,16 +716,19 @@ class AClient(discord.Client):
             asyncio.create_task(on_catch(self, payload.message))
         # Grow-a-Tree usually EDITS the tree message in place when someone waters (instead of
         # posting a new one), and that old message is often out of the cache - so use the RAW
-        # edit event (fires regardless of cache) and fetch the current message. Dedup is by
-        # tree height inside the handler, so this can't double-pay vs the on_message path.
+        # edit event (fires regardless of cache). The edit carries the whole message, so the
+        # payout doesn't wait on a fetch unless the embeds are missing. Dedup is on the
+        # "come back" timestamp inside the handler, so this can't double-pay vs on_message.
         try:
             if payload.channel_id != TREE_CHANNEL_ID:
                 return
             author = ((payload.data or {}).get("author") or {}).get("id")
             if str(author) != str(GROW_A_TREE_BOT_ID):
                 return
-            channel = self.get_channel(TREE_CHANNEL_ID) or await self.fetch_channel(TREE_CHANNEL_ID)
-            msg = await channel.fetch_message(payload.message_id)
+            msg = getattr(payload, "message", None)
+            if msg is None or not msg.embeds:
+                channel = self.get_channel(TREE_CHANNEL_ID) or await self.fetch_channel(TREE_CHANNEL_ID)
+                msg = await channel.fetch_message(payload.message_id)
             from lib.features.ukp_rewards import handle_tree_watering
             asyncio.create_task(handle_tree_watering(self, msg))
         except Exception:

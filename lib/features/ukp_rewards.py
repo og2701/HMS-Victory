@@ -158,15 +158,7 @@ async def handle_tree_watering(client, message):
     store[str(waterer_id)] = {"date": today, "count": count + 1, "earned": earned + pay_amt, "total": total}
     save_json_file(config.TREE_WATER_FILE, store)
 
-    from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
-    bump_daily_income("tree_total", pay_amt)
-    await award_badge_safe(client, waterer_id, "green_fingers")     # first water (idempotent)
-    if pay_amt <= 10:
-        await award_badge_safe(client, waterer_id, "drip")          # decayed to 10 UKPence or below today
-    if total >= 100:
-        await award_badge_safe(client, waterer_id, "sir_branchalot")
-    await record_income_source(client, waterer_id, "tree")
-
+    # The line goes out first: the waterer is watching for it, the badge checks can follow.
     try:
         await message.channel.send(
             f"\U0001f333 <@{waterer_id}> earned **{pay_amt:,} UKPence** for watering the tree!",
@@ -175,6 +167,15 @@ async def handle_tree_watering(client, message):
         )
     except Exception:
         log.debug("tree watering message failed", exc_info=True)
+
+    from lib.features.income_badges import award_badge_safe, record_income_source, bump_daily_income
+    bump_daily_income("tree_total", pay_amt)
+    await award_badge_safe(client, waterer_id, "green_fingers")     # first water (idempotent)
+    if pay_amt <= 10:
+        await award_badge_safe(client, waterer_id, "drip")          # decayed to 10 UKPence or below today
+    if total >= 100:
+        await award_badge_safe(client, waterer_id, "sir_branchalot")
+    await record_income_source(client, waterer_id, "tree")
 
 
 TREE_PAYOUT_TTL = 600
