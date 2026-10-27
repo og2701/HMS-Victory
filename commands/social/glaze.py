@@ -9,6 +9,7 @@ from commands.social.roast import roast
 from config import GLAZE_DAILY_LIMIT, ROLES, USERS
 from database import DatabaseManager
 from lib.features import glazes
+from lib.features.chat_responder import sanitize_ai_mentions
 from lib.features.member_context import channel_problem
 
 
@@ -91,7 +92,7 @@ async def glaze(interaction, channel: TextChannel = None, user: Member = None, a
             return
 
         await interaction.channel.send(
-            glazes.header(user, interaction.user, candidate["form"]) + candidate["text"],
+            glazes.header(user, interaction.user, candidate["form"]) + sanitize_ai_mentions(candidate["text"]),
             allowed_mentions=AllowedMentions(users=[user], everyone=False, roles=False, replied_user=False),
         )
         delivered = True

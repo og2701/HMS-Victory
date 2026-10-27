@@ -50,7 +50,8 @@ class AClient(discord.Client):
         intents.message_content = True
         intents.members = True
         intents.guilds = True
-        super().__init__(intents=intents)
+        # No send from Vic may ever ping @everyone/@here; a per-send AllowedMentions only overrides what it sets.
+        super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions(everyone=False))
         self.synced = False
         self.maintenance_mode = False  # set True during graceful shutdown to refuse new coin-deducting actions
         self._shutting_down = False    # re-entrancy guard for graceful_shutdown

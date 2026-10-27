@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 from config import ROAST_DAILY_LIMIT, USERS
 from database import DatabaseManager
 from lib.features import roasts
+from lib.features.chat_responder import sanitize_ai_mentions
 from lib.features.member_context import channel_problem
 
 
@@ -77,8 +78,9 @@ async def roast(interaction, channel: TextChannel = None, user: Member = None, *
 
         note = note or f"roasted at {interaction.user.display_name}'s request"
         header = f"🔥 {user.mention} 🔥\n-# {note}\n\n"
+        # The model has put a bare @everyone in a roast (about Oggers' mass ping); defuse it so it doesn't even render.
         await interaction.channel.send(
-            header + candidate["text"],
+            header + sanitize_ai_mentions(candidate["text"]),
             allowed_mentions=AllowedMentions(users=[user], everyone=False, roles=False, replied_user=False),
         )
         delivered = True
