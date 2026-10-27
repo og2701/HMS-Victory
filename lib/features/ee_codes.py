@@ -7,10 +7,10 @@ times them out and drops a short note in the police station with Remove timeout 
 they're on EE. One reply per person, ever; staff and bots are left alone. Gated on
 config.EE_CODE_REPLIES_ENABLED so it can be switched off when the promotion ends.
 
-Two checks. The patterns below run on everyone and cost nothing. Members who joined in the last
-week also get their first few messages read by Jev, which catches the asks that never say "EE"
-("any UK lads able to get me the new cod skin?"). That's where the code-hunters are, and it keeps
-the Jev calls to a few dozen a day rather than one per message on the server.
+Only members who joined in the last week are checked: that's where the code-hunters are, and a
+regular saying "what is it with EE codes" got timed out when the patterns ran on everyone. The
+patterns below cost nothing; a new joiner's first few messages are also read by Jev, which catches
+the asks that never say "EE" ("any UK lads able to get me the new cod skin?").
 """
 
 import logging
@@ -154,7 +154,7 @@ def _new_joiner(member) -> bool:
 async def handle_ee_code_ask(message: discord.Message) -> None:
     if not getattr(config, "EE_CODE_REPLIES_ENABLED", False) or message.author.bot or message.guild is None:
         return
-    if any(r.id in _STAFF_ROLES for r in getattr(message.author, "roles", [])):
+    if not _new_joiner(message.author) or any(r.id in _STAFF_ROLES for r in getattr(message.author, "roles", [])):
         return
     seen = load_json_file(config.EE_CODE_REPLIES_FILE) or {}
     if str(message.author.id) in seen:
@@ -165,7 +165,7 @@ async def handle_ee_code_ask(message: discord.Message) -> None:
         uid = message.author.id
         if len(text.split()) < 3 or not _ON_TOPIC.search(text):
             return
-        if not _new_joiner(message.author) or _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
+        if _jev_checked.get(uid, 0) >= NEW_JOINER_MESSAGES:
             return
         _jev_checked[uid] = _jev_checked.get(uid, 0) + 1
         p = await _jev_ee_ask(text)
