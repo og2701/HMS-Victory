@@ -28,7 +28,8 @@ log = logging.getLogger(__name__)
 
 _ASKS_FOR_EE = re.compile(
     r"\bee\s*(?:codes?|promo|skins?|rewards?|offer|operator)\b"
-    r"|\b(?:any\s*one|anybody|some\s*one|somebody|who|any\s+(?:brits?|uk))\b[^.?!\n]{0,30}?\b(?:have|has|got|with|on|uses?)\s+(?:an?\s+)?ee\b"
+    r"|\b(?:any\s*one|anybody|some\s*one|somebody|who|any\s+(?:brits?|uk))\b[^.?!\n]{0,30}?"
+    r"\b(?:have|has|got|with|on|uses?|by)\s+(?:an?\s+|the\s+(?:(?:provider|network)\s+)?)?ee\b"
     r"|\bif\s+(?:you|u)\b[^.?!\n]{0,15}?\b(?:have|got|on|with|use)\s+ee\b",
     re.IGNORECASE,
 )

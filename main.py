@@ -705,6 +705,10 @@ class AClient(discord.Client):
         from lib.core.whitespace_moderation import check_whitespace_spam
         if await check_whitespace_spam(self, after):
             return
+        # A new joiner fixing a typo can turn a borderline EE ask into a clear one, so edits get the same check.
+        if before.content != after.content:
+            from lib.features.ee_codes import handle_ee_code_ask
+            asyncio.create_task(handle_ee_code_ask(after))
         await on_message_edit(self, before, after)
 
     async def on_raw_message_edit(self, payload):
