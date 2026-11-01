@@ -38,7 +38,8 @@ SETTLE_SECS = 90.0
 # Service states where the persona bot is up or about to be, so its channel modes still count.
 RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
 MODES = {"off": ("💤", "Off"), "mention": ("🏷️", "Mentions only"), "ambient": ("🌊", "Ambient")}
-SLEEP_CHOICES = ((30, "30 min"), (60, "1 hour"), (120, "2 hours"), (240, "4 hours"))
+SLEEP_CHOICES = ((5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min"),
+                 (60, "1 hour"), (120, "2 hours"), (240, "4 hours"))
 
 
 @dataclass

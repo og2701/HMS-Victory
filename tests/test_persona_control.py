@@ -96,6 +96,8 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([s.custom_id for s in selects], ["persona_ctl:mode:1001", "persona_ctl:mode:2001"])
         self.assertEqual([o.value for o in selects[0].options if o.default], ["ambient"])
         self.assertIn("keep", [o.value for o in selects[0].options])
+        self.assertEqual([o.value for o in selects[0].options if o.value.startswith("sleep:")][:3],
+                         ["sleep:5", "sleep:10", "sleep:15"])
         self.assertNotIn("keep", [o.value for o in selects[1].options])
         buttons = {b.custom_id: b.disabled for b in view.walk_children() if isinstance(b, discord.ui.Button)}
         self.assertEqual(buttons, {"persona_ctl:start": True, "persona_ctl:stop": False,
