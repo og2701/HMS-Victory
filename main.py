@@ -237,6 +237,15 @@ class AClient(discord.Client):
             except Exception as e:
                 logger.warning(f"Could not register Big Brother views: {e}")
 
+        # Secret Santa (one-off event): control panel + public Join / Leave buttons.
+        if getattr(config, "SECRET_SANTA_ENABLED", False):
+            try:
+                from lib.features.secret_santa import ControlButton, SignupButton
+                self.add_dynamic_items(ControlButton, SignupButton)
+                logger.info("Registered Secret Santa buttons.")
+            except Exception as e:
+                logger.warning(f"Could not register Secret Santa buttons: {e}")
+
         logger.info("Persistent prediction views registered in setup_hook.")
 
         # The ukplace activities API (Wordle as a Discord Activity). Inside this process on
@@ -300,6 +309,13 @@ class AClient(discord.Client):
                 asyncio.create_task(ensure_panels(self))
             except Exception:
                 logger.exception("could not ensure Big Brother control panel")
+
+        if getattr(config, "SECRET_SANTA_ENABLED", False):
+            try:
+                from lib.features.secret_santa import ensure_panel as ensure_secret_santa_panel
+                asyncio.create_task(ensure_secret_santa_panel(self))
+            except Exception:
+                logger.exception("could not ensure the Secret Santa panel")
 
         # Registered before anything else can trip a detector. The money rules hang off
         # economy_manager, which has no route to a client of its own, so without this an

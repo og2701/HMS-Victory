@@ -846,6 +846,18 @@ BIG_BROTHER_HOUSE_PANEL_UNLOCKED = False            # TEMP: house panel usable b
 BIG_BROTHER_SHOP_CHANNEL = None                     # where shop tasks post; None = the house channel (set to the control channel to test)
 
 # ---------------------------------------------------------------------------
+# Secret Santa (lib/features/secret_santa.py) - one-off Christmas 2026 event, run from a
+# control panel rather than a slash command. The panel starts in test mode, where a draw
+# posts the pairings and a DM preview in the channel and sends nothing. A live draw DMs
+# everyone their match and keeps the pairings only in SECRET_SANTA_FILE on the VM.
+# ---------------------------------------------------------------------------
+SECRET_SANTA_ENABLED = True
+SECRET_SANTA_CHANNEL = 1566485382504382514           # the control panel and test draws post here
+SECRET_SANTA_SIGNUP_CHANNEL = None                   # the public Join card; None = the same channel
+SECRET_SANTA_OPERATOR_IDS = {USERS.OGGERS}           # may press the control panel
+SECRET_SANTA_FILE = os.path.join(JSON_DATA_DIR, "secret_santa.json")  # gitignored: the live pairings live here
+
+# ---------------------------------------------------------------------------
 # Anti-alt / anti-farm / anti-laundering detection (lib/core/detection.py)
 #
 # Every threshold is here rather than in the detectors, because these are the numbers that
