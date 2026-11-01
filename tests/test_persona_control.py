@@ -34,6 +34,9 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
         self._card_file = patch.object(pc, "CARD_STATE_FILE", os.path.join(tmp.name, "persona_card.json"))
         self._card_file.start()
         self.addCleanup(self._card_file.stop)
+        self._passes_file = patch.object(pc, "PASSES_FILE", os.path.join(tmp.name, "persona_passes.json"))
+        self._passes_file.start()
+        self.addCleanup(self._passes_file.stop)
 
     def tearDown(self):
         pc._state, pc._client, pc._settle_until = self._saved
@@ -100,8 +103,8 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
                          ["sleep:5", "sleep:10", "sleep:15"])
         self.assertNotIn("keep", [o.value for o in selects[1].options])
         buttons = {b.custom_id: b.disabled for b in view.walk_children() if isinstance(b, discord.ui.Button)}
-        self.assertEqual(buttons, {"persona_ctl:start": True, "persona_ctl:stop": False,
-                                   "persona_ctl:restart": False, "persona_ctl:refresh": False})
+        self.assertEqual(buttons, {"persona_ctl:start": True, "persona_ctl:stop": False, "persona_ctl:restart": False,
+                                   "persona_ctl:refresh": False, "persona_ctl:pass": False})
 
         stopped = pc.PersonaCardView(pc.PersonaState(service="inactive", channels={GENERAL: "ambient"}))
         self.assertFalse([i for i in stopped.walk_children() if isinstance(i, discord.ui.Select)])
@@ -119,6 +122,83 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(pc.is_persona_card(other))
         pc.atomic_write_json(pc.CARD_STATE_FILE, {"message_id": "6"})
         self.assertTrue(pc.is_persona_card(other))
+
+    async def _give(self, user_dm_fails=False):
+        user = MagicMock(id=42, display_name="Kaizo", bot=False)
+        granter = types.SimpleNamespace(id=USERS.OGGERS, display_name="Oggers")
+        sent = MagicMock(id=900, channel=types.SimpleNamespace(id=800))
+        if user_dm_fails:
+            user.send = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "closed"))
+        else:
+            user.send = AsyncMock(return_value=sent)
+        channel = MagicMock()
+        channel.send = AsyncMock(return_value=sent)
+        client = MagicMock()
+        client.get_channel.return_value = channel
+        pid, p = await pc.give_pass(client, granter, user, GENERAL, 10)
+        return pid, p, user, channel
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_pass_is_dmed_or_posted_in_the_channel_when_dms_are_closed(self):
+        pid, p, user, channel = await self._give()
+        self.assertEqual(p["delivery"], "dm")
+        self.assertIn("for **10 min**", user.send.await_args.args[0])
+        button = user.send.await_args.kwargs["view"].children[0]
+        self.assertEqual(button.custom_id, f"persona_pass:{pid}")
+        self.assertIsNotNone(pc.PassButton.__discord_ui_compiled_template__.fullmatch(button.custom_id))
+        self.assertEqual(pc.load_passes()[pid]["status"], "open")
+
+        pid, p, user, channel = await self._give(user_dm_fails=True)
+        self.assertEqual(p["delivery"], "channel")
+        self.assertTrue(channel.send.await_args.args[0].startswith("<@42> 🎟️"))
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_pass_switches_vic_on_once_and_only_when_it_can(self):
+        pc._client.get_partial_messageable.return_value.get_partial_message.return_value.edit = AsyncMock()
+        with patch.object(pc, "refresh_and_update", AsyncMock()):
+            pid, _, _, _ = await self._give()
+            stopped = pc.PersonaState(service="inactive")
+            busy = pc.PersonaState(service="active", api_up=True, channels={GENERAL: "mention"})
+            ready = pc.PersonaState(service="active", api_up=True, channels={GENERAL: "off"})
+            api = AsyncMock(return_value={"ok": True, "expires_at": 2e9})
+            with patch.object(pc, "_api", api):
+                self.assertEqual((await pc.use_pass(pid, 7))[1], "This pass isn't yours to use.")
+                for state in (stopped, busy):
+                    with patch.object(pc, "refresh_state", AsyncMock(return_value=state)):
+                        ok, reply = await pc.use_pass(pid, 42)
+                    self.assertFalse(ok)
+                    self.assertIn("still here", reply)
+                api.assert_not_awaited()
+                with patch.object(pc, "refresh_state", AsyncMock(return_value=ready)):
+                    ok, _ = await pc.use_pass(pid, 42)
+                    self.assertTrue(ok)
+                    api.assert_awaited_once_with("POST", "/api/sleep_timer",
+                                                 {"channel_id": str(GENERAL), "minutes": 10, "active_mode": "ambient"})
+                    self.assertEqual(await pc.use_pass(pid, 42), (False, "You've already used this pass."))
+            self.assertEqual(pc.load_passes()[pid]["status"], "used")
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_passes_run_out_or_get_taken_back_and_show_on_the_card(self):
+        pc._client.get_partial_messageable.return_value.get_partial_message.return_value.edit = AsyncMock()
+        old, _, _, _ = await self._give()
+        keep, _, _, _ = await self._give()
+        gone, _, _, _ = await self._give()
+        passes = pc.load_passes()
+        passes[old]["expires_at"] = pc.time.time() - 1
+        pc.atomic_write_json(pc.PASSES_FILE, passes)
+        self.assertEqual(pc.pass_status(pc.load_passes()[old]), "expired")
+        self.assertTrue(await pc.expire_passes())
+        self.assertFalse(await pc.expire_passes())
+        self.assertTrue(await pc.revoke_pass(gone))
+        self.assertFalse(await pc.revoke_pass(gone))
+        self.assertEqual({pid: p["status"] for pid, p in pc.load_passes().items()},
+                         {old: "expired", keep: "open", gone: "revoked"})
+
+        view = pc.PersonaCardView(pc.PersonaState(service="active", api_up=True, channels={GENERAL: "off"}))
+        revoke = [i for i in view.walk_children() if getattr(i, "custom_id", "") == "persona_ctl:revoke"]
+        self.assertEqual([o.value for o in revoke[0].options], [keep])
+        self.assertIn("persona_ctl:pass", [getattr(i, "custom_id", None) for i in view.walk_children()])
+        self.assertLessEqual(view.total_children_count, 40)
 
     @patch("lib.features.chat_responder.handle_one_off_owner_mention")
     async def test_direct_tags_stand_down_while_the_persona_bot_is_on(self, one_off):

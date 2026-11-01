@@ -91,6 +91,12 @@ class AClient(discord.Client):
             self.add_dynamic_items(FollowupButton)
         except Exception as e:
             logger.warning(f"Could not register Analyse User follow-up button: {e}")
+        # 'Turn Vic on' buttons on persona bot passes, which sit in DMs until used.
+        try:
+            from lib.features.persona_control import PassButton
+            self.add_dynamic_items(PassButton)
+        except Exception as e:
+            logger.warning(f"Could not register persona pass button: {e}")
         # Persistent 'Remove timeout' buttons on join-watch police station reports.
         try:
             from commands.moderation.join_watch import UntimeoutButton

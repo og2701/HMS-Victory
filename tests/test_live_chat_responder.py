@@ -86,9 +86,11 @@ if "discord" not in sys.modules:
 
     for name in (
         "View", "LayoutView", "Container", "TextDisplay", "Separator", "ActionRow",
-        "Modal", "TextInput", "ChannelSelect", "Select", "Button"
+        "Modal", "TextInput", "ChannelSelect", "UserSelect", "Select", "Button"
     ):
         setattr(ui, name, type(name, (_Item,), {}))
+    # persona_control defines a DynamicItem[Button] subclass at import time.
+    ui.DynamicItem = type("DynamicItem", (_Item,), {"__class_getitem__": classmethod(lambda cls, item: cls)})
 
     def _select(*a, **k):
         def dec(fn):

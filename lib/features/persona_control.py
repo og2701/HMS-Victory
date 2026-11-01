@@ -8,11 +8,15 @@ the same API the Tailscale console uses, so both always show the same Vic.
 
 While the persona bot is on in a server, Direct Replies stand down there, so a
 tag never gets two answers from two different Vics.
+
+Passes let someone else switch it on once: the card sends them a DM button that
+turns Vic on in a chosen channel for a chosen time, through the same sleep timer.
 """
 
 import asyncio
 import logging
 import os
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, Set, Tuple
@@ -40,6 +44,14 @@ RUNNING_STATES = {"active", "activating", "reloading", "deactivating"}
 MODES = {"off": ("💤", "Off"), "mention": ("🏷️", "Mentions only"), "ambient": ("🌊", "Ambient")}
 SLEEP_CHOICES = ((5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min"),
                  (60, "1 hour"), (120, "2 hours"), (240, "4 hours"))
+PASSES_FILE = os.path.join(config.JSON_DATA_DIR, "persona_passes.json")
+PASS_TTL_SECS = 24 * 3600  # an unused pass runs out after this
+PASS_KEEP_SECS = 7 * 24 * 3600  # used, taken back and run-out passes are forgotten after this
+CLOSED_PASS_REPLIES = {
+    "used": "You've already used this pass.",
+    "revoked": "This pass was taken back.",
+    "expired": "This pass ran out before it was used.",
+}
 
 
 @dataclass
@@ -72,6 +84,7 @@ _poll_task: Optional[asyncio.Task] = None
 _wake = asyncio.Event()
 _settle_until = 0.0  # poll fast and ride over the stop half of a restart until then
 _last_live: frozenset = frozenset()
+_pass_lock = asyncio.Lock()
 
 
 def parse_systemctl_show(text: str) -> Tuple[str, int]:
@@ -207,6 +220,255 @@ def _channel_name(channel_id: int) -> str:
     return f"#{channel.name}" if channel is not None else f"#{channel_id}"
 
 
+def _minutes_label(minutes: int) -> str:
+    return dict(SLEEP_CHOICES).get(int(minutes), f"{int(minutes)} min")
+
+
+# ---------- Passes ----------
+
+def load_passes() -> Dict[str, dict]:
+    try:
+        data = load_json_file(PASSES_FILE)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_passes(passes: Dict[str, dict]) -> None:
+    cutoff = time.time() - PASS_KEEP_SECS
+    atomic_write_json(PASSES_FILE, {
+        pid: p for pid, p in passes.items()
+        if pass_status(p) == "open" or float(p.get("closed_at") or p.get("expires_at") or 0) > cutoff
+    })
+
+
+def pass_status(p: dict, now: Optional[float] = None) -> str:
+    """open, used, revoked or expired. A pass past its time reads as expired before the sweep marks it."""
+    status = p.get("status") or "open"
+    if status == "open" and float(p.get("expires_at") or 0) <= (now or time.time()):
+        return "expired"
+    return status
+
+
+def _pass_text(p: dict) -> str:
+    lead = f"<@{p['user_id']}> " if p.get("delivery") == "channel" else ""
+    return (
+        f"{lead}🎟️ **{p['granted_by_name']}** gave you a one-time pass to switch Vic on in <#{p['channel_id']}> "
+        f"for **{_minutes_label(p['minutes'])}**."
+    )
+
+
+def _pass_view(pid: str) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(PassButton(pid))
+    return view
+
+
+async def give_pass(client: discord.Client, granter, user, channel_id: int, minutes: int) -> Tuple[str, dict]:
+    """DM someone a one-time pass, or post it in the channel tagging them when their DMs are closed."""
+    now = time.time()
+    pid = secrets.token_hex(4)
+    p = {
+        "user_id": str(user.id), "user_name": getattr(user, "display_name", str(user)),
+        "channel_id": str(channel_id), "minutes": int(minutes),
+        "granted_by": str(granter.id), "granted_by_name": getattr(granter, "display_name", str(granter)),
+        "created_at": now, "expires_at": now + PASS_TTL_SECS, "status": "open", "delivery": "dm",
+    }
+    footer = f"\nPress the button whenever you want it. It runs out <t:{int(p['expires_at'])}:R> if you don't."
+    try:
+        message = await user.send(_pass_text(p) + footer, view=_pass_view(pid))
+    except discord.HTTPException:
+        p["delivery"] = "channel"
+        channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+        message = await channel.send(_pass_text(p) + footer, view=_pass_view(pid),
+                                     allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=[user]))
+    p["message_channel_id"], p["message_id"] = str(message.channel.id), str(message.id)
+    async with _pass_lock:
+        passes = load_passes()
+        passes[pid] = p
+        _save_passes(passes)
+    logger.info("Persona pass %s: %s gave %s %d min in %s (%s)", pid, granter, user, minutes, channel_id, p["delivery"])
+    return pid, p
+
+
+async def _close_pass_message(p: dict, note: str) -> None:
+    """Swap the pass button for what happened to it."""
+    if _client is None or not p.get("message_id"):
+        return
+    try:
+        channel = _client.get_partial_messageable(int(p["message_channel_id"]))
+        await channel.get_partial_message(int(p["message_id"])).edit(content=_pass_text(p) + "\n" + note, view=None)
+    except (discord.HTTPException, ValueError) as e:
+        logger.debug("Could not update persona pass message: %s", e)
+
+
+async def use_pass(pid: str, user_id: int) -> Tuple[bool, str]:
+    """Switch Vic on for the pass holder. The pass stays unused when Vic can't be switched on."""
+    async with _pass_lock:
+        passes = load_passes()
+        p = passes.get(pid)
+        if p is None or p["user_id"] != str(user_id):
+            return False, "This pass isn't yours to use."
+        status = pass_status(p)
+        if status != "open":
+            return False, CLOSED_PASS_REPLIES[status]
+        channel_id = int(p["channel_id"])
+        state = await refresh_state()
+        if not (state.service == "active" and state.api_up):
+            return False, "Vic is switched off at the moment, so your pass is still here for later."
+        if state.channels.get(channel_id, "off") != "off":
+            return False, f"Vic's already on in <#{channel_id}>, so your pass is still here for later."
+        result = await _api("POST", "/api/sleep_timer", {
+            "channel_id": str(channel_id), "minutes": int(p["minutes"]), "active_mode": "ambient",
+        })
+        if result is None:
+            return False, "Couldn't reach Vic just now, so your pass is still here. Try again in a minute."
+        now = time.time()
+        p.update(status="used", closed_at=now)
+        _save_passes(passes)
+    until = int(float(result.get("expires_at") or now + int(p["minutes"]) * 60))
+    logger.info("Persona pass %s used by %s: Vic on in %s until %s", pid, user_id, channel_id, until)
+    await _close_pass_message(p, f"✅ Used <t:{int(now)}:R>. Vic is on in <#{channel_id}> until <t:{until}:t>.")
+    await refresh_and_update(force=True)  # Direct Replies stand down straight away
+    return True, f"🫥 Vic is on in <#{channel_id}> until <t:{until}:t>."
+
+
+async def revoke_pass(pid: str) -> bool:
+    async with _pass_lock:
+        passes = load_passes()
+        p = passes.get(pid)
+        if p is None or pass_status(p) != "open":
+            return False
+        p.update(status="revoked", closed_at=time.time())
+        _save_passes(passes)
+    logger.info("Persona pass %s taken back", pid)
+    await _close_pass_message(p, "❌ This pass was taken back.")
+    return True
+
+
+async def expire_passes() -> bool:
+    """Mark passes that ran out unused, and say so on their messages."""
+    async with _pass_lock:
+        passes = load_passes()
+        expired = [p for p in passes.values() if (p.get("status") or "open") == "open" and pass_status(p) == "expired"]
+        for p in expired:
+            p.update(status="expired", closed_at=time.time())
+        if expired:
+            _save_passes(passes)
+    for p in expired:
+        await _close_pass_message(p, "⌛ This pass ran out before it was used.")
+    return bool(expired)
+
+
+class PassButton(discord.ui.DynamicItem[discord.ui.Button], template=r"persona_pass:(?P<pid>[0-9a-f]{8})"):
+    """The holder's 'Turn Vic on' button. Dynamic, so it still works after a restart."""
+
+    def __init__(self, pid: str):
+        self.pid = pid
+        super().__init__(discord.ui.Button(
+            label="Turn Vic on", emoji="🎟️", style=discord.ButtonStyle.success, custom_id=f"persona_pass:{pid}",
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["pid"])
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        p = load_passes().get(self.pid)
+        if p is None:
+            await interaction.response.send_message("This pass doesn't exist any more.", ephemeral=True)
+        elif p["user_id"] != str(interaction.user.id):
+            await interaction.response.send_message("This pass belongs to someone else.", ephemeral=True)
+        elif pass_status(p) != "open":
+            await interaction.response.send_message(CLOSED_PASS_REPLIES[pass_status(p)], ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"Switch Vic on in <#{p['channel_id']}> for {_minutes_label(p['minutes'])} now? You can only do this once.",
+                view=_UsePassView(self.pid), ephemeral=True)
+
+
+class _UsePassView(discord.ui.View):
+    def __init__(self, pid: str):
+        super().__init__(timeout=120)
+        self.pid = pid
+        go = discord.ui.Button(label="Turn it on", emoji="🫥", style=discord.ButtonStyle.success)
+        go.callback = self._go
+        wait = discord.ui.Button(label="Not yet", style=discord.ButtonStyle.secondary)
+        wait.callback = self._wait
+        self.add_item(go)
+        self.add_item(wait)
+
+    async def _go(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(content="⏳ Switching Vic on…", view=None)
+        _, reply = await use_pass(self.pid, interaction.user.id)
+        await interaction.edit_original_response(content=reply)
+        self.stop()
+
+    async def _wait(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(content="No problem, your pass is still there.", view=None)
+        self.stop()
+
+
+class _GivePassView(discord.ui.View):
+    """Ephemeral form behind the card's Give a pass button."""
+
+    def __init__(self):
+        super().__init__(timeout=300)
+        self.who = discord.ui.UserSelect(placeholder="Who gets it?")
+        self.where = discord.ui.ChannelSelect(placeholder="Which channel?", channel_types=[discord.ChannelType.text])
+        self.length = discord.ui.Select(placeholder="How long?", options=[
+            discord.SelectOption(label=label, value=str(minutes), default=minutes == 10)
+            for minutes, label in SLEEP_CHOICES
+        ])
+        send = discord.ui.Button(label="Send pass", emoji="🎟️", style=discord.ButtonStyle.success)
+        for item, callback in ((self.who, self._picked), (self.where, self._picked),
+                               (self.length, self._picked), (send, self._send)):
+            item.callback = callback
+            self.add_item(item)
+
+    async def _picked(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+    async def _send(self, interaction: discord.Interaction):
+        if not self.who.values or not self.where.values:
+            await interaction.response.send_message("Pick who gets it and which channel first.", ephemeral=True)
+            return
+        user, channel = self.who.values[0], self.where.values[0]
+        if getattr(user, "bot", False):
+            await interaction.response.send_message("Bots can't use passes.", ephemeral=True)
+            return
+        minutes = int(self.length.values[0]) if self.length.values else 10
+        await interaction.response.edit_message(content="⏳ Sending the pass…", view=None)
+        try:
+            _, p = await give_pass(interaction.client, interaction.user, user, channel.id, minutes)
+        except discord.HTTPException as e:
+            await interaction.edit_original_response(content=f"❌ Couldn't deliver the pass: {e}")
+            return
+        where = "by DM" if p["delivery"] == "dm" else f"in <#{channel.id}>, because their DMs are closed"
+        await interaction.edit_original_response(
+            content=f"✅ Sent <@{user.id}> a pass for <#{channel.id}>, {_minutes_label(minutes)}, {where}. "
+                    f"It runs out <t:{int(p['expires_at'])}:R> if unused.")
+        self.stop()
+        await refresh_and_update(force=True)
+
+
+class RevokePassSelect(discord.ui.Select):
+    def __init__(self, open_passes: list):
+        options = [
+            discord.SelectOption(
+                label=f"{p.get('user_name') or p['user_id']} · {_channel_name(int(p['channel_id']))} · {_minutes_label(p['minutes'])}"[:100],
+                value=pid, emoji="❌")
+            for pid, p in open_passes[:25]
+        ]
+        super().__init__(custom_id=f"{CUSTOM_ID_PREFIX}revoke", placeholder="Take back a pass…", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        _remember_card(interaction)
+        await revoke_pass(self.values[0])
+        await refresh_and_update(force=True)
+
+
 class ChannelModeSelect(discord.ui.Select):
     def __init__(self, channel_id: int, mode: str, has_timer: bool):
         name = _channel_name(channel_id)[:40]
@@ -293,6 +555,9 @@ class _CardButton(discord.ui.Button):
             await interaction.response.send_message(
                 "Restart Vic? It's back in about 10 seconds.",
                 view=_ConfirmView("restart", "Restart Vic"), ephemeral=True)
+        elif self.action == "pass":
+            await interaction.response.send_message(
+                "🎟️ Who gets the pass, which channel, and for how long?", view=_GivePassView(), ephemeral=True)
         elif self.action == "start":
             await interaction.response.defer(ephemeral=True, thinking=True)
             ok, out = await _service_action("start")
@@ -356,12 +621,36 @@ class PersonaCardView(discord.ui.LayoutView):
         if up:
             for cid, mode in list(s.channels.items())[:5]:
                 card.add_item(discord.ui.ActionRow(ChannelModeSelect(cid, mode, cid in s.timers)))
+        now = time.time()
+        passes = load_passes()
+        open_passes = sorted(
+            ((pid, p) for pid, p in passes.items() if pass_status(p, now) == "open"),
+            key=lambda item: float(item[1]["expires_at"]),
+        )
+        used = sorted(
+            (p for p in passes.values() if p.get("status") == "used" and float(p.get("closed_at") or 0) > now - 86400),
+            key=lambda p: -float(p["closed_at"]),
+        )[:3]
+        if open_passes or used:
+            lines = [
+                f"- 🎟️ <@{p['user_id']}> · <#{p['channel_id']}> · {_minutes_label(p['minutes'])} · "
+                f"runs out <t:{int(p['expires_at'])}:R>"
+                for _, p in open_passes
+            ] + [
+                f"- ✅ <@{p['user_id']}> used one in <#{p['channel_id']}> <t:{int(p['closed_at'])}:R>"
+                for p in used
+            ]
+            card.add_item(discord.ui.Separator(visible=True))
+            card.add_item(discord.ui.TextDisplay("### Passes\n" + "\n".join(lines)))
+            if open_passes:
+                card.add_item(discord.ui.ActionRow(RevokePassSelect(open_passes)))
         card.add_item(discord.ui.Separator(visible=True))
         card.add_item(discord.ui.ActionRow(
             _CardButton("start", "Start", "▶️", discord.ButtonStyle.success, disabled=s.running),
             _CardButton("stop", "Stop", "⏹️", discord.ButtonStyle.danger, disabled=not s.running),
             _CardButton("restart", "Restart", "🔄", discord.ButtonStyle.secondary, disabled=not s.running),
             _CardButton("refresh", "Refresh", "🔁", discord.ButtonStyle.secondary),
+            _CardButton("pass", "Give a pass", "🎟️", discord.ButtonStyle.primary),
         ))
         self.add_item(card)
 
@@ -403,7 +692,7 @@ async def refresh_and_update(force: bool = False) -> None:
 async def _poll_loop() -> None:
     while True:
         try:
-            await refresh_and_update()
+            await refresh_and_update(force=await expire_passes())
         except asyncio.CancelledError:
             raise
         except Exception:
