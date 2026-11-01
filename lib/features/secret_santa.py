@@ -3,10 +3,8 @@
 Everything is gated on config.SECRET_SANTA_ENABLED and reads its channel and operators
 from the SECRET_SANTA_* block in config.py.
 
-Two messages live in the Secret Santa channel: the control panel (operators only) and,
-once sign-ups have been opened, a public card with Join / Leave. Joining DMs the member
-straight away, and a member whose DMs are shut is turned away there, so the live draw
-can't half-fail later.
+The organisers pick who's in from the control panel (operators only); there's no public
+sign-up. Nobody is messaged until the live draw.
 
 The draw is a single loop (A buys for B, B for C, ... the last person for A), so nobody
 gets themselves and no two people have each other.
@@ -59,10 +57,6 @@ def channel_id() -> int:
     return int(getattr(config, "SECRET_SANTA_CHANNEL", 0))
 
 
-def signup_channel_id() -> int:
-    return int(getattr(config, "SECRET_SANTA_SIGNUP_CHANNEL", 0) or channel_id())
-
-
 def operator_ids() -> set[int]:
     return {int(x) for x in getattr(config, "SECRET_SANTA_OPERATOR_IDS", set())}
 
@@ -82,11 +76,9 @@ def _path() -> str:
 def _default_state() -> dict:
     return {
         "mode": MODE_TEST,
-        "signups_open": False,
         "participants": {},       # str(user id) -> {"name", "joined_at", "added_by"}
         "draw": None,             # the live draw, once it has happened
         "panel_message_id": None,
-        "signup_message_id": None,
     }
 
 
@@ -216,7 +208,6 @@ async def run_live_draw(client: discord.Client, by: int) -> tuple[int, list[int]
         pairs = draw_loop(participant_ids(state))
         state["draw"] = {"drawn_at": _now(), "drawn_by": int(by),
                          "pairs": {str(g): str(r) for g, r in pairs.items()}, "dms": {}}
-        state["signups_open"] = False
         save_state(state)
         log.info("Secret Santa: live draw of %d people by %s", len(pairs), by)
     return await send_match_dms(client)
@@ -286,15 +277,8 @@ def panel_text(state: dict) -> str:
     live = state["mode"] == MODE_LIVE
     mode = ("\N{LARGE RED CIRCLE} **Live** - drawing DMs everyone their match"
             if live else "\N{TEST TUBE} **Test** - draws post here and nothing is sent")
-    if is_drawn(state):
-        signups = "closed (names drawn)"
-    elif state["signups_open"]:
-        signups = "open"
-    else:
-        signups = "closed" if state.get("signup_message_id") else "not opened yet"
     lines = [f"## {SANTA} Secret Santa - control panel",
              f"**Mode:** {mode}",
-             f"**Sign-ups:** {signups}",
              f"**In the hat ({len(state['participants'])}):** {_participant_line(state)}"]
     draw = state.get("draw")
     if draw:
@@ -328,7 +312,7 @@ class ControlButton(discord.ui.DynamicItem[discord.ui.Button], template=r"ss:ctl
             await interaction.response.send_message("Secret Santa is switched off.", ephemeral=True)
             return
         if not is_operator(interaction.user.id):
-            await interaction.response.send_message("Only the organisers can use this panel.", ephemeral=True)
+            await interaction.response.send_message("Only the Secret Santa coordinators can use this panel.", ephemeral=True)
             return
         handler = PANEL_ACTIONS.get(self.action)
         if handler is None:
@@ -346,68 +330,20 @@ class ControlPanelView(discord.ui.LayoutView):
         card = discord.ui.Container(accent_colour=ACCENT)
         card.add_item(discord.ui.TextDisplay(panel_text(state)))
         card.add_item(discord.ui.ActionRow(
-            ControlButton("signups", "Close sign-ups" if state["signups_open"] else "Open sign-ups",
-                          discord.ButtonStyle.secondary if state["signups_open"] else discord.ButtonStyle.success,
-                          "\N{LOCK}" if state["signups_open"] else "\N{OPEN LOCK}", disabled=drawn),
-            ControlButton("mode", "Switch to test" if live else "Switch to live",
-                          emoji="\N{TEST TUBE}" if live else "\N{LARGE RED CIRCLE}", disabled=drawn),
+            ControlButton("add", "Add people", discord.ButtonStyle.success, "\N{HEAVY PLUS SIGN}", disabled=drawn),
+            ControlButton("remove", "Remove people", emoji="\N{HEAVY MINUS SIGN}", disabled=drawn),
             ControlButton("refresh", "Refresh", emoji="\N{ANTICLOCKWISE DOWNWARDS AND UPWARDS OPEN CIRCLE ARROWS}"),
         ))
         draw_btn = (ControlButton("draw", "Draw and DM everyone", discord.ButtonStyle.danger, SANTA, disabled=drawn)
                     if live else ControlButton("draw", "Test draw", discord.ButtonStyle.primary, "\N{TEST TUBE}"))
         card.add_item(discord.ui.ActionRow(
-            ControlButton("add", "Add people", emoji="\N{HEAVY PLUS SIGN}", disabled=drawn),
-            ControlButton("remove", "Remove people", emoji="\N{HEAVY MINUS SIGN}", disabled=drawn),
+            ControlButton("mode", "Switch to test" if live else "Switch to live",
+                          emoji="\N{TEST TUBE}" if live else "\N{LARGE RED CIRCLE}", disabled=drawn),
             draw_btn,
         ))
         if drawn and undelivered(state):
             card.add_item(discord.ui.ActionRow(
                 ControlButton("retry", "Retry failed DMs", discord.ButtonStyle.primary, "\N{ENVELOPE}")))
-        self.add_item(card)
-
-
-def signup_text(state: dict) -> str:
-    n = len(state["participants"])
-    head = f"## {SANTA} Secret Santa\n"
-    if is_drawn(state):
-        return head + "Names have been drawn! Check your DMs to see who you're buying for."
-    if state["signups_open"]:
-        return (head + "Press **Join** to put your name in the hat. When sign-ups close, names get drawn "
-                "and I'll DM you who you're buying for.\n"
-                f"-# {n} {'person' if n == 1 else 'people'} in so far")
-    return head + f"Sign-ups are closed. {n} {'person is' if n == 1 else 'people are'} in."
-
-
-class SignupButton(discord.ui.DynamicItem[discord.ui.Button], template=r"ss:signup:(?P<action>join|leave)"):
-    def __init__(self, action: str, disabled: bool = False):
-        self.action = action
-        join = action == "join"
-        super().__init__(discord.ui.Button(
-            label="Join" if join else "Leave", emoji=SANTA if join else None,
-            style=discord.ButtonStyle.success if join else discord.ButtonStyle.secondary,
-            disabled=disabled, custom_id=f"ss:signup:{action}"))
-
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match, /):
-        return cls(match["action"])
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if not enabled():
-            await interaction.response.send_message("Secret Santa is switched off.", ephemeral=True)
-            return
-        await (_join if self.action == "join" else _leave)(interaction)
-
-
-class SignupView(discord.ui.LayoutView):
-    def __init__(self, state: Optional[dict] = None):
-        super().__init__(timeout=None)
-        state = state or load_state()
-        closed = is_drawn(state) or not state["signups_open"]
-        card = discord.ui.Container(accent_colour=ACCENT)
-        card.add_item(discord.ui.TextDisplay(signup_text(state)))
-        if not is_drawn(state):
-            card.add_item(discord.ui.ActionRow(SignupButton("join", disabled=closed),
-                                               SignupButton("leave", disabled=closed)))
         self.add_item(card)
 
 
@@ -450,13 +386,8 @@ async def _upsert(client: discord.Client, key: str, cid: int, view: discord.ui.L
 
 
 async def refresh_messages(client: discord.Client) -> None:
-    """Bring both messages in line with the state. The public card is first posted when an
-    operator opens sign-ups, and edited in place from then on."""
     async with _panel_lock:
-        state = load_state()
-        await _upsert(client, "panel_message_id", channel_id(), ControlPanelView(state))
-        if state["signups_open"] or state.get("signup_message_id"):
-            await _upsert(client, "signup_message_id", signup_channel_id(), SignupView(state))
+        await _upsert(client, "panel_message_id", channel_id(), ControlPanelView())
 
 
 async def ensure_panel(client: discord.Client) -> None:
@@ -470,62 +401,10 @@ async def ensure_panel(client: discord.Client) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sign-up handlers
+# Control panel handlers
 # ---------------------------------------------------------------------------
 # Every state change below is a load-modify-save with no await in the middle, so two
 # presses can't interleave inside one; only the DM sends and message edits await.
-
-async def _join(interaction: discord.Interaction) -> None:
-    state = load_state()
-    if is_drawn(state) or not state["signups_open"]:
-        await interaction.response.send_message("Sign-ups are closed.", ephemeral=True)
-        return
-    if str(interaction.user.id) in state["participants"]:
-        await interaction.response.send_message("You're already in! Watch your DMs.", ephemeral=True)
-        return
-    await interaction.response.defer(ephemeral=True, thinking=True)
-    try:
-        await interaction.user.send(
-            f"## {SANTA} You're in the Secret Santa\n"
-            "When names are drawn I'll send your match here, so keep your DMs open until then.")
-    except discord.HTTPException:
-        await interaction.followup.send(
-            "I couldn't DM you, and that's how your match gets sent. Turn on DMs from server members "
-            "(server name > Privacy Settings), then press Join again.", ephemeral=True)
-        return
-    state = load_state()
-    if is_drawn(state) or not state["signups_open"]:
-        await interaction.followup.send("Sign-ups closed just before you got in, sorry.", ephemeral=True)
-        return
-    add_participants([interaction.user])
-    await interaction.followup.send(f"You're in! {SANTA} I've sent you a DM to check it works.", ephemeral=True)
-    await refresh_messages(interaction.client)
-
-
-async def _leave(interaction: discord.Interaction) -> None:
-    if is_drawn(load_state()):
-        await interaction.response.send_message(
-            "Names have already been drawn. Message an organiser if you need to drop out.", ephemeral=True)
-        return
-    if not remove_participants([interaction.user.id]):
-        await interaction.response.send_message("You weren't in.", ephemeral=True)
-        return
-    await interaction.response.send_message("You're out. Press Join if you change your mind.", ephemeral=True)
-    await refresh_messages(interaction.client)
-
-
-# ---------------------------------------------------------------------------
-# Control panel handlers
-# ---------------------------------------------------------------------------
-
-async def _act_signups(interaction: discord.Interaction) -> None:
-    state = load_state()
-    if not is_drawn(state):
-        state["signups_open"] = not state["signups_open"]
-        save_state(state)
-    await interaction.response.defer()
-    await refresh_messages(interaction.client)
-
 
 async def _act_mode(interaction: discord.Interaction) -> None:
     state = load_state()
@@ -551,7 +430,6 @@ class _PeopleSelect(discord.ui.UserSelect):
             await interaction.response.edit_message(content="Names have already been drawn.", view=None)
             return
         if self.adding:
-            # Added by an organiser, so no welcome DM: their DMs get tested at the live draw.
             changed = add_participants(self.values, added_by=interaction.user.id)
         else:
             changed = remove_participants([u.id for u in self.values])
@@ -570,7 +448,7 @@ class _PeoplePicker(discord.ui.View):
 
 async def _act_add(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(
-        "Who should go in the hat? They won't get a welcome DM this way.",
+        "Who should go in the hat? Nobody is messaged until the live draw. Up to 25 at a time.",
         view=_PeoplePicker(True), ephemeral=True)
 
 
@@ -615,7 +493,7 @@ async def _act_draw(interaction: discord.Interaction) -> None:
         return
     if state["mode"] == MODE_LIVE:
         await interaction.response.send_message(
-            f"This draws for real: all {n} people get a DM with their match, sign-ups close, "
+            f"This draws for real: all {n} people get a DM with their match, "
             "and it can't be undone or redrawn. Go?",
             view=_LiveDrawConfirm(n), ephemeral=True)
         return
@@ -636,7 +514,6 @@ async def _act_retry(interaction: discord.Interaction) -> None:
 
 
 PANEL_ACTIONS = {
-    "signups": _act_signups,
     "mode": _act_mode,
     "refresh": _act_refresh,
     "add": _act_add,

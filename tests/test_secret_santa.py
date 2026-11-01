@@ -87,10 +87,9 @@ def test_draw_needs_three_people(ss):
         ss.draw_loop([1, 1, 1, 2])  # duplicates don't count twice
 
 
-def test_state_defaults_to_test_mode_with_signups_shut(ss):
+def test_state_defaults_to_test_mode_with_nobody_in(ss):
     state = ss.load_state()
     assert state["mode"] == ss.MODE_TEST
-    assert state["signups_open"] is False
     assert state["participants"] == {} and state["draw"] is None
 
 
@@ -108,7 +107,6 @@ def _setup_live(ss, n=5):
     ss.add_participants([FakeMember(i) for i in range(1, n + 1)])
     state = ss.load_state()
     state["mode"] = ss.MODE_LIVE
-    state["signups_open"] = True
     ss.save_state(state)
 
 
@@ -132,7 +130,6 @@ def test_live_draw_saves_pairs_before_any_dm_and_dms_everyone(ss):
     assert stored_at_first_send and all(stored_at_first_send)
     state = ss.load_state()
     assert sorted(client.sent) == [1, 2, 3, 4, 5]
-    assert state["signups_open"] is False
     assert set(state["draw"]["dms"].values()) == {"sent"}
     pairs = {int(g): int(r) for g, r in state["draw"]["pairs"].items()}
     assert len(_cycle_from(pairs, 1)) == 5
@@ -191,25 +188,40 @@ def test_panel_buttons_lock_after_the_draw_and_retry_appears_only_when_needed(ss
     ss.save_state(state)
     asyncio.run(ss.run_live_draw(FakeClient(closed_dms={4}), by=1))
     ids = dict(_custom_ids(ss.ControlPanelView(ss.load_state())))
-    for locked in ("ss:ctl:signups", "ss:ctl:mode", "ss:ctl:add", "ss:ctl:remove", "ss:ctl:draw"):
+    for locked in ("ss:ctl:mode", "ss:ctl:add", "ss:ctl:remove", "ss:ctl:draw"):
         assert ids[locked] is True
     assert ids["ss:ctl:retry"] is False and ids["ss:ctl:refresh"] is False
 
 
-def test_signup_buttons_follow_the_signup_state(ss):
-    shut = dict(_custom_ids(ss.SignupView(ss.load_state())))
-    assert shut == {"ss:signup:join": True, "ss:signup:leave": True}
-    state = ss.load_state()
-    state["signups_open"] = True
-    ss.save_state(state)
-    assert dict(_custom_ids(ss.SignupView(ss.load_state()))) == {"ss:signup:join": False, "ss:signup:leave": False}
+def test_only_the_three_coordinators_can_press_the_panel(ss):
+    import config
+    assert ss.operator_ids() == {config.USERS.OGGERS, config.USERS.CHIN, config.USERS.KAIZO}
+
+    replies = []
+
+    class Response:
+        async def send_message(self, text, **kwargs):
+            replies.append(text)
+
+    class Interaction:
+        def __init__(self, uid):
+            self.user = FakeMember(uid)
+            self.response = Response()
+
+    pressed = []
+    ss.PANEL_ACTIONS["probe"] = lambda interaction: pressed.append(interaction.user.id) or asyncio.sleep(0)
+    try:
+        asyncio.run(ss.ControlButton("probe").callback(Interaction(12345)))
+        assert pressed == [] and "coordinators" in replies[0]
+        asyncio.run(ss.ControlButton("probe").callback(Interaction(config.USERS.KAIZO)))
+        assert pressed == [config.USERS.KAIZO]
+    finally:
+        del ss.PANEL_ACTIONS["probe"]
 
 
 def test_dynamic_items_match_their_own_custom_ids(ss):
     for action in ss.PANEL_ACTIONS:
         assert ss.ControlButton.__discord_ui_compiled_template__.fullmatch(f"ss:ctl:{action}")
-    for action in ("join", "leave"):
-        assert ss.SignupButton.__discord_ui_compiled_template__.fullmatch(f"ss:signup:{action}")
 
 
 def test_test_draw_splits_long_lists_and_ends_with_a_dm_preview(ss):

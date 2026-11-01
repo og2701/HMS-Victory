@@ -237,11 +237,11 @@ class AClient(discord.Client):
             except Exception as e:
                 logger.warning(f"Could not register Big Brother views: {e}")
 
-        # Secret Santa (one-off event): control panel + public Join / Leave buttons.
+        # Secret Santa (one-off event): the coordinators' control panel buttons.
         if getattr(config, "SECRET_SANTA_ENABLED", False):
             try:
-                from lib.features.secret_santa import ControlButton, SignupButton
-                self.add_dynamic_items(ControlButton, SignupButton)
+                from lib.features.secret_santa import ControlButton
+                self.add_dynamic_items(ControlButton)
                 logger.info("Registered Secret Santa buttons.")
             except Exception as e:
                 logger.warning(f"Could not register Secret Santa buttons: {e}")
