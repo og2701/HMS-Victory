@@ -6626,6 +6626,11 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
+        # The persona bot (the full Vic, same account) answers tags itself while it's on here.
+        from lib.features.persona_control import persona_live
+        if persona_live(getattr(getattr(message, "guild", None), "id", None)):
+            logger.info("Direct mention from %s (%s) left to the persona bot, which is on in this server.", message.author, message.author.id)
+            return False
         note_answering(message.id)
         return await handle_one_off_owner_mention(client, message)
 
@@ -6860,7 +6865,9 @@ class ChatbotDashboardView(discord.ui.LayoutView):
 
     def build_ui(self):
         paused = live_chat_manager.owner_mentions_paused
-        accent = 0xE74C3C if paused else (0xE67E22 if live_chat_manager.target_user_id else 0x2ECC71)
+        from lib.features.persona_control import live_guilds
+        standing_down = not paused and bool(live_guilds())
+        accent = 0xE74C3C if paused else (0xE67E22 if live_chat_manager.target_user_id else (0x95A5A6 if standing_down else 0x2ECC71))
         card = discord.ui.Container(accent_colour=accent)
 
         # Header
@@ -6873,7 +6880,12 @@ class ChatbotDashboardView(discord.ui.LayoutView):
         card.add_item(discord.ui.Separator(visible=True))
 
         # Status & Troll/Defence Target
-        direct_str = "⏸️ **Paused** *(ignoring direct tags)*" if paused else "✅ **Active** *(responding to direct tags)*"
+        if paused:
+            direct_str = "⏸️ **Paused** *(ignoring direct tags)*"
+        elif standing_down:
+            direct_str = "🫥 **Standing down** *(the persona bot is on and answers tags itself)*"
+        else:
+            direct_str = "✅ **Active** *(responding to direct tags)*"
         if live_chat_manager.target_user_id:
             target_str = f"🎯 <@{live_chat_manager.target_user_id}> (`{live_chat_manager.target_user_id}`)\n> 🚨 **Defence Mode ACTIVE:** Retaliating and roasting every message they send."
         else:
@@ -6927,8 +6939,9 @@ async def ensure_chatbot_dashboard_message(client: discord.Client):
         view = ChatbotDashboardView()
 
         dashboard_msg = None
+        from lib.features.persona_control import is_persona_card
         async for m in thread.history(limit=25):
-            if m.author.id == client.user.id:
+            if m.author.id == client.user.id and not is_persona_card(m):
                 # Detect old embed message or new components v2 card
                 if (m.embeds and "HMS Victory Chatbot Dashboard" in (m.embeds[0].title or "")) or (
                     m.components and any(getattr(c, "type", None) and getattr(c.type, "value", None) in (17, 10, 1) for c in m.components)

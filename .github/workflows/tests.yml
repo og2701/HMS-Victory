@@ -35,4 +35,5 @@ jobs:
           tests/test_roast_prompt.py
           tests/test_roasts.py
           tests/test_glazes.py
+          tests/test_persona_control.py
           -v

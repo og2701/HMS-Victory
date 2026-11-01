@@ -277,6 +277,13 @@ class AClient(discord.Client):
         except Exception:
             logger.exception("could not ensure chatbot controller dashboard message")
 
+        # Persona bot card in the same thread: start/stop the full Vic and set its channel modes
+        try:
+            from lib.features.persona_control import ensure_persona_card
+            asyncio.create_task(ensure_persona_card(self))
+        except Exception:
+            logger.exception("could not ensure the persona bot card")
+
         # Tree payout lines whose 10-minute self-delete was lost to a restart.
         from lib.features.ukp_rewards import clear_stale_tree_payouts
         asyncio.create_task(clear_stale_tree_payouts(self))
