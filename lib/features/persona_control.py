@@ -302,8 +302,30 @@ async def _close_pass_message(p: dict, note: str) -> None:
         logger.debug("Could not update persona pass message: %s", e)
 
 
+async def _ensure_running(timeout: float = 60.0) -> Optional[PersonaState]:
+    """Start the persona bot if it's stopped and wait until it's logged in; None if it doesn't come up."""
+    state = await refresh_state()
+    if not state.running:
+        ok, _ = await _service_action("start")
+        if not ok:
+            return None
+    deadline = time.time() + timeout
+    while True:
+        if state.service == "active" and state.api_up:
+            status = await _api("GET", "/api/status")
+            if status and status.get("ready"):
+                return state
+        if time.time() >= deadline:
+            return None
+        await asyncio.sleep(2)
+        state = await refresh_state()
+
+
 async def use_pass(pid: str, user_id: int) -> Tuple[bool, str]:
-    """Switch Vic on for the pass holder. The pass stays unused when Vic can't be switched on."""
+    """Switch Vic on for the pass holder, starting it first if it's stopped.
+
+    The pass stays unused when Vic can't be switched on.
+    """
     async with _pass_lock:
         passes = load_passes()
         p = passes.get(pid)
@@ -313,9 +335,9 @@ async def use_pass(pid: str, user_id: int) -> Tuple[bool, str]:
         if status != "open":
             return False, CLOSED_PASS_REPLIES[status]
         channel_id = int(p["channel_id"])
-        state = await refresh_state()
-        if not (state.service == "active" and state.api_up):
-            return False, "Vic is switched off at the moment, so your pass is still here for later."
+        state = await _ensure_running()
+        if state is None:
+            return False, "Vic didn't come up just now, so your pass is still here. Try again in a minute."
         if state.channels.get(channel_id, "off") != "off":
             return False, f"Vic's already on in <#{channel_id}>, so your pass is still here for later."
         result = await _api("POST", "/api/sleep_timer", {
@@ -399,7 +421,7 @@ class _UsePassView(discord.ui.View):
         self.add_item(wait)
 
     async def _go(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(content="⏳ Switching Vic on…", view=None)
+        await interaction.response.edit_message(content="⏳ Switching Vic on… (up to a minute if it has to start up)", view=None)
         _, reply = await use_pass(self.pid, interaction.user.id)
         await interaction.edit_original_response(content=reply)
         self.stop()

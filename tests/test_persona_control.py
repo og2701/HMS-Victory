@@ -160,21 +160,39 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
             stopped = pc.PersonaState(service="inactive")
             busy = pc.PersonaState(service="active", api_up=True, channels={GENERAL: "mention"})
             ready = pc.PersonaState(service="active", api_up=True, channels={GENERAL: "off"})
-            api = AsyncMock(return_value={"ok": True, "expires_at": 2e9})
-            with patch.object(pc, "_api", api):
+            posts = []
+
+            async def api(method, path, payload=None):
+                if path == "/api/status":
+                    return {"ready": True}
+                posts.append((method, path, payload))
+                return {"ok": True, "expires_at": 2e9}
+
+            start = AsyncMock(return_value=(True, ""))
+            with patch.object(pc, "_api", api), patch.object(pc, "_service_action", start), \
+                    patch.object(pc.asyncio, "sleep", AsyncMock()):
                 self.assertEqual((await pc.use_pass(pid, 7))[1], "This pass isn't yours to use.")
-                for state in (stopped, busy):
-                    with patch.object(pc, "refresh_state", AsyncMock(return_value=state)):
-                        ok, reply = await pc.use_pass(pid, 42)
-                    self.assertFalse(ok)
-                    self.assertIn("still here", reply)
-                api.assert_not_awaited()
-                with patch.object(pc, "refresh_state", AsyncMock(return_value=ready)):
+                # Already on there: nothing changes and the pass keeps.
+                with patch.object(pc, "refresh_state", AsyncMock(return_value=busy)):
+                    ok, reply = await pc.use_pass(pid, 42)
+                self.assertFalse(ok)
+                self.assertIn("still here", reply)
+                # Stopped and it won't start: the pass keeps.
+                start.return_value = (False, "nope")
+                with patch.object(pc, "refresh_state", AsyncMock(return_value=stopped)):
+                    ok, reply = await pc.use_pass(pid, 42)
+                self.assertFalse(ok)
+                self.assertIn("still here", reply)
+                self.assertEqual(posts, [])
+                # Stopped: the pass starts Vic, waits for it, then switches the channel on.
+                start.return_value = (True, "")
+                with patch.object(pc, "refresh_state", AsyncMock(side_effect=[stopped, stopped, ready])):
                     ok, _ = await pc.use_pass(pid, 42)
-                    self.assertTrue(ok)
-                    api.assert_awaited_once_with("POST", "/api/sleep_timer",
-                                                 {"channel_id": str(GENERAL), "minutes": 10, "active_mode": "ambient"})
-                    self.assertEqual(await pc.use_pass(pid, 42), (False, "You've already used this pass."))
+                self.assertTrue(ok)
+                start.assert_awaited_with("start")
+                self.assertEqual(posts, [("POST", "/api/sleep_timer",
+                                          {"channel_id": str(GENERAL), "minutes": 10, "active_mode": "ambient"})])
+                self.assertEqual(await pc.use_pass(pid, 42), (False, "You've already used this pass."))
             self.assertEqual(pc.load_passes()[pid]["status"], "used")
 
     @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
