@@ -1,4 +1,6 @@
-"""Runs on the VM (piped over ssh). argv: the message id to start after, or "latest" for the newest one.
+"""Runs on the VM (piped over ssh). argv: the message id to start after, or "latest" for the newest one, then
+optionally "pending" while a confirmation card waits for a go: any human message wakes it, since "sounds good,
+build it" rarely pings Vic.
 
 Polls #cabinet and exits when anyone (not a bot) pings Vic, replies to Vic or says "vic". Starts Vic typing straight
 away (typing_indicator.py stop or the next card post ends it), then waits 30s so Vic's own auto-reply and any
@@ -10,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 CH, VIC = 1155637791917613147, "1171842947440967770"
 after = sys.argv[1]
+pending = len(sys.argv) > 2 and sys.argv[2] == "pending"
 deadline = time.time() + 6 * 3600
 
 
@@ -23,12 +26,14 @@ if after == "latest":
     after = get(f"/channels/{CH}/messages?limit=1")[0]["id"]
 
 
-def wanted(m):
-    if m["author"].get("bot"):
-        return False
+def addresses_vic(m):
     ref = (m.get("referenced_message") or {}).get("author", {}).get("id")
     return bool(ref == VIC or any(u["id"] == VIC for u in m.get("mentions", []))
                 or re.search(r"\bvic\b", text_of(m), re.I))
+
+
+def wanted(m):
+    return not m["author"].get("bot") and (pending or addresses_vic(m))
 
 
 TYPING_LOOP = r'''
@@ -84,9 +89,10 @@ while time.time() < deadline:
     for m in msgs:
         after = m["id"]
         if wanted(m):
-            hits.append(brief(m))
+            hits.append(dict(brief(m), addresses_vic=addresses_vic(m)))
     if hits:
-        start_typing()
+        if any(h["addresses_vic"] for h in hits):  # plain chatter in pending mode shouldn't make Vic type
+            start_typing()
         time.sleep(30)
         before = sorted(get(f"/channels/{CH}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
         later = sorted(get(f"/channels/{CH}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))

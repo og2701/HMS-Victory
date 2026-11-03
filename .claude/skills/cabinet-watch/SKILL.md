@@ -25,7 +25,8 @@ The output has `hits` (what woke it), `context_before` (the 30 messages before t
 
 ## Answering
 
-1. **Vic is already typing when you wake.** If you decide not to reply, stop it with `R typing_indicator.py stop`.
+1. **Vic is already typing when you wake** for a message aimed at Vic (hits have `addresses_vic`); plain chatter
+   in pending mode doesn't start it. If you decide not to reply, stop it with `R typing_indicator.py stop`.
    `R typing_indicator.py start` turns it back on for a long job; it gives up by itself after 10 minutes.
 2. **Let Vic's auto-reply count.** Vic's chat responder answers pings too. If its answer in `after_first_hit` is
    right, say nothing. Step in only when it's missing, vague or wrong, and say you're correcting it.
@@ -61,6 +62,9 @@ The output has `hits` (what woke it), `context_before` (the 30 messages before t
 
 - **Any request to change something gets a confirmation card first** listing exactly what will change, and nothing
   happens until someone says go. That covers roles, permissions, channels, code and config.
+- While a card waits for a go, run the watcher as `R watch.py <id> pending` so any human message wakes you: people
+  answer "sounds good, build it" without pinging Vic. Go back to plain `R watch.py <id>` once it's settled. Chatter
+  that isn't a go or a change just means start it again in pending mode.
 - Save the current state before a live server change so it can be put back, and say so in the done card.
 - The auto-mode classifier may block live permission edits or deploys even after a go in #cabinet. Don't work
   around it: ask Oggers in this chat, then apply.
