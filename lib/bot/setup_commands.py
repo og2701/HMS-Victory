@@ -357,7 +357,7 @@ def define_commands(tree, client):
         await interaction.response.send_modal(PredictionCreateModal(options))
 
 
-    @command("pred-admin", "Lock, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
+    @command("pred-admin", "Lock, edit, resolve, or draw an existing UKPence prediction", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.PCSO])])
     async def pred_admin(interaction: Interaction, message_id: Optional[str] = None):
         if message_id:
             try:

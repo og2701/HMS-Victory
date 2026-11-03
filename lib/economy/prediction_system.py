@@ -841,7 +841,10 @@ class PredAdminView(discord.ui.View):
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
 
         self.pred.locked = False
-        self.pred.end_ts = None
+        # Drop a closing time that's already passed, or the sweep would lock it again straight
+        # away. A future one (e.g. pushed back with Edit) is kept so it still auto-locks.
+        if self.pred.end_ts and self.pred.end_ts <= discord.utils.utcnow().timestamp():
+            self.pred.end_ts = None
         await interaction.response.defer(ephemeral=True)
 
         try:
@@ -852,6 +855,10 @@ class PredAdminView(discord.ui.View):
 
         _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         await interaction.followup.send("🔓 Unlocked.", ephemeral=True)
+
+    @discord.ui.button(label="Edit", style=discord.ButtonStyle.secondary, row=0)
+    async def edit(self, interaction: discord.Interaction, _btn: discord.ui.Button):
+        await interaction.response.send_modal(LivePredictionEditModal(self))
 
     @discord.ui.button(label="View Bettors", style=discord.ButtonStyle.secondary, row=0)
     async def view_bettors(self, interaction: discord.Interaction, _btn: discord.ui.Button):
@@ -1019,6 +1026,123 @@ class PredAdminView(discord.ui.View):
         except discord.NotFound:
             pass  # Admin interaction might be old/invalid too
         self.stop()
+
+
+def _remap_live_options(pred: Prediction, new_options: list) -> tuple:
+    """Work out where each outcome's bets go when a live prediction's outcome list is
+    edited. An outcome whose text is unchanged keeps its bets wherever it now sits; the
+    rest pair up in order as renames; spare new lines become new (empty) outcomes and
+    spare old ones are removed, which is only allowed if nobody has bet on them.
+    Returns (new_bets, error)."""
+    old = [o.lower() for o in pred.options]
+    mapping = {}  # new side -> old side
+    for n, label in enumerate(new_options, 1):
+        if label.lower() in old:
+            mapping[n] = old.index(label.lower()) + 1
+    free_old = [s for s in range(1, len(old) + 1) if s not in mapping.values()]
+    free_new = [n for n in range(1, len(new_options) + 1) if n not in mapping]
+    mapping.update(zip(free_new, free_old))
+    removed_with_bets = [pred.options[s - 1] for s in free_old[len(free_new):] if pred.bets.get(s)]
+    if removed_with_bets:
+        return None, (
+            f"Can't remove **{', '.join(removed_with_bets)}** - people have bet on it. "
+            f"Rename it instead, or use Draw to refund everyone."
+        )
+    return {n: dict(pred.bets.get(mapping[n], {})) if n in mapping else {}
+            for n in range(1, len(new_options) + 1)}, None
+
+
+class LivePredictionEditModal(discord.ui.Modal):
+    """Opened by Edit on /pred-admin. Fixes a live prediction's title, outcome names or
+    closing time without touching anyone's bets (a renamed or moved outcome keeps its
+    pool), then re-renders the card and the admin panel in place."""
+    def __init__(self, admin_view: "PredAdminView"):
+        super().__init__(title="Edit Prediction")
+        self.admin_view = admin_view
+        pred = admin_view.pred
+
+        import pytz
+        from datetime import datetime
+        # Kept so an untouched close time skips the future-time check, which lets a locked
+        # prediction whose time has passed still have its title or outcomes fixed.
+        self._orig_close = datetime.fromtimestamp(
+            pred.end_ts, tz=pytz.timezone("Europe/London")
+        ).strftime("%Y-%m-%d %H:%M") if pred.end_ts else ""
+
+        self.title_input = discord.ui.TextInput(
+            label="Title", style=discord.TextStyle.long,
+            default=pred.title[:200], required=True, max_length=200,
+        )
+        self.options_input = discord.ui.TextInput(
+            label="Outcomes (one per line, 2-5)", style=discord.TextStyle.long,
+            default="\n".join(pred.options), required=True, max_length=430,
+        )
+        self.close_input = discord.ui.TextInput(
+            label="Closes (mins from now / YYYY-MM-DD HH:MM UK)",
+            style=discord.TextStyle.short, default=self._orig_close,
+            placeholder="Leave blank to keep it open until someone locks it",
+            required=False, max_length=20,
+        )
+        for item in (self.title_input, self.options_input, self.close_input):
+            self.add_item(item)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        pred, client = self.admin_view.pred, self.admin_view.client
+        if client.predictions.get(pred.msg_id) is not pred:
+            return await interaction.response.send_message(
+                "This prediction has already been settled.", ephemeral=True
+            )
+
+        title = self.title_input.value.strip()
+        if not title:
+            return await interaction.response.send_message("The title can't be empty.", ephemeral=True)
+        options, err = _clean_options(self.options_input.value.splitlines())
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+        new_bets, err = _remap_live_options(pred, options)
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+
+        close = self.close_input.value.strip()
+        if close == self._orig_close:
+            end_ts = pred.end_ts
+        elif not close:
+            end_ts = None
+        else:
+            try:
+                end_ts = _resolve_end_ts(close, discord.utils.utcnow().timestamp())
+            except ValueError as e:
+                return await interaction.response.send_message(str(e), ephemeral=True)
+
+        old_title = pred.title
+        pred.title, pred.options, pred.bets, pred.end_ts = title, options, new_bets, end_ts
+        _save({k: v.to_dict() for k, v in client.predictions.items()})
+
+        self.admin_view.stop()
+        await interaction.response.edit_message(
+            content=f"Managing: **{title}**", view=PredAdminView(pred, client)
+        )
+
+        try:
+            msg = await _fetch_pred_message(interaction, pred, client)
+            await _edit_prediction_message(msg, pred, client, interactive=not pred.locked)
+            # In the CV2 style the role ping is its own message just above the card and
+            # repeats the title, so fix that too or it keeps showing the old one.
+            if title != old_title:
+                old_tail = f"**{discord.utils.escape_markdown(old_title)}**"
+                async for prev in msg.channel.history(limit=1, before=msg):
+                    if prev.author.id == client.user.id and prev.content.endswith(old_tail):
+                        await prev.edit(
+                            content=prev.content[:-len(old_tail)]
+                                    + f"**{discord.utils.escape_markdown(title)}**",
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+        except discord.NotFound:
+            pass
+
+        closes = f"closes <t:{int(end_ts)}:F> (<t:{int(end_ts)}:R>)" if end_ts else "no closing time"
+        note = "\nStill locked - press **Unlock** to reopen betting." if pred.locked else ""
+        await interaction.followup.send(f"✏️ Updated, {closes}.{note}", ephemeral=True)
 
 
 def _parse_post_time(value: str) -> int:
