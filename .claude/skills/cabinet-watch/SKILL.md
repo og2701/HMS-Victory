@@ -55,13 +55,19 @@ The output has `hits` (what woke it), `context_before` (the 30 messages before t
    -# small footer
    ```
 
-   Accents: `00247D` info, `E67E22` waiting on a go, `2ECC71` done, `E74C3C` problem. Short bullets, no em-dashes,
-   no pings (mentions are switched off, but still write `@​everyone` with a zero-width space).
+   Accents: `00247D` info, `E67E22` waiting on a go, `2ECC71` done, `E74C3C` problem. Short bullets, no em-dashes.
+   Nobody is pinged by default (still write `@​everyone` with a zero-width space). To ping one person, add a
+   `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text; only that person gets pinged.
 
 ## Changes
 
 - **Any request to change something gets a confirmation card first** listing exactly what will change, and nothing
   happens until someone says go. That covers roles, permissions, channels, code and config.
+- **Changes to Vic's code need Oggers' go** (404634271861571584), nobody else's. Anyone can ask for one and get it
+  planned, but when someone else asked, the plan card pings Oggers for the final go (`ping: 404634271861571584` and
+  `<@404634271861571584>` in the text). A go from anyone else on a code change gets a short reply that it's waiting
+  on Oggers, and nothing is built or pushed until Oggers says go. Roles, permissions and other server changes still
+  take a go from whoever's running the request in #cabinet.
 - While a card waits for a go, run the watcher as `R watch.py <id> pending` so any human message wakes you: people
   answer "sounds good, build it" without pinging Vic. Go back to plain `R watch.py <id>` once it's settled. Chatter
   that isn't a go or a change just means start it again in pending mode.

@@ -1,12 +1,14 @@
 """Local helper. Turns a card file into a script that runs on the VM and posts it in #cabinet as Vic, as a
-Components V2 card, with no pings, then stops the typing indicator. Pipe its output to the VM's venv python.
+Components V2 card, then stops the typing indicator. Pipe its output to the VM's venv python.
 
-  vic_card.py <card_file> reply <message_id>   reply to a message
-  vic_card.py <card_file> edit <message_id>    turn one of Vic's messages into this card
-  vic_card.py <card_file> post                 plain post
+  card.py <card_file> reply <message_id>   reply to a message
+  card.py <card_file> edit <message_id>    turn one of Vic's messages into this card
+  card.py <card_file> post                 plain post
 
-Card file: first line 'accent: RRGGBB', then text. A line of '===' starts a new section (a separator is drawn
-between sections). Use '## ' for the title, '### ' for section heads and '-# ' for small print."""
+Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. Nobody is pinged
+unless named on a ping line, and that person must be @'d as <@id> in the text. A line of '===' starts a new
+section (a separator is drawn between sections). Use '## ' for the title, '### ' for section heads and '-# ' for
+small print."""
 import json, sys
 
 src, mode = sys.argv[1], sys.argv[2]
@@ -14,8 +16,13 @@ target = sys.argv[3] if len(sys.argv) > 3 else None
 lines = open(src).read().strip().splitlines()
 assert lines[0].startswith("accent:")
 accent = int(lines[0].split(":", 1)[1].strip().lstrip("#"), 16)
+body = lines[1:]
+ping = None
+if body and body[0].startswith("ping:"):
+    ping = body.pop(0).split(":", 1)[1].strip()
+    assert ping.isdigit(), ping
 sections, cur = [], []
-for line in lines[1:]:
+for line in body:
     if line.strip() == "===":
         sections.append("\n".join(cur).strip()); cur = []
     else:
@@ -24,7 +31,8 @@ sections.append("\n".join(cur).strip())
 sections = [s for s in sections if s]
 text = "".join(sections)
 assert len(text) <= 3800, len(text)
-assert "—" not in text and "–" not in text, "no em/en dashes"
+assert "\u2014" not in text and "\u2013" not in text, "no em/en dashes"
+assert not ping or f"<@{ping}>" in text, "the pinged person must be @'d in the text"
 
 items = []
 for i, s in enumerate(sections):
@@ -32,7 +40,7 @@ for i, s in enumerate(sections):
         items.append({"type": 14, "divider": True, "spacing": 1})
     items.append({"type": 10, "content": s})
 payload = {"flags": 1 << 15, "components": [{"type": 17, "accent_color": accent, "components": items}],
-           "allowed_mentions": {"parse": [], "replied_user": False}}
+           "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": False}}
 method, path = "POST", "/channels/1155637791917613147/messages"
 if mode == "reply":
     payload["message_reference"] = {"message_id": target, "fail_if_not_exists": False}
