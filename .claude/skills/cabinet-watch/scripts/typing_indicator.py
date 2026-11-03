@@ -1,13 +1,15 @@
-"""Runs on the VM (piped over ssh). argv: start | stop. start keeps Vic 'typing' in #cabinet (Discord's indicator
-lasts ~10s per call, so it re-sends every 8s) in a detached process for up to 10 minutes; stop ends it."""
+"""Runs on the VM (piped over ssh). argv: start [cabinet|workshop] | stop. start keeps Vic 'typing' in that channel
+(#cabinet by default; Discord's indicator lasts ~10s per call, so it re-sends every 8s) in a detached process for up
+to 10 minutes; stop ends it."""
 import os, signal, subprocess, sys
 from dotenv import load_dotenv
 
 load_dotenv(".env")
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
 PID = "/tmp/vic_typing.pid"
 LOOP = r'''
-import os, time, urllib.request
-req = lambda: urllib.request.Request("https://discord.com/api/v10/channels/1155637791917613147/typing", data=b"", method="POST",
+import os, sys, time, urllib.request
+req = lambda: urllib.request.Request(f"https://discord.com/api/v10/channels/{sys.argv[1]}/typing", data=b"", method="POST",
     headers={"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"})
 end = time.time() + 600
 while time.time() < end:
@@ -30,13 +32,13 @@ def stop():
         pass
 
 
-def start():
+def start(channel="cabinet"):
     stop()
-    p = subprocess.Popen([sys.executable, "-c", LOOP], start_new_session=True,
+    p = subprocess.Popen([sys.executable, "-c", LOOP, CHANNELS[channel]], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     open(PID, "w").write(str(p.pid))
 
 
 if __name__ == "__main__":
-    {"start": start, "stop": stop}[sys.argv[1]]()
+    {"start": start, "stop": stop}[sys.argv[1]](*sys.argv[2:3])
     print("typing", sys.argv[1])

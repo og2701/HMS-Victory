@@ -1,11 +1,13 @@
-"""Runs on the VM (piped over ssh). argv: before_id [count]. Prints #cabinet messages before that id, oldest first,
-one per line, for when an ask refers back further than the watcher's context. count defaults to 100 (max 500)."""
+"""Runs on the VM (piped over ssh). argv: before_id [count] [cabinet|workshop]. Prints that channel's messages
+(#cabinet by default) before that id, oldest first, one per line, for when an ask refers back further than the
+watcher's context. count defaults to 100 (max 500)."""
 import json, os, sys, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CH = 1155637791917613147
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
 before, want = sys.argv[1], min(int(sys.argv[2]) if len(sys.argv) > 2 else 100, 500)
+CH = CHANNELS[sys.argv[3] if len(sys.argv) > 3 else "cabinet"]
 
 
 def get(path):

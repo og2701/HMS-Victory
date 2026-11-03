@@ -1,18 +1,22 @@
 """Runs on the VM (piped over ssh). argv: the message id to start after, or "latest" for the newest one, then
-optionally "pending" while a confirmation card waits for a go: any human message wakes it, since "sounds good,
-build it" rarely pings Vic.
+optionally "pending" (or "pending:workshop") while a confirmation card waits for a go in that channel: any human
+message there wakes it, since "sounds good, build it" rarely pings Vic. Plain "pending" means #cabinet.
 
-Polls #cabinet and exits when anyone (not a bot) pings Vic, replies to Vic or says "vic". Starts Vic typing straight
-away (typing_indicator.py stop or the next card post ends it), then waits 30s so Vic's own auto-reply and any
-follow-ups land, and prints the hits, the 30 messages before them, everything posted after them (Vic's
-auto-reply included) and the last id seen. Gives up after 6 hours with "timeout": true."""
+Polls #cabinet and #bot-workshop and exits when anyone (not a bot) pings Vic, replies to Vic or says "vic". Starts
+Vic typing in that channel straight away (typing_indicator.py stop or the next card post ends it), then waits 30s
+so Vic's own auto-reply and any follow-ups land, and prints the channel, the hits, the 30 messages before them,
+everything posted after them (Vic's auto-reply included) and the last id seen. Gives up after 6 hours with
+"timeout": true."""
 import json, os, re, signal, subprocess, sys, time, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CH, VIC = 1155637791917613147, "1171842947440967770"
-after = sys.argv[1]
-pending = len(sys.argv) > 2 and sys.argv[2] == "pending"
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+NAMES = {cid: name for name, cid in CHANNELS.items()}
+VIC = "1171842947440967770"
+start = sys.argv[1]
+mode = sys.argv[2] if len(sys.argv) > 2 else ""
+pending = CHANNELS[mode.split(":", 1)[1] if ":" in mode else "cabinet"] if mode.startswith("pending") else None
 deadline = time.time() + 6 * 3600
 
 
@@ -22,8 +26,13 @@ def get(path):
     return json.loads(urllib.request.urlopen(req, timeout=20).read())
 
 
-if after == "latest":
-    after = get(f"/channels/{CH}/messages?limit=1")[0]["id"]
+def newest(cid):
+    page = get(f"/channels/{cid}/messages?limit=1")
+    return page[0]["id"] if page else "0"
+
+
+# Each channel keeps its own place, so a slow poll in one can't skip messages in the other.
+after = {cid: (newest(cid) if start == "latest" else start) for cid in CHANNELS.values()}
 
 
 def addresses_vic(m):
@@ -32,13 +41,13 @@ def addresses_vic(m):
                 or re.search(r"\bvic\b", text_of(m), re.I))
 
 
-def wanted(m):
-    return not m["author"].get("bot") and (pending or addresses_vic(m))
+def wanted(m, cid):
+    return not m["author"].get("bot") and (cid == pending or addresses_vic(m))
 
 
 TYPING_LOOP = r'''
-import os, time, urllib.request
-req = lambda: urllib.request.Request("https://discord.com/api/v10/channels/1155637791917613147/typing", data=b"", method="POST",
+import os, sys, time, urllib.request
+req = lambda: urllib.request.Request(f"https://discord.com/api/v10/channels/{sys.argv[1]}/typing", data=b"", method="POST",
     headers={"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"})
 end = time.time() + 600
 while time.time() < end:
@@ -50,12 +59,12 @@ while time.time() < end:
 '''
 
 
-def start_typing():
+def start_typing(cid):
     try:
         os.kill(int(open("/tmp/vic_typing.pid").read()), signal.SIGTERM)
     except (OSError, ValueError):
         pass
-    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP], start_new_session=True,
+    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP, cid], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     open("/tmp/vic_typing.pid", "w").write(str(p.pid))
 
@@ -78,28 +87,40 @@ def brief(m):
             "reply_to": (m.get("referenced_message") or {}).get("id")}
 
 
+def poll(cid):
+    """New hits in one channel since its last poll."""
+    hits = []
+    for m in sorted(get(f"/channels/{cid}/messages?after={after[cid]}&limit=50"), key=lambda m: int(m["id"])):
+        after[cid] = m["id"]
+        if wanted(m, cid):
+            hits.append(dict(brief(m), addresses_vic=addresses_vic(m), channel=NAMES[cid]))
+    return hits
+
+
 while time.time() < deadline:
     try:
-        msgs = sorted(get(f"/channels/{CH}/messages?after={after}&limit=50"), key=lambda m: int(m["id"]))
+        hits = [h for cid in CHANNELS.values() for h in poll(cid)]
     except Exception as e:  # network blips just retry
         print("poll error", e, file=sys.stderr)
         time.sleep(30)
         continue
-    hits = []
-    for m in msgs:
-        after = m["id"]
-        if wanted(m):
-            hits.append(dict(brief(m), addresses_vic=addresses_vic(m)))
     if hits:
-        if any(h["addresses_vic"] for h in hits):  # plain chatter in pending mode shouldn't make Vic type
-            start_typing()
+        cid = CHANNELS[hits[0]["channel"]]
+        aimed = [h for h in hits if h["addresses_vic"]]
+        if aimed:  # plain chatter in pending mode shouldn't make Vic type
+            start_typing(CHANNELS[aimed[0]["channel"]])
         time.sleep(30)
-        before = sorted(get(f"/channels/{CH}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
-        later = sorted(get(f"/channels/{CH}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
+        before = sorted(get(f"/channels/{cid}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
+        later = sorted(get(f"/channels/{cid}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
         if later:
-            after = later[-1]["id"]
-        print(json.dumps({"hits": hits, "context_before": [brief(m) for m in before],
-                          "after_first_hit": [brief(m) for m in later], "last_id": after}))
+            after[cid] = max(after[cid], later[-1]["id"], key=int)
+        for other in CHANNELS.values():  # anything aimed at Vic elsewhere during the wait comes along too
+            if other != cid:
+                hits += poll(other)
+        print(json.dumps({"channel": NAMES[cid], "channel_id": cid, "hits": hits,
+                          "context_before": [brief(m) for m in before],
+                          "after_first_hit": [brief(m) for m in later],
+                          "last_id": max(after.values(), key=int)}))
         sys.exit(0)
     time.sleep(15)
-print(json.dumps({"hits": [], "last_id": after, "timeout": True}))
+print(json.dumps({"hits": [], "last_id": max(after.values(), key=int), "timeout": True}))

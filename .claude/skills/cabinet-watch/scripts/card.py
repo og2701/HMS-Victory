@@ -1,9 +1,11 @@
-"""Local helper. Turns a card file into a script that runs on the VM and posts it in #cabinet as Vic, as a
-Components V2 card, then stops the typing indicator. Pipe its output to the VM's venv python.
+"""Local helper. Turns a card file into a script that runs on the VM and posts it as Vic, as a Components V2
+card, then stops the typing indicator. Pipe its output to the VM's venv python.
 
-  card.py <card_file> reply <message_id>   reply to a message
-  card.py <card_file> edit <message_id>    turn one of Vic's messages into this card
-  card.py <card_file> post                 plain post
+  card.py <card_file> reply <message_id> [channel]   reply to a message
+  card.py <card_file> edit <message_id> [channel]    turn one of Vic's messages into this card
+  card.py <card_file> post [channel]                 plain post
+
+channel is cabinet (the default) or workshop.
 
 Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. Nobody is pinged
 unless named on a ping line, and that person must be @'d as <@id> in the text. A line of '===' starts a new
@@ -11,8 +13,10 @@ section (a separator is drawn between sections). Use '## ' for the title, '### '
 small print."""
 import json, sys
 
-src, mode = sys.argv[1], sys.argv[2]
-target = sys.argv[3] if len(sys.argv) > 3 else None
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
+target = rest.pop(0) if mode in ("reply", "edit") else None
+CH = CHANNELS[rest[0] if rest else "cabinet"]
 lines = open(src).read().strip().splitlines()
 assert lines[0].startswith("accent:")
 accent = int(lines[0].split(":", 1)[1].strip().lstrip("#"), 16)
@@ -41,12 +45,12 @@ for i, s in enumerate(sections):
     items.append({"type": 10, "content": s})
 payload = {"flags": 1 << 15, "components": [{"type": 17, "accent_color": accent, "components": items}],
            "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": False}}
-method, path = "POST", "/channels/1155637791917613147/messages"
+method, path = "POST", f"/channels/{CH}/messages"
 if mode == "reply":
     payload["message_reference"] = {"message_id": target, "fail_if_not_exists": False}
 elif mode == "edit":
     payload["content"] = ""
-    method, path = "PATCH", f"/channels/1155637791917613147/messages/{target}"
+    method, path = "PATCH", f"/channels/{CH}/messages/{target}"
 
 print(f'''import json, os, signal, urllib.request
 from dotenv import load_dotenv
