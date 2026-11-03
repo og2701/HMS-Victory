@@ -2,18 +2,22 @@
 optionally "pending" (or "pending:workshop") while a confirmation card waits for a go in that channel: any human
 message there wakes it, since "sounds good, build it" rarely pings Vic. Plain "pending" means #cabinet.
 
-Polls #cabinet and #bot-workshop and exits when anyone (not a bot) pings Vic, replies to Vic or says "vic". Starts
-Vic typing in that channel straight away (typing_indicator.py stop or the next card post ends it), then waits 30s
-so Vic's own auto-reply and any follow-ups land, and prints the channel, the hits, the 30 messages before them,
-everything posted after them (Vic's auto-reply included) and the last id seen. Gives up after 6 hours with
+Polls #cabinet and #bot-workshop every few seconds and exits when anyone (not a bot) pings Vic, replies to Vic or
+says "vic". Each such message gets Vic's ACK reaction and Vic starts typing in that channel straight away (a card
+reply or a reaction from react.py takes the ACK off; typing_indicator.py stop or the next card post ends the
+typing). It then waits a few seconds so a follow-up line from the same person lands, and prints the channel, the
+hits, the 30 messages before them, everything posted after them and the last id seen. Gives up after 6 hours with
 "timeout": true."""
-import json, os, re, signal, subprocess, sys, time, urllib.request
+import json, os, re, signal, subprocess, sys, time, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
 NAMES = {cid: name for name, cid in CHANNELS.items()}
 VIC = "1171842947440967770"
+ACK = "hmmnote:1179638366275383297"  # "looking into it", added the moment a request is seen
+POLL_SECONDS = 5
+FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
 pending = CHANNELS[mode.split(":", 1)[1] if ":" in mode else "cabinet"] if mode.startswith("pending") else None
@@ -57,6 +61,18 @@ while time.time() < end:
         pass
     time.sleep(8)
 '''
+
+
+def ack(h):
+    """React with ACK so the asker knows it's been seen, long before the answer is ready."""
+    cid = CHANNELS[h["channel"]]
+    req = urllib.request.Request(
+        f"https://discord.com/api/v10/channels/{cid}/messages/{h['id']}/reactions/{urllib.parse.quote(ACK)}/@me",
+        data=b"", method="PUT", headers={"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"})
+    try:
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        print("ack failed", h["id"], e, file=sys.stderr)
 
 
 def start_typing(cid):
@@ -107,20 +123,31 @@ while time.time() < deadline:
     if hits:
         cid = CHANNELS[hits[0]["channel"]]
         aimed = [h for h in hits if h["addresses_vic"]]
-        if aimed:  # plain chatter in pending mode shouldn't make Vic type
+        if aimed:  # plain chatter in pending mode gets neither the ACK nor typing
+            for h in aimed:
+                ack(h)
             start_typing(CHANNELS[aimed[0]["channel"]])
-        time.sleep(30)
+        time.sleep(FOLLOW_UP_SECONDS)
         before = sorted(get(f"/channels/{cid}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
         later = sorted(get(f"/channels/{cid}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
         if later:
             after[cid] = max(after[cid], later[-1]["id"], key=int)
+        for m in later:  # a second request in the same channel during the wait gets its ACK too
+            if wanted(m, cid) and addresses_vic(m) and m["id"] not in {h["id"] for h in hits}:
+                h = dict(brief(m), addresses_vic=True, channel=NAMES[cid])
+                ack(h)
+                hits.append(h)
         for other in CHANNELS.values():  # anything aimed at Vic elsewhere during the wait comes along too
             if other != cid:
-                hits += poll(other)
+                extra = poll(other)
+                for h in extra:
+                    if h["addresses_vic"]:
+                        ack(h)
+                hits += extra
         print(json.dumps({"channel": NAMES[cid], "channel_id": cid, "hits": hits,
                           "context_before": [brief(m) for m in before],
                           "after_first_hit": [brief(m) for m in later],
                           "last_id": max(after.values(), key=int)}))
         sys.exit(0)
-    time.sleep(15)
+    time.sleep(POLL_SECONDS)
 print(json.dumps({"hits": [], "last_id": max(after.values(), key=int), "timeout": True}))

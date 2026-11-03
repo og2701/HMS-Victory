@@ -1,5 +1,6 @@
 """Local helper. Turns a card file into a script that runs on the VM and posts it as Vic, as a Components V2
-card, then stops the typing indicator. Pipe its output to the VM's venv python.
+card, then stops the typing indicator (and a reply takes the watcher's ACK reaction off the request). Pipe its
+output to the VM's venv python.
 
   card.py <card_file> reply <message_id> [channel]   reply to a message
   card.py <card_file> edit <message_id> [channel]    turn one of Vic's messages into this card
@@ -13,9 +14,10 @@ section (a separator is drawn between sections). Use '## ' for the title, '### '
 small print. An 'image: /path/to/file.png' line anywhere attaches that image (render.py makes them from HTML) and
 shows it under the card, outside the bordered box so a framed chart isn't boxed twice. A card can be images only:
 then the file is just 'accent:' plus image lines."""
-import base64, json, os, sys
+import base64, json, os, sys, urllib.parse
 
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+ACK_QUOTED = urllib.parse.quote("hmmnote:1179638366275383297")  # watch.py's "looking into it"
 src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
 target = rest.pop(0) if mode in ("reply", "edit") else None
 CH = CHANNELS[rest[0] if rest else "cabinet"]
@@ -82,6 +84,13 @@ try:
     print("{mode}", json.load(urllib.request.urlopen(r))["id"])
 except urllib.error.HTTPError as e:
     print("failed", e.code, e.read().decode()[:500])
+if {mode == "reply"}:  # the answer is in, so the watcher's "looking into it" comes off the request
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            "https://discord.com/api/v10/channels/{CH}/messages/{target}/reactions/{ACK_QUOTED}/@me", method="DELETE",
+            headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"}}), timeout=20)
+    except urllib.error.HTTPError:
+        pass
 try:
     os.kill(int(open("/tmp/vic_typing.pid").read()), signal.SIGTERM); os.remove("/tmp/vic_typing.pid")
 except (OSError, ValueError):

@@ -21,19 +21,27 @@ R watch.py latest
 ```
 
 The output has `channel` (`cabinet` or `workshop`, where the first hit was; each hit has its own `channel` too),
-`hits` (what woke it), `context_before` (the 30 messages before the first hit), `after_first_hit` (Vic's own
-auto-reply shows up here) and `last_id`. Answer in the channel the hit came from: the typing, history and card
-scripts below take `cabinet` (the default) or `workshop`.
+`hits` (what woke it), `context_before` (the 30 messages before the first hit), `after_first_hit` (anything
+posted in the few seconds after) and `last_id`. Answer in the channel the hit came from: the typing, history and
+card scripts below take `cabinet` (the default) or `workshop`.
 
-After handling it, start it again from the newer of `last_id` and the id of your own post: `R watch.py <id>`. `"timeout": true` after 6 hours just means start it again.
+**Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
+or `pending:workshop` while a card waits on a go). Always restart from `last_id`, never from the id of your own
+post: a request sent while you were working sits between the two and would be skipped. With the watcher already
+running again, a request that lands while you're busy gets Vic's ACK at once and wakes you as soon as you're free;
+take them in order, quick ones first when a long one is mid-flight. `"timeout": true` after 6 hours just means
+start it again.
 
 ## Answering
 
-1. **Vic is already typing when you wake** for a message aimed at Vic (hits have `addresses_vic`); plain chatter
-   in pending mode doesn't start it. If you decide not to reply, stop it with `R typing_indicator.py stop`.
-   `R typing_indicator.py start <channel>` turns it back on for a long job; it gives up by itself after 10 minutes.
-2. **Let Vic's auto-reply count.** Vic's chat responder answers pings too. If its answer in `after_first_hit` is
-   right, say nothing. Step in only when it's missing, vague or wrong, and say you're correcting it.
+1. **Vic has already acked it and is typing when you wake** for a message aimed at Vic (hits have
+   `addresses_vic`): the watcher puts its ACK reaction (`hmmnote:1179638366275383297`) on each request within
+   about 5 seconds. A card reply or a react.py reaction takes the ACK off and stops the typing; plain chatter in
+   pending mode gets neither. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297
+   <channel> remove`. `R typing_indicator.py start <channel>` turns typing back on for a long job; it gives up by
+   itself after 10 minutes.
+2. **Nobody else is answering.** Vic's own chat responder stays out of #cabinet and #bot-workshop, so every
+   message aimed at Vic there needs a card or a reaction from you.
 3. **Get the whole thread.** A fresh session knows nothing of earlier talk beyond those 30 messages. If the ask
    points further back ("what we said earlier", "the plan above", a reply to an old message), read more with
    `R history.py <oldest_id_you_have> 100 <channel>` (up to 500) before answering.
@@ -74,9 +82,9 @@ After handling it, start it again from the newer of `last_id` and the id of your
      palette's examples show how each is used), otherwise any normal emoji, not only the top of the list. Names
      can mislead, so if unsure what one looks like, download `https://cdn.discordapp.com/emojis/<id>.png` (`.gif`
      when animated) into the scratchpad and look at it first.
-   - **When to react:** a thanks, a joke or "nice" aimed at Vic gets a reaction instead of a reply; a long job gets
-     a "looking into it" reaction on the request (with `keep`) and a "done" one once the card is up; a go gets an
-     approving one before the work starts. One reaction, two at most when they read as a pair.
+   - **When to react:** a thanks, a joke or "nice" aimed at Vic gets a reaction instead of a reply; a long job
+     already carries the watcher's ACK and gets a "done" one once the card is up (which swaps the ACK off); a go
+     gets an approving one with `keep` before the work starts. One reaction, two at most when they read as a pair.
    - **Never** `:Shut:`, `:bedtime:`, `:oggersglare:`, flags or ❌: they set off Vic's own timeouts, translations
      and deletes. react.py refuses them and the palette leaves them out.
 7. **Show it as an image when a picture says it better.** A request for an analysis, a trend, a comparison or how
