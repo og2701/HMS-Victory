@@ -29,7 +29,8 @@ from lib.core.file_operations import load_json_file, save_json_file
 log = logging.getLogger(__name__)
 _UK = pytz.timezone("Europe/London")
 
-_STAFF_ROLES = {ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE, ROLES.PCSO}
+# Who can press the ticket reward buttons. PCSOs were taken off tickets in Nov 2026.
+_STAFF_ROLES = {ROLES.DEPUTY_PM, ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE}
 
 
 def _today() -> str:

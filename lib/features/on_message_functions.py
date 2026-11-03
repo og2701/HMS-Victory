@@ -21,12 +21,12 @@ MAX_IMAGES = 8
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 TICKET_TOOL_BOT_ID = 557628352828014614
 
+# Tagged "Staff" in ticket summaries. PCSOs were taken off tickets in Nov 2026.
 STAFF_ROLE_IDS = {
     ROLES.DEPUTY_PM,
     ROLES.MINISTER,
     ROLES.CABINET,
     ROLES.BORDER_FORCE,
-    ROLES.PCSO,
 }
 
 
