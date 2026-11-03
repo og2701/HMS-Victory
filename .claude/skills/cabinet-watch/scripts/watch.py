@@ -2,7 +2,7 @@
 
 Polls #cabinet and exits when anyone (not a bot) pings Vic, replies to Vic or says "vic". Starts Vic typing straight
 away (typing_indicator.py stop or the next card post ends it), then waits 30s so Vic's own auto-reply and any
-follow-ups land, and prints the hits, a few messages of context before them, everything posted after them (Vic's
+follow-ups land, and prints the hits, the 30 messages before them, everything posted after them (Vic's
 auto-reply included) and the last id seen. Gives up after 6 hours with "timeout": true."""
 import json, os, re, signal, subprocess, sys, time, urllib.request
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ def wanted(m):
         return False
     ref = (m.get("referenced_message") or {}).get("author", {}).get("id")
     return bool(ref == VIC or any(u["id"] == VIC for u in m.get("mentions", []))
-                or re.search(r"\bvic\b", m["content"] or "", re.I))
+                or re.search(r"\bvic\b", text_of(m), re.I))
 
 
 TYPING_LOOP = r'''
@@ -55,9 +55,21 @@ def start_typing():
     open("/tmp/vic_typing.pid", "w").write(str(p.pid))
 
 
+def text_of(m):
+    """Message text, including the text inside Components V2 cards (Vic's replies)."""
+    parts = [m["content"]] if m.get("content") else []
+    stack = list(m.get("components") or [])
+    while stack:
+        c = stack.pop(0)
+        if c.get("type") == 10:
+            parts.append(c.get("content", ""))
+        stack[:0] = c.get("components") or []
+    return "\n".join(parts)
+
+
 def brief(m):
     return {"id": m["id"], "author": m["author"].get("global_name") or m["author"]["username"], "bot": bool(m["author"].get("bot")),
-            "content": m["content"], "attachments": [x["url"] for x in m["attachments"]],
+            "content": text_of(m), "attachments": [x["url"] for x in m["attachments"]],
             "reply_to": (m.get("referenced_message") or {}).get("id")}
 
 
@@ -76,7 +88,7 @@ while time.time() < deadline:
     if hits:
         start_typing()
         time.sleep(30)
-        before = sorted(get(f"/channels/{CH}/messages?before={hits[0]['id']}&limit=6"), key=lambda m: int(m["id"]))
+        before = sorted(get(f"/channels/{CH}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
         later = sorted(get(f"/channels/{CH}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
         if later:
             after = later[-1]["id"]
