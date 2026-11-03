@@ -5,17 +5,33 @@
 The page is laid out at `width` CSS pixels (default 820, portrait reads best in Discord) and shot at 2x. If the
 page has an element with id="card", only that element is captured; otherwise the whole page. Scripts and web fonts
 load before the shot, so Chart.js or Google Fonts from a CDN work; the page can set window.renderReady = false and
-flip it to true when it has finished drawing."""
-import sys
+flip it to true when it has finished drawing.
+
+Without Chrome (a cloud session) it uses Playwright's own Chromium, installing it on first use if the network
+allows."""
+import subprocess, sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Error, sync_playwright
 
 src, out = Path(sys.argv[1]).resolve(), Path(sys.argv[2])
 width = int(sys.argv[3]) if len(sys.argv) > 3 else 820
 
+
+def launch(p):
+    try:
+        return p.chromium.launch(channel="chrome")
+    except Error:
+        pass
+    try:
+        return p.chromium.launch()
+    except Error:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], check=True)
+        return p.chromium.launch()
+
+
 with sync_playwright() as p:
-    browser = p.chromium.launch(channel="chrome")
+    browser = launch(p)
     page = browser.new_page(viewport={"width": width, "height": 800}, device_scale_factor=2)
     page.goto(src.as_uri(), wait_until="networkidle")
     page.evaluate("document.fonts.ready")

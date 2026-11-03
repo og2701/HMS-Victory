@@ -8,8 +8,9 @@ description: Watch #cabinet and #bot-workshop and answer, as Vic, anyone who pin
 Claude sits behind Vic in #cabinet (1155637791917613147) and #bot-workshop (1141037835445616640). A poller on the
 VM wakes this session when someone in either channel pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
 leaves the VM: `scripts/run.sh` pipes each script over ssh into `venv/bin/python -` in `~/HMS-Victory`, which loads
-`.env`. Below, `R` is `/Users/ogme01/Documents/Projects/HMS-Victory/.claude/skills/cabinet-watch/scripts/run.sh`;
-write the full path in every command, since shell variables don't carry between Bash calls.
+`.env`. Below, `R` is `<base>/scripts/run.sh` and `<scripts>` is `<base>/scripts`, where `<base>` is this skill's
+base directory as shown when it loads. Write the full path in every command, since shell variables don't carry
+between Bash calls.
 
 ## Start
 
@@ -112,6 +113,20 @@ After handling it, start it again from the newer of `last_id` and the id of your
   around it: ask Oggers in this chat, then apply.
 - Code changes follow the repo's normal flow: commit, cherry-pick onto `origin/main` in a temp worktree, push, then
   `./update_bot.sh` on the VM.
+
+## Running from a cloud session
+
+The watcher itself runs on the VM, so a cloud session works the same once it can reach the box. `run.sh` notices
+it isn't on Oggers' Mac and tunnels through AWS SSM instead of a direct ssh, which cloud sessions can't make.
+- **Environment:** use the "HMS Victory" cloud environment. Its network secret signs the SSM calls (IAM user
+  `owen-dev-cloud-ssh`, credential type AWS SigV4, host `ssm.eu-west-2.amazonaws.com`), and it needs the
+  `owen-dev-key` private key as a secret called `VIC_SSH_KEY` (or a file path in `VIC_SSH_KEY_FILE`).
+- **Tools:** the `aws` CLI and `session-manager-plugin`. If `run.sh` says one is missing, install it in the
+  session first.
+- **Check before starting:** `R typing_indicator.py stop` should print `typing stop`. If it says there's no key,
+  or ssh fails, tell Oggers what's missing rather than trying other ways in.
+- **Charts:** there's no Chrome, so `render.py` installs Playwright's Chromium on first use (`pip install
+  playwright` first if `uv` isn't there). If the download is blocked, answer without images and say so.
 
 ## Stop
 
