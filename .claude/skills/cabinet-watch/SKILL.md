@@ -63,6 +63,13 @@ After handling it, start it again from the newer of `last_id` and the id of your
    Nobody is pinged by default (still write `@​everyone` with a zero-width space). To ping one person, add a
    `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text; only that person gets pinged.
 
+6. **React where a card would be too much.** `R react.py <message_id> <emoji> <channel>` adds Vic's reaction
+   (a normal emoji, or a server one as `name:id`) and stops the typing indicator. Use one reaction, not a row:
+   - a thanks, a joke or "nice" aimed at Vic gets a fitting reaction instead of a reply;
+   - a long job gets 👀 on the request first (add `keep` so Vic carries on typing), then ✅ once the card is up;
+   - a go gets 👍 before the work starts.
+   `remove` as the last argument takes a reaction back off.
+
 ## Changes
 
 - **Any request to change something gets a confirmation card first** listing exactly what will change, and nothing
