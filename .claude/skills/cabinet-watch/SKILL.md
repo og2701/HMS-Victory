@@ -78,6 +78,21 @@ After handling it, start it again from the newer of `last_id` and the id of your
      approving one before the work starts. One reaction, two at most when they read as a pair.
    - **Never** `:Shut:`, `:bedtime:`, `:oggersglare:`, flags or ❌: they set off Vic's own timeouts, translations
      and deletes. react.py refuses them and the palette leaves them out.
+7. **Show it as an image when a picture says it better.** A request for an analysis, a trend, a comparison or how
+   something fits together ("give me a detailed analysis of the economy", "how has chat activity changed", "map
+   out how the casino money flows") gets a chart, diagram or data card rendered from HTML/CSS, with the card's
+   text carrying the takeaways. Short factual answers stay text.
+   - **Real data only.** Pull the numbers from the databases or the live server first, the same as any answer.
+   - **Design it properly.** Load the `dataviz` skill before any chart. Build a self-contained page in the
+     scratchpad: portrait, 820px wide, big type (secondary text 18px or more), the dark Discord look (#111214,
+     #1E1F22, #2B2D31 backgrounds, blurple accent), the content inside `<div id="card">`. Chart.js, D3 or Mermaid
+     from cdn.jsdelivr.net are fine; set `window.renderReady = false` until drawing finishes. Several focused
+     images beat one crammed one.
+   - **Render and look before posting.** Run
+     `uv run --no-project -q --with playwright python <scripts>/render.py page.html out.png` (it drives this Mac's
+     Chrome at 2x), then Read the PNG and fix anything clipped, cramped or unreadable.
+   - **Attach it** with an `image: /full/path/out.png` line in the card file; it shows under the card, unboxed.
+     Up to ten images per card.
 
 ## Changes
 

@@ -10,8 +10,10 @@ channel is cabinet (the default) or workshop.
 Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. Nobody is pinged
 unless named on a ping line, and that person must be @'d as <@id> in the text. A line of '===' starts a new
 section (a separator is drawn between sections). Use '## ' for the title, '### ' for section heads and '-# ' for
-small print."""
-import json, sys
+small print. An 'image: /path/to/file.png' line anywhere attaches that image (render.py makes them from HTML) and
+shows it under the card, outside the bordered box so a framed chart isn't boxed twice. A card can be images only:
+then the file is just 'accent:' plus image lines."""
+import base64, json, os, sys
 
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
 src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
@@ -25,6 +27,10 @@ ping = None
 if body and body[0].startswith("ping:"):
     ping = body.pop(0).split(":", 1)[1].strip()
     assert ping.isdigit(), ping
+images = [line.split(":", 1)[1].strip() for line in body if line.startswith("image:")]
+body = [line for line in body if not line.startswith("image:")]
+for path in images:
+    assert os.path.getsize(path) < 9_000_000, f"{path} is too big for Discord"
 sections, cur = [], []
 for line in body:
     if line.strip() == "===":
@@ -43,8 +49,14 @@ for i, s in enumerate(sections):
     if i:
         items.append({"type": 14, "divider": True, "spacing": 1})
     items.append({"type": 10, "content": s})
-payload = {"flags": 1 << 15, "components": [{"type": 17, "accent_color": accent, "components": items}],
-           "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": False}}
+names = [f"vic-{i}{os.path.splitext(p)[1].lower() or '.png'}" for i, p in enumerate(images)]
+components = [{"type": 17, "accent_color": accent, "components": items}] if items else []
+if images:
+    components.append({"type": 12, "items": [{"media": {"url": f"attachment://{n}"}} for n in names]})
+payload = {"flags": 1 << 15, "components": components,
+           "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": False},
+           "attachments": [{"id": i, "filename": n} for i, n in enumerate(names)]}
+files = {n: base64.b64encode(open(p, "rb").read()).decode() for n, p in zip(names, images)}
 method, path = "POST", f"/channels/{CH}/messages"
 if mode == "reply":
     payload["message_reference"] = {"message_id": target, "fail_if_not_exists": False}
@@ -52,11 +64,20 @@ elif mode == "edit":
     payload["content"] = ""
     method, path = "PATCH", f"/channels/{CH}/messages/{target}"
 
-print(f'''import json, os, signal, urllib.request
+print(f'''import base64, json, os, signal, urllib.request, uuid
 from dotenv import load_dotenv
 load_dotenv(".env")
-r = urllib.request.Request("https://discord.com/api/v10{path}", data={json.dumps(json.dumps(payload))}.encode(), method="{method}",
-    headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "Content-Type": "application/json", "User-Agent": "DiscordBot (x, 1)"}})
+files = {json.dumps(files)}
+boundary = uuid.uuid4().hex
+body = (f"--{{boundary}}\\r\\nContent-Disposition: form-data; name=\\"payload_json\\"\\r\\n"
+        f"Content-Type: application/json\\r\\n\\r\\n").encode() + {json.dumps(json.dumps(payload))}.encode() + b"\\r\\n"
+for i, (name, data) in enumerate(files.items()):
+    body += (f"--{{boundary}}\\r\\nContent-Disposition: form-data; name=\\"files[{{i}}]\\"; filename=\\"{{name}}\\"\\r\\n"
+             f"Content-Type: image/png\\r\\n\\r\\n").encode() + base64.b64decode(data) + b"\\r\\n"
+body += f"--{{boundary}}--\\r\\n".encode()
+r = urllib.request.Request("https://discord.com/api/v10{path}", data=body, method="{method}",
+    headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "Content-Type": f"multipart/form-data; boundary={{boundary}}",
+             "User-Agent": "DiscordBot (x, 1)"}})
 try:
     print("{mode}", json.load(urllib.request.urlopen(r))["id"])
 except urllib.error.HTTPError as e:
