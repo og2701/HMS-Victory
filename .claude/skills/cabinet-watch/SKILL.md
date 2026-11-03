@@ -63,12 +63,21 @@ After handling it, start it again from the newer of `last_id` and the id of your
    Nobody is pinged by default (still write `@​everyone` with a zero-width space). To ping one person, add a
    `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text; only that person gets pinged.
 
-6. **React where a card would be too much.** `R react.py <message_id> <emoji> <channel>` adds Vic's reaction
-   (a normal emoji, or a server one as `name:id`) and stops the typing indicator. Use one reaction, not a row:
-   - a thanks, a joke or "nice" aimed at Vic gets a fitting reaction instead of a reply;
-   - a long job gets 👀 on the request first (add `keep` so Vic carries on typing), then ✅ once the card is up;
-   - a go gets 👍 before the work starts.
-   `remove` as the last argument takes a reaction back off.
+6. **React where a card would be too much, and pick the emoji like a regular would.**
+   `R react.py <message_id> <emoji> <channel>` adds Vic's reaction and stops the typing indicator (`keep` leaves
+   it typing, `remove` takes a reaction back off).
+   - **Know the palette.** Run `R emojis.py` once per session: the server's own emojis ranked by how often members
+     react with them, each with a message it landed on, then the most used normal emojis. Server emojis go in as
+     `name:id`.
+   - **Choose for the moment.** Match the message's tone the way members do: a server emoji when one fits (the
+     palette's examples show how each is used), otherwise any normal emoji, not only the top of the list. Names
+     can mislead, so if unsure what one looks like, download `https://cdn.discordapp.com/emojis/<id>.png` (`.gif`
+     when animated) into the scratchpad and look at it first.
+   - **When to react:** a thanks, a joke or "nice" aimed at Vic gets a reaction instead of a reply; a long job gets
+     a "looking into it" reaction on the request (with `keep`) and a "done" one once the card is up; a go gets an
+     approving one before the work starts. One reaction, two at most when they read as a pair.
+   - **Never** `:Shut:`, `:bedtime:`, `:oggersglare:`, flags or ❌: they set off Vic's own timeouts, translations
+     and deletes. react.py refuses them and the palette leaves them out.
 
 ## Changes
 

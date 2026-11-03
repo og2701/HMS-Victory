@@ -1,14 +1,28 @@
 """Runs on the VM (piped over ssh). argv: message_id emoji [cabinet|workshop] [keep] [remove].
 
 Adds Vic's reaction to a message (#cabinet by default). The emoji is a normal one like ✅, or a server emoji as
-name:id. A reaction usually is the whole answer, so it stops the typing indicator unless "keep" is given (for a 👀
-while a longer reply is being written). "remove" takes Vic's reaction off instead."""
+name:id; emojis.py lists the server's. Timeout, flag and cross emojis are refused. A reaction usually is the whole
+answer, so it stops the typing indicator unless "keep" is given (for a 👀 while a longer reply is being written).
+"remove" takes Vic's reaction off instead."""
 import os, signal, sys, urllib.error, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+# Reactions that set off Vic's own reaction features: timeouts (Shut, bedtime, oggersglare), translations (flags)
+# and deleting Vic's posts (the cross). Vic must never use them.
+BLOCKED_NAMES = {"shut", "bedtime", "oggersglare"}
+
+
+def blocked(emoji):
+    name = emoji.split(":")[0].lower()
+    flag = any(0x1F1E6 <= ord(c) <= 0x1F1FF or 0xE0000 <= ord(c) <= 0xE007F for c in emoji) or "\U0001F3F4" in emoji
+    return name in BLOCKED_NAMES or flag or emoji in ("\u274c", "\u274e", "\u2716\ufe0f", "\u2716")
+
+
 message_id, emoji, flags = sys.argv[1], sys.argv[2], sys.argv[3:]
+if blocked(emoji) and "remove" not in flags:
+    sys.exit(f"refused: {emoji} sets off one of Vic's reaction features (timeouts, translation or deleting)")
 channel = CHANNELS[next((f for f in flags if f in CHANNELS), "cabinet")]
 method = "DELETE" if "remove" in flags else "PUT"
 req = urllib.request.Request(
