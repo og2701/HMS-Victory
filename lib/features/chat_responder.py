@@ -6626,6 +6626,10 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
+        # #cabinet is answered by hand through the cabinet-watch skill, so Vic's own replies stay out of it.
+        if getattr(message.channel, "id", None) == CHANNELS.CABINET:
+            logger.info("Direct mention from %s (%s) ignored in #cabinet.", message.author, message.author.id)
+            return False
         # The persona bot (the full Vic, same account) answers tags itself while it's on here.
         from lib.features.persona_control import persona_live
         if persona_live(getattr(getattr(message, "guild", None), "id", None)):
@@ -6874,7 +6878,7 @@ class ChatbotDashboardView(discord.ui.LayoutView):
         card.add_item(
             discord.ui.TextDisplay(
                 "## 🤖 HMS Victory · Direct Replies\n"
-                "Vic answers anyone on the list below when they @ it, anywhere on the server."
+                "Vic answers anyone on the list below when they @ it, anywhere on the server except #cabinet."
             )
         )
         card.add_item(discord.ui.Separator(visible=True))

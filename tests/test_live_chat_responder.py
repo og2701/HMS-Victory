@@ -4431,6 +4431,24 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(res)
         mock_handle_one_off.assert_called_once_with(client, message)
 
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention")
+    async def test_handle_chat_message_direct_mention_ignored_in_cabinet(self, mock_handle_one_off):
+        from config import CHANNELS
+        client = MagicMock()
+        client.user.id = 999999999
+
+        message = MagicMock()
+        message.author.bot = False
+        message.author.id = USERS.OGGERS
+        message.mentions = [client.user]
+        message.content = f"<@{client.user.id}> vic, are you awake?"
+        message.channel.id = CHANNELS.CABINET
+
+        live_chat_manager.owner_mentions_paused = False
+        res = await handle_chat_message(client, message)
+        self.assertFalse(res)
+        mock_handle_one_off.assert_not_called()
+
     async def test_chatbot_direct_pause_button_ui_and_callback(self):
         # 1. When active, button offers to Pause
         live_chat_manager.owner_mentions_paused = False
