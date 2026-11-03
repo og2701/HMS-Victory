@@ -1523,7 +1523,7 @@ async def on_message(client, message):
             try:
                 from lib.economy.bank_commands_ui import (
                     UKPAddAmountLaunchView,
-                    UKPAddUserSelectView,
+                    UKPAddPickerView,
                 )
 
                 mentioned = [m for m in message.mentions if not m.bot]
@@ -1549,8 +1549,8 @@ async def on_message(client, message):
                         )
                 else:
                     await message.reply(
-                        "Please select the members you want to give UKPence to:",
-                        view=UKPAddUserSelectView(message.author.id)
+                        view=UKPAddPickerView(message.author.id),
+                        allowed_mentions=discord.AllowedMentions.none(),
                     )
             except Exception as e:
                 logger.error(f"Error launching ukpadd flow: {e}")
