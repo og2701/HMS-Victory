@@ -6699,10 +6699,13 @@ class ChatbotRefreshButton(discord.ui.Button):
 
 
 class ChatbotTargetButton(discord.ui.Button):
+    """Opens the target modal when nobody is targeted; while a target is set it turns troll mode off in one press."""
+
     def __init__(self):
+        active = bool(live_chat_manager.target_user_id)
         super().__init__(
-            label="🎯 Target",
-            style=discord.ButtonStyle.secondary,
+            label="🛑 Stop Troll Mode" if active else "🎯 Target",
+            style=discord.ButtonStyle.danger if active else discord.ButtonStyle.secondary,
             custom_id="vic_live_set_target",
         )
 
@@ -6710,7 +6713,14 @@ class ChatbotTargetButton(discord.ui.Button):
         if interaction.user.id != USERS.OGGERS:
             await interaction.response.send_message("⛔ Only Oggers can control HMS Victory.", ephemeral=True)
             return
-        await interaction.response.send_modal(ChatbotTargetModal())
+        # Check the live state, not the label: the persistent view registered at startup may be stale.
+        if not live_chat_manager.target_user_id:
+            await interaction.response.send_modal(ChatbotTargetModal())
+            return
+        live_chat_manager.set_target_user(None)
+        if interaction.message:
+            live_chat_manager.set_dashboard(interaction.client, interaction.message)
+        await interaction.response.edit_message(content=None, embed=None, view=ChatbotDashboardView())
 
 
 class ChatbotDirectPauseButton(discord.ui.Button):
