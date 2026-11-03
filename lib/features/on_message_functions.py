@@ -118,6 +118,27 @@ def _log_task_exception(task):
         log.exception("Ticket summary task failed", exc_info=exc)
 
 
+# Ticket Tool only adds its own support roles to a new ticket; Vic adds these on top with the same View + Send.
+EXTRA_TICKET_ROLE_IDS = (ROLES.DEPUTY_MINISTER_OF_COMMUNITY,)
+
+
+async def add_extra_ticket_roles(channel):
+    """Give the extra staff roles access when Ticket Tool opens a ticket-#### channel. Custom tickets are left alone."""
+    if not isinstance(channel, discord.TextChannel) or channel.category_id != CATEGORIES.TICKETS:
+        return
+    if not channel.name.startswith("ticket-"):
+        return
+    for role_id in EXTRA_TICKET_ROLE_IDS:
+        role = channel.guild.get_role(role_id)
+        if role is None:
+            continue
+        try:
+            # A per-role overwrite, so Ticket Tool's own overwrites on the channel are untouched.
+            await channel.set_permissions(role, view_channel=True, send_messages=True, reason="Staff access to new ticket")
+        except discord.HTTPException:
+            log.exception("Couldn't add %s to %s", role.name, channel.name)
+
+
 def handle_ticket_closed_message(bot, message):
     if not message.embeds:
         return

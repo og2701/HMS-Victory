@@ -826,6 +826,9 @@ class AClient(discord.Client):
     async def on_stage_instance_delete(self, stage_instance):
         await on_stage_instance_delete(stage_instance)
 
+    async def on_guild_channel_create(self, channel):
+        await add_extra_ticket_roles(channel)
+
     async def clear_image_cache(self):
         self.image_cache.clear()
         logger.info("Image cache cleared.")
