@@ -825,6 +825,26 @@ USER_DOSSIER_MODEL = "gpt-4o-mini"  # ~20k input tokens per person per day; mini
 _USER_DOSSIER_CACHE: Dict[str, Dict[str, Any]] = {}
 _dossier_cache_loaded = False
 
+# Per-person corrections, applied on every rebuild. Messages and dossier lines mentioning a "drop" word never reach
+# the dossier, and "look" goes in as a fixed fact the caricaturist must follow.
+DOSSIER_OVERRIDES: Dict[int, Dict[str, Any]] = {
+    # Rin (Rindeer) kept coming out as a man with a giant forehead. Oggers asked for this in Nov 2026.
+    1185370569382838447: {
+        "drop": ("forehead", "ninehead", "fivehead", "sixhead"),
+        "look": "She is a woman: draw her as one. Her forehead is off limits: never enlarge it, mention it or joke about it.",
+    },
+}
+
+
+DOSSIER_FIXED_FACTS = "FIXED FACTS (override anything else here or in the chat):"
+
+
+def dossier_override_drops(user_id: Optional[int], text: Optional[str]) -> bool:
+    """True when `text` touches something an override keeps out of this person's dossier."""
+    words = DOSSIER_OVERRIDES.get(int(user_id or 0), {}).get("drop", ())
+    low = (text or "").lower()
+    return any(w in low for w in words)
+
 USER_DOSSIER_INSTRUCTIONS = """You are compiling a comedy dossier on one Discord user for a caricaturist who will draw them for a roast.
 You get a large sample of their own messages from the last 30 days, plus messages where other people mention them.
 
@@ -943,6 +963,8 @@ def build_user_dossier(
     if (
         cached and not force and cached.get("v") == USER_DOSSIER_VERSION
         and time.time() - float(cached.get("ts", 0)) < USER_DOSSIER_TTL_SECONDS and cached.get("text")
+        # A dossier cached before an override was added still carries the dropped material, so rebuild it.
+        and not dossier_override_drops(user_id, cached["text"].split(DOSSIER_FIXED_FACTS)[0])
     ):
         return cached["text"]
 
@@ -955,6 +977,8 @@ def build_user_dossier(
         return None  # not enough to say anything; the caller falls back to the plain sample
     names = [n for n in ([name] + list(aliases or [])) if n]
     about = fetch_mentions_of_user(user_id, names)
+    own = [m for m in own if not dossier_override_drops(user_id, m["content"])]
+    about = [m for m in about if not dossier_override_drops(user_id, m["content"])]
 
     own_lines = "\n".join(f"- {m['content'][:200]}" for m in own)
     about_lines = "\n".join(f"- <@{m['author_id']}>: {m['content'][:200]}" for m in about) or "- [none found]"
@@ -974,10 +998,11 @@ def build_user_dossier(
 
     def _list(k: str) -> List[str]:
         v = parsed.get(k)
-        return [str(x) for x in v if x] if isinstance(v, list) else ([str(v)] if v else [])
+        items = [str(x) for x in v if x] if isinstance(v, list) else ([str(v)] if v else [])
+        return [i for i in items if not dossier_override_drops(user_id, i)]
 
     parts = [f"DOSSIER ON {name} (<@{user_id}>), distilled from {len(own)} of their messages and {len(about)} mentions over the last 30 days:"]
-    if parsed.get("summary"):
+    if parsed.get("summary") and not dossier_override_drops(user_id, parsed["summary"]):
         parts.append(f"Summary: {parsed['summary']}")
     for label, k in (("Recurring themes", "recurring_themes"), ("Running jokes", "running_jokes"),
                      ("Catchphrases", "catchphrases"), ("What others say", "what_others_say"),
@@ -985,8 +1010,14 @@ def build_user_dossier(
         items = _list(k)
         if items:
             parts.append(f"{label}:\n" + "\n".join(f"  - {i}" for i in items[:10]))
-    if parsed.get("look_clues") and str(parsed["look_clues"]).strip().lower() != "none":
+    if (
+        parsed.get("look_clues") and str(parsed["look_clues"]).strip().lower() != "none"
+        and not dossier_override_drops(user_id, str(parsed["look_clues"]))
+    ):
         parts.append(f"Look clues: {parsed['look_clues']}")
+    override_look = DOSSIER_OVERRIDES.get(int(user_id), {}).get("look")
+    if override_look:
+        parts.append(f"{DOSSIER_FIXED_FACTS} {override_look}")
     text = "\n".join(parts)
 
     _USER_DOSSIER_CACHE[key] = {"ts": time.time(), "name": name, "text": text, "v": USER_DOSSIER_VERSION}
@@ -4302,6 +4333,7 @@ async def ensure_target_history_in_context(
         sections.append(dossier)
         try:
             recent = await fetch_user_recent_chat_async(client, target_id, getattr(message, "channel", None), limit=15)
+            recent = [r for r in recent or [] if not dossier_override_drops(target_id, r.get("content"))]
             if recent:
                 sections.append(format_user_chat_for_context(name, target_id, recent, header="THEIR MOST RECENT MESSAGES (for freshness) FOR", max_lines=15))
         except Exception as e:
