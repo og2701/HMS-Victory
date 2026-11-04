@@ -72,9 +72,13 @@ class CompanyTests(unittest.TestCase):
         self.assertEqual(scheduled_tasks._voice_company({"kind": "join"}), "")
 
     def test_cap_and_escaping(self):
-        names = [f"n{i}" for i in range(11)]
+        names = [f"n{i}" for i in range(40)]
         out = scheduled_tasks._voice_company({"kind": "join", "others": names})
-        self.assertEqual(out, " · with " + ", ".join(names[:8]) + " +3 more")
+        self.assertEqual(out, " · with " + ", ".join(names))
+        huge = [f"member{i:04d}" for i in range(500)]
+        out = scheduled_tasks._voice_company({"kind": "join", "others": huge})
+        self.assertLessEqual(len(out), scheduled_tasks.VOICE_LINE_ROOM + 30)
+        self.assertTrue(out.endswith(" more"))
         out = scheduled_tasks._voice_company({"kind": "join", "others": ["*bold*_x_"]})
         self.assertEqual(out, " · with \\*bold\\*\\_x\\_")
 

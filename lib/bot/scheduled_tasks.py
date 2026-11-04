@@ -983,14 +983,13 @@ def _voice_spell(seconds):
     return f" after {hours}h {minutes}m" if minutes else f" after {hours}h"
 
 
-VOICE_COMPANY_SHOWN = 8  # names listed per line before it falls back to "+N more"
+VOICE_LINE_ROOM = 3500  # chars of names a single digest line can hold inside one embed
 
 
 def _voice_company(event):
     """Who else was in the call at the time, as a tail for the digest line.
 
-    Plain display names, never mentions, capped so one packed call can't make a line run
-    long. Events recorded before this field existed carry no list and get no tail.
+    Plain display names, never mentions, everyone in the call. Events recorded before this field existed carry no list and get no tail.
     """
     import discord
     others = event.get("others")
@@ -998,9 +997,12 @@ def _voice_company(event):
         return ""
     if not others:
         return " · now empty" if event["kind"] == "leave" else " · alone"
-    shown = ", ".join(discord.utils.escape_markdown(n) for n in others[:VOICE_COMPANY_SHOWN])
-    if len(others) > VOICE_COMPANY_SHOWN:
-        shown += f" +{len(others) - VOICE_COMPANY_SHOWN} more"
+    names = [discord.utils.escape_markdown(n) for n in others]
+    shown = ", ".join(names)
+    # No cap on names: only a call so packed that one line wouldn't fit in an embed gets cut.
+    while len(shown) > VOICE_LINE_ROOM and len(names) > 1:
+        names.pop()
+        shown = ", ".join(names) + f" +{len(others) - len(names)} more"
     return f" · still in: {shown}" if event["kind"] == "leave" else f" · with {shown}"
 
 
