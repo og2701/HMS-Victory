@@ -5,7 +5,7 @@ import json, os, sys, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
 before, want = sys.argv[1], min(int(sys.argv[2]) if len(sys.argv) > 2 else 100, 500)
 CH = CHANNELS[sys.argv[3] if len(sys.argv) > 3 else "cabinet"]
 

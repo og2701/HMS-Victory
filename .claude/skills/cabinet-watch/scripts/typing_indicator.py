@@ -8,7 +8,7 @@ import glob, os, signal, subprocess, sys
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
 DIR = "/tmp/vic_typing"
 LOOP = r'''
 import os, sys, time, urllib.request

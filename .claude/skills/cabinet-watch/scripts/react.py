@@ -8,7 +8,7 @@ import os, signal, sys, urllib.error, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
 # Reactions that set off Vic's own reaction features: timeouts (Shut, bedtime, oggersglare), translations (flags)
 # and deleting Vic's posts (the cross). Vic must never use them.
 BLOCKED_NAMES = {"shut", "bedtime", "oggersglare"}

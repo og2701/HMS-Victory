@@ -16,7 +16,7 @@ shows it under the card, outside the bordered box so a framed chart isn't boxed 
 then the file is just 'accent:' plus image lines."""
 import base64, json, os, sys, urllib.parse
 
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
 ACK_QUOTED = urllib.parse.quote("hmmnote:1179638366275383297")  # watch.py's "looking into it"
 src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
 target = rest.pop(0) if mode in ("reply", "edit") else None
