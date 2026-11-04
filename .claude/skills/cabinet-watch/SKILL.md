@@ -173,6 +173,8 @@ means start it again.
   around it: ask Oggers in this chat, then apply.
 - Code changes follow the repo's normal flow: commit, cherry-pick onto `origin/main` in a temp worktree, push, then
   `./update_bot.sh` on the VM.
+- Commits go out as Oggers only: author `og2701 <67282414+og2701@users.noreply.github.com>`, no `Co-Authored-By`,
+  `Claude-Session` or other Claude attribution lines. When cherry-picking a worker's commit, strip any such lines.
 
 ## Tickets in #bot-ideas
 

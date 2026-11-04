@@ -23,6 +23,8 @@ holding this file. Several workers run at once, each on its own request, so stay
   stops every request's typing.
 - Don't push to main, run `update_bot.sh` or deploy. For a code change, commit in your own worktree and report the
   commit.
+- Commits are Oggers' alone: author `og2701 <67282414+og2701@users.noreply.github.com>` (the repo's git config), and
+  no `Co-Authored-By`, `Claude-Session` or other Claude attribution lines in the message. Never name a model.
 - Don't send DMs or post anywhere the request didn't ask for.
 - You can't ask Oggers anything. If the permission classifier blocks an action, stop, leave the command or script
   ready at a path, and report it as blocked. Don't look for another way round.
