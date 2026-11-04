@@ -1,12 +1,12 @@
 ---
-name: cabinet-watch
-description: Watch #cabinet and #bot-workshop and answer, as Vic, anyone who pings Vic there. Use for /cabinet-watch, "start the watcher" or "listen in cabinet"; keep it going until told to stop.
+name: watcher
+description: Watch #bot-workshop and answer, as Vic, anyone who pings Vic there. Use for /watcher, "start the watcher" or "listen in bot-workshop"; keep it going until told to stop.
 ---
 
-# Cabinet watcher
+# Watcher
 
-Claude sits behind Vic in #cabinet (1155637791917613147) and #bot-workshop (1141037835445616640). A poller on the
-VM wakes this session when someone in either channel pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
+Claude sits behind Vic in #bot-workshop (1141037835445616640). A poller on the
+VM wakes this session when someone there pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
 leaves the VM: `scripts/run.sh` pipes each script over ssh into `venv/bin/python -` in `~/HMS-Victory`, which loads
 `.env`. Below, `R` is `<base>/scripts/run.sh` and `<scripts>` is `<base>/scripts`, where `<base>` is this skill's
 base directory as shown when it loads. Write the full path in every command, since shell variables don't carry
@@ -32,20 +32,21 @@ something bites you, add one short bullet with
 `python3 <scripts>/notes.py put <local_file> <name> | R -`. Workers don't write notes; they report what's worth
 noting and you add it. Not a request log: #bot-ideas and the task board cover that.
 
-Then start the watcher in the background (`run_in_background: true`) and end the turn; the task notification wakes
-you:
+Then start the watcher in the background (`run_in_background: true`, and in a cloud session `timeout: 7200000`,
+since background commands otherwise die after 30 minutes) and end the turn; the task notification wakes you:
 
 ```bash
 R watch.py latest
 ```
 
-The output has `channel` (`cabinet` or `workshop`, where the first hit was; each hit has its own `channel` too),
+The output has `channel` (`workshop`, or `dm` when Oggers' DM is watched; each hit has its own `channel` too),
 `hits` (what woke it), `context_before` (the 30 messages before the first hit), `after_first_hit` (anything
 posted in the few seconds after) and `last_id`. Answer in the channel the hit came from: the typing, history and
-card scripts below take `cabinet` (the default) or `workshop`.
+card scripts below take `workshop` (the default), `dm` or `cabinet`. #cabinet is no longer watched (Oggers, 4 Nov
+2026), but a card can still be posted there when someone asks; `R watch.py <id> cabinet` watches it again if he wants.
 
-**Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`,
-`pending:workshop` or `pending:cabinet,workshop` while a card waits on a go there). Always restart from `last_id`,
+**Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
+while a card waits on a go there). Always restart from `last_id`,
 never from the id of your own post: a request sent while you were working sits between the two and would be
 skipped. With the watcher already running again, a new request gets Vic's ACK at once and wakes you as soon as
 you're free. Starting a watcher stops any that's still running, so switching mode is just starting it again; the
@@ -65,7 +66,7 @@ means start it again.
 4. **The brief.** Workers know nothing but what you give them:
 
    ```
-   You are a cabinet-watch worker answering one request as Vic. Read <base>/worker.md first and follow it.
+   You are a watcher worker answering one request as Vic. Read <base>/worker.md first and follow it.
    Request <message_id> in #<channel> from <author> (<user_id>): "<text>"
    Context: <the context_before lines that matter, or a summary of the thread>
    Already known: <facts you've checked, decisions made, earlier answers this touches>
@@ -73,12 +74,10 @@ means start it again.
    ```
 
    For a code change, also pass `isolation: "worktree"` so it builds in its own checkout.
-5. **Keep a ledger.** For #bot-workshop it's the task board (see "Task board"): add a row for each request
+5. **Keep a ledger.** It's the task board (see "Task board"): add a row for each request
    you take on, and keep its status current. `board.py show` prints it, so a fresh session can pick up where the
-   last left off. For #cabinet keep it in the conversation: request id, worker id, what it's on, and whether it's
-   waiting on a go. Note the worker id against each board row in the conversation too. A worker that posts a
-   confirmation card ends its turn saying so. Put the watcher in pending mode for that channel (and, in
-   #bot-workshop, set the row to `waiting`), and when the answer comes, by text or a board press, send it to that
+   last left off. Note the worker id against each board row in the conversation too. A worker that posts a
+   confirmation card ends its turn saying so. Put the watcher in pending mode (and set the row to `waiting`), and when the answer comes, by text or a board press, send it to that
    worker with SendMessage, quoted, so it carries on with its own context.
 6. **Check what workers report.** Each ends with what it posted (message ids), what's waiting and what's blocked.
    Spot-check before telling Oggers something is done.
@@ -92,11 +91,10 @@ means start it again.
 8. **Mind the VM.** Workers share one small box, and big chronicle queries side by side slow everything down. Run
    at most two data-heavy workers at once and queue the rest.
 
-## Task board (#bot-workshop only)
+## Task board
 
 #bot-workshop has one live Components V2 board listing every request Vic is on there, grouped 🟠 waiting on a go
-(with Approve, Reject and Reply buttons), ⏳ received, 🔴 blocked, 🔵 working and 🟢 done (the last 5). #cabinet
-has no board and works as before. Only the orchestrator runs board.py; workers report and you update the row.
+(with Approve, Reject and Reply buttons), ⏳ received, 🔴 blocked, 🔵 working and 🟢 done (the last 5). Only the orchestrator runs board.py; workers report and you update the row.
 
 ```bash
 python3 <scripts>/board.py add <request_id> <asker_id> "<what, a few words>" [status] [--rule ..] | R -
@@ -135,8 +133,8 @@ python3 <scripts>/board.py show | R -
    takes both off without touching other requests; plain chatter in pending mode gets neither. If you decide not
    to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`. Typing gives up by itself after
    10 minutes; `R typing_indicator.py start <channel> <request_id>` turns it back on for a long job.
-2. **Nobody else is answering.** Vic's own chat responder stays out of #cabinet and #bot-workshop, so every
-   message aimed at Vic there needs a card or a reaction from you.
+2. **Nobody else is answering.** Vic's own chat responder stays out of #bot-workshop (and #cabinet, which
+   now gets no answers to pings at all, by Oggers' choice), so every message aimed at Vic in #bot-workshop needs a card or a reaction from you.
 3. **Get the whole thread.** A fresh session knows nothing of earlier talk beyond those 30 messages. If the ask
    points further back ("what we said earlier", "the plan above", a reply to an old message), read more with
    `R history.py <oldest_id_you_have> 100 <channel>` (up to 500) before answering.
@@ -221,15 +219,15 @@ python3 <scripts>/board.py show | R -
   planned, but when someone else asked, the plan card pings Oggers for the final go (`ping: 404634271861571584` and
   `<@404634271861571584>` in the text). A go from anyone else on a code change gets a short reply that it's waiting
   on Oggers, and nothing is built or pushed until Oggers says go. Other server changes that are easy to put back (adding a role,
-  creating or renaming a channel) still take a go from whoever's running the request in #cabinet.
+  creating or renaming a channel) still take a go from whoever's running the request.
 - In #bot-workshop, a card waiting on a go also puts its board row on `waiting` with the right `--rule`, so the
   buttons show for the people who can approve it.
-- While a card waits for a go, run the watcher as `R watch.py <id> pending` (#cabinet), `pending:workshop` or
-  `pending:cabinet,workshop` so any human message in that channel wakes you: people answer "sounds good, build
+- While a card waits for a go, run the watcher as `R watch.py <id> pending` so any human message in
+  #bot-workshop wakes you: people answer "sounds good, build
   it" without pinging Vic. Go back to plain `R watch.py <id>` once nothing is waiting. Chatter that isn't a go or
   a change just means start it again in pending mode.
 - Save the current state before a live server change so it can be put back, and say so in the done card.
-- The auto-mode classifier may block live permission edits or deploys even after a go in #cabinet. Don't work
+- The auto-mode classifier may block live permission edits or deploys even after a go in Discord. Don't work
   around it: ask Oggers in this chat, then apply.
 - Code changes follow the repo's normal flow: commit, cherry-pick onto `origin/main` in a temp worktree, push, then
   `./update_bot.sh` on the VM.

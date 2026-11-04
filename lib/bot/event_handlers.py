@@ -1156,7 +1156,7 @@ async def _run_ready_initialisation(client, tree, scheduler):
         await asyncio.sleep(0.1)
     from lib.bot.scheduled_tasks import schedule_client_jobs
     schedule_client_jobs(client, scheduler)
-    # The cabinet-watch tooling's door into this process (preds etc. without a restart).
+    # The watcher skill's door into this process (preds etc. without a restart).
     # Started once per process; a later ready event finds the task running and leaves it.
     try:
         from lib.bot.bot_actions import start_bot_action_watcher

@@ -1,4 +1,4 @@
-"""The bot action queue: cabinet-watch drops a request file, the live bot runs one of a
+"""The bot action queue: the watcher skill drops a request file, the live bot runs one of a
 fixed list of actions and writes a result. Covers the safety rules (whitelist, typed args,
 stale and duplicate requests, rate limit), the pred actions doing what the slash commands
 do (DB row plus live scheduler job), the slash commands still working after the refactor,
@@ -394,7 +394,7 @@ def test_slash_pred_create_still_posts():
 
 # ------------------------------------------------------------------ the local helper
 
-HELPER = os.path.join(ROOT, ".claude", "skills", "cabinet-watch", "scripts", "bot_action.py")
+HELPER = os.path.join(ROOT, ".claude", "skills", "watcher", "scripts", "bot_action.py")
 
 
 def test_helper_refuses_unknown_actions_and_bad_json():

@@ -1,12 +1,12 @@
 """Vic's task board in #bot-workshop: one Components V2 message that lists every request
-cabinet-watch is on, with Approve / Reject / Reply buttons on the rows waiting for a go.
+the watcher skill is on, with Approve / Reject / Reply buttons on the rows waiting for a go.
 board.py reposts it at the bottom of the channel (and deletes the old one) whenever it
 changes a row, so it stays in view; a button press edits it in place, since the presser is
 looking right at it, and moves the row to ⏳ received until the session acts.
 
 Two processes touch it, and both go through this module:
 
-- the cabinet-watch session, through .claude/skills/cabinet-watch/scripts/board.py, whose VM
+- the watcher session, through .claude/skills/watcher/scripts/board.py, whose VM
   script imports this file to add rows, change their status and redraw the message over REST;
 - the live bot, which gets the button presses (interactions only ever reach the gateway
   connection) and handles them with the DynamicItems below.
@@ -16,7 +16,7 @@ exclusive flock on a sidecar lock file, so a press and a board.py update can't t
 other. A press is written to data/cabinet_board/events/<interaction id>.json, which watch.py
 picks up on its next poll and hands to the session as a `board` hit.
 
-Who may press is decided by the rule in the button's custom_id, matching cabinet-watch's go
+Who may press is decided by the rule in the button's custom_id, matching the watcher skill's go
 rules (SKILL.md, "Changes"):
 
     o  Oggers only: code, deleting data, money moves

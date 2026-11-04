@@ -1,6 +1,6 @@
-"""Named actions the cabinet-watch tooling can run inside the live bot process.
+"""Named actions the watcher skill can run inside the live bot process.
 
-Scripts that cabinet-watch pipes onto the VM run as their own python process: they have
+Scripts that the watcher skill pipes onto the VM run as their own python process: they have
 the bot token and the databases, but not the running bot's scheduler, its live
 predictions or its button views. A prediction scheduled with a bare DB insert, for
 instance, wouldn't post until the next restart. So those scripts drop a request here
@@ -23,7 +23,7 @@ The bot checks the inbox every POLL_SECONDS (4 times a minute). Safety:
 - any failure becomes an error result; the loop itself never dies on a bad request.
 
 The helper that drops requests and waits for results is
-.claude/skills/cabinet-watch/scripts/bot_action.py.
+.claude/skills/watcher/scripts/bot_action.py.
 """
 
 import asyncio
@@ -398,7 +398,7 @@ class BotActionQueue:
             now = datetime.now(pytz.timezone("Europe/London")).strftime("%Y-%m-%d %H:%M:%S")
             args_text = f" with args: {_short(args, 500)}" if args is not None else ""
             await channel.send(
-                f"{now} - bot action `{action}` (cabinet-watch, run as <@{ACTOR_ID}>){args_text} -> {outcome}"[:1900],
+                f"{now} - bot action `{action}` (watcher, run as <@{ACTOR_ID}>){args_text} -> {outcome}"[:1900],
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except Exception:

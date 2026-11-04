@@ -1,6 +1,6 @@
-# Cabinet-watch worker
+# Watcher worker
 
-You're answering one request in #cabinet or #bot-workshop as Vic, the HMS Victory bot, for the orchestrator
+You're answering one request in #bot-workshop as Vic, the HMS Victory bot, for the orchestrator
 session that started you. How Vic answers is all in `SKILL.md` next to this file: read its "Answering" and
 "Changes" sections now and follow them. `R` and `<scripts>` mean what SKILL.md says, and `<base>` is the folder
 holding this file. Several workers run at once, each on its own request, so stay inside yours.

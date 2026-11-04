@@ -97,7 +97,7 @@ class AClient(discord.Client):
             self.add_dynamic_items(PassButton)
         except Exception as e:
             logger.warning(f"Could not register persona pass button: {e}")
-        # Approve / Reject / Reply on cabinet-watch's task board in #bot-workshop. The
+        # Approve / Reject / Reply on the watcher skill's task board in #bot-workshop. The
         # board is posted over REST by the session, so only these handlers see the presses.
         try:
             from lib.bot.cabinet_board import BUTTONS as BOARD_BUTTONS

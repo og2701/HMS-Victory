@@ -1,4 +1,4 @@
-"""The cabinet-watch notes on the VM: what a fresh session should know that isn't in the skill, the code or Discord.
+"""The watcher notes on the VM: what a fresh session should know that isn't in the skill, the code or Discord.
 
 Lives at ~/cabinet_watch/notes.md on the VM, outside the repo checkout, so deploys and git never touch it. Prints a
 script that runs on the VM, so pipe it there:
@@ -31,7 +31,7 @@ OP, P = {op!r}, {payload!r}
 D = os.path.expanduser("~/cabinet_watch")
 F = os.path.join(D, "notes.md")
 os.makedirs(D, exist_ok=True)
-HEAD = "# cabinet-watch notes\\n\\nWhat a fresh session should know that isn't in SKILL.md, the code or Discord. Read at start, add with notes.py.\\n"
+HEAD = "# watcher notes\\n\\nWhat a fresh session should know that isn't in SKILL.md, the code or Discord. Read at start, add with notes.py.\\n"
 with open(os.path.join(D, ".lock"), "w") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     if not os.path.exists(F):

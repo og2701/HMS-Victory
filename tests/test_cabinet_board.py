@@ -1,4 +1,4 @@
-"""The task board in #bot-workshop: who may press what (cabinet-watch's go rules ride in the
+"""The task board in #bot-workshop: who may press what (the watcher skill's go rules ride in the
 custom_id), a press moving the row to received and leaving one event for watch.py, the board
 staying inside Components V2's limits however full it gets, done rows rolling off, and the
 board.py helper building a VM script for each op."""
@@ -20,7 +20,7 @@ from lib.bot import cabinet_board as cb  # noqa: E402
 
 ASKER = 111111111111111111
 RANDO = 222222222222222222
-BOARD_PY = os.path.join(ROOT, ".claude", "skills", "cabinet-watch", "scripts", "board.py")
+BOARD_PY = os.path.join(ROOT, ".claude", "skills", "watcher", "scripts", "board.py")
 
 
 def _run(coro):

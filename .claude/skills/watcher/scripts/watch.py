@@ -1,9 +1,10 @@
 """Runs on the VM (piped over ssh). argv: the message id to start after, or "latest" for the newest one, then
 optionally "pending" while a confirmation card waits for a go: any human message in that channel wakes it, since
-"sounds good, build it" rarely pings Vic. Plain "pending" means #cabinet; "pending:workshop" or
-"pending:cabinet,workshop" name the channels.
+"sounds good, build it" rarely pings Vic. Plain "pending" means #bot-workshop; "pending:dm" or
+"pending:workshop,dm" name the channels. Add "dm" to watch Oggers' DM too, or "cabinet" to watch #cabinet again
+(it stopped being watched on 4 Nov 2026, at Oggers' ask).
 
-Polls #cabinet and #bot-workshop every few seconds and exits when anyone (not a bot) pings Vic, replies to Vic or
+Polls #bot-workshop every few seconds and exits when anyone (not a bot) pings Vic, replies to Vic or
 says "vic". Each such message gets Vic's ACK reaction and its own typing loop straight away (a card reply or a
 react.py reaction to that message takes both off). It then waits a few seconds so a follow-up line from the same
 person lands, and prints the channel, the hits, the 30 messages before them, everything posted after them and the
@@ -30,13 +31,11 @@ BOARD_EVENTS = os.path.join("data", "cabinet_board", "events")
 BOARD_SEEN = os.path.join(BOARD_EVENTS, "seen")
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
-if "dm" not in sys.argv[2:]:  # Oggers' DM is only watched when asked for: watch.py <id> [pending...] dm
-    WATCHED = {k: v for k, v in CHANNELS.items() if k != "dm"}
-else:
-    WATCHED = CHANNELS
-    if mode == "dm":
-        mode = ""
-pending = ({CHANNELS[n] for n in (mode.split(":", 1)[1].split(",") if ":" in mode else ["cabinet"])}
+# #bot-workshop always; Oggers' DM and #cabinet only when asked for: watch.py <id> [pending...] [dm] [cabinet]
+WATCHED = {k: v for k, v in CHANNELS.items() if k == "workshop" or k in sys.argv[2:]}
+if mode in ("dm", "cabinet"):
+    mode = ""
+pending = ({CHANNELS[n] for n in (mode.split(":", 1)[1].split(",") if ":" in mode else ["workshop"])}
            if mode.startswith("pending") else set())
 deadline = time.time() + 6 * 3600
 

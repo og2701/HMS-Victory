@@ -6658,7 +6658,7 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
         if live_chat_manager.owner_mentions_paused:
             logger.info("Direct mention from %s (%s) ignored because direct mentions are paused.", message.author, message.author.id)
             return False
-        # #cabinet and #bot-workshop are answered by hand through the cabinet-watch skill, so Vic's own replies
+        # #cabinet and #bot-workshop are answered by hand through the watcher skill (#cabinet is left silent), so Vic's own replies
         # stay out of them. Threads under them (like the chatbot controller) still get answers.
         if getattr(message.channel, "id", None) in (CHANNELS.CABINET, CHANNELS.BOT_WORKSHOP):
             logger.info("Direct mention from %s (%s) ignored in #%s.", message.author, message.author.id,

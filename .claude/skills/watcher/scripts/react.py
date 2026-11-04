@@ -1,6 +1,6 @@
-"""Runs on the VM (piped over ssh). argv: message_id emoji [cabinet|workshop] [keep] [remove].
+"""Runs on the VM (piped over ssh). argv: message_id emoji [workshop|cabinet|dm] [keep] [remove].
 
-Adds Vic's reaction to a message (#cabinet by default). The emoji is a normal one like ✅, or a server emoji as
+Adds Vic's reaction to a message (#bot-workshop by default). The emoji is a normal one like ✅, or a server emoji as
 name:id; emojis.py lists the server's. Timeout, flag and cross emojis are refused. A reaction usually is the whole
 answer, so it stops the typing indicator and takes off the watcher's ACK unless "keep" is given (for a reaction
 while a longer reply is being written). "remove" takes Vic's reaction off instead."""
@@ -24,7 +24,7 @@ def blocked(emoji):
 message_id, emoji, flags = sys.argv[1], sys.argv[2], sys.argv[3:]
 if blocked(emoji) and "remove" not in flags:
     sys.exit(f"refused: {emoji} sets off one of Vic's reaction features (timeouts, translation or deleting)")
-channel = CHANNELS[next((f for f in flags if f in CHANNELS), "cabinet")]
+channel = CHANNELS[next((f for f in flags if f in CHANNELS), "workshop")]
 method = "DELETE" if "remove" in flags else "PUT"
 
 

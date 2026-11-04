@@ -1,4 +1,4 @@
-"""Runs on the VM (piped over ssh). argv: start <cabinet|workshop> [request_id] | stop [request_id].
+"""Runs on the VM (piped over ssh). argv: start <workshop|cabinet|dm> [request_id] | stop [request_id].
 
 start keeps Vic 'typing' in that channel for one request (Discord's indicator lasts ~10s per call, so it re-sends
 every 8s) in a detached process for up to 10 minutes. Each request gets its own loop, keyed by the request's message
@@ -37,7 +37,7 @@ def stop(request_id=None):
             pass
 
 
-def start(channel="cabinet", request_id="manual"):
+def start(channel="workshop", request_id="manual"):
     stop(request_id)
     os.makedirs(DIR, exist_ok=True)
     p = subprocess.Popen([sys.executable, "-c", LOOP, CHANNELS[channel]], start_new_session=True,
