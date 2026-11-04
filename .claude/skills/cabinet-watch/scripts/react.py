@@ -45,9 +45,9 @@ if method == "PUT" and emoji != ACK and "keep" not in flags:
         urllib.request.urlopen(reaction("DELETE", ACK), timeout=20)
     except urllib.error.HTTPError:
         pass
-if "keep" not in flags:
+if "keep" not in flags:  # only this message's typing loop; parallel jobs keep theirs
     try:
-        os.kill(int(open("/tmp/vic_typing.pid").read()), signal.SIGTERM)
-        os.remove("/tmp/vic_typing.pid")
+        os.kill(int(open(f"/tmp/vic_typing/{message_id}.pid").read()), signal.SIGTERM)
+        os.remove(f"/tmp/vic_typing/{message_id}.pid")
     except (OSError, ValueError):
         pass

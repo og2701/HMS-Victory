@@ -12,6 +12,9 @@ leaves the VM: `scripts/run.sh` pipes each script over ssh into `venv/bin/python
 base directory as shown when it loads. Write the full path in every command, since shell variables don't carry
 between Bash calls.
 
+This session is the orchestrator: it keeps the watcher running, does quick answers itself and hands bigger
+requests to background worker subagents, so several requests run at once (see "Orchestrating").
+
 ## Start
 
 Run in the background (`run_in_background: true`) and end the turn; the task notification wakes you:
@@ -25,21 +28,59 @@ The output has `channel` (`cabinet` or `workshop`, where the first hit was; each
 posted in the few seconds after) and `last_id`. Answer in the channel the hit came from: the typing, history and
 card scripts below take `cabinet` (the default) or `workshop`.
 
-**Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
-or `pending:workshop` while a card waits on a go). Always restart from `last_id`, never from the id of your own
-post: a request sent while you were working sits between the two and would be skipped. With the watcher already
-running again, a request that lands while you're busy gets Vic's ACK at once and wakes you as soon as you're free;
-take them in order, quick ones first when a long one is mid-flight. `"timeout": true` after 6 hours just means
-start it again.
+**Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`,
+`pending:workshop` or `pending:cabinet,workshop` while a card waits on a go there). Always restart from `last_id`,
+never from the id of your own post: a request sent while you were working sits between the two and would be
+skipped. With the watcher already running again, a new request gets Vic's ACK at once and wakes you as soon as
+you're free. Starting a watcher stops any that's still running, so switching mode is just starting it again; the
+replaced one's task then finishes with no output, which you can ignore. `"timeout": true` after 6 hours just
+means start it again.
+
+## Orchestrating
+
+1. **On every wake** restart the watcher first, then sort the hits.
+2. **Do it here** when that's quicker than writing a brief: a thanks or a joke (react), a one-line answer you
+   already know, a go or a no on a card a worker posted (see 5), "stop the watcher", or a follow-up to something
+   you're handling yourself.
+3. **Hand it to a worker** when it needs digging: data pulls, analyses, charts, CVs, investigations, planning a
+   code or server change. One worker per request, started with the Agent tool (`subagent_type: "general-purpose"`,
+   `run_in_background: true`, a `description` naming the request); start several at once when several came in. A
+   follow-up to a request a worker is still on goes to that worker with SendMessage, not to a new one.
+4. **The brief.** Workers know nothing but what you give them:
+
+   ```
+   You are a cabinet-watch worker answering one request as Vic. Read <base>/worker.md first and follow it.
+   Request <message_id> in #<channel> from <author> (<user_id>): "<text>"
+   Context: <the context_before lines that matter, or a summary of the thread>
+   Already known: <facts you've checked, decisions made, earlier answers this touches>
+   Scratch folder: <scratchpad>/<message_id>/
+   ```
+
+   For a code change, also pass `isolation: "worktree"` so it builds in its own checkout.
+5. **Keep a ledger** in the conversation: request id, worker id, what it's on, and whether it's waiting on a go.
+   A worker that posts a confirmation card ends its turn saying so. Put the watcher in pending mode for that
+   channel, and when the answer comes, send it to that worker with SendMessage, quoted, so it carries on with its
+   own context.
+6. **Check what workers report.** Each ends with what it posted (message ids), what's waiting and what's blocked.
+   Spot-check before telling Oggers something is done.
+7. **Only the orchestrator:**
+   - starts, restarts and stops the watcher;
+   - asks Oggers in this chat: a worker that hits a classifier block stops and reports the prepared command, and
+     you ask, then run it;
+   - pushes to main and runs `update_bot.sh`, one change at a time: a code worker commits in its worktree and
+     reports the commit, then you cherry-pick it onto `origin/main`, push and deploy;
+   - sends DMs.
+8. **Mind the VM.** Workers share one small box, and big chronicle queries side by side slow everything down. Run
+   at most two data-heavy workers at once and queue the rest.
 
 ## Answering
 
 1. **Vic has already acked it and is typing when you wake** for a message aimed at Vic (hits have
    `addresses_vic`): the watcher puts its ACK reaction (`hmmnote:1179638366275383297`) on each request within
-   about 5 seconds. A card reply or a react.py reaction takes the ACK off and stops the typing; plain chatter in
-   pending mode gets neither. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297
-   <channel> remove`. `R typing_indicator.py start <channel>` turns typing back on for a long job; it gives up by
-   itself after 10 minutes.
+   about 5 seconds, and starts a typing loop for that request alone. A card reply or a react.py reaction to it
+   takes both off without touching other requests; plain chatter in pending mode gets neither. If you decide not
+   to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`. Typing gives up by itself after
+   10 minutes; `R typing_indicator.py start <channel> <request_id>` turns it back on for a long job.
 2. **Nobody else is answering.** Vic's own chat responder stays out of #cabinet and #bot-workshop, so every
    message aimed at Vic there needs a card or a reaction from you.
 3. **Get the whole thread.** A fresh session knows nothing of earlier talk beyond those 30 messages. If the ask
@@ -48,7 +89,8 @@ start it again.
 4. **Check, don't guess.** Read the live server (roles, channels, overwrites, members) or the databases on the VM
    before stating facts. Read-only GETs are fine; write a throwaway script to the scratchpad and run it with
    `R - < script.py`.
-5. **Reply as a Components V2 card** in the style of Vic's dashboard. Posting also stops the typing indicator:
+5. **Reply as a Components V2 card** in the style of Vic's dashboard. A reply also takes the ACK and the typing
+   off the request it answers:
 
    ```bash
    python3 <scripts>/card.py card.txt reply <message_id> <channel> | R -
@@ -73,8 +115,8 @@ start it again.
    `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text; only that person gets pinged.
 
 6. **React where a card would be too much, and pick the emoji like a regular would.**
-   `R react.py <message_id> <emoji> <channel>` adds Vic's reaction and stops the typing indicator (`keep` leaves
-   it typing, `remove` takes a reaction back off).
+   `R react.py <message_id> <emoji> <channel>` adds Vic's reaction and takes that message's ACK and typing off
+   (`keep` leaves both on, `remove` takes a reaction back off).
    - **Know the palette.** Run `R emojis.py` once per session: the server's own emojis ranked by how often members
      react with them, each with a message it landed on, then the most used normal emojis. Server emojis go in as
      `name:id`.
@@ -112,10 +154,10 @@ start it again.
   `<@404634271861571584>` in the text). A go from anyone else on a code change gets a short reply that it's waiting
   on Oggers, and nothing is built or pushed until Oggers says go. Roles, permissions and other server changes still
   take a go from whoever's running the request in #cabinet.
-- While a card waits for a go, run the watcher as `R watch.py <id> pending` (#cabinet) or
-  `R watch.py <id> pending:workshop` so any human message in that channel wakes you: people answer "sounds good,
-  build it" without pinging Vic. Go back to plain `R watch.py <id>` once it's settled. Chatter
-  that isn't a go or a change just means start it again in pending mode.
+- While a card waits for a go, run the watcher as `R watch.py <id> pending` (#cabinet), `pending:workshop` or
+  `pending:cabinet,workshop` so any human message in that channel wakes you: people answer "sounds good, build
+  it" without pinging Vic. Go back to plain `R watch.py <id>` once nothing is waiting. Chatter that isn't a go or
+  a change just means start it again in pending mode.
 - Save the current state before a live server change so it can be put back, and say so in the done card.
 - The auto-mode classifier may block live permission edits or deploys even after a go in #cabinet. Don't work
   around it: ask Oggers in this chat, then apply.
@@ -139,4 +181,6 @@ it isn't on Oggers' Mac and tunnels through AWS SSM instead of a direct ssh, whi
 ## Stop
 
 Stop the background task, then run `R stop.py`. Killing the local ssh leaves the remote python running, so this is
-what really ends it; it also stops the typing indicator and never touches the bot itself.
+what really ends it; it also stops every typing loop and never touches the bot itself. Workers' own VM scripts keep
+running so a job in flight can finish; stop any running workers too if Oggers wants everything ended, and
+`R stop.py all` ends every piped script on the VM.

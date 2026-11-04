@@ -1,6 +1,6 @@
 """Local helper. Turns a card file into a script that runs on the VM and posts it as Vic, as a Components V2
-card, then stops the typing indicator (and a reply takes the watcher's ACK reaction off the request). Pipe its
-output to the VM's venv python.
+card. A reply also takes the watcher's ACK reaction off the request and stops that request's typing; other jobs'
+typing carries on. Pipe its output to the VM's venv python.
 
   card.py <card_file> reply <message_id> [channel]   reply to a message
   card.py <card_file> edit <message_id> [channel]    turn one of Vic's messages into this card
@@ -91,8 +91,8 @@ if {mode == "reply"}:  # the answer is in, so the watcher's "looking into it" co
             headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"}}), timeout=20)
     except urllib.error.HTTPError:
         pass
-try:
-    os.kill(int(open("/tmp/vic_typing.pid").read()), signal.SIGTERM); os.remove("/tmp/vic_typing.pid")
-except (OSError, ValueError):
-    pass
+    try:  # and only this request's typing stops; parallel jobs keep theirs
+        os.kill(int(open("/tmp/vic_typing/{target}.pid").read()), signal.SIGTERM); os.remove("/tmp/vic_typing/{target}.pid")
+    except (OSError, ValueError):
+        pass
 ''')

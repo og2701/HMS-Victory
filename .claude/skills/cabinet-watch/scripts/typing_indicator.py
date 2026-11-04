@@ -1,12 +1,15 @@
-"""Runs on the VM (piped over ssh). argv: start [cabinet|workshop] | stop. start keeps Vic 'typing' in that channel
-(#cabinet by default; Discord's indicator lasts ~10s per call, so it re-sends every 8s) in a detached process for up
-to 10 minutes; stop ends it."""
-import os, signal, subprocess, sys
+"""Runs on the VM (piped over ssh). argv: start <cabinet|workshop> [request_id] | stop [request_id].
+
+start keeps Vic 'typing' in that channel for one request (Discord's indicator lasts ~10s per call, so it re-sends
+every 8s) in a detached process for up to 10 minutes. Each request gets its own loop, keyed by the request's message
+id, so parallel jobs never cut each other's typing off: stop <request_id> ends that one, a plain stop ends them all.
+card.py replies and react.py reactions end the loop for the message they answer."""
+import glob, os, signal, subprocess, sys
 from dotenv import load_dotenv
 
 load_dotenv(".env")
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
-PID = "/tmp/vic_typing.pid"
+DIR = "/tmp/vic_typing"
 LOOP = r'''
 import os, sys, time, urllib.request
 req = lambda: urllib.request.Request(f"https://discord.com/api/v10/channels/{sys.argv[1]}/typing", data=b"", method="POST",
@@ -21,24 +24,27 @@ while time.time() < end:
 '''
 
 
-def stop():
-    try:
-        os.kill(int(open(PID).read()), signal.SIGTERM)
-    except (OSError, ValueError):
-        pass
-    try:
-        os.remove(PID)
-    except OSError:
-        pass
+def stop(request_id=None):
+    files = glob.glob(f"{DIR}/*.pid") + ["/tmp/vic_typing.pid"] if request_id is None else [f"{DIR}/{request_id}.pid"]
+    for f in files:
+        try:
+            os.kill(int(open(f).read()), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
-def start(channel="cabinet"):
-    stop()
+def start(channel="cabinet", request_id="manual"):
+    stop(request_id)
+    os.makedirs(DIR, exist_ok=True)
     p = subprocess.Popen([sys.executable, "-c", LOOP, CHANNELS[channel]], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    open(PID, "w").write(str(p.pid))
+    open(f"{DIR}/{request_id}.pid", "w").write(str(p.pid))
 
 
 if __name__ == "__main__":
-    {"start": start, "stop": stop}[sys.argv[1]](*sys.argv[2:3])
-    print("typing", sys.argv[1])
+    {"start": start, "stop": stop}[sys.argv[1]](*sys.argv[2:4])
+    print("typing", *sys.argv[1:4])

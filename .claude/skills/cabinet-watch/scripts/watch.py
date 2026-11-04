@@ -1,14 +1,16 @@
 """Runs on the VM (piped over ssh). argv: the message id to start after, or "latest" for the newest one, then
-optionally "pending" (or "pending:workshop") while a confirmation card waits for a go in that channel: any human
-message there wakes it, since "sounds good, build it" rarely pings Vic. Plain "pending" means #cabinet.
+optionally "pending" while a confirmation card waits for a go: any human message in that channel wakes it, since
+"sounds good, build it" rarely pings Vic. Plain "pending" means #cabinet; "pending:workshop" or
+"pending:cabinet,workshop" name the channels.
 
 Polls #cabinet and #bot-workshop every few seconds and exits when anyone (not a bot) pings Vic, replies to Vic or
-says "vic". Each such message gets Vic's ACK reaction and Vic starts typing in that channel straight away (a card
-reply or a reaction from react.py takes the ACK off; typing_indicator.py stop or the next card post ends the
-typing). It then waits a few seconds so a follow-up line from the same person lands, and prints the channel, the
-hits, the 30 messages before them, everything posted after them and the last id seen. Gives up after 6 hours with
-"timeout": true."""
-import json, os, re, signal, subprocess, sys, time, urllib.parse, urllib.request
+says "vic". Each such message gets Vic's ACK reaction and its own typing loop straight away (a card reply or a
+react.py reaction to that message takes both off). It then waits a few seconds so a follow-up line from the same
+person lands, and prints the channel, the hits, the 30 messages before them, everything posted after them and the
+last id seen. Gives up after 6 hours with "timeout": true.
+
+Only one watcher runs at a time: starting one stops any that's still going (to switch into pending mode, say)."""
+import atexit, json, os, re, signal, subprocess, sys, time, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
@@ -20,8 +22,28 @@ POLL_SECONDS = 5
 FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
-pending = CHANNELS[mode.split(":", 1)[1] if ":" in mode else "cabinet"] if mode.startswith("pending") else None
+pending = ({CHANNELS[n] for n in (mode.split(":", 1)[1].split(",") if ":" in mode else ["cabinet"])}
+           if mode.startswith("pending") else set())
 deadline = time.time() + 6 * 3600
+
+WATCH_PID = "/tmp/vic_watch.pid"
+try:
+    old = int(open(WATCH_PID).read())
+    # Only if it's still a piped python: a stale file could name a pid that's since been reused by something else.
+    if old != os.getpid() and open(f"/proc/{old}/cmdline", "rb").read().split(b"\0")[:2] == [b"venv/bin/python", b"-"]:
+        os.kill(old, signal.SIGTERM)
+except (OSError, ValueError):
+    pass
+open(WATCH_PID, "w").write(str(os.getpid()))
+
+
+@atexit.register
+def _clear_pid():  # so a later script that happens to get this pid is never taken for the watcher
+    try:
+        if open(WATCH_PID).read() == str(os.getpid()):
+            os.remove(WATCH_PID)
+    except OSError:
+        pass
 
 
 def get(path):
@@ -46,7 +68,7 @@ def addresses_vic(m):
 
 
 def wanted(m, cid):
-    return not m["author"].get("bot") and (cid == pending or addresses_vic(m))
+    return not m["author"].get("bot") and (cid in pending or addresses_vic(m))
 
 
 TYPING_LOOP = r'''
@@ -75,14 +97,17 @@ def ack(h):
         print("ack failed", h["id"], e, file=sys.stderr)
 
 
-def start_typing(cid):
+def start_typing(h):
+    """One typing loop per request (keyed by its message id), so parallel jobs end only their own."""
+    pid_file = f"/tmp/vic_typing/{h['id']}.pid"
     try:
-        os.kill(int(open("/tmp/vic_typing.pid").read()), signal.SIGTERM)
+        os.kill(int(open(pid_file).read()), signal.SIGTERM)
     except (OSError, ValueError):
         pass
-    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP, cid], start_new_session=True,
+    os.makedirs("/tmp/vic_typing", exist_ok=True)
+    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP, CHANNELS[h["channel"]]], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    open("/tmp/vic_typing.pid", "w").write(str(p.pid))
+    open(pid_file, "w").write(str(p.pid))
 
 
 def text_of(m):
@@ -123,10 +148,9 @@ while time.time() < deadline:
     if hits:
         cid = CHANNELS[hits[0]["channel"]]
         aimed = [h for h in hits if h["addresses_vic"]]
-        if aimed:  # plain chatter in pending mode gets neither the ACK nor typing
-            for h in aimed:
-                ack(h)
-            start_typing(CHANNELS[aimed[0]["channel"]])
+        for h in aimed:  # plain chatter in pending mode gets neither the ACK nor typing
+            ack(h)
+            start_typing(h)
         time.sleep(FOLLOW_UP_SECONDS)
         before = sorted(get(f"/channels/{cid}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
         later = sorted(get(f"/channels/{cid}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
@@ -136,6 +160,7 @@ while time.time() < deadline:
             if wanted(m, cid) and addresses_vic(m) and m["id"] not in {h["id"] for h in hits}:
                 h = dict(brief(m), addresses_vic=True, channel=NAMES[cid])
                 ack(h)
+                start_typing(h)
                 hits.append(h)
         for other in CHANNELS.values():  # anything aimed at Vic elsewhere during the wait comes along too
             if other != cid:
@@ -143,6 +168,7 @@ while time.time() < deadline:
                 for h in extra:
                     if h["addresses_vic"]:
                         ack(h)
+                        start_typing(h)
                 hits += extra
         print(json.dumps({"channel": NAMES[cid], "channel_id": cid, "hits": hits,
                           "context_before": [brief(m) for m in before],
