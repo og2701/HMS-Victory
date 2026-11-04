@@ -81,7 +81,15 @@ EE_CODES = Kind(
     "You were asking members for EE / Call of Duty codes, which is against the server rules.\n\n"
     "If you believe this was an error, you can submit an appeal below.")
 
-KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH, HATE_FILTER, EE_CODES)}
+APP_SPAM = Kind(
+    "appspam",
+    "Spammed chat with a user-installed app",
+    "### You have been removed from UK Place\n"
+    "An app on your account flooded the server with messages.\n\n"
+    "If you believe this was an error or your account was compromised, you can submit an appeal below.")
+
+KINDS = {k.slug: k for k in (DM_SPAM, ONBOARDING, JOIN_WATCH, VOICE_RUSH, HATE_FILTER, EE_CODES,
+                             APP_SPAM)}
 _FALLBACK = Kind("unknown", "Automated moderation report", DM_SPAM.ban_dm)
 
 
@@ -319,6 +327,10 @@ class ModUntimeoutButton(_MemberAction, template=r"mod:untime:(?P<kind>\w+):(?P<
         except Exception as e:
             await interaction.followup.send(f"Could not lift it: {e}", ephemeral=True)
             return
+        if self.kind == APP_SPAM.slug:
+            # Undoing a false positive should also stop the bot deleting their app's posts.
+            from lib.core.app_spam import release
+            release(self.user_id)
         await self._done(interaction, f"🔓 Timeout removed by {interaction.user.mention}")
         await interaction.followup.send("Timeout removed.", ephemeral=True)
 
