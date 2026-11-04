@@ -983,6 +983,27 @@ def _voice_spell(seconds):
     return f" after {hours}h {minutes}m" if minutes else f" after {hours}h"
 
 
+VOICE_COMPANY_SHOWN = 8  # names listed per line before it falls back to "+N more"
+
+
+def _voice_company(event):
+    """Who else was in the call at the time, as a tail for the digest line.
+
+    Plain display names, never mentions, capped so one packed call can't make a line run
+    long. Events recorded before this field existed carry no list and get no tail.
+    """
+    import discord
+    others = event.get("others")
+    if others is None:
+        return ""
+    if not others:
+        return " · now empty" if event["kind"] == "leave" else " · alone"
+    shown = ", ".join(discord.utils.escape_markdown(n) for n in others[:VOICE_COMPANY_SHOWN])
+    if len(others) > VOICE_COMPANY_SHOWN:
+        shown += f" +{len(others) - VOICE_COMPANY_SHOWN} more"
+    return f" · still in: {shown}" if event["kind"] == "leave" else f" · with {shown}"
+
+
 async def process_voice_activity_log(client):
     """Flush the buffered voice joins, leaves and moves into the log thread.
 
@@ -1018,12 +1039,13 @@ async def process_voice_activity_log(client):
         lines = []
         for e in events:
             when, who = f"<t:{e['at']}:T>", f"**{discord.utils.escape_markdown(e['who'])}**"
+            company = _voice_company(e)
             if e["kind"] == "join":
-                lines.append(f"{when} 🟢 {who} joined {_where(e, 'to')}")
+                lines.append(f"{when} 🟢 {who} joined {_where(e, 'to')}{company}")
             elif e["kind"] == "leave":
-                lines.append(f"{when} 🔴 {who} left {_where(e, 'from')}{_voice_spell(e['held'])}")
+                lines.append(f"{when} 🔴 {who} left {_where(e, 'from')}{_voice_spell(e['held'])}{company}")
             else:
-                lines.append(f"{when} 🔁 {who} moved {_where(e, 'from')} → {_where(e, 'to')}")
+                lines.append(f"{when} 🔁 {who} moved {_where(e, 'from')} → {_where(e, 'to')}{company}")
 
         # Embed descriptions cap at 4096, so a long stretch goes out as several.
         chunk, size = [], 0
@@ -1034,7 +1056,7 @@ async def process_voice_activity_log(client):
                         title="🎧 Voice Activity",
                         description="\n".join(chunk),
                         color=0x5865F2,
-                    ))
+                    ), allowed_mentions=discord.AllowedMentions.none())
                 chunk, size = [], 0
             if line is not None:
                 chunk.append(line)

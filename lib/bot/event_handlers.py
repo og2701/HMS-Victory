@@ -2407,6 +2407,13 @@ def record_voice_activity(client, kind, member, before_channel=None, after_chann
         "from_id": getattr(before_channel, "id", None),
         "to_id": getattr(after_channel, "id", None),
         "held": held,
+        # Who else was in the call right then (the room joined or moved into, or the one
+        # left behind), taken now because the digest posts up to 30s later.
+        "others": sorted(
+            (m.display_name for m in getattr(
+                before_channel if kind == "leave" else after_channel, "members", None) or []
+             if m.id != member.id),
+            key=str.casefold),
     })
     if len(buf) > VOICE_ACTIVITY_BUFFER_LIMIT:
         del buf[:len(buf) - VOICE_ACTIVITY_BUFFER_LIMIT]
