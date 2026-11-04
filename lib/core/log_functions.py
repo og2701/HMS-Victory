@@ -400,6 +400,90 @@ async def create_edited_message_image(client, before, after):
 
     return await screenshot_html(html_content, size=(800, estimated_height), element_selector=".container")
 
+_CV2_HEADING_RE = re.compile(r"^\s*(?:#{1,3}|-#)\s+")
+
+
+def _cv2_media_url(media) -> str | None:
+    if media is None:
+        return None
+    return getattr(media, "proxy_url", None) or getattr(media, "url", None) or None
+
+
+def components_v2_embeds(message) -> list:
+    """Turn a message's Components V2 layout into plain discord.Embeds so the quote
+    card can draw it. One embed per top-level Container (keeping its accent colour),
+    plus one for any loose text outside containers. Text comes from TextDisplays
+    (also inside Sections), the image from the first MediaGallery item or Section
+    thumbnail. Buttons, selects, separators and files are dropped. The first heading
+    line becomes the title; other heading/subtext markers are stripped."""
+    components = getattr(message, "components", None)
+    if not isinstance(components, (list, tuple)):
+        return []
+
+    def walk(items, acc):
+        for comp in items or []:
+            if isinstance(comp, discord.TextDisplay):
+                if comp.content:
+                    acc["texts"].append(comp.content)
+            elif isinstance(comp, discord.SectionComponent):
+                walk(comp.children, acc)
+                acc_item = comp.accessory
+                if isinstance(acc_item, discord.ThumbnailComponent) and not acc["thumb"]:
+                    acc["thumb"] = _cv2_media_url(acc_item.media)
+            elif isinstance(comp, discord.MediaGalleryComponent):
+                if not acc["image"]:
+                    for item in comp.items or []:
+                        url = _cv2_media_url(getattr(item, "media", None))
+                        if url:
+                            acc["image"] = url
+                            break
+            elif isinstance(comp, discord.Container):
+                walk(comp.children, acc)
+
+    def build(acc, colour=None):
+        if not acc["texts"] and not acc["image"] and not acc["thumb"]:
+            return None
+        title = None
+        lines = []
+        for line in "\n".join(acc["texts"]).splitlines():
+            stripped = line.strip()
+            if title is None and not lines and re.match(r"^#{1,3}\s+", stripped):
+                title = _CV2_HEADING_RE.sub("", stripped).replace("**", "")
+                continue
+            lines.append(_CV2_HEADING_RE.sub("", line).replace("**", ""))
+        description = "\n".join(lines).strip() or None
+        embed = discord.Embed(title=title, description=description, colour=colour)
+        if acc["image"]:
+            embed.set_image(url=acc["image"])
+        elif acc["thumb"]:
+            embed.set_thumbnail(url=acc["thumb"])
+        return embed
+
+    embeds = []
+    loose = {"texts": [], "image": None, "thumb": None}
+    for comp in components:
+        if isinstance(comp, discord.Container):
+            acc = {"texts": [], "image": None, "thumb": None}
+            walk(comp.children, acc)
+            embed = build(acc, colour=getattr(comp, "accent_colour", None))
+            if embed:
+                embeds.append(embed)
+        else:
+            walk([comp], loose)
+    embed = build(loose)
+    if embed:
+        embeds.append(embed)
+    return embeds
+
+
+def components_v2_text(message) -> str:
+    """Plain text of a message's Components V2 layout (empty when there is none)."""
+    parts = []
+    for embed in components_v2_embeds(message):
+        parts.extend(p for p in (embed.title, embed.description) if p)
+    return "\n".join(parts)
+
+
 async def render_embeds_html(client, embeds, message):
     """Render a list of Discord Embeds into styled HTML suitable for baking into a quote image."""
     if not embeds:
@@ -711,10 +795,14 @@ async def create_quote_image(client, message):
         )
         extra_height += 30
 
-    # Render direct embeds if present (and not already in snapshots)
+    # Render direct embeds if present (and not already in snapshots), plus any
+    # Components V2 containers/text (a bot card with no content), drawn as embeds.
     embeds_html = ""
-    if getattr(message, "embeds", None) and not getattr(message, "message_snapshots", None):
-        embeds_html, emb_height = await render_embeds_html(client, message.embeds, message)
+    direct_embeds = []
+    if not getattr(message, "message_snapshots", None):
+        direct_embeds = list(getattr(message, "embeds", None) or []) + components_v2_embeds(message)
+    if direct_embeds:
+        embeds_html, emb_height = await render_embeds_html(client, direct_embeds, message)
         extra_height += emb_height
 
     # Render forwarded message snapshots if present

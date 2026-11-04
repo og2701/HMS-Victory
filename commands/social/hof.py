@@ -4,7 +4,7 @@ import re
 import logging
 import discord
 from config import CHANNELS, ROLES, HALL_OF_FAME_FILE
-from lib.core.log_functions import create_quote_image
+from lib.core.log_functions import create_quote_image, components_v2_text
 from lib.core.file_operations import load_json_file, save_json_file
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,24 @@ def collect_link_media_urls(message: discord.Message, size_limit: int) -> list[s
     return urls
 
 
+def _triggering_user(message: discord.Message):
+    """The user a bot message was for: whoever ran the command or pressed the button
+    that produced it, when Discord says so."""
+    meta = getattr(message, "interaction_metadata", None)
+    user = getattr(meta, "user", None) if meta else None
+    if user is None or getattr(user, "bot", False) or not isinstance(getattr(user, "id", None), int):
+        return None
+    return user
+
+
+def hof_announcement(message: discord.Message) -> str:
+    if not message.author.bot:
+        return f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
+    user = _triggering_user(message)
+    suffix = f" (for {user.mention})" if user else ""
+    return f"🏆 {message.author.display_name}'s message{suffix} made it to the Hall of Fame!"
+
+
 async def send_hof_post(client, thread, message: discord.Message):
     """Build and send the Hall of Fame post for `message` into `thread`.
 
@@ -92,11 +110,12 @@ async def send_hof_post(client, thread, message: discord.Message):
     # Re-posting the URL in the bot's message body lets Discord regenerate the
     # video/gif embed beneath the post.
     link_block = ("\n" + "\n".join(link_urls)) if link_urls else ""
-    announcement = f"🏆 {message.author.mention}'s message made it to the Hall of Fame!"
+    announcement = hof_announcement(message)
 
     # A message with no real text (just a video/gif, uploaded or linked) has
     # nothing meaningful to render in the quote card - post the media directly.
-    has_text_or_embed = bool(message.content.strip()) or bool(message.embeds)
+    has_text_or_embed = (bool(message.content.strip()) or bool(message.embeds)
+                         or bool(components_v2_text(message)))
     if not has_text_or_embed and getattr(message, "message_snapshots", None):
         for snap in message.message_snapshots:
             if getattr(snap, "content", "").strip() or getattr(snap, "embeds", None):
@@ -126,7 +145,7 @@ async def send_hof_post(client, thread, message: discord.Message):
         await thread.send(content=f"{announcement}{link_block}", embed=embed, files=[quote_file, *media_files])
     except Exception as e:
         logger.error(f"[HOF] Error creating quote image: {e}")
-        embed.description = f"{embed.description}\n\n{message.content}"
+        embed.description = f"{embed.description}\n\n{message.content or components_v2_text(message)}"
         fallback_files = list(media_files)
         if message.attachments:
             for attachment in message.attachments:
@@ -224,12 +243,11 @@ async def handle_hof_context_menu(interaction: discord.Interaction, message: dis
         await interaction.response.send_message("Messages from the Hall of Fame thread can't be added.", ephemeral=True)
         return
 
-    if message.author.bot:
-        await interaction.response.send_message("Bot messages can't be added to the Hall of Fame.", ephemeral=True)
-        return
-
+    # Bot messages (Vic's cards, case results...) can be added by hand here; the
+    # automatic reaction path still skips them, and no badge or UKP is paid for them.
     has_snapshots = bool(getattr(message, "message_snapshots", None))
-    if not message.content and not message.attachments and not message.embeds and not has_snapshots:
+    if (not message.content and not message.attachments and not message.embeds
+            and not has_snapshots and not components_v2_text(message)):
         await interaction.response.send_message("This message has nothing to add.", ephemeral=True)
         return
 
