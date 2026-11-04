@@ -470,7 +470,7 @@ ACTIVITY_PENNYFALLS_FILE = os.path.join(JSON_DATA_DIR, "activity_pennyfalls.json
 
 # --- County Balls (BallsDex-style collectibles: county balls spawn in chat, first
 # correct guess catches; duplicates sell to the bank for UKPence) ---
-COUNTY_ENABLED = True
+COUNTY_ENABLED = False
 COUNTY_SPAWN_CHANNELS = [1141037835445616640]  # bot-workshop while testing
 COUNTY_SPAWN_CATEGORY = 0          # go-live: 959544877325115424 (General category); 0 = off
 COUNTY_SPAWN_RANGE = (15, 30)      # qualifying messages per spawn; go-live: (180, 320)
