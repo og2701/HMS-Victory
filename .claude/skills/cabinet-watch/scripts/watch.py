@@ -22,6 +22,12 @@ POLL_SECONDS = 5
 FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
+if "dm" not in sys.argv[2:]:  # Oggers' DM is only watched when asked for: watch.py <id> [pending...] dm
+    WATCHED = {k: v for k, v in CHANNELS.items() if k != "dm"}
+else:
+    WATCHED = CHANNELS
+    if mode == "dm":
+        mode = ""
 pending = ({CHANNELS[n] for n in (mode.split(":", 1)[1].split(",") if ":" in mode else ["cabinet"])}
            if mode.startswith("pending") else set())
 deadline = time.time() + 6 * 3600
@@ -58,7 +64,7 @@ def newest(cid):
 
 
 # Each channel keeps its own place, so a slow poll in one can't skip messages in the other.
-after = {cid: (newest(cid) if start == "latest" else start) for cid in CHANNELS.values()}
+after = {cid: (newest(cid) if start == "latest" else start) for cid in WATCHED.values()}
 
 
 DM = CHANNELS["dm"]
@@ -151,7 +157,7 @@ def poll(cid):
 
 while time.time() < deadline:
     try:
-        hits = [h for cid in CHANNELS.values() for h in poll(cid)]
+        hits = [h for cid in WATCHED.values() for h in poll(cid)]
     except Exception as e:  # network blips just retry
         print("poll error", e, file=sys.stderr)
         time.sleep(30)
@@ -173,7 +179,7 @@ while time.time() < deadline:
                 ack(h)
                 start_typing(h)
                 hits.append(h)
-        for other in CHANNELS.values():  # anything aimed at Vic elsewhere during the wait comes along too
+        for other in WATCHED.values():  # anything aimed at Vic elsewhere during the wait comes along too
             if other != cid:
                 extra = poll(other)
                 for h in extra:
