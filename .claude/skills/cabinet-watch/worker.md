@@ -19,6 +19,8 @@ holding this file. Several workers run at once, each on its own request, so stay
 
 ## Don't
 
+- Don't run `board.py`: the orchestrator keeps #bot-workshop's task board. Say in your report what the row should
+  become (waiting on whom, with which card id, or done with the answer card's id).
 - Don't run `watch.py` or `stop.py`, and never `typing_indicator.py stop` without your request id: on its own it
   stops every request's typing.
 - Don't push to main, run `update_bot.sh` or deploy. For a code change, commit in your own worktree and report the
@@ -47,7 +49,7 @@ Done when shipped), as SKILL.md's "Tickets in #bot-ideas" says.
 Finish with a short report for the orchestrator (not for Discord):
 
 - the request id and channel
-- what you posted or reacted, with message ids
+- what you posted or reacted, with message ids (the plan or answer card id is what the board row links to)
 - **waiting:** on a go, from whom, for what
 - **blocked:** the action, why, and the exact command or script that's ready to run
 - anything worth knowing for later requests

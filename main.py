@@ -97,6 +97,13 @@ class AClient(discord.Client):
             self.add_dynamic_items(PassButton)
         except Exception as e:
             logger.warning(f"Could not register persona pass button: {e}")
+        # Approve / Reject / Reply on cabinet-watch's task board in #bot-workshop. The
+        # board is posted over REST by the session, so only these handlers see the presses.
+        try:
+            from lib.bot.cabinet_board import BUTTONS as BOARD_BUTTONS
+            self.add_dynamic_items(*BOARD_BUTTONS)
+        except Exception as e:
+            logger.warning(f"Could not register task board buttons: {e}")
         # Persistent 'Remove timeout' buttons on join-watch police station reports.
         try:
             from commands.moderation.join_watch import UntimeoutButton

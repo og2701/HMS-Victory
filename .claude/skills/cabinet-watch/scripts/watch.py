@@ -9,6 +9,12 @@ react.py reaction to that message takes both off). It then waits a few seconds s
 person lands, and prints the channel, the hits, the 30 messages before them, everything posted after them and the
 last id seen. Gives up after 6 hours with "timeout": true.
 
+It also wakes when someone presses a button on the task board in #bot-workshop (lib/bot/cabinet_board.py): the
+bot writes each press to data/cabinet_board/events/, and each one comes through as a hit with "type": "board",
+the action (approve, reject or reply), the task (its request id, number and what), who pressed (user_id) and, for
+a reply, their text in "content". The bot has already checked they may press and answered them privately. An
+approve or reply starts that request's typing loop, like a ping does.
+
 Only one watcher runs at a time: starting one stops any that's still going (to switch into pending mode, say)."""
 import atexit, json, os, re, signal, subprocess, sys, time, urllib.parse, urllib.request
 from dotenv import load_dotenv
@@ -20,6 +26,8 @@ VIC = "1171842947440967770"
 ACK = "hmmnote:1179638366275383297"  # "looking into it", added the moment a request is seen
 POLL_SECONDS = 5
 FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
+BOARD_EVENTS = os.path.join("data", "cabinet_board", "events")
+BOARD_SEEN = os.path.join(BOARD_EVENTS, "seen")
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
 if "dm" not in sys.argv[2:]:  # Oggers' DM is only watched when asked for: watch.py <id> [pending...] dm
@@ -155,13 +163,60 @@ def poll(cid):
     return hits
 
 
+def board_hits():
+    """Task board presses the bot has recorded since the last look. Each file is moved to seen/ as it's read, so a
+    press is handed over once; seen/ keeps a day of them for reference."""
+    try:
+        names = sorted(n for n in os.listdir(BOARD_EVENTS) if n.endswith(".json"))
+    except FileNotFoundError:
+        return []
+    os.makedirs(BOARD_SEEN, mode=0o700, exist_ok=True)
+    hits = []
+    for name in names:
+        path = os.path.join(BOARD_EVENTS, name)
+        try:
+            ev = json.load(open(path))
+            os.replace(path, os.path.join(BOARD_SEEN, name))
+        except (OSError, ValueError) as e:
+            print("bad board event", name, e, file=sys.stderr)
+            try:
+                os.replace(path, os.path.join(BOARD_SEEN, name + ".bad"))
+            except OSError:
+                pass
+            continue
+        hits.append({"type": "board", "channel": "workshop", "id": ev["task"], "action": ev["action"],
+                     "no": ev.get("no"), "what": ev.get("what"), "asker": ev.get("asker"),
+                     "user_id": ev["user_id"], "author": f"<@{ev['user_id']}>", "content": ev.get("text", ""),
+                     "addresses_vic": False, "bot": False})
+    cutoff = time.time() - 86400
+    for name in os.listdir(BOARD_SEEN):
+        try:
+            if os.path.getmtime(os.path.join(BOARD_SEEN, name)) < cutoff:
+                os.remove(os.path.join(BOARD_SEEN, name))
+        except OSError:
+            pass
+    return hits
+
+
+def board_typing(board):
+    for h in board:
+        if h["action"] in ("approve", "reply"):
+            start_typing(h)
+
+
 while time.time() < deadline:
     try:
         hits = [h for cid in WATCHED.values() for h in poll(cid)]
+        board = board_hits()  # after the polls, so a network blip can't drop a press it has already taken
     except Exception as e:  # network blips just retry
         print("poll error", e, file=sys.stderr)
         time.sleep(30)
         continue
+    if board and not hits:  # only presses: hand them over now, no message context needed
+        board_typing(board)
+        print(json.dumps({"channel": "workshop", "channel_id": CHANNELS["workshop"], "hits": board,
+                          "context_before": [], "after_first_hit": [], "last_id": max(after.values(), key=int)}))
+        sys.exit(0)
     if hits:
         cid = CHANNELS[hits[0]["channel"]]
         aimed = [h for h in hits if h["addresses_vic"]]
@@ -187,6 +242,9 @@ while time.time() < deadline:
                         ack(h)
                         start_typing(h)
                 hits += extra
+        board += board_hits()  # presses come along after the messages
+        board_typing(board)
+        hits += board
         print(json.dumps({"channel": NAMES[cid], "channel_id": cid, "hits": hits,
                           "context_before": [brief(m) for m in before],
                           "after_first_hit": [brief(m) for m in later],
