@@ -1139,6 +1139,14 @@ def init_db():
                 status TEXT NOT NULL DEFAULT 'active'
             )
         ''')
+        # Tiered rates in basis points, stored per bond when it opens. Additive and nullable:
+        # bonds opened before these columns existed keep NULLs and are paid on their original
+        # whole-percent rate_pct, exactly as promised (see bonds.interest_for).
+        c.execute("PRAGMA table_info(bonds)")
+        _bond_cols = {row[1] for row in c.fetchall()}
+        for _col in ("rate_bp", "upper_rate_bp", "tier_split"):
+            if _col not in _bond_cols:
+                c.execute(f"ALTER TABLE bonds ADD COLUMN {_col} INTEGER")
         c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_user ON bonds(user_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_bonds_status ON bonds(status)')
 

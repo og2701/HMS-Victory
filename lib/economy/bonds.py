@@ -9,6 +9,10 @@ next tick after the bot comes back.
 Economy: each bond state change and its UKP movement share one SQLite transaction.
 The bank nets -interest per matured bond, which is the intended drain of the over-full
 bank back to savers. One active bond per user.
+
+Rates are tiered and stored per bond in basis points (rate_bp on the first tier_split UKP,
+upper_rate_bp on the rest), so a config change never touches a bond already running. Bonds
+opened before that have NULL bp columns and are paid on their whole-percent rate_pct.
 """
 
 import logging
@@ -27,7 +31,9 @@ from lib.features.inbox import create_notification
 log = logging.getLogger(__name__)
 ACCENT = discord.Colour(0x1C6B46)
 
-_COLS = "id, user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status"
+_COLS = ("id, user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status, "
+         "rate_bp, upper_rate_bp, tier_split")
+_DEFAULT_TERMS_BP = {3: (100, 50), 7: (300, 160), 30: (1500, 800)}
 _KEYS = [c.strip() for c in _COLS.split(",")]
 
 
@@ -35,8 +41,67 @@ def _row_to_bond(r):
     return dict(zip(_KEYS, r)) if r else None
 
 
-def interest_for(principal: int, rate_pct: int) -> int:
-    return int(principal) * int(rate_pct) // 100
+def interest_for(principal: int, rate_pct: int, rate_bp=None, upper_rate_bp=None,
+                 tier_split=None) -> int:
+    """Interest a bond pays at maturity.
+
+    Legacy bonds (no basis-point rates stored) pay principal * rate_pct // 100, unchanged.
+    Tiered bonds pay rate_bp on the first tier_split UKP and upper_rate_bp on the rest."""
+    principal = int(principal)
+    if rate_bp is None:
+        return principal * int(rate_pct) // 100
+    upper_bp = int(rate_bp if upper_rate_bp is None else upper_rate_bp)
+    split = principal if tier_split is None else max(0, int(tier_split))
+    lower = min(principal, split)
+    upper = principal - lower
+    return lower * int(rate_bp) // 10000 + upper * upper_bp // 10000
+
+
+def bond_interest(bond) -> int:
+    """interest_for() on a bond dict as returned by get_active() and friends."""
+    return interest_for(bond["principal"], bond["rate_pct"], bond.get("rate_bp"),
+                        bond.get("upper_rate_bp"), bond.get("tier_split"))
+
+
+def _terms_bp() -> dict:
+    return getattr(config, "BOND_TERMS_BP", _DEFAULT_TERMS_BP)
+
+
+def _tier_split() -> int:
+    return int(getattr(config, "BOND_TIER_SPLIT", 5000))
+
+
+def _fmt_bp(bp) -> str:
+    """1500 -> '15%', 160 -> '1.6%', 53 -> '0.53%'."""
+    return f"{int(bp) / 100:.2f}".rstrip("0").rstrip(".") + "%"
+
+
+def rate_label(bond) -> str:
+    """Human rate for a bond: '30%' for a legacy bond, '15% / 8% over 5,000' for a tiered one."""
+    if bond.get("rate_bp") is None:
+        return f"{bond['rate_pct']}%"
+    lo, hi = bond["rate_bp"], bond.get("upper_rate_bp")
+    split = bond.get("tier_split")
+    if hi is None or hi == lo or split is None or bond["principal"] <= split:
+        return _fmt_bp(lo)
+    return f"{_fmt_bp(lo)} / {_fmt_bp(hi)} over {int(split):,}"
+
+
+def _short_rate(bond) -> str:
+    """'30%' for a legacy bond, '15% / 8%' for a tiered one (no split amount)."""
+    if bond.get("rate_bp") is None:
+        return f"{bond['rate_pct']}%"
+    hi = bond.get("upper_rate_bp")
+    if hi is None or hi == bond["rate_bp"]:
+        return _fmt_bp(bond["rate_bp"])
+    return f"{_fmt_bp(bond['rate_bp'])} / {_fmt_bp(hi)}"
+
+
+def total_active_principal() -> int:
+    """All principal currently locked in active bonds (the bank is holding it for savers)."""
+    r = DatabaseManager.fetch_one(
+        "SELECT COALESCE(SUM(principal), 0) FROM bonds WHERE status = 'active'")
+    return int(r[0]) if r else 0
 
 
 def get_active(user_id):
@@ -68,12 +133,15 @@ def _recent_received(uid, days) -> int:
 
 def open_bond(user_id, principal, term_days):
     """Lock ``principal`` for ``term_days``. Returns (bond, error_message)."""
-    terms = getattr(config, "BOND_TERMS", {3: 2, 7: 6, 30: 30})
+    terms = _terms_bp()
     if term_days not in terms:
         return None, "That isn't a valid bond term."
+    rate_bp, upper_rate_bp = (int(x) for x in terms[term_days])
+    tier_split = _tier_split()
+    book_limit = getattr(config, "BOND_BOOK_LIMIT", None)
     if get_active(user_id):
         return None, "You already have an active bond - you can only hold one at a time."
-    mx = getattr(config, "BOND_MAX", 5000)
+    mx = getattr(config, "BOND_MAX", 10000)
     if principal < 1:
         return None, "Enter a positive amount of UKPence."
     if principal > mx:
@@ -104,6 +172,12 @@ def open_bond(user_id, principal, term_days):
             )
             if cursor.fetchone() is not None:
                 return None, "You already have an active bond - you can only hold one at a time."
+            if book_limit is not None:
+                cursor.execute(
+                    "SELECT COALESCE(SUM(principal), 0) FROM bonds WHERE status = 'active'")
+                if int(cursor.fetchone()[0]) + int(principal) > int(book_limit):
+                    return None, ("The Treasury's bond book is full right now. Try a smaller "
+                                  "amount or check back after the next maturity.")
 
             change = UKPenceManager._remove_amount_in_transaction(
                 cursor,
@@ -122,15 +196,21 @@ def open_bond(user_id, principal, term_days):
             )
             cursor.execute(
                 "INSERT INTO bonds "
-                "(user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                "(user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status, "
+                "rate_bp, upper_rate_bp, tier_split) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
                 (
                     str(user_id),
                     int(principal),
-                    int(terms[term_days]),
+                    # rate_pct is kept (NOT NULL, read by older queries) as the first-tier
+                    # rate rounded to a whole percent; rate_bp is what actually pays.
+                    int(round(rate_bp / 100)),
                     int(term_days),
                     now,
                     now + term_days * 86400,
+                    rate_bp,
+                    upper_rate_bp,
+                    tier_split,
                 ),
             )
             bond_id = cursor.lastrowid
@@ -213,7 +293,7 @@ async def mature_due(client):
                 g = _row_to_bond(cursor.fetchone())
                 if not g:
                     continue
-                interest = interest_for(g["principal"], g["rate_pct"])
+                interest = bond_interest(g)
                 payout = g["principal"] + interest
                 if not BankManager._withdraw_in_transaction(
                     cursor, payout, "Bond maturity", now
@@ -270,9 +350,10 @@ async def mature_due(client):
         # Badges: total bond interest earned (incl. this one) >= 10000 -> Bond Villain.
         from lib.features.income_badges import award_badge_safe, record_income_source
         matured = DatabaseManager.fetch_all(
-            "SELECT principal, rate_pct FROM bonds WHERE user_id = ? AND status = 'matured'",
+            "SELECT principal, rate_pct, rate_bp, upper_rate_bp, tier_split FROM bonds "
+            "WHERE user_id = ? AND status = 'matured'",
             (str(g["user_id"]),)) or []
-        if sum(interest_for(p, rt) for p, rt in matured) >= 10000:
+        if sum(interest_for(*row) for row in matured) >= 10000:
             await award_badge_safe(client, g["user_id"], "bond_villain")
         await record_income_source(client, g["user_id"], "bond")
 
@@ -312,28 +393,39 @@ def forfeit_bonds_on_leave(user_id) -> int:
 # Panels (text only - no image render, so no interaction-expiry risk)
 # ---------------------------------------------------------------------------
 def _term_lines() -> str:
-    terms = getattr(config, "BOND_TERMS", {3: 2, 7: 6, 30: 30})
-    return "\n".join(f"- **{d} days** - {p}% return" for d, p in sorted(terms.items()))
+    split = _tier_split()
+    mx = int(getattr(config, "BOND_MAX", 10000))
+    lines = []
+    for d, (lo, hi) in sorted(_terms_bp().items()):
+        top = interest_for(mx, 0, lo, hi, split)
+        if hi == lo or mx <= split:
+            lines.append(f"- **{d} days**: {_fmt_bp(lo)} (up to +{top:,})")
+        else:
+            lines.append(f"- **{d} days**: {_fmt_bp(lo)} on the first {split:,}, "
+                         f"{_fmt_bp(hi)} on the rest (up to +{top:,})")
+    return "\n".join(lines)
 
 
 def build_open_panel(user_id) -> discord.ui.LayoutView:
     bal = get_bb(user_id)
-    mx = getattr(config, "BOND_MAX", 5000)
+    mx = getattr(config, "BOND_MAX", 10000)
     pen = getattr(config, "BOND_EARLY_PENALTY_PCT", 10)
+    demurrage_note = (" Bonded UKP counts toward wealth demurrage."
+                      if getattr(config, "BOND_COUNTS_FOR_DEMURRAGE", True) else "")
     view = discord.ui.LayoutView(timeout=300)
     box = discord.ui.Container(accent_colour=ACCENT)
     box.add_item(discord.ui.TextDisplay(
         "## \U0001f3e6 UKPence Bonds - Treasury Savings\n"
-        "Lock your UKPence for a fixed term and earn interest, paid from the Server Bank.\n"
+        f"Lock up to **{mx:,} UKPence** for a fixed term and earn interest, paid from the Server Bank.\n"
         f"Your balance: **{bal:,} UKPence**\n\n"
         f"{_term_lines()}\n\n"
         f"-# Max **{mx:,}** per bond, one at a time. Break early and you forfeit the interest "
-        f"plus a {pen}% penalty on your principal."
+        f"plus a {pen}% penalty on your principal.{demurrage_note}"
     ))
     view.add_item(box)
     row = discord.ui.ActionRow()
-    for d, p in sorted(getattr(config, "BOND_TERMS", {3: 2, 7: 6, 30: 30}).items()):
-        b = discord.ui.Button(label=f"{d}d · {p}%", style=discord.ButtonStyle.success,
+    for d, (lo, _hi) in sorted(_terms_bp().items()):
+        b = discord.ui.Button(label=f"{d}d · {_fmt_bp(lo)}", style=discord.ButtonStyle.success,
                               custom_id=f"bond:open:{user_id}:{d}")
         b.callback = _make_open_cb(user_id, d)
         row.add_item(b)
@@ -341,8 +433,20 @@ def build_open_panel(user_id) -> discord.ui.LayoutView:
     return view
 
 
+def _interest_split_text(bond) -> str:
+    """'  (+750 on the first 5,000, +400 on the rest)' for a tiered bond that spans both tiers."""
+    if bond.get("rate_bp") is None or bond.get("tier_split") is None:
+        return ""
+    split = int(bond["tier_split"])
+    if bond["principal"] <= split or bond.get("upper_rate_bp") in (None, bond["rate_bp"]):
+        return ""
+    lo = split * int(bond["rate_bp"]) // 10000
+    hi = (bond["principal"] - split) * int(bond["upper_rate_bp"]) // 10000
+    return f"\n-# +{lo:,} on the first {split:,}, +{hi:,} on the rest"
+
+
 def build_status_panel(user_id, bond, *, note=None) -> discord.ui.LayoutView:
-    interest = interest_for(bond["principal"], bond["rate_pct"])
+    interest = bond_interest(bond)
     payout = bond["principal"] + interest
     pen = getattr(config, "BOND_EARLY_PENALTY_PCT", 10)
     penalty = bond["principal"] * pen // 100
@@ -351,9 +455,9 @@ def build_status_panel(user_id, bond, *, note=None) -> discord.ui.LayoutView:
     txt = (
         "## \U0001f3e6 Your Bond\n"
         f"Locked: **{bond['principal']:,} UKPence**\n"
-        f"Term: **{bond['term_days']} days** @ **{bond['rate_pct']}%**\n"
+        f"Term: **{bond['term_days']} days** @ **{rate_label(bond)}**\n"
         f"Matures: <t:{bond['matures_ts']}:R>  (<t:{bond['matures_ts']}:f>)\n"
-        f"Payout at maturity: **{payout:,} UKPence**  (+{interest:,})\n\n"
+        f"Payout at maturity: **{payout:,} UKPence**  (+{interest:,}){_interest_split_text(bond)}\n\n"
         f"-# Break early and you get back {bond['principal'] - penalty:,} "
         f"(lose the {interest:,} interest and a {penalty:,} penalty)."
     )
@@ -373,7 +477,7 @@ def build_status_panel(user_id, bond, *, note=None) -> discord.ui.LayoutView:
 def _build_confirm_panel(user_id, bond) -> discord.ui.LayoutView:
     pen = getattr(config, "BOND_EARLY_PENALTY_PCT", 10)
     penalty = bond["principal"] * pen // 100
-    interest = interest_for(bond["principal"], bond["rate_pct"])
+    interest = bond_interest(bond)
     refund = bond["principal"] - penalty
     view = discord.ui.LayoutView(timeout=300)
     box = discord.ui.Container(accent_colour=ACCENT)
@@ -413,7 +517,7 @@ class BondAmountModal(discord.ui.Modal, title="Open a bond"):
         super().__init__()
         self.user_id = user_id
         self.term = term
-        mx = getattr(config, "BOND_MAX", 5000)
+        mx = getattr(config, "BOND_MAX", 10000)
         self.amount = discord.ui.TextInput(
             label=f"Amount to lock for {term} days",
             placeholder=f"max {mx:,} UKPence", required=True, max_length=12)
@@ -499,7 +603,7 @@ def bonds_overview_embed() -> discord.Embed:
         f"SELECT {_COLS} FROM bonds WHERE status = 'active'") or []
     active = [_row_to_bond(r) for r in rows]
     principal = sum(b["principal"] for b in active)
-    interest = sum(interest_for(b["principal"], b["rate_pct"]) for b in active)
+    interest = sum(bond_interest(b) for b in active)
 
     e = discord.Embed(title="🏦 Bond Overview", colour=ACCENT,
                       description="Fixed-term savings currently locked in the bank.")
@@ -509,15 +613,19 @@ def bonds_overview_embed() -> discord.Embed:
     e.add_field(name="Locked (principal)", value=f"{principal:,} UKP", inline=True)
     e.add_field(name="Interest owed", value=f"{interest:,} UKP", inline=True)
     e.add_field(name="Payout liability", value=f"{principal + interest:,} UKP", inline=True)
+    limit = getattr(config, "BOND_BOOK_LIMIT", None)
+    if limit:
+        e.add_field(name="Book limit", value=f"{principal:,} / {int(limit):,} UKP", inline=True)
 
     if active:
         terms = {}
         for b in active:
-            slot = terms.setdefault(b["term_days"], [0, 0, b["rate_pct"]])
+            slot = terms.setdefault(b["term_days"], [0, 0, set()])
             slot[0] += 1
             slot[1] += b["principal"]
+            slot[2].add(_short_rate(b))
         by_term = "\n".join(
-            f"**{d}d** @ {slot[2]}%: {slot[0]} bond(s) · {slot[1]:,} UKP"
+            f"**{d}d** @ {', '.join(sorted(slot[2]))}: {slot[0]} bond(s) · {slot[1]:,} UKP"
             for d, slot in sorted(terms.items()))
         e.add_field(name="By term", value=by_term, inline=False)
         e.add_field(name="Next maturity", value=f"<t:{min(b['matures_ts'] for b in active)}:R>", inline=True)

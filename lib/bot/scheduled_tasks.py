@@ -768,7 +768,11 @@ async def apply_wealth_demurrage(client):
     yours, and money just passing through isn't double-counted). It is NOT based on a peak
     balance: money genuinely lost gambling or spent in the shop lowers your balance for real, so
     it shouldn't be taxed - only money you still hold or have shuffled out should. The charge is
-    clamped to the real balance, so it never drives anyone negative."""
+    clamped to the real balance, so it never drives anyone negative.
+
+    Bonded principal (BOND_COUNTS_FOR_DEMURRAGE) also counts toward effective wealth, so locking
+    UKP in a bond isn't a shelter from demurrage. The charge still only ever comes out of the
+    wallet: a locked bond is never touched."""
     try:
         import config, time
         if not getattr(config, "WEALTH_DEMURRAGE_ENABLED", True):
@@ -791,7 +795,20 @@ async def apply_wealth_demurrage(client):
         # Union, then judge each by effective wealth. Every chargeable user is covered by one of
         # these two: to have effective wealth over the threshold you must either hold more than it
         # now, or have sent the difference out recently.
-        cand = set()
+        bonded = {}
+        if getattr(config, "BOND_COUNTS_FOR_DEMURRAGE", True):
+            try:
+                for uid, total in (DatabaseManager.fetch_all(
+                        "SELECT user_id, SUM(principal) FROM bonds WHERE status = 'active' "
+                        "GROUP BY user_id") or []):
+                    if uid is not None and total:
+                        bonded[str(uid)] = int(total)
+            except Exception:
+                logger.error("[ECONOMY] Demurrage: bond read failed; charging on wallets only.",
+                             exc_info=True)
+                bonded = {}
+
+        cand = set(bonded)
         for src, params in (
             ("SELECT user_id FROM ukpence WHERE balance > ? AND user_id != ?", (threshold, str(BOT_ID))),
             ("SELECT DISTINCT payer_id FROM pay_transfers WHERE timestamp > ?", (window_start,)),
@@ -815,7 +832,9 @@ async def apply_wealth_demurrage(client):
             # Effective wealth = what you hold + what you've shuffled out − what you've been sent.
             # No peak term: money lost/spent genuinely left, so it isn't taxed.
             inflow, outflow = recent_transfer_io(uid, window_days)
-            effective = max(0, bal + outflow - inflow)
+            effective = max(0, bal + bonded.get(uid, 0) + outflow - inflow)
+            # Planned on effective wealth (bonds included); collect_tax_batch clamps it to the
+            # wallet balance, so it never reaches into a locked bond.
             amount = int((effective - threshold) * rate)
             if amount > 0:
                 plans.append((uid, amount))

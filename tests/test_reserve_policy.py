@@ -57,13 +57,14 @@ def test_throttle_tiers_scale_only_when_reserves_fall():
     assert R.throttle_multiplier() == 1.0
     assert R.scale_reward(100) == 100
     # Each tier bites at its ceiling. First match wins, so check the boundaries.
-    for reserves, expected in ((160_000, 0.75), (120_000, 0.50), (80_000, 0.25),
-                               (79_999, 0.25), (1, 0.25)):
+    for reserves, expected in ((85_000, 0.75), (45_000, 0.50), (5_000, 0.25),
+                               (4_999, 0.25), (1, 0.25)):
         _set_bank(reserves)
         assert R.throttle_multiplier() == expected, reserves
-    _set_bank(120_000)
+    assert R.throttle_multiplier(85_001) == 1.0
+    _set_bank(45_000)
     assert R.scale_reward(100) == 50
-    _set_bank(160_000)
+    _set_bank(85_000)
     assert R.scale_reward(100) == 75
 
 
@@ -72,7 +73,7 @@ def test_throttle_never_rounds_a_reward_away_to_nothing():
     pays zero reads as a broken feature rather than a tightened belt."""
     from lib.economy import reserve_policy as R
     _fresh_db()
-    _set_bank(50_000)
+    _set_bank(5_000)
     assert R.throttle_multiplier() == 0.25
     assert R.scale_reward(1) == 1
     assert R.scale_reward(3) == 1
@@ -85,7 +86,7 @@ def test_obligations_are_never_throttled():
     from lib.economy import reserve_policy as R
     from lib.economy.economy_manager import add_bb, get_bb
     _fresh_db()
-    _set_bank(50_000)
+    _set_bank(5_000)
     assert R.throttle_multiplier() == 0.25
 
     add_bb(4242, 100, reason="Casino payout", from_bank=True, taxable=False)
@@ -164,6 +165,7 @@ def test_dry_pot_stops_chat_rewards_but_a_disabled_pot_does_not():
 def test_reserve_state_reports_the_floor_and_headroom():
     from lib.economy import reserve_policy as R
     _fresh_db()
+    old_floor = config.RESERVE_FLOOR
     config.RESERVE_FLOOR = 80_000
     config.MAX_TOTAL_SUPPLY = 1_000_000
     _set_bank(200_000)
@@ -176,7 +178,54 @@ def test_reserve_state_reports_the_floor_and_headroom():
     st = R.reserve_state()
     assert st["above_floor"] == -20_000             # below the floor reads negative
     assert st["throttled"] is True
-    assert st["multiplier"] == 0.25
+    assert st["multiplier"] == 0.75                 # 60k free sits in the 85k tier
+    config.RESERVE_FLOOR = old_floor
+
+
+def _add_bond(user_id, principal, status="active"):
+    DatabaseManager.execute(
+        "INSERT INTO bonds (user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status) "
+        "VALUES (?, ?, 30, 30, 0, 9999999999, ?)", (str(user_id), principal, status))
+
+
+def test_bank_reserves_exclude_locked_bond_principal():
+    """Savers' locked principal sits in the bank's balance but is owed back, so free
+    reserves (what the throttle reads) leave it out. Only ACTIVE bonds count."""
+    from lib.economy import reserve_policy as R
+    _fresh_db()
+    _set_bank(203_925)
+    _add_bond(1, 5_000)
+    _add_bond(2, 71_618)
+    _add_bond(3, 9_000, status="matured")          # already paid back: not locked
+    assert R.bank_balance() == 203_925
+    assert R.locked_bond_principal() == 76_618
+    assert R.bank_reserves() == 127_307
+    # Ship-day check: the shifted tiers leave these free reserves unthrottled, as the raw
+    # balance was under the old tiers.
+    assert R.throttle_multiplier() == 1.0
+    st = R.reserve_state()
+    assert st["reserves"] == 127_307 and st["bonded"] == 76_618
+    assert st["bank_balance"] == 203_925
+    assert st["circulating"] == R.total_supply() - 203_925
+    # Never negative, even if the book somehow exceeded the bank.
+    _set_bank(10_000)
+    assert R.bank_reserves() == 0
+
+
+def test_casino_limits_read_whole_balance_unless_told_to_exclude_bonds():
+    from lib.economy import reserve_policy as R
+    _fresh_db()
+    _set_bank(200_000)
+    _add_bond(1, 100_000)
+    old = getattr(config, "CASINO_EXPOSURE_EXCLUDES_BONDS", False)
+    try:
+        config.CASINO_EXPOSURE_EXCLUDES_BONDS = False
+        assert R.max_casino_net_payout() == int(200_000 * config.MAX_EXPOSURE_PCT)
+        config.CASINO_EXPOSURE_EXCLUDES_BONDS = True
+        assert R.max_casino_net_payout() == int(100_000 * config.MAX_EXPOSURE_PCT)
+        assert R.max_casino_bet(2.0, 250_000) == int(100_000 * config.MAX_EXPOSURE_PCT / 2.0)
+    finally:
+        config.CASINO_EXPOSURE_EXCLUDES_BONDS = old
 
 
 def _run_all():
