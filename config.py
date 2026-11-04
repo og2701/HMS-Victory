@@ -940,6 +940,26 @@ MUTE_NOTIFY_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
 # --- Automated Moderation ---
 HATE_SPEECH_TIMEOUT_MINUTES = 24 * 60
 
+# --- App spam (apps people install to their own account) ---
+# A user-installed app posts in any server its owner is in, and its replies dodge every
+# member check because they are not the member's own messages. The Feb 2025 raid was one
+# of these ("Spectre") spamming #general with an invite link. See lib/core/app_spam.py.
+APP_SPAM_ENABLED = True
+APP_SPAM_REPORT_ONLY = False          # True: card only, no deleting or timeout
+APP_SPAM_USER_COUNT = 5               # one person's app messages...
+APP_SPAM_USER_WINDOW_SECONDS = 15     # ...this quickly
+APP_SPAM_RAID_COUNT = 8               # one app's messages across people...
+APP_SPAM_RAID_MIN_USERS = 2           # ...from at least this many accounts...
+APP_SPAM_RAID_WINDOW_SECONDS = 15     # ...this quickly
+APP_SPAM_TIMEOUT_MINUTES = 10
+APP_SPAM_CLEANUP_SECONDS = 15 * 60    # an interaction token can post follow-ups for 15 min
+APP_SPAM_ALLOWED_APP_IDS = {
+    1514711405960499291,  # UK Place Town (Oggers')
+    1211781489931452447,  # Wordle (Discord's own)
+    1555609854108770355,  # UK Place Activities (Oggers')
+}
+APP_SPAM_ALLOWED_CHANNEL_IDS: set = set()
+
 # --- Voice note transcription ---
 # A voice note gets a reply with one button; pressing it puts the words underneath. Once
 # per note, anyone can press it. gpt-4o-mini-transcribe was accurate on real notes from

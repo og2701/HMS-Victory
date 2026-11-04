@@ -1230,6 +1230,14 @@ def _set_piggy_react(client, enabled: bool):
 
 
 async def on_message(client, message):
+    # Apps people installed on their own account, flooding chat (the Feb 2025 app raid).
+    try:
+        from lib.core.app_spam import handle_app_message
+        if handle_app_message(client, message):
+            return
+    except Exception:
+        logger.debug("app spam hook failed", exc_info=True)
+
     if await handle_hate_speech_message(client, message):
         return
 
