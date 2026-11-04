@@ -14,7 +14,7 @@ import atexit, json, os, re, signal, subprocess, sys, time, urllib.parse, urllib
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640"}
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
 NAMES = {cid: name for name, cid in CHANNELS.items()}
 VIC = "1171842947440967770"
 ACK = "hmmnote:1179638366275383297"  # "looking into it", added the moment a request is seen
@@ -61,13 +61,24 @@ def newest(cid):
 after = {cid: (newest(cid) if start == "latest" else start) for cid in CHANNELS.values()}
 
 
+DM = CHANNELS["dm"]
+
+
+def mentions_vic(m):
+    return any(u["id"] == VIC for u in m.get("mentions", []))
+
+
 def addresses_vic(m):
+    if m.get("channel_id") == DM:  # everything in the DM is aimed at Vic
+        return True
     ref = (m.get("referenced_message") or {}).get("author", {}).get("id")
     return bool(ref == VIC or any(u["id"] == VIC for u in m.get("mentions", []))
                 or re.search(r"\bvic\b", text_of(m), re.I))
 
 
 def wanted(m, cid):
+    if cid == DM:  # Vic's own responder answers Oggers' @mentions in DMs, so only plain messages come here
+        return not m["author"].get("bot") and not mentions_vic(m)
     return not m["author"].get("bot") and (cid in pending or addresses_vic(m))
 
 
