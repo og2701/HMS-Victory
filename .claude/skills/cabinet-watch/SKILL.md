@@ -111,8 +111,10 @@ means start it again.
    ```
 
    Accents: `00247D` info, `E67E22` waiting on a go, `2ECC71` done, `E74C3C` problem. Short bullets, no em-dashes.
-   Nobody is pinged by default (still write `@​everyone` with a zero-width space). To ping one person, add a
-   `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text; only that person gets pinged.
+   A reply pings the person it replies to, so they can see the turn is done (Oggers asked for this). Add a
+   `quiet` line under the accent for a reply that shouldn't notify, such as a status update mid-job. Nobody else
+   is pinged (still write `@​everyone` with a zero-width space). To ping one more person, add a
+   `ping: <user_id>` line under the accent and @ them as `<@user_id>` in the text.
 
 6. **React where a card would be too much, and pick the emoji like a regular would.**
    `R react.py <message_id> <emoji> <channel>` adds Vic's reaction and takes that message's ACK and typing off

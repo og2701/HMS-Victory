@@ -8,8 +8,9 @@ typing carries on. Pipe its output to the VM's venv python.
 
 channel is cabinet (the default) or workshop.
 
-Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. Nobody is pinged
-unless named on a ping line, and that person must be @'d as <@id> in the text. A line of '===' starts a new
+Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. A reply pings the
+person it replies to (so they see the turn is done); add a 'quiet' line under the accent to reply without that.
+Nobody else is pinged unless named on a ping line, and that person must be @'d as <@id> in the text. A line of '===' starts a new
 section (a separator is drawn between sections). Use '## ' for the title, '### ' for section heads and '-# ' for
 small print. An 'image: /path/to/file.png' line anywhere attaches that image (render.py makes them from HTML) and
 shows it under the card, outside the bordered box so a framed chart isn't boxed twice. A card can be images only:
@@ -25,6 +26,10 @@ lines = open(src).read().strip().splitlines()
 assert lines[0].startswith("accent:")
 accent = int(lines[0].split(":", 1)[1].strip().lstrip("#"), 16)
 body = lines[1:]
+quiet = False
+if body and body[0].strip() == "quiet":
+    quiet = True
+    body.pop(0)
 ping = None
 if body and body[0].startswith("ping:"):
     ping = body.pop(0).split(":", 1)[1].strip()
@@ -56,7 +61,7 @@ components = [{"type": 17, "accent_color": accent, "components": items}] if item
 if images:
     components.append({"type": 12, "items": [{"media": {"url": f"attachment://{n}"}} for n in names]})
 payload = {"flags": 1 << 15, "components": components,
-           "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": False},
+           "allowed_mentions": {"parse": [], "users": [ping] if ping else [], "replied_user": mode == "reply" and not quiet},
            "attachments": [{"id": i, "filename": n} for i, n in enumerate(names)]}
 files = {n: base64.b64encode(open(p, "rb").read()).decode() for n, p in zip(names, images)}
 method, path = "POST", f"/channels/{CH}/messages"
