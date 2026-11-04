@@ -37,6 +37,8 @@ a server change, save the current state first, as SKILL.md says. Anything destru
 data, bans, kicks, timeouts, removing roles, permission changes, money moves) waits on the go SKILL.md names
 (Oggers, or Oggers or Hadidas for permissions, roles and moderation) whoever asked, so its card pings them; never
 act on a go you can't see came from that person.
+A code change or new feature also gets a ticket in #bot-ideas (To do when planned, replies as it moves, ✅ and
+Done when shipped), as SKILL.md's "Tickets in #bot-ideas" says.
 
 ## Report
 

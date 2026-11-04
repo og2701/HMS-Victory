@@ -174,6 +174,25 @@ means start it again.
 - Code changes follow the repo's normal flow: commit, cherry-pick onto `origin/main` in a temp worktree, push, then
   `./update_bot.sh` on the VM.
 
+## Tickets in #bot-ideas
+
+#bot-ideas (forum 1173740832805883964) is the ticket tracker for Vic's features. Keep it current as part of the
+work, without being asked:
+
+- **Tags:** 🟠 `To do` 1263525546403434516 (open or in progress), 🟢 `Done` 1263525508214296617 (shipped),
+  🔴 `Closed` 1263525696886673519 (dropped or not doable).
+- **A new feature or code change** gets a post as soon as its plan card goes up: a short sentence-case title in
+  the forum's plain style ("Bond cap raised to 10k", not "[FEATURE] ..."), a few plain lines on what it does and
+  who asked (link the request), tagged To do. If a post for it already exists, use that one instead.
+- **Updates** go in as short replies in the thread: plan approved, built, a snag, a change of plan.
+- **When it ships**, reply with a ✅ line naming the commit and date, and swap the tag to Done. Dropped ideas get a
+  one-line reason and Closed.
+- Workers building a feature do this for their own ticket; the orchestrator checks it happened before the done card.
+- Creating a post: `POST /channels/1173740832805883964/threads` with `{name, applied_tags, message: {content}}`.
+  Retagging: `PATCH /channels/<thread_id>` with `applied_tags`. An archived thread has to be unarchived first
+  (`{"archived": false}`), then re-archived once it's updated if it was archived before.
+- Ticket posts and tag swaps are bookkeeping and don't need a go of their own; the feature's own go covers them.
+
 ## Acting inside the running bot
 
 Scripts piped through `R` are their own process: they can read the databases and call the REST API, but they
