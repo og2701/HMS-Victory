@@ -618,6 +618,15 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, update_server_icon, args=[client], id="server_icon_boot", name="Halloween server icons (boot)",
                      next_run_time=discord.utils.utcnow() + timedelta(seconds=60))
 
+    # Seasonal level-role colours: on the first day of each season, and once after boot so a restart over that
+    # midnight (or the flag being flipped) still catches up. Registered either way; the flag is read at run time,
+    # so turning it off restores the original colours.
+    from lib.features.seasonal_rank_colours import apply_seasonal_rank_colours
+    _add_process_job(scheduler, apply_seasonal_rank_colours, CronTrigger(month="3,6,9,12", day=1, hour=0, minute=0, timezone="Europe/London"),
+                     args=[client], id="seasonal_rank_colours_switch", name="Seasonal rank colours")
+    _add_process_job(scheduler, apply_seasonal_rank_colours, args=[client], id="seasonal_rank_colours_boot",
+                     name="Seasonal rank colours (boot)", next_run_time=discord.utils.utcnow() + timedelta(seconds=90))
+
     _add_process_job(scheduler, apply_inactivity_tax, CronTrigger(day_of_week="fri", hour=0, minute=0, timezone="Europe/London"), args=[client], id="apply_inactivity_tax_job", name="Weekly Inactivity Tax")
 
     _add_process_job(scheduler, apply_wealth_demurrage, CronTrigger(day_of_week="fri", hour=0, minute=5, timezone="Europe/London"), args=[client], id="apply_wealth_demurrage_job", name="Weekly Wealth Demurrage")

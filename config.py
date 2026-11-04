@@ -36,6 +36,11 @@ IMAGE_HOST_ENABLED = False
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
 
+# Seasonal colours for the 20 chat level roles (lib/features/seasonal_rank_colours.py): switched on the 1st of
+# Mar/Jun/Sep/Dec and checked at boot. Off until a start date is picked; turning it off after a season has gone
+# up puts the original colours back at the next boot.
+SEASONAL_RANK_COLOURS_ENABLED = False
+
 # --- Blackjack (vs-the-house) ---
 #   BLACKJACK_ENABLED        - master toggle for the /blackjack command.
 #   BLACKJACK_IMAGE_ENABLED  - render the premium HTML→PNG felt table each action
