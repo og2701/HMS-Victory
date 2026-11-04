@@ -6,7 +6,7 @@ typing carries on. Pipe its output to the VM's venv python.
   card.py <card_file> edit <message_id> [channel]    turn one of Vic's messages into this card
   card.py <card_file> post [channel]                 plain post
 
-channel is workshop (the default), dm or cabinet.
+channel is workshop (the default), dm, cabinet, or the id of a channel the watcher is watching for a while.
 
 Card file: first line 'accent: RRGGBB', then an optional 'ping: <user_id>' line, then text. A reply pings the
 person it replies to (so they see the turn is done); add a 'quiet' line under the accent to reply without that.
@@ -21,7 +21,8 @@ CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640",
 ACK_QUOTED = urllib.parse.quote("hmmnote:1179638366275383297")  # watch.py's "looking into it"
 src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
 target = rest.pop(0) if mode in ("reply", "edit") else None
-CH = CHANNELS[rest[0] if rest else "workshop"]
+CH = CHANNELS.get(rest[0], rest[0]) if rest else CHANNELS["workshop"]
+assert CH.isdigit(), f"unknown channel {CH}"
 lines = open(src).read().strip().splitlines()
 assert lines[0].startswith("accent:")
 accent = int(lines[0].split(":", 1)[1].strip().lstrip("#"), 16)

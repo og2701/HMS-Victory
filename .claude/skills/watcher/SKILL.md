@@ -42,7 +42,7 @@ R watch.py latest
 The output has `channel` (`workshop`, or `dm` when Oggers' DM is watched; each hit has its own `channel` too),
 `hits` (what woke it), `context_before` (the 30 messages before the first hit), `after_first_hit` (anything
 posted in the few seconds after) and `last_id`. Answer in the channel the hit came from: the typing, history and
-card scripts below take `workshop` (the default), `dm` or `cabinet`. #cabinet is no longer watched (Oggers, 4 Nov
+card scripts below take `workshop` (the default), `dm`, `cabinet`, or a channel id (see "Watching another channel"). #cabinet is no longer watched (Oggers, 4 Nov
 2026), but a card can still be posted there when someone asks; `R watch.py <id> cabinet` watches it again if he wants.
 
 **Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
@@ -199,6 +199,38 @@ python3 <scripts>/board.py show | R -
    - **Attach it** with an `image: /full/path/out.png` line in the card file; it shows under the card, unboxed.
      Up to ten images per card.
 
+## Watching another channel
+
+Oggers can tell Vic in #bot-workshop to watch another channel for a while ("vic, watch #general for 2h, and let
+@x in"). The watcher then covers that channel too, but only for the watch's users: Oggers, Hadidas and anyone he
+names. Their pings, replies to Vic and "vic" there come to you, and Vic's own replies to them there (tags and live
+chat) stand down so nobody gets two answers. Everyone else in that channel still gets normal Vic.
+
+```bash
+R watch_channel.py add <channel_id> [duration] [user_id ...] --request <request_id>
+R watch_channel.py end <channel_id|all> --by <user_id>
+R watch_channel.py list
+```
+
+- **Who:** only Oggers starts one, extends one or adds people, and his ask is the go (no card needed). Anyone else
+  asking gets a short reply that it's Oggers' call. Oggers or Hadidas can end one early.
+- **How long:** 30 minutes unless he says otherwise ("45", "90m", "2h"), 24 hours at most, 3 watches at once.
+  `add` on a channel that's already watched restarts its clock from now and merges the users.
+- **Say so:** after `add`, react to his ask or reply with a one-line card naming the channel, who's on it and when it
+  ends (pass on any warning `add` prints, such as the persona bot being on, since that still answers tags). Same
+  after `end`.
+- **No restart:** the running watcher re-reads the file every poll. Hits from a watched channel carry its id as
+  `channel`; pass that id as the channel to card.py, react.py, history.py and typing_indicator.py.
+- **Expiry** comes in as a hit with `"type": "watch_expired"` (`id` is the request that started it, `channel_id`,
+  `name`). Post a quiet one-liner in #bot-workshop that the watch on that channel ended.
+- **Failsafes:** the bot only stands down while a watch is unexpired and the watcher's heartbeat
+  (`data/watcher/heartbeat`, touched every poll while a watch is on) is under 5 minutes old, so a crashed session
+  never leaves a channel without Vic for long. Stopping the watcher for good: also run `watch_channel.py end all`.
+- **Scope:** the exact channel only. A thread under it isn't covered unless the thread's own id is given. DMs can't
+  be watched, and #bot-workshop always is.
+- State is `data/watcher/extra_channels.json` on the VM, every change is logged to `data/watcher/log.jsonl`, and the
+  bot logs each reply it leaves to you.
+
 ## Changes
 
 - **Anything destructive or hard to undo needs a go from the right person, whoever asks, and always after a
@@ -292,7 +324,7 @@ it isn't on Oggers' Mac and tunnels through AWS SSM instead of a direct ssh, whi
 
 ## Stop
 
-Stop the background task, then run `R stop.py`. Killing the local ssh leaves the remote python running, so this is
+Stop the background task, then run `R stop.py` (and `R watch_channel.py end all` if a watch is on). Killing the local ssh leaves the remote python running, so this is
 what really ends it; it also stops every typing loop and never touches the bot itself. Workers' own VM scripts keep
 running so a job in flight can finish; stop any running workers too if Oggers wants everything ended, and
 `R stop.py all` ends every piped script on the VM.

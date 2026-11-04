@@ -16,8 +16,15 @@ the action (approve, reject or reply), the task (its request id, number and what
 a reply, their text in "content". The bot has already checked they may press and answered them privately. An
 approve or reply starts that request's typing loop, like a ping does.
 
+It also covers any channels Oggers has asked Vic to watch for a while (watch_channel.py keeps them in
+data/watcher/extra_channels.json, re-read every poll, so no restart is needed). There only the watch's listed users'
+pings, replies to Vic and "vic" count, pending mode doesn't apply, and those hits carry the channel's id as "channel"
+(the card, react, history and typing scripts take an id too). While a watch is on it touches data/watcher/heartbeat
+every poll; the bot only stands its own replies down while that's fresh. When a watch runs out it's taken out of the
+file and comes through as a hit with "type": "watch_expired". With no file, none of this does anything.
+
 Only one watcher runs at a time: starting one stops any that's still going (to switch into pending mode, say)."""
-import atexit, json, os, re, signal, subprocess, sys, time, urllib.parse, urllib.request
+import atexit, fcntl, json, os, re, signal, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
@@ -29,6 +36,11 @@ POLL_SECONDS = 5
 FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
 BOARD_EVENTS = os.path.join("data", "cabinet_board", "events")
 BOARD_SEEN = os.path.join(BOARD_EVENTS, "seen")
+EXTRA_DIR = os.path.join("data", "watcher")
+EXTRA_FILE = os.path.join(EXTRA_DIR, "extra_channels.json")
+EXTRA_LOCK = os.path.join(EXTRA_DIR, ".lock")
+EXTRA_LOG = os.path.join(EXTRA_DIR, "log.jsonl")
+HEARTBEAT = os.path.join(EXTRA_DIR, "heartbeat")
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
 # #bot-workshop always; Oggers' DM and #cabinet only when asked for: watch.py <id> [pending...] [dm] [cabinet]
@@ -75,6 +87,62 @@ after = {cid: (newest(cid) if start == "latest" else start) for cid in WATCHED.v
 
 
 DM = CHANNELS["dm"]
+extra = {}  # channel id -> its watch, for the other channels Oggers asked Vic to watch
+
+
+def channel_id(name):
+    return CHANNELS.get(name, name)
+
+
+def channel_name(cid):
+    return NAMES.get(cid, cid)
+
+
+def refresh_extra():
+    """Re-read the watches. Returns the ones that have just run out (taken out of the file and logged)."""
+    global extra
+    if not os.path.exists(EXTRA_FILE):
+        if extra:
+            for cid in extra:
+                after.pop(cid, None)
+            extra = {}
+        return []
+    now = time.time()
+    with open(EXTRA_LOCK, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            try:
+                watches = [w for w in json.load(open(EXTRA_FILE)).get("watches", []) if isinstance(w, dict)]
+            except (OSError, ValueError, AttributeError) as e:
+                print("bad extra_channels.json", e, file=sys.stderr)
+                watches = []
+            expired = [w for w in watches if w.get("expires_at", 0) <= now]
+            if expired:
+                tmp = EXTRA_FILE + ".tmp"
+                json.dump({"watches": [w for w in watches if w not in expired]}, open(tmp, "w"), indent=1)
+                os.replace(tmp, EXTRA_FILE)
+                with open(EXTRA_LOG, "a") as f:
+                    for w in expired:
+                        f.write(json.dumps({"at": int(now), "event": "expired", "channel_id": w.get("channel_id"),
+                                            "name": w.get("name"), "request_id": w.get("request_id")}) + "\n")
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+    live = {str(w["channel_id"]): w for w in watches if w not in expired and str(w.get("channel_id")) not in WATCHED.values()}
+    for cid in set(extra) - set(live):
+        after.pop(cid, None)
+    for cid, w in live.items():
+        if cid not in after:  # from where the watch began, or where this watcher was told to start if that's later
+            after[cid] = newest(cid) if start == "latest" else max(str(w.get("after") or start), start, key=int)
+    extra = live
+    if extra:
+        open(HEARTBEAT, "a").close()
+        os.utime(HEARTBEAT)
+    return [{"type": "watch_expired", "channel": "workshop", "id": w.get("request_id"), "channel_id": w.get("channel_id"),
+             "name": w.get("name"), "users": w.get("users"), "addresses_vic": False, "bot": False} for w in expired]
+
+
+def polled_channels():
+    return list(WATCHED.values()) + [cid for cid in extra if cid not in WATCHED.values()]
 
 
 def mentions_vic(m):
@@ -90,6 +158,9 @@ def addresses_vic(m):
 
 
 def wanted(m, cid):
+    if cid in extra:  # a channel Oggers asked Vic to watch: only the watch's users, and only when aimed at Vic
+        return not m["author"].get("bot") and m["author"]["id"] in {str(u) for u in extra[cid].get("users", [])} \
+            and addresses_vic(m)
     if cid == DM:  # Vic's own responder answers Oggers' @mentions in DMs, so only plain messages come here
         return not m["author"].get("bot") and not mentions_vic(m)
     return not m["author"].get("bot") and (cid in pending or addresses_vic(m))
@@ -111,7 +182,7 @@ while time.time() < end:
 
 def ack(h):
     """React with ACK so the asker knows it's been seen, long before the answer is ready."""
-    cid = CHANNELS[h["channel"]]
+    cid = channel_id(h["channel"])
     req = urllib.request.Request(
         f"https://discord.com/api/v10/channels/{cid}/messages/{h['id']}/reactions/{urllib.parse.quote(ACK)}/@me",
         data=b"", method="PUT", headers={"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"})
@@ -129,7 +200,7 @@ def start_typing(h):
     except (OSError, ValueError):
         pass
     os.makedirs("/tmp/vic_typing", exist_ok=True)
-    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP, CHANNELS[h["channel"]]], start_new_session=True,
+    p = subprocess.Popen([sys.executable, "-c", TYPING_LOOP, channel_id(h["channel"])], start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     open(pid_file, "w").write(str(p.pid))
 
@@ -155,10 +226,17 @@ def brief(m):
 def poll(cid):
     """New hits in one channel since its last poll."""
     hits = []
-    for m in sorted(get(f"/channels/{cid}/messages?after={after[cid]}&limit=50"), key=lambda m: int(m["id"])):
+    try:
+        page = get(f"/channels/{cid}/messages?after={after[cid]}&limit=50")
+    except urllib.error.HTTPError as e:
+        if cid not in extra:
+            raise
+        print("can't read watched channel", cid, e.code, file=sys.stderr)  # a bad watch mustn't stall the rest
+        return []
+    for m in sorted(page, key=lambda m: int(m["id"])):
         after[cid] = m["id"]
         if wanted(m, cid):
-            hits.append(dict(brief(m), addresses_vic=addresses_vic(m), channel=NAMES[cid]))
+            hits.append(dict(brief(m), addresses_vic=addresses_vic(m), channel=channel_name(cid)))
     return hits
 
 
@@ -199,25 +277,27 @@ def board_hits():
 
 def board_typing(board):
     for h in board:
-        if h["action"] in ("approve", "reply"):
+        if h.get("action") in ("approve", "reply"):
             start_typing(h)
 
 
 while time.time() < deadline:
     try:
-        hits = [h for cid in WATCHED.values() for h in poll(cid)]
+        expired = refresh_extra()
+        hits = [h for cid in polled_channels() for h in poll(cid)]
         board = board_hits()  # after the polls, so a network blip can't drop a press it has already taken
     except Exception as e:  # network blips just retry
         print("poll error", e, file=sys.stderr)
         time.sleep(30)
         continue
+    board = expired + board  # a run-out watch travels with the presses: no message context needed
     if board and not hits:  # only presses: hand them over now, no message context needed
         board_typing(board)
         print(json.dumps({"channel": "workshop", "channel_id": CHANNELS["workshop"], "hits": board,
                           "context_before": [], "after_first_hit": [], "last_id": max(after.values(), key=int)}))
         sys.exit(0)
     if hits:
-        cid = CHANNELS[hits[0]["channel"]]
+        cid = channel_id(hits[0]["channel"])
         aimed = [h for h in hits if h["addresses_vic"]]
         for h in aimed:  # plain chatter in pending mode gets neither the ACK nor typing
             ack(h)
@@ -229,11 +309,11 @@ while time.time() < deadline:
             after[cid] = max(after[cid], later[-1]["id"], key=int)
         for m in later:  # a second request in the same channel during the wait gets its ACK too
             if wanted(m, cid) and addresses_vic(m) and m["id"] not in {h["id"] for h in hits}:
-                h = dict(brief(m), addresses_vic=True, channel=NAMES[cid])
+                h = dict(brief(m), addresses_vic=True, channel=channel_name(cid))
                 ack(h)
                 start_typing(h)
                 hits.append(h)
-        for other in WATCHED.values():  # anything aimed at Vic elsewhere during the wait comes along too
+        for other in polled_channels():  # anything aimed at Vic elsewhere during the wait comes along too
             if other != cid:
                 extra = poll(other)
                 for h in extra:
@@ -244,7 +324,7 @@ while time.time() < deadline:
         board += board_hits()  # presses come along after the messages
         board_typing(board)
         hits += board
-        print(json.dumps({"channel": NAMES[cid], "channel_id": cid, "hits": hits,
+        print(json.dumps({"channel": channel_name(cid), "channel_id": cid, "hits": hits,
                           "context_before": [brief(m) for m in before],
                           "after_first_hit": [brief(m) for m in later],
                           "last_id": max(after.values(), key=int)}))

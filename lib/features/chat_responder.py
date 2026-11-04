@@ -6647,6 +6647,17 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
+    # While the hand-run watcher covers this channel for this user (Oggers asked for it in #bot-workshop), their
+    # pings go to the watcher, so Vic's own replies (direct mentions and live chat) stand down until it ends.
+    from lib.features.watcher_channels import watch_for
+    watch = watch_for(getattr(message.channel, "id", None), message.author.id)
+    if watch:
+        if is_bot_explicitly_mentioned(client, message) or live_chat_manager.active:
+            logger.info("Message from %s (%s) in #%s left to the watcher (watch %s, until %s).", message.author,
+                        message.author.id, getattr(message.channel, "name", "?"), watch.get("request_id"),
+                        datetime.fromtimestamp(float(watch.get("expires_at", 0)), timezone.utc).strftime("%H:%M UTC"))
+        return False
+
     # 2. If message is from Oggers or someone he's given access to on the controller card, and
     # explicitly @mentions the bot: always respond as a one-off anywhere on the server UNLESS paused!
     # Only a real @mention counts here. Name-drops like "I'll get vic to dm her" or replies to the
