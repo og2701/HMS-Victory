@@ -34,7 +34,10 @@ def tax_overview_embed() -> discord.Embed:
         e.add_field(
             name="🏦 Reserves",
             value=(f"`{_pct_bar(pct)}` **{pct:.1f}%**\n"
-                   f"{st['reserves']:,} of {st['supply']:,} UKP · {floor_txt}"),
+                   f"{st['reserves']:,} of {st['supply']:,} UKP · {floor_txt}"
+                   + (f"\n-# Free reserves: the bank holds {st.get('bank_balance', 0):,}, of which "
+                      f"{st.get('bonded', 0):,} is savers' bond principal."
+                      if st.get("bonded") else "")),
             inline=False,
         )
         if st["throttled"]:

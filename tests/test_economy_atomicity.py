@@ -456,7 +456,9 @@ def test_successful_bond_maturity_commits_payout_state_and_notice():
         assert database.DatabaseManager.fetch_one(
             "SELECT status FROM bonds WHERE id = ?", (bond["id"],)
         ) == ("matured",)
-        assert economy.get_bb(user_id) == 1_005
+        # 250 for 3 days at the 3-day first-tier rate (1% = 100 bp) pays 2 interest.
+        assert bonds.bond_interest(bond) == 250 * config.BOND_TERMS_BP[3][0] // 10000
+        assert economy.get_bb(user_id) == 1_000 + bonds.bond_interest(bond)
         assert database.DatabaseManager.fetch_one(
             "SELECT category, title FROM notifications WHERE user_id = ?",
             (str(user_id),),

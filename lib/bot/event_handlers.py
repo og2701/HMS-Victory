@@ -1156,6 +1156,13 @@ async def _run_ready_initialisation(client, tree, scheduler):
         await asyncio.sleep(0.1)
     from lib.bot.scheduled_tasks import schedule_client_jobs
     schedule_client_jobs(client, scheduler)
+    # The cabinet-watch tooling's door into this process (preds etc. without a restart).
+    # Started once per process; a later ready event finds the task running and leaves it.
+    try:
+        from lib.bot.bot_actions import start_bot_action_watcher
+        start_bot_action_watcher(client)
+    except Exception:
+        logger.exception("could not start the bot action queue")
     logger.info(f"{client.user} setup complete")
     await refresh_live_stages(client)
     from lib.bot.backup_manager import backup_database, backup_json_data

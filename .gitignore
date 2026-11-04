@@ -42,3 +42,4 @@ scratch/
 
 # /ptb lyrics fetched from LRCLIB on the VM, cached beside the audio
 data/audio/*.lrc
+data/bot_actions/

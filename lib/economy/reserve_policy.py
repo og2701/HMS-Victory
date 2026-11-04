@@ -36,9 +36,37 @@ def _cfg(name, default):
 # ---------------------------------------------------------------------------
 # Reserves + the discretionary throttle
 # ---------------------------------------------------------------------------
-def bank_reserves() -> int:
+def bank_balance() -> int:
+    """The bank's whole balance, including bond principal it is holding for savers."""
     from lib.economy.bank_manager import BankManager
     return int(BankManager.get_balance() or 0)
+
+
+def locked_bond_principal() -> int:
+    """Principal locked in active bonds. Fails open (0) so a bad read never throttles."""
+    from database import DatabaseManager
+    try:
+        row = DatabaseManager.fetch_one(
+            "SELECT COALESCE(SUM(principal), 0) FROM bonds WHERE status = 'active'")
+        return max(0, int(row[0])) if row and row[0] is not None else 0
+    except Exception:
+        logger.error("locked bond principal read failed; treating as 0", exc_info=True)
+        return 0
+
+
+def bank_reserves() -> int:
+    """FREE reserves: the bank's balance minus the bond principal it owes back to savers.
+
+    Savers' locked principal sits in the bank's balance, but it isn't the bank's to spend, so
+    counting it would make the bank look healthier the more people bond."""
+    return max(0, bank_balance() - locked_bond_principal())
+
+
+def _casino_reserves() -> int:
+    """What the casino's dynamic limits scale with (see CASINO_EXPOSURE_EXCLUDES_BONDS)."""
+    if _cfg("CASINO_EXPOSURE_EXCLUDES_BONDS", False):
+        return bank_reserves()
+    return bank_balance()
 
 
 def total_supply() -> int:
@@ -81,16 +109,19 @@ def scale_reward(amount: int, reserves: int = None) -> int:
 def reserve_state() -> dict:
     """Everything the /bank-status tax panel needs, in one read."""
     try:
-        reserves, supply = bank_reserves(), total_supply()
+        balance, bonded, supply = bank_balance(), locked_bond_principal(), total_supply()
     except Exception:
         logger.error("reserve_state read failed", exc_info=True)
         return {}
-    floor = int(_cfg("RESERVE_FLOOR", 80_000))
+    reserves = max(0, balance - bonded)
+    floor = int(_cfg("RESERVE_FLOOR", 5_000))
     cap = int(_cfg("MAX_TOTAL_SUPPLY", 1_000_000))
     return {
         "reserves": reserves,
+        "bank_balance": balance,
+        "bonded": bonded,
         "supply": supply,
-        "circulating": supply - reserves,
+        "circulating": supply - balance,
         "pct_of_supply": (100.0 * reserves / supply) if supply else 0.0,
         "floor": floor,
         "above_floor": reserves - floor,
@@ -106,7 +137,7 @@ def max_casino_net_payout(static_max_net: int = 250_000) -> int:
     if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):
         return static_max_net
     try:
-        reserves = bank_reserves()
+        reserves = _casino_reserves()
         if reserves <= 0:
             return 500
         pct = float(_cfg("MAX_EXPOSURE_PCT", 0.80))
@@ -125,7 +156,7 @@ def max_casino_bet(game_max_multiplier: float = 3.0, static_max: int = 250_000) 
     if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):
         return static_max
     try:
-        reserves = bank_reserves()
+        reserves = _casino_reserves()
         if reserves <= 0:
             return 100
         pct = float(_cfg("MAX_EXPOSURE_PCT", 0.80))

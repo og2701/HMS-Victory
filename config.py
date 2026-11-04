@@ -308,12 +308,17 @@ PVP_RAKE_RATE = 0.05
 # wins, refunds, bond maturities, anything already promised - are never scaled; you cannot
 # shrink a bet someone has already won.
 RESERVE_POLICY_ENABLED = True
+# Reserves are FREE reserves: the bank's balance minus the bond principal it is holding for
+# savers (reserve_policy.bank_reserves). That principal is owed back, so it must not make the
+# bank look healthier than it is. The floor and tiers below were each lowered by 75,000 when
+# this switched over (the bond book was ~76.6k), so the throttle reads the same on the day it
+# shipped and only tightens as the bond book grows relative to the bank.
 # A FLAT floor, deliberately not a % of live supply: if the mint ever fires, supply rises and
 # a percentage floor would rise with it, tightening the throttle exactly when the bank has
-# just been bailed out. 80,000 is 10% of the 800k baseline.
-RESERVE_FLOOR = 80_000
-# (reserves_at_or_below, multiplier applied to discretionary rewards). First match wins.
-RESERVE_THROTTLE_TIERS = ((80_000, 0.25), (120_000, 0.50), (160_000, 0.75))
+# just been bailed out.
+RESERVE_FLOOR = 5_000
+# (free_reserves_at_or_below, multiplier applied to discretionary rewards). First match wins.
+RESERVE_THROTTLE_TIERS = ((5_000, 0.25), (45_000, 0.50), (85_000, 0.75))
 # Hard ceiling on total UKP in existence. The emergency mint (casino insolvency) may only
 # ever raise supply to this; past it a win cannot be honoured and is logged CRITICAL rather
 # than silently inflating the currency. 800k baseline -> at most 25% expansion, ever.
@@ -323,6 +328,10 @@ MAX_TOTAL_SUPPLY = 1_000_000
 DYNAMIC_MAX_BET_ENABLED = True
 MAX_EXPOSURE_PCT = 0.80        # max single-win payout capped at 80% of Bank liquid balance
 DYNAMIC_MIN_MAX_BET = 500      # floor for dynamic max bet so table is always playable
+# False: the casino's dynamic max bet / max payout keep reading the bank's whole balance (bond
+# principal included), exactly as before free reserves existed. True: they read free reserves
+# instead, which lowers the limits by roughly the bond book.
+CASINO_EXPOSURE_EXCLUDES_BONDS = False
 
 # --- Demurrage dividend ---------------------------------------------------------------
 # Reclaimed hoard money is earmarked to pay for chat activity rewards, turning a wealth tax
@@ -379,11 +388,18 @@ HOF_EXCLUDED_CHANNELS = {959503403199905862, 1133386861033832448, 12798736336022
 
 # --- Bonds (fixed-term Treasury savings; interest paid from the bank) ---
 BOND_ENABLED = True
-BOND_TERMS = {3: 2, 7: 6, 30: 30}   # term in days -> interest percent
-BOND_MAX = 5000                      # max principal per bond (one active bond per user)
+# Tiered rates in basis points (100 bp = 1%), per term: term_days -> (bp on the first
+# BOND_TIER_SPLIT UKP, bp on the rest). Each bond stores its own rates when it opens, so
+# changing these never alters a bond already running. Longer terms pay more per week
+# (30d 3.5%/wk, 7d 3%/wk, 3d 2.3%/wk on the first tier), so rolling short bonds never wins.
+BOND_TERMS_BP = {3: (100, 50), 7: (300, 160), 30: (1500, 800)}
+BOND_TIER_SPLIT = 5000               # the first-tier rate applies up to this much principal
+BOND_MAX = 10000                     # max principal per bond (one active bond per user)
+BOND_BOOK_LIMIT = 150_000            # total principal across all active bonds; new bonds past it are refused
+BOND_COUNTS_FOR_DEMURRAGE = True     # bonded principal counts toward wealth demurrage (charged from the wallet only)
 BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this % of principal
 BOND_FUNNEL_LOOKBACK_DAYS = 3        # UKP /pay-received in this window can't be bonded
-                                     # (stops a whale funnelling 5k to alts to invest past the cap)
+                                     # (stops a whale funnelling UKP to alts to invest past the cap)
 
 # --- National Lottery (shared pooled draw) ---
 # Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little

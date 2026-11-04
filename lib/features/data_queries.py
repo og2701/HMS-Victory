@@ -872,9 +872,11 @@ def _list_counties(uid, limit, since, pick) -> Lines:
 
 
 def _list_bonds(uid, limit, since, pick) -> Lines:
-    rows = _fetch("SELECT principal, rate_pct, term_days, matures_ts, status FROM bonds WHERE user_id = ? "
-                  "ORDER BY status = 'active' DESC, matures_ts DESC", (uid,))
-    return [(None, f"{int(p):,} UKP at {r}% over {d} days, matures {_dt(m)} [{s}]") for p, r, d, m, s in rows]
+    from lib.economy.bonds import rate_label
+    rows = _fetch("SELECT principal, rate_pct, term_days, matures_ts, status, rate_bp, upper_rate_bp, tier_split "
+                  "FROM bonds WHERE user_id = ? ORDER BY status = 'active' DESC, matures_ts DESC", (uid,))
+    return [(None, f"{int(p):,} UKP at {rate_label({'principal': int(p), 'rate_pct': r, 'rate_bp': bp, 'upper_rate_bp': ubp, 'tier_split': ts})} "
+                   f"over {d} days, matures {_dt(m)} [{s}]") for p, r, d, m, s, bp, ubp, ts in rows]
 
 
 def _list_purchases(uid, limit, since, pick) -> Lines:
