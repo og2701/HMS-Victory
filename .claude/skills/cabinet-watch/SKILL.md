@@ -164,6 +164,29 @@ means start it again.
 - Code changes follow the repo's normal flow: commit, cherry-pick onto `origin/main` in a temp worktree, push, then
   `./update_bot.sh` on the VM.
 
+## Acting inside the running bot
+
+Scripts piped through `R` are their own process: they can read the databases and call the REST API, but they
+can't reach the running bot's scheduler, live predictions or button views, so a bare DB insert (a scheduled pred,
+say) wouldn't take effect until a restart. For those, ask the bot itself through its action queue:
+
+```bash
+python3 <scripts>/bot_action.py pred_schedule '{"channel_id": 123, "title": "England vs Greece", "options": ["England", "Draw", "Greece"], "when": "2026-11-14 19:45", "duration": "90"}' | R -
+```
+
+- The bot checks `data/bot_actions/inbox/` every 15 seconds (4 times a minute), so allow up to about 15s before
+  it starts; the helper waits up to 60s and prints the result as JSON (exit 0 only on success). Args can also come
+  from a file: `@/full/path/args.json`.
+- Actions: `pred_list`, `pred_list_scheduled`, `pred_schedule` (channel_id, title, options, when, duration),
+  `pred_create` (channel_id, title, options, duration), `pred_cancel_scheduled` (sched_id), `pred_lock` and
+  `pred_unlock` (message_id). `when` and `duration` take what /pred-schedule takes. Anything else is refused, and
+  resolving or drawing a pred (payouts) stays a manual /pred-admin job.
+- Each action runs as Oggers, posts what the slash command would (the Prediction Scheduled card in
+  #community-management and so on) and is logged to #bot-usage-log. It's still a change: card first, then run it
+  on the go. Requests over 2 minutes old are refused unrun, and at most 5 actions run a minute.
+- New actions are a code change to `lib/bot/bot_actions.py` (an entry in `ACTIONS` with typed args, calling the
+  same function the slash command uses), plus the list in `bot_action.py`.
+
 ## Running from a cloud session
 
 The watcher itself runs on the VM, so a cloud session works the same once it can reach the box. `run.sh` notices

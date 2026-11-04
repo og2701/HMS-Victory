@@ -696,6 +696,12 @@ async def _fetch_pred_message(interaction: discord.Interaction, pred: Prediction
     must still update the original card (and let the settlement reply land under it).
     Falls back to the interaction's channel for legacy predictions created before
     channel_id was recorded."""
+    return await _fetch_pred_message_in(client, pred, interaction.channel)
+
+
+async def _fetch_pred_message_in(client: discord.Client, pred: Prediction, fallback_channel=None):
+    """The prediction's own message, looked up in the channel it was posted in, else
+    ``fallback_channel``. Raises discord.NotFound when neither has it."""
     channel = None
     if pred.channel_id:
         channel = client.get_channel(pred.channel_id)
@@ -705,8 +711,39 @@ async def _fetch_pred_message(interaction: discord.Interaction, pred: Prediction
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 channel = None
     if channel is None:
-        channel = interaction.channel
+        channel = fallback_channel
+    if channel is None:
+        raise discord.NotFound(_NoResponse(), "prediction channel not found")
     return await channel.fetch_message(pred.msg_id)
+
+
+class _NoResponse:
+    """Stand-in HTTP response for a NotFound raised without a request behind it."""
+    status = 404
+    reason = "Not Found"
+
+
+async def set_prediction_locked(client: discord.Client, pred: Prediction, locked: bool,
+                                fallback_channel=None) -> bool:
+    """Lock or unlock a live prediction: flip the flag, re-render its card and save.
+    Returns False (changing nothing) when it's already in that state. Shared by the
+    /pred-admin buttons and the bot-action queue. Locking doesn't award the indecisive
+    badges here; callers do that after replying, as /pred-admin always has."""
+    if bool(pred.locked) == bool(locked):
+        return False
+    pred.locked = bool(locked)
+    if not locked:
+        # Drop a closing time that's already passed, or the sweep would lock it again straight
+        # away. A future one (e.g. pushed back with Edit) is kept so it still auto-locks.
+        if pred.end_ts and pred.end_ts <= discord.utils.utcnow().timestamp():
+            pred.end_ts = None
+    try:
+        msg = await _fetch_pred_message_in(client, pred, fallback_channel)
+        await _edit_prediction_message(msg, pred, client, interactive=not locked)
+    except discord.NotFound:
+        pass
+    _save({k: v.to_dict() for k, v in client.predictions.items()})
+    return True
 
 
 
@@ -823,14 +860,8 @@ class PredAdminView(discord.ui.View):
     async def lock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if self.pred.locked:
             return await interaction.response.send_message("Already locked.", ephemeral=True)
-        self.pred.locked = True
         await interaction.response.defer(ephemeral=True)
-        try:
-            msg = await _fetch_pred_message(interaction, self.pred, self.client)
-            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
-        except discord.NotFound:
-            pass
-        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await set_prediction_locked(self.client, self.pred, True, interaction.channel)
         await interaction.followup.send("🔒 Locked.", ephemeral=True)
 
         await award_indecisive_badges(self.client, self.pred)
@@ -839,21 +870,8 @@ class PredAdminView(discord.ui.View):
     async def unlock(self, interaction: discord.Interaction, _btn: discord.ui.Button):
         if not self.pred.locked:
             return await interaction.response.send_message("Already unlocked.", ephemeral=True)
-
-        self.pred.locked = False
-        # Drop a closing time that's already passed, or the sweep would lock it again straight
-        # away. A future one (e.g. pushed back with Edit) is kept so it still auto-locks.
-        if self.pred.end_ts and self.pred.end_ts <= discord.utils.utcnow().timestamp():
-            self.pred.end_ts = None
         await interaction.response.defer(ephemeral=True)
-
-        try:
-            msg = await _fetch_pred_message(interaction, self.pred, self.client)
-            await _edit_prediction_message(msg, self.pred, self.client, interactive=True)
-        except discord.NotFound:
-            pass
-
-        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
+        await set_prediction_locked(self.client, self.pred, False, interaction.channel)
         await interaction.followup.send("🔓 Unlocked.", ephemeral=True)
 
     @discord.ui.button(label="Edit", style=discord.ButtonStyle.secondary, row=0)
@@ -1269,19 +1287,25 @@ async def post_prediction(client: discord.Client, channel, title: str, options: 
     return p
 
 
+def validate_new_prediction(title: str, raw_options: list, duration: str, reference_ts: float) -> tuple:
+    """Check a new prediction's title, outcomes and closing time. Returns
+    (title, options, end_ts); raises ValueError with a message fit to show."""
+    options, err = _clean_options(raw_options)
+    if err:
+        raise ValueError(err)
+    title = (title or "").strip()
+    if not title:
+        raise ValueError("The title can't be empty.")
+    end_ts = _resolve_end_ts(str(duration), reference_ts)
+    return title, options, end_ts
+
+
 async def handle_pred_create_command(interaction: discord.Interaction, title: str,
                                      raw_options: list, duration: str):
     """Slash-command backed prediction creation (2-5 outcomes via slash options)."""
-    options, err = _clean_options(raw_options)
-    if err:
-        return await interaction.response.send_message(err, ephemeral=True)
-    title = (title or "").strip()
-    if not title:
-        return await interaction.response.send_message("The title can't be empty.", ephemeral=True)
-
-    now_ts = discord.utils.utcnow().timestamp()
     try:
-        end_ts = _resolve_end_ts(duration, now_ts)
+        title, options, end_ts = validate_new_prediction(
+            title, raw_options, duration, discord.utils.utcnow().timestamp())
     except ValueError as e:
         return await interaction.response.send_message(str(e), ephemeral=True)
 
@@ -1290,26 +1314,25 @@ async def handle_pred_create_command(interaction: discord.Interaction, title: st
     await interaction.followup.send(f"✅ Prediction opened with {len(options)} outcomes.", ephemeral=True)
 
 
-async def handle_pred_schedule_command(interaction: discord.Interaction, channel_id: int,
-                                       title: str, raw_options: list, when: str, duration: str):
-    """Slash-command backed scheduling of a prediction (2-5 outcomes)."""
+def validate_scheduled_prediction(title: str, raw_options: list, when: str, duration: str) -> tuple:
+    """Check a prediction to schedule. Returns (title, options, scheduled_ts,
+    duration_minutes); raises ValueError with a message fit to show."""
     options, err = _clean_options(raw_options)
     if err:
-        return await interaction.response.send_message(err, ephemeral=True)
+        raise ValueError(err)
     title = (title or "").strip()
     if not title:
-        return await interaction.response.send_message("The title can't be empty.", ephemeral=True)
-
-    try:
-        scheduled_ts = _parse_post_time(when)
-    except ValueError as e:
-        return await interaction.response.send_message(str(e), ephemeral=True)
-    try:
-        end_ts = _resolve_end_ts(duration, float(scheduled_ts))
-    except ValueError as e:
-        return await interaction.response.send_message(str(e), ephemeral=True)
+        raise ValueError("The title can't be empty.")
+    scheduled_ts = _parse_post_time(str(when))
+    end_ts = _resolve_end_ts(str(duration), float(scheduled_ts))
     duration_minutes = max(1, int(round((end_ts - scheduled_ts) / 60)))
+    return title, options, scheduled_ts, duration_minutes
 
+
+def store_scheduled_prediction(client: discord.Client, channel_id: int, creator_id: int, title: str,
+                               options: list, scheduled_ts: int, duration_minutes: int):
+    """Insert a pending scheduled prediction and give it its APScheduler job on the
+    running client, so it posts without a restart. Returns the new id."""
     from database import DatabaseManager
     import time
     now_ts = int(time.time())
@@ -1317,23 +1340,69 @@ async def handle_pred_schedule_command(interaction: discord.Interaction, channel
         "INSERT INTO scheduled_predictions "
         "(channel_id, creator_id, title, opt1, opt2, options_json, duration_minutes, scheduled_ts, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-        (str(channel_id), str(interaction.user.id), title, options[0], options[1],
+        (str(channel_id), str(creator_id), title, options[0], options[1],
          json.dumps(options), duration_minutes, scheduled_ts, now_ts),
     )
 
     from apscheduler.triggers.date import DateTrigger
     from datetime import datetime, timezone
     run_at = datetime.fromtimestamp(scheduled_ts, tz=timezone.utc)
-    scheduler = getattr(interaction.client, "scheduler", None)
+    scheduler = getattr(client, "scheduler", None)
     if scheduler is not None and sched_id is not None:
         scheduler.add_job(
             post_scheduled_prediction,
             DateTrigger(run_date=run_at),
-            args=[interaction.client, sched_id],
+            args=[client, sched_id],
             id=f"scheduled_pred_{sched_id}",
             name=f"Scheduled Prediction #{sched_id}",
             misfire_grace_time=3600,
         )
+    return sched_id
+
+
+async def announce_scheduled_prediction(client: discord.Client, sched_id, channel_id: int, title: str,
+                                        options: list, scheduled_ts: int, duration_minutes: int,
+                                        creator_mention: str) -> None:
+    """Post the "Prediction Scheduled" card (with its cancel button) to
+    #community-management and remember its message id on the row."""
+    from database import DatabaseManager
+    cm_channel = client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
+    if cm_channel is None or sched_id is None:
+        return
+    embed = _scheduled_pred_embed(
+        sched_id, channel_id, title, options,
+        scheduled_ts, duration_minutes, creator_mention,
+    )
+    try:
+        cm_msg = await cm_channel.send(
+            embed=embed,
+            view=CancelScheduledPredView(sched_id),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        DatabaseManager.execute(
+            "UPDATE scheduled_predictions SET cm_message_id = ? WHERE id = ?",
+            (str(cm_msg.id), sched_id),
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
+            exc_info=True,
+        )
+
+
+async def handle_pred_schedule_command(interaction: discord.Interaction, channel_id: int,
+                                       title: str, raw_options: list, when: str, duration: str):
+    """Slash-command backed scheduling of a prediction (2-5 outcomes)."""
+    try:
+        title, options, scheduled_ts, duration_minutes = validate_scheduled_prediction(
+            title, raw_options, when, duration)
+    except ValueError as e:
+        return await interaction.response.send_message(str(e), ephemeral=True)
+
+    sched_id = store_scheduled_prediction(
+        interaction.client, channel_id, interaction.user.id, title, options,
+        scheduled_ts, duration_minutes)
 
     await interaction.response.send_message(
         f"✅ Prediction #{sched_id} ({len(options)} outcomes) scheduled for "
@@ -1341,28 +1410,9 @@ async def handle_pred_schedule_command(interaction: discord.Interaction, channel
         ephemeral=True,
     )
 
-    cm_channel = interaction.client.get_channel(CHANNELS.COMMUNITY_MANAGEMENT)
-    if cm_channel is not None and sched_id is not None:
-        embed = _scheduled_pred_embed(
-            sched_id, channel_id, title, options,
-            scheduled_ts, duration_minutes, interaction.user.mention,
-        )
-        try:
-            cm_msg = await cm_channel.send(
-                embed=embed,
-                view=CancelScheduledPredView(sched_id),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            DatabaseManager.execute(
-                "UPDATE scheduled_predictions SET cm_message_id = ? WHERE id = ?",
-                (str(cm_msg.id), sched_id),
-            )
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Could not send scheduled-pred announcement to COMMUNITY_MANAGEMENT.",
-                exc_info=True,
-            )
+    await announce_scheduled_prediction(
+        interaction.client, sched_id, channel_id, title, options,
+        scheduled_ts, duration_minutes, interaction.user.mention)
 
 
 def _build_option_inputs(num_options: int):

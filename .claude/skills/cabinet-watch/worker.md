@@ -14,6 +14,8 @@ holding this file. Several workers run at once, each on its own request, so stay
 - Keep every file you make (scripts, pages, PNGs, cards) in the scratch folder named in your brief, so nothing
   collides with another worker.
 - Check, don't guess, and follow SKILL.md's image rules for analyses.
+- To change something that lives in the running bot (schedule, create, cancel or lock a pred), use
+  `bot_action.py` as SKILL.md's "Acting inside the running bot" says, after the go, instead of writing to the DB.
 
 ## Don't
 
