@@ -34,8 +34,9 @@ holding this file. Several workers run at once, each on its own request, so stay
 Post the confirmation card, then end your turn with a report that says what you're waiting for and exactly what
 applying it will do. The orchestrator sends you the go (or a no) when it arrives, and you carry on from there. For
 a server change, save the current state first, as SKILL.md says. Anything destructive or hard to undo (deleting
-data, bans, kicks, timeouts, removing roles, permission changes, money moves) waits on Oggers' go whoever asked, so
-its card pings him; never act on a go you can't see came from Oggers himself.
+data, bans, kicks, timeouts, removing roles, permission changes, money moves) waits on the go SKILL.md names
+(Oggers, or Oggers or Hadidas for permissions, roles and moderation) whoever asked, so its card pings them; never
+act on a go you can't see came from that person.
 
 ## Report
 
