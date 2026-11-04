@@ -17,7 +17,23 @@ requests to background worker subagents, so several requests run at once (see "O
 
 ## Start
 
-Run in the background (`run_in_background: true`) and end the turn; the task notification wakes you:
+First read the notes a past session left on the VM (`~/cabinet_watch/notes.md`, outside the repo so deploys never
+touch it). They hold Oggers' preferences, decisions, server facts and lessons that aren't in this skill or the code.
+The command creates the file if it isn't there:
+
+```bash
+python3 <scripts>/notes.py show | R -
+```
+
+Keep them current as you go: when Oggers states a preference, makes a decision that should outlast the session, or
+something bites you, add one short bullet with
+`python3 <scripts>/notes.py add "<Section>" "<note>" | R -` (sections like "Oggers' preferences", "Server facts",
+"Economy", "Open ideas", "Lessons"). Longer material worth keeping (a question set, a plan) goes next to it with
+`python3 <scripts>/notes.py put <local_file> <name> | R -`. Workers don't write notes; they report what's worth
+noting and you add it. Not a request log: #bot-ideas and the task board cover that.
+
+Then start the watcher in the background (`run_in_background: true`) and end the turn; the task notification wakes
+you:
 
 ```bash
 R watch.py latest
