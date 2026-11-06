@@ -262,6 +262,18 @@ def define_commands(tree, client):
     async def vc_ban_command(interaction: Interaction, user: Member):
         await vc_ban(interaction, user)
 
+    @app_commands.describe(
+        user_one="One of the two to keep apart (pick them, or paste their user id)",
+        user_two="The other one",
+        action="Toggle the pair on or off (default), or list who's separated",
+    )
+    # handle_separate_command checks who can use it (Border Force, and Oggers).
+    @command("separate", "Silently keep two members out of each other's voice calls (Border Force)")
+    async def separate_command(interaction: Interaction, user_one: discord.User = None,
+                               user_two: discord.User = None, action: Literal["toggle", "list"] = "toggle"):
+        from lib.features.separate import handle_separate_command
+        await handle_separate_command(interaction, user_one, user_two, action)
+
     @command("video-ban", "Toggles the Video Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def video_ban_command(interaction: Interaction, user: Member):
         await video_ban(interaction, user)
