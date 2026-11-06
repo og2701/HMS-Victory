@@ -1165,6 +1165,11 @@ async def _run_ready_initialisation(client, tree, scheduler):
         logger.exception("could not start the bot action queue")
     logger.info(f"{client.user} setup complete")
     await refresh_live_stages(client)
+    try:
+        from lib.features.separate import reconcile as reconcile_separations
+        asyncio.create_task(reconcile_separations(client))
+    except Exception:
+        logger.exception("could not start the /separate reconcile")
     from lib.bot.backup_manager import backup_database, backup_json_data
     await backup_database(client)
     await backup_json_data(client)
@@ -2428,6 +2433,11 @@ def record_voice_activity(client, kind, member, before_channel=None, after_chann
 
 
 async def on_voice_state_update(member, before, after):
+    # /separate: hide each separated member's call from the other. Detached, and it orders
+    # its own work behind a lock, so the first update processed is the one that counts.
+    from lib.features.separate import on_voice_state_update as separate_on_voice
+    asyncio.create_task(separate_on_voice(member, before, after))
+
     if after.channel and not before.channel and is_lockdown_active():
         if not any(role.id in VC_LOCKDOWN_WHITELIST for role in member.roles):
             await member.edit(mute=True, deafen=True)
