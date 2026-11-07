@@ -1,5 +1,5 @@
 """Vic's control panel: only Oggers and Hadidas get through, a press reaches the right action
-and refreshes its card, every press is logged, and each card renders its live status with the
+and redraws the panel, every press is logged, and each card renders its live status with the
 buttons that match it (and stays a valid Components V2 card)."""
 
 import asyncio
@@ -250,18 +250,54 @@ def test_handout_and_titles_cards():
     assert "**4** of 20 titles held" in cp.titles_card(4, 20)["status"]
 
 
-@pytest.mark.parametrize("card", cp.CARD_ORDER)
-def test_every_card_renders_as_valid_components_v2(card):
-    body = cp.payload(cp._fallback(card), NOW)
+def _all_cards():
+    return [cp._fallback(k) for k in cp.CARD_ORDER]
+
+
+def test_the_whole_panel_is_one_valid_components_v2_message():
+    body = cp.payload(_all_cards(), NOW)
     assert body["flags"] == 1 << 15 and body["allowed_mentions"] == {"parse": []}
+    assert len(body["components"]) == 1
     container = body["components"][0]
     assert container["type"] == 17
     rows = [c for c in container["components"] if c["type"] == 1]
-    assert len(rows) == 1 and 1 <= len(rows[0]["components"]) <= 5
-    for b in rows[0]["components"]:
-        assert len(b["custom_id"]) <= 100 and len(b["label"]) <= 80
-    assert len(_texts(body["components"])) < 4000
-    assert f"<t:{NOW}:R>" in _texts(body["components"])
+    assert len(rows) == len(cp.CARD_ORDER)  # one row of buttons per section
+    ids = [b["custom_id"] for r in rows for b in r["components"]]
+    assert len(ids) == len(set(ids))
+    for r in rows:
+        assert 1 <= len(r["components"]) <= 5
+        for b in r["components"]:
+            assert len(b["custom_id"]) <= 100 and len(b["label"]) <= 80
+    seps = [c for c in container["components"] if c["type"] == 14]
+    assert len(seps) == len(cp.CARD_ORDER) + 1  # between sections, and above the footer
+    text = _texts(body["components"])
+    assert text.startswith("## 🎛️ Vic's control panel")
+    for title in ("📰 News feed", "🏦 Bank", "🛡️ Flags", "🌙 Visitor overnight mute", "🪙 UKPence handout", "🎖️ Titles"):
+        assert f"### {title}" in text
+    assert f"<t:{NOW}:R>" in text
+    assert cp.count_components(body["components"]) <= cp.MAX_COMPONENTS
+    assert cp.text_length(body["components"]) <= cp.MAX_TEXT
+
+
+def test_the_panel_stays_inside_the_limits_at_its_busiest():
+    cards = _all_cards()
+    cards[0] = cp.newsfeed_card({"paused": True, "last_run": NOW, "last_error": {"error": "x" * 2000}}, True, True, NOW)
+    cards[1] = cp.bank_card({"balance": 10**9, "total_revenue": 10**9, "total_tax_collected": 10**9},
+                            {"reserves": 10**9, "pct_of_supply": 99.9, "throttled": True, "multiplier": 0.25})
+    cards[2] = cp.flags_card([(123456789012345678, "economy", NOW, "x" * 500)] * 300)
+    cards[3] = cp.overnight_card(True, NOW)
+    components = cp.render(cards, NOW)
+    assert cp.count_components(components) <= cp.MAX_COMPONENTS
+    assert cp.text_length(components) <= cp.MAX_TEXT
+
+
+def test_panel_accent_is_the_worst_section():
+    cards = _all_cards()
+    assert cp.render(cards, NOW)[0]["accent_color"] == cp.BLUE
+    cards[0] = cp.newsfeed_card({"paused": True}, True, False, NOW)
+    assert cp.render(cards, NOW)[0]["accent_color"] == cp.ORANGE
+    cards[1] = dict(cards[1], accent=cp.RED)
+    assert cp.render(cards, NOW)[0]["accent_color"] == cp.RED
 
 
 def test_gather_survives_a_broken_read(monkeypatch):
@@ -278,9 +314,9 @@ def test_gather_survives_a_broken_read(monkeypatch):
 
 def test_state_round_trips(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONTROL_PANEL_STATE_FILE", str(tmp_path / "cp.json"))
-    assert cp.load_state() == {"thread_id": None, "cards": {}}
-    cp.save_state({"thread_id": "1", "cards": {"bank": "2"}})
-    assert cp.load_state()["cards"] == {"bank": "2"}
+    assert cp.load_state() == {"thread_id": None, "message_id": None}
+    cp.save_state({"thread_id": "1", "message_id": "2"})
+    assert cp.load_state()["message_id"] == "2"
 
 
 # ---------------------------------------------------------------- ensure / re-post
@@ -293,11 +329,15 @@ def _not_found():
 class _FakeHttp:
     def __init__(self, deleted=()):
         self.calls, self.deleted, self.next_id = [], {int(d) for d in deleted}, 500
+        self.removed = []
 
     async def request(self, route, json=None):
         self.calls.append(route.method)
-        if route.method == "PATCH" and int(route.url.rsplit("/", 1)[1]) in self.deleted:
+        if route.method in ("PATCH", "DELETE") and int(route.url.rsplit("/", 1)[1]) in self.deleted:
             raise _not_found()
+        if route.method == "DELETE":
+            self.removed.append(route.url.rsplit("/", 1)[1])
+            return None
         self.next_id += 1
         return {"id": str(self.next_id)}
 
@@ -328,25 +368,48 @@ def _thread():
     return SimpleNamespace(id=42, parent_id=config.CHANNELS.BOT_WORKSHOP, archived=False)
 
 
-def test_first_run_creates_the_thread_and_posts_every_card(quiet_gather):
+def test_first_run_creates_the_thread_and_posts_one_message(quiet_gather):
     http = _FakeHttp()
     client = _client(http, _thread())
-    _run(cp._sync(client, header=True))
+    _run(cp._sync(client))
     assert client.parent.created == [config.CONTROL_PANEL_THREAD_NAME]
-    assert http.calls == ["POST"] * (1 + len(cp.CARD_ORDER))
-    state = cp.load_state()
-    assert state["thread_id"] == "42" and set(state["cards"]) == {"header", *cp.CARD_ORDER}
+    assert http.calls == ["POST"]
+    assert cp.load_state() == {"thread_id": "42", "message_id": "501"}
 
 
-def test_a_deleted_card_is_reposted_and_the_rest_edited(quiet_gather):
-    cards = {"header": "1", **{k: str(10 + i) for i, k in enumerate(cp.CARD_ORDER)}}
-    cp.save_state({"thread_id": "42", "cards": cards})
-    http = _FakeHttp(deleted={cards["flags"]})
-    client = _client(http, _thread())
+def _existing(client):
     client.channels[42] = _thread()
+    return client
+
+
+def test_a_redraw_edits_the_message_in_place(quiet_gather):
+    cp.save_state({"thread_id": "42", "message_id": "77"})
+    http = _FakeHttp()
+    _run(cp._sync(_existing(_client(http, _thread()))))
+    assert http.calls == ["PATCH"]
+    assert cp.load_state()["message_id"] == "77"
+
+
+def test_a_deleted_panel_is_reposted(quiet_gather):
+    cp.save_state({"thread_id": "42", "message_id": "77"})
+    http = _FakeHttp(deleted={77})
+    client = _existing(_client(http, _thread()))
     _run(cp._sync(client))
     assert client.parent.created == []
-    assert http.calls.count("POST") == 1  # only the flags card came back
+    assert http.calls == ["PATCH", "POST"]
+    assert cp.load_state()["message_id"] == "501"
+
+
+def test_old_per_feature_cards_are_deleted_and_one_message_posted(quiet_gather):
+    cards = {"header": "1", **{k: str(10 + i) for i, k in enumerate(cp.CARD_ORDER)}}
+    cp.save_state({"thread_id": "42", "cards": cards})
+    http = _FakeHttp(deleted={cards["flags"]})  # one was already gone: that's fine
+    _run(cp._sync(_existing(_client(http, _thread()))))
+    assert sorted(http.removed) == sorted(v for k, v in cards.items() if k != "flags")
+    assert http.calls.count("DELETE") == len(cards) and http.calls.count("POST") == 1
     state = cp.load_state()
-    assert state["cards"]["flags"] not in cards.values()
-    assert {k: v for k, v in state["cards"].items() if k != "flags"} == {k: v for k, v in cards.items() if k != "flags"}
+    assert "cards" not in state and state["message_id"] == "501"
+    # and the next redraw just edits it
+    http2 = _FakeHttp()
+    _run(cp._sync(_existing(_client(http2, _thread()))))
+    assert http2.calls == ["PATCH"]
