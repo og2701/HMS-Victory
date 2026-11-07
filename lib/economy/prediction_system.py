@@ -1083,9 +1083,7 @@ class LivePredictionEditModal(discord.ui.Modal):
         from datetime import datetime
         # Kept so an untouched close time skips the future-time check, which lets a locked
         # prediction whose time has passed still have its title or outcomes fixed.
-        self._orig_close = datetime.fromtimestamp(
-            pred.end_ts, tz=pytz.timezone("Europe/London")
-        ).strftime("%Y-%m-%d %H:%M") if pred.end_ts else ""
+        self._orig_close = _fmt_uk_datetime(pred.end_ts) if pred.end_ts else ""
 
         self.title_input = discord.ui.TextInput(
             label="Title", style=discord.TextStyle.long,
@@ -1096,7 +1094,7 @@ class LivePredictionEditModal(discord.ui.Modal):
             default="\n".join(pred.options), required=True, max_length=430,
         )
         self.close_input = discord.ui.TextInput(
-            label="Closes (mins from now / YYYY-MM-DD HH:MM UK)",
+            label="Closes (mins from now / DD/MM/YYYY HH:MM UK)",
             style=discord.TextStyle.short, default=self._orig_close,
             placeholder="Leave blank to keep it open until someone locks it",
             required=False, max_length=20,
@@ -1163,10 +1161,42 @@ class LivePredictionEditModal(discord.ui.Modal):
         await interaction.followup.send(f"✏️ Updated, {closes}.{note}", ephemeral=True)
 
 
+UK_DT_FORMAT = "%d/%m/%Y %H:%M"
+UK_DT_HINT = "DD/MM/YYYY HH:MM"
+
+
+def _fmt_uk_datetime(ts: float) -> str:
+    """A unix timestamp as staff type it: DD/MM/YYYY HH:MM, 24h, Europe/London."""
+    import pytz
+    from datetime import datetime
+    return datetime.fromtimestamp(ts, tz=pytz.timezone("Europe/London")).strftime(UK_DT_FORMAT)
+
+
+def _parse_uk_datetime(value: str):
+    """Parse a typed date and time into an aware Europe/London datetime, day first:
+    DD/MM/YYYY HH:MM (also with - or . between the parts, a two-digit year, or the time
+    first). An unambiguous ISO YYYY-MM-DD HH:MM is still taken. Never month first, so
+    08/05/2026 is 8 May. Raises ValueError when it doesn't parse."""
+    import re, pytz
+    from datetime import datetime
+    text = " ".join(value.strip().split())
+    m = re.fullmatch(r"(\d{1,2}:\d{2})\s+(\S+)", text)
+    if m:  # "19:30 08/05/2026"
+        text = f"{m.group(2)} {m.group(1)}"
+    for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%y %H:%M", "%d-%m-%Y %H:%M",
+                "%d.%m.%Y %H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            naive = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        return pytz.timezone("Europe/London").localize(naive)
+    raise ValueError(f"not a {UK_DT_HINT} time: {value!r}")
+
+
 def _parse_post_time(value: str) -> int:
     """Parse the 'when to post' field. Accepts:
       - integer minutes from now
-      - "YYYY-MM-DD HH:MM" in Europe/London
+      - "DD/MM/YYYY HH:MM" in Europe/London (day first; see _parse_uk_datetime)
       - a Discord timestamp like "<t:1715116200:F>"
     Returns a unix timestamp. Raises ValueError on bad input or past time."""
     import re, pytz
@@ -1187,13 +1217,13 @@ def _parse_post_time(value: str) -> int:
             if "positive integer" in str(int_err):
                 raise
             try:
-                naive = datetime.strptime(value, "%Y-%m-%d %H:%M")
+                aware = _parse_uk_datetime(value)
             except ValueError:
                 raise ValueError(
                     "Post time must be one of: minutes from now (e.g. `30`), "
-                    "`YYYY-MM-DD HH:MM` in UK time, or a Discord timestamp like `<t:1715116200:F>`."
+                    f"`{UK_DT_HINT}` in UK time (e.g. `14/11/2026 19:45`), "
+                    "or a Discord timestamp like `<t:1715116200:F>`."
                 )
-            aware = pytz.timezone("Europe/London").localize(naive)
             scheduled_ts = int(aware.timestamp())
 
     if scheduled_ts <= int(now_uk.timestamp()):
@@ -1203,7 +1233,7 @@ def _parse_post_time(value: str) -> int:
 
 def _resolve_end_ts(value: str, reference_ts: float) -> float:
     """Parse duration field as either minutes (int) or absolute UK end time
-    (`YYYY-MM-DD HH:MM`). Returns absolute end timestamp. Raises ValueError on
+    (`DD/MM/YYYY HH:MM`, day first). Returns absolute end timestamp. Raises ValueError on
     bad input or non-positive duration."""
     import pytz
     from datetime import datetime
@@ -1217,12 +1247,12 @@ def _resolve_end_ts(value: str, reference_ts: float) -> float:
         if "positive" in str(int_err):
             raise
     try:
-        naive = datetime.strptime(value, "%Y-%m-%d %H:%M")
+        aware = _parse_uk_datetime(value)
     except ValueError:
         raise ValueError(
-            "End time must be a positive integer (minutes) or `YYYY-MM-DD HH:MM` in UK time."
+            f"End time must be a positive integer (minutes) or `{UK_DT_HINT}` in UK time "
+            "(e.g. `14/11/2026 21:30`)."
         )
-    aware = pytz.timezone("Europe/London").localize(naive)
     end_ts = aware.timestamp()
     if end_ts <= reference_ts:
         raise ValueError("End time must be in the future, after the prediction posts.")
@@ -1470,7 +1500,7 @@ class PredictionCreateModal(discord.ui.Modal):
             self.add_item(item)
 
         self.duration_input = discord.ui.TextInput(
-            label="Minutes or end time YYYY-MM-DD HH:MM",
+            label="Minutes or end time DD/MM/YYYY HH:MM",
             style=discord.TextStyle.short, default="5", required=True, max_length=20,
         )
         self.add_item(self.duration_input)
@@ -1504,15 +1534,15 @@ class PredictionScheduleModal(discord.ui.Modal):
             self.add_item(item)
 
         self.when_input = discord.ui.TextInput(
-            label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
+            label="Post when? (mins / DD/MM/YYYY HH:MM UK)",
             style=discord.TextStyle.short,
-            placeholder="30  or  2026-05-08 19:30  or  <t:1715116200:F>",
+            placeholder="30  or  08/05/2026 19:30  or  <t:1715116200:F>",
             required=True, max_length=40,
         )
         self.add_item(self.when_input)
 
         self.duration_input = discord.ui.TextInput(
-            label="Minutes or end time YYYY-MM-DD HH:MM",
+            label="Minutes or end time DD/MM/YYYY HH:MM",
             style=discord.TextStyle.short, default="5", required=True, max_length=20,
         )
         self.add_item(self.duration_input)
@@ -1538,9 +1568,7 @@ class PredictionEditModal(discord.ui.Modal):
 
         import pytz
         from datetime import datetime
-        when_default = datetime.fromtimestamp(
-            scheduled_ts, tz=pytz.timezone("Europe/London")
-        ).strftime("%Y-%m-%d %H:%M")
+        when_default = _fmt_uk_datetime(scheduled_ts)
         # Keep the originals so an unchanged "when" can skip the future-time
         # check - staff editing only the title of an imminent prediction
         # shouldn't be blocked by "Post time must be in the future."
@@ -1565,14 +1593,14 @@ class PredictionEditModal(discord.ui.Modal):
             max_length=430,
         )
         self.when_input = discord.ui.TextInput(
-            label="Post when? (mins / YYYY-MM-DD HH:MM UK)",
+            label="Post when? (mins / DD/MM/YYYY HH:MM UK)",
             style=discord.TextStyle.short,
             default=when_default,
             required=True,
             max_length=40,
         )
         self.duration_input = discord.ui.TextInput(
-            label="Minutes or end time YYYY-MM-DD HH:MM",
+            label="Minutes or end time DD/MM/YYYY HH:MM",
             style=discord.TextStyle.short,
             default=str(duration_minutes),
             required=True,
@@ -1742,7 +1770,7 @@ class ScheduledPredSelectView(discord.ui.View):
             short_title = title[:80]
             options.append(discord.SelectOption(
                 label=f"#{sched_id}: {short_title}",
-                description=f"Posts: {datetime.fromtimestamp(scheduled_ts).strftime('%Y-%m-%d %H:%M')} UK",
+                description=f"Posts: {_fmt_uk_datetime(scheduled_ts)} UK",
                 value=str(sched_id)
             ))
 

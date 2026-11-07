@@ -105,7 +105,7 @@ def test_modal_keeps_past_close_time_when_untouched_on_locked_pred():
     pred.end_ts = 1_700_000_000  # long gone; the field defaults to it
     from datetime import datetime
     import pytz
-    orig = datetime.fromtimestamp(pred.end_ts, tz=pytz.timezone("Europe/London")).strftime("%Y-%m-%d %H:%M")
+    orig = datetime.fromtimestamp(pred.end_ts, tz=pytz.timezone("Europe/London")).strftime("%d/%m/%Y %H:%M")
     inter, _, edit_card = _submit(pred, "Fenerbahce Vs Liverpool",
                                   "Fenerbahce\nDraw\nLiverpool", orig)
     assert pred.end_ts == 1_700_000_000
