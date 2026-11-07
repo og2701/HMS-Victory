@@ -1,7 +1,7 @@
-"""Vic's control panel: a thread under #bot-workshop with one Components V2 card per admin
-switch, so they don't each need a slash command.
+"""Vic's control panel: one Components V2 message in a thread under #bot-workshop, with a
+section per admin switch, so they don't each need a slash command.
 
-Cards: News feed, Bank, Flags, Visitor overnight mute, UKPence handout and Titles. Each shows
+Sections: News feed, Bank, Flags, Visitor overnight mute, UKPence handout and Titles. Each shows
 a live status line and the buttons for what its old command (or text trigger) did. Every
 button runs the same code the command ran, so there is one code path, not two.
 
@@ -10,14 +10,15 @@ button runs the same code the command ran, so there is one code path, not two.
   needs Deputy PM, the title manager needs Oggers or Deputy PM) keep them.
 - Every press is logged to #bot-usage-log the way slash commands are, and the presser gets a
   private reply from the action itself.
-- The card refreshes after each press, and every CONTROL_PANEL_REFRESH_MINUTES in the
+- The panel redraws after each press, and every CONTROL_PANEL_REFRESH_MINUTES in the
   background, so a change made elsewhere (a poll, a flag) shows up too.
 - The buttons are DynamicItems registered in setup_hook, so they keep working after a
-  restart. ensure_panel (called from on_ready) creates the thread and cards when they are
-  missing, re-posts a deleted card, and keeps the thread from archiving. The ids live in
-  config.CONTROL_PANEL_STATE_FILE.
+  restart. ensure_panel (called from on_ready) creates the thread and the message when they
+  are missing, re-posts a deleted message, and keeps the thread from archiving. The ids live in
+  config.CONTROL_PANEL_STATE_FILE. The first version posted one message per feature; those
+  old messages are deleted once, the first time the single message goes up.
 
-The cards are sent as raw CV2 JSON over REST, like the #bot-workshop task board, which keeps
+The panel is sent as raw CV2 JSON over REST, like the #bot-workshop task board, which keeps
 rendering a pure function that the tests can check without Discord.
 """
 
@@ -44,7 +45,10 @@ GREEN, ORANGE, RED, GREY, BLUE, GOLD = 0x2ECC71, 0xE67E22, 0xE74C3C, 0x95A5A6, 0
 MUTE_HOUR, UNMUTE_HOUR = 3, 7
 
 NOT_FOR_YOU = "🎛️ This control panel isn't for you. Only Oggers and Hadidas can use it."
-STALE = "🎛️ That button is out of date. The card has been refreshed, so try again."
+STALE = "🎛️ That button is out of date. The panel has been refreshed, so try again."
+# Discord's Components V2 limits for one message.
+MAX_COMPONENTS = 40
+MAX_TEXT = 4000
 
 
 # ---------------------------------------------------------------- permissions
@@ -73,7 +77,9 @@ def load_state() -> dict:
         logger.exception("control panel: could not read %s; starting fresh", state_path())
         state = {}
     state.setdefault("thread_id", None)
-    state.setdefault("cards", {})
+    state.setdefault("message_id", None)
+    # "cards" only exists in state written by the one-message-per-feature version: those
+    # messages get deleted when the single panel goes up.
     return state
 
 
@@ -121,7 +127,7 @@ def newsfeed_card(state: dict, enabled: bool, dry: bool, now: float) -> dict:
         _button("newsfeed", "live", "Go live", "📣") if dry else _button("newsfeed", "dry-run", "Dry run", "🧪"),
         _button("newsfeed", "status", "Full status", "📋"),
     ]
-    return {"title": "## 📰 News feed", "sub": "The BBC news forum auto-poster (was /newsfeed)",
+    return {"title": "### 📰 News feed", "sub": "The BBC news forum auto-poster (was /newsfeed)",
             "status": "\n".join(lines), "accent": accent, "buttons": buttons}
 
 
@@ -134,7 +140,7 @@ def bank_card(info: dict, reserve: dict) -> dict:
         if reserve.get("throttled"):
             accent = ORANGE
             lines.append(f"🚦 **Throttle on:** rewards paying {reserve.get('multiplier', 1.0):.0%}")
-    return {"title": "## 🏦 Bank", "sub": "The server bank (was /bank-status)",
+    return {"title": "### 🏦 Bank", "sub": "The server bank (was /bank-status)",
             "status": "\n".join(lines), "accent": accent,
             "buttons": [_button("bank", "report", "Full report", "📊", 1)]}
 
@@ -153,7 +159,7 @@ def flags_card(rows: list, tier_label=None) -> dict:
         status, accent = f"🚫 **{len(rows)}** {who} restricted ({split})", ORANGE
         newest = rows[0]
         status += f"\n-# Newest: <@{newest[0]}> <t:{int(newest[2])}:R>"
-    return {"title": "## 🛡️ Flags", "sub": "Anti-cheat flags and economy restrictions (was /flags)",
+    return {"title": "### 🛡️ Flags", "sub": "Anti-cheat flags and economy restrictions (was /flags)",
             "status": status, "accent": accent,
             "buttons": [_button("flags", "review", "Review flags", "🔎", 1)]}
 
@@ -178,51 +184,78 @@ def overnight_card(active: bool, now: float) -> dict:
     else:
         status = "☀️ **Off** · visitors can talk overnight"
         button, accent = _button("overnight", "on", "Turn on", "🌙", 3), GREY
-    return {"title": "## 🌙 Visitor overnight mute", "sub": "Was /toggle-visitor-overnight-mute",
+    return {"title": "### 🌙 Visitor overnight mute", "sub": "Was /toggle-visitor-overnight-mute",
             "status": status, "accent": accent, "buttons": [button]}
 
 
 def ukpadd_card(balance: int) -> dict:
-    return {"title": "## 🪙 UKPence handout", "sub": "Pay people or a whole role from the bank (same as `ukpadd`)",
+    return {"title": "### 🪙 UKPence handout", "sub": "Pay people or a whole role from the bank (same as `ukpadd`)",
             "status": f"💰 **{int(balance):,}** UKP available in the bank\n-# The handout itself still needs the Deputy PM role.",
             "accent": GOLD, "buttons": [_button("ukpadd", "open", "Hand out UKPence", "🪙", 1)]}
 
 
 def titles_card(held: int, total: int) -> dict:
-    return {"title": "## 🎖️ Titles", "sub": "Give or clear a member's title (same as `titleadd`)",
+    return {"title": "### 🎖️ Titles", "sub": "Give or clear a member's title (same as `titleadd`)",
             "status": f"🎖️ **{int(held)}** of {int(total)} titles held",
             "accent": BLUE, "buttons": [_button("titles", "open", "Open title manager", "🎖️", 1)]}
 
 
-def render(card: dict, now: float = None) -> list:
-    now = time.time() if now is None else now
-    items = [
-        {"type": 10, "content": f"{card['title']}\n-# {card['sub']}"},
-        {"type": 14, "divider": True, "spacing": 1},
-        {"type": 10, "content": card["status"]},
-        {"type": 1, "components": card["buttons"][:5]},
-        {"type": 10, "content": f"-# Updated <t:{int(now)}:R> · Oggers and Hadidas only"},
-    ]
-    return [{"type": 17, "accent_color": card["accent"], "components": items}]
-
-
-def payload(card: dict, now: float = None) -> dict:
-    return {"flags": 1 << 15, "components": render(card, now), "allowed_mentions": {"parse": []}}
-
-
-def header_payload() -> dict:
+def header_text() -> str:
     who = " and ".join(f"<@{u}>" for u in getattr(config, "CONTROL_PANEL_USER_IDS", []))
-    text = ("## 🎛️ Vic's control panel\n"
-            "Admin switches that used to be slash commands. Each card shows what's on now and has the buttons. "
+    return ("## 🎛️ Vic's control panel\n"
+            "Admin switches that used to be slash commands. Each section shows what's on now and has its buttons. "
             f"Only {who} can press them; replies are private and every press goes in <#{CHANNELS.BOT_USAGE_LOG}>.")
-    return {"flags": 1 << 15, "allowed_mentions": {"parse": []},
-            "components": [{"type": 17, "accent_color": BLUE, "components": [{"type": 10, "content": text}]}]}
+
+
+def _accent(cards: list) -> int:
+    """The worst state on the panel: red if a read failed, orange if something needs a look."""
+    accents = {c["accent"] for c in cards}
+    if RED in accents:
+        return RED
+    if ORANGE in accents:
+        return ORANGE
+    return BLUE
+
+
+def count_components(components: list) -> int:
+    n = 0
+    for c in components:
+        n += 1 + count_components(c.get("components", []))
+    return n
+
+
+def text_length(components: list) -> int:
+    total = 0
+    for c in components:
+        total += len(c.get("content", "")) + text_length(c.get("components", []))
+    return total
+
+
+def render(cards: list, now: float = None) -> list:
+    """The whole panel as one CV2 container: the header, then a section per feature (title,
+    status, buttons) with separators between them. 6 sections cost 30 of the 40 components."""
+    now = time.time() if now is None else now
+    items = [{"type": 10, "content": header_text()}]
+    for card in cards:
+        items.append({"type": 14, "divider": True, "spacing": 2})
+        items.append({"type": 10, "content": f"{card['title']}\n-# {card['sub']}\n{card['status']}"})
+        items.append({"type": 1, "components": card["buttons"][:5]})
+    items.append({"type": 14, "divider": True, "spacing": 1})
+    items.append({"type": 10, "content": f"-# Updated <t:{int(now)}:R> · Oggers and Hadidas only"})
+    components = [{"type": 17, "accent_color": _accent(cards), "components": items}]
+    assert count_components(components) <= MAX_COMPONENTS, count_components(components)
+    assert text_length(components) <= MAX_TEXT, text_length(components)
+    return components
+
+
+def payload(cards: list, now: float = None) -> dict:
+    return {"flags": 1 << 15, "components": render(cards, now), "allowed_mentions": {"parse": []}}
 
 
 # ---------------------------------------------------------------- live data
 
 def gather(key: str, now: float = None) -> dict:
-    """The card for key, built from live data. A read that fails shows on the card instead."""
+    """The section for key, built from live data. A read that fails shows on the panel instead."""
     now = time.time() if now is None else now
     try:
         if key == "newsfeed":
@@ -443,43 +476,53 @@ async def _thread(client, state: dict):
     return thread, False
 
 
-async def _sync(client, keys=None, header: bool = False) -> None:
-    """Redraw the cards from live status, posting any that are missing or were deleted.
-    header=True also redraws (or re-posts) the intro card at the top."""
+async def _delete(client, channel_id: int, message_id: int) -> None:
+    try:
+        await client.http.request(_route("DELETE", "/channels/{channel_id}/messages/{message_id}",
+                                         channel_id=int(channel_id), message_id=int(message_id)))
+    except discord.NotFound:
+        pass
+
+
+async def _sync(client) -> None:
+    """Redraw the panel from live status, posting it if it's missing or was deleted. Old
+    one-message-per-feature cards left from the first version are deleted once."""
     state = load_state()
     thread, created = await _thread(client, state)
     if created or str(thread.id) != str(state.get("thread_id")):
-        state = {"thread_id": str(thread.id), "cards": {}}
+        state = {"thread_id": str(thread.id), "message_id": None}
     changed = False
-    header_id = state["cards"].get("header")
-    if header_id and header:
-        try:
-            await _patch(client, thread.id, int(header_id), header_payload())
-        except discord.NotFound:
-            header_id = None
-    if not header_id:
-        state["cards"]["header"] = str(await _post(client, thread.id, header_payload()))
-        changed = True
-    for key in (keys or CARD_ORDER):
-        card = await asyncio.to_thread(gather, key)
-        body = payload(card)
-        message_id = state["cards"].get(key)
-        if message_id:
+    old_cards = state.pop("cards", None)
+    if old_cards:
+        for message_id in old_cards.values():
             try:
-                await _patch(client, thread.id, int(message_id), body)
-                continue
-            except discord.NotFound:
-                logger.info("control panel: %s card was deleted, re-posting", key)
-        state["cards"][key] = str(await _post(client, thread.id, body))
+                await _delete(client, thread.id, int(message_id))
+            except Exception:
+                logger.warning("control panel: could not delete old card %s", message_id, exc_info=True)
+        logger.info("control panel: removed %d old per-feature cards", len(old_cards))
+        changed = True
+    cards = [await asyncio.to_thread(gather, key) for key in CARD_ORDER]
+    body = payload(cards)
+    message_id = state.get("message_id")
+    posted = False
+    if message_id:
+        try:
+            await _patch(client, thread.id, int(message_id), body)
+            posted = True
+        except discord.NotFound:
+            logger.info("control panel: the panel message was deleted, re-posting")
+    if not posted:
+        state["message_id"] = str(await _post(client, thread.id, body))
         changed = True
     if changed:
         save_state(state)
 
 
 async def refresh_card(client, key: str) -> None:
+    """Redraw the panel after a press on key's section (one message, so all of it)."""
     try:
         async with _lock:
-            await _sync(client, [key])
+            await _sync(client)
     except Exception:
         logger.warning("control panel: could not refresh %s", key, exc_info=True)
 
@@ -496,12 +539,12 @@ async def _refresh_loop(client) -> None:
 
 
 async def ensure_panel(client) -> None:
-    """Create the thread and cards if they're missing, redraw them all, and start the
+    """Create the thread and the panel message if they're missing, redraw it, and start the
     background refresh. Safe to call on every on_ready."""
     global _loop_task
     try:
         async with _lock:
-            await _sync(client, header=True)
+            await _sync(client)
     except Exception:
         logger.exception("control panel: could not set up the panel")
     if _loop_task is None or _loop_task.done():

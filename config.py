@@ -805,9 +805,10 @@ BOT_ID = USERS.HMS_VICTORY
 
 DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.JOHNNY]
 
-# Vic's control panel: a thread under #bot-workshop with one card of buttons per admin switch
-# (news feed, bank, flags, overnight mute, UKP handouts, titles). Only these people can press
-# them; anyone else gets a private "not for you". Thread and card ids live in CONTROL_PANEL_STATE_FILE.
+# Vic's control panel: one Components V2 message in a thread under #bot-workshop, with a section of
+# buttons per admin switch (news feed, bank, flags, overnight mute, UKP handouts, titles). Only these
+# people can press them; anyone else gets a private "not for you". Thread and message ids live in
+# CONTROL_PANEL_STATE_FILE.
 CONTROL_PANEL_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
 CONTROL_PANEL_THREAD_NAME = "🎛️ Control panel"
 CONTROL_PANEL_REFRESH_MINUTES = 5

@@ -303,7 +303,7 @@ class AClient(discord.Client):
         except Exception:
             logger.exception("could not ensure the persona bot card")
 
-        # Vic's control panel thread: create it and its cards if missing, redraw them, keep it fresh.
+        # Vic's control panel thread: create it and its message if missing, redraw it, keep it fresh.
         try:
             from lib.bot.control_panel import ensure_panel
             asyncio.create_task(ensure_panel(self))
