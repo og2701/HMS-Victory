@@ -13,8 +13,8 @@ Actions (the bot refuses anything else, and any arg not listed):
   pred_list                                      live predictions
   pred_list_scheduled                            pending scheduled predictions
   pred_schedule  channel_id title options when duration
-                 when: minutes from now, "YYYY-MM-DD HH:MM" UK time, or <t:unix>
-                 duration: minutes after posting, or an end "YYYY-MM-DD HH:MM" UK time
+                 when: minutes from now, "DD/MM/YYYY HH:MM" UK time (day first), or <t:unix>
+                 duration: minutes after posting, or an end "DD/MM/YYYY HH:MM" UK time
   pred_create    channel_id title options duration
   pred_cancel_scheduled  sched_id
   pred_lock / pred_unlock  message_id
