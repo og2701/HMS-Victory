@@ -207,12 +207,12 @@ def test_editorial_tails_are_trimmed_from_why_it_matters():
 
 
 def test_post_body_matches_the_forum_style():
-    body = N.build_post_body("https://bbc.co.uk/news/x", "It matters.", "What should happen next?")
+    body = N.build_post_body("https://bbc.co.uk/news/x", "It matters.")
     lines = body.split("\n\n")
     assert lines[0] == "https://bbc.co.uk/news/x"
     assert lines[1] == "It matters."
-    assert lines[2] == "**What should happen next?**"
-    assert lines[3].startswith("-# Posted automatically from BBC News")
+    assert len(lines) == 3
+    assert lines[2].startswith("-# Posted automatically from BBC News")
     assert N.build_update_body("Suspect named", "https://l").startswith("**Update:** Suspect named\nhttps://l")
 
 
@@ -478,3 +478,17 @@ def test_the_daily_cap_holds(poll, monkeypatch):
     forum = FakeForum()
     state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
     assert forum.created == [] and not N.already_posted(state, BARNIER)
+
+
+def test_post_body_is_just_link_and_description():
+    body = N.build_post_body("https://bbc.co.uk/news/x", "Six people were killed.")
+    assert body.startswith("https://bbc.co.uk/news/x\n\nSix people were killed.")
+    assert "?" not in body.split("\n\n")[1]
+    assert '"question"' not in N.JUDGE_PROMPT
+
+
+def test_new_post_never_includes_a_question(poll):
+    forum = FakeForum()
+    poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
+    _, content, _ = forum.created[0]
+    assert "How should Europe respond?" not in content
