@@ -11,7 +11,7 @@ when it entered and last sat in BBC top stories. Those give a signal score befor
     in three or more BBC feeds    +1   (top stories plus one section is the norm)
 
 Only a story over the signal threshold goes to the AI, through the chat responder's own OpenAI client. The AI rates
-its importance for this server, picks the forum tag, writes a neutral "why it matters" and a discussion question,
+its importance for this server, picks the forum tag, writes a neutral "why it matters",
 and says whether it is the same developing story as one of the forum's open posts from the last few days. Then:
 
     article already linked in an open post -> nothing (no duplicate)
@@ -20,7 +20,7 @@ and says whether it is the same developing story as one of the forum's open post
 "Open posts" means every unlocked post in the forum from the last NEWSFEED_MATCH_DAYS, members' as well as Vic's:
 if a member got there first, the article goes into their post as an update. Members' posts are only ever replied
 to, never edited, retagged or pinned.
-    strong enough on its own    -> a new post (title = headline, body = link, why it matters, question)
+    strong enough on its own    -> a new post (title = headline, body = link, why it matters)
     otherwise                   -> nothing; it may be judged again if its signal climbs
 
 New posts are capped per UK day and per poll. A story is only ever posted once (by URL, persisted). Live pages get
@@ -450,12 +450,11 @@ def trim_title(title: str, limit: int = TITLE_LIMIT) -> str:
     return cut.rstrip(",;:-–— ") + "…"
 
 
-def build_post_body(link: str, why: str = "", question: str = "", source: str = "BBC News") -> str:
+def build_post_body(link: str, why: str = "", source: str = "BBC News") -> str:
+    """A post is the link and a brief neutral description, nothing else (no discussion question, at Oggers' ask)."""
     parts = [link]
     if why:
         parts.append(why)
-    if question:
-        parts.append(f"**{question}**")
     parts.append(FOOTER.format(source=source))
     return "\n\n".join(parts)
 
@@ -490,18 +489,16 @@ when the event itself is major.
 ongoing issue, where this article is a new development or follow-up on it), give that post's "id"; otherwise null. \
 Two different stories on the same broad subject (two separate stories about one party, say) are NOT the same story.
 - "why": one or two short sentences (at most 220 characters) on why it matters, for someone who has not read it.
-- "question": one open, balanced discussion question (at most 120 characters) that does not presume an answer, or \
-"" if none fits.
 - "reason": a few words on your call.
 
-"why" and "question" must be strictly neutral and factual, to the standard of BBC impartiality: no opinions, no \
+"why" must be strictly neutral and factual, to the standard of BBC impartiality: no opinions, no \
 loaded or emotive words, no jokes, no persona, and no taking sides on parties, politicians, countries or groups. \
 Nothing that promotes non-British nationalism or disparages Britain or the British. No @mentions, no emojis, no \
 hashtags. Say plainly what happened and what it directly affects or decides; avoid commentary words such as \
 "highlights", "tensions", "concerns", "landmark", "end of an era" or "controversial".
 
 Reply with JSON only: {"importance": int, "newsworthy": bool, "tag": str, "same_story_post": str or null, \
-"why": str, "question": str, "reason": str}"""
+"why": str, "reason": str}"""
 
 
 def judge_payload(entry: Dict[str, Any], signal: int, reasons: List[str], threads: List[Dict[str, Any]],
@@ -554,7 +551,6 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str])
         "tag": tag,
         "same_story_thread": match,
         "why": clean_text(strip_commentary(raw.get("why")), 240),
-        "question": clean_text(raw.get("question"), 130),
         "reason": clean_text(raw.get("reason"), 120),
     }
 
@@ -843,7 +839,7 @@ def _forum_tags(forum, names: List[str]):
 async def _create_post(client, forum, state, entry, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
     live = is_live_url(entry.get("link") or entry["url"])
     title = trim_title(entry["title"])
-    body = build_post_body(entry["link"], verdict.get("why", ""), verdict.get("question", ""))
+    body = build_post_body(entry["link"], verdict.get("why", ""))
     tag_names = [verdict.get("tag") or ""] + ([MEGATHREAD_TAG] if live else [])
     detail = (f"\"{title}\" <{entry['link']}> (signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
               f"{verdict.get('tag')}{', megathread' if live else ''})")
