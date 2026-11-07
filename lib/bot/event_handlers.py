@@ -1942,6 +1942,40 @@ async def handle_flag_reaction(reaction, message, user):
         await translate_and_send(reaction, message, target_language, message.author, user)
 
 
+async def handle_uncached_flag_reaction(client, payload):
+    """Flag translation for a message the bot doesn't have cached.
+
+    on_reaction_add only fires for messages in discord.py's message cache, which starts empty
+    at every restart and only holds the last ~1000 messages server-wide. A flag on anything
+    older (a message from before the last deploy, or from an hour ago in a busy server) never
+    reached handle_flag_reaction and did nothing, silently. Here the raw event fetches the
+    message and runs the same path. A cached message is skipped, because on_reaction_add
+    handles that one and running both would translate twice.
+    """
+    if str(payload.emoji) not in FLAG_LANGUAGE_MAPPINGS:
+        return
+    if payload.guild_id is None or payload.member is None or payload.member.bot:
+        return
+    if payload.channel_id in TRANSLATION_BLACKLIST_CHANNELS:
+        return
+    if discord.utils.get(client.cached_messages, id=payload.message_id) is not None:
+        return
+    channel = client.get_channel(payload.channel_id)
+    if channel is None:
+        try:
+            channel = await client.fetch_channel(payload.channel_id)
+        except (discord.NotFound, discord.Forbidden):
+            return
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+    reaction = next((r for r in message.reactions if str(r.emoji) == str(payload.emoji)), None)
+    if reaction is None:
+        return
+    await handle_flag_reaction(reaction, message, payload.member)
+
+
 def save_shut_count(user_id):
     DatabaseManager.execute(
         "INSERT INTO shut_counts (user_id, count) VALUES (?, 1) ON CONFLICT(user_id) DO UPDATE SET count = count + 1",
@@ -2228,8 +2262,13 @@ async def check_hall_of_fame(client, payload):
 
 async def on_raw_reaction_add(client, payload):
     try:
+        try:
+            await handle_uncached_flag_reaction(client, payload)
+        except Exception as e:
+            logger.error(f"Flag translation on an uncached message failed: {e}")
+
         await check_hall_of_fame(client, payload)
-        
+
         # Announcement speed badges
         is_announcement_channel = False
         announcement_channel_id = None
