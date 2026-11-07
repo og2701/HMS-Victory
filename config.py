@@ -1008,3 +1008,55 @@ VC_LOCKDOWN_WHITELIST = [
     ROLES.KNIGHT, ROLES.LORD, ROLES.ESQUIRE, ROLES.GENTLEMAN, ROLES.YEOMAN,
     ROLES.COMMONER, ROLES.FREEMAN, ROLES.PEASANT, ROLES.SERF,
 ]
+
+# --- News forum auto-poster (lib/features/newsfeed.py) ---
+# Polls BBC News (top stories and section feeds) plus Sky and the Guardian for cross-checking, keeps only the strong
+# stories (time in BBC top stories, live pages, cross-outlet coverage, then an AI judgement), and opens one forum post
+# per story in the news forum. A later article on a story that already has a post goes into that post as an update.
+# /newsfeed status|pause|resume|run|dry-run|live controls it at runtime (pause and dry-run persist in the state file
+# and override these defaults until changed back). Engagement at 24h and 72h is logged for tuning the thresholds.
+NEWSFEED_ENABLED = True                    # kill switch: False stops the poller entirely (no fetches, no AI calls)
+NEWSFEED_DRY_RUN = False                   # True: judge and log "would post" to the log channel, post nothing
+NEWSFEED_FORUM_ID = 1568698404060536922    # 📰｜news (private trial forum under General)
+NEWSFEED_LOG_CHANNEL_ID = CHANNELS.BOT_USAGE_LOG  # posts, updates, dry-run decisions and errors are logged here
+NEWSFEED_POLL_MINUTES = 10
+NEWSFEED_MODEL = "gpt-4o"                  # through the chat responder's OpenAI client (_chat_completion_json)
+NEWSFEED_DAILY_CAP = 8                     # new posts per UK day (updates don't count)
+NEWSFEED_DAILY_UPDATE_CAP = 20             # update replies per UK day, across all posts
+NEWSFEED_MAX_NEW_PER_RUN = 1               # new posts per poll, so a busy hour is spread out
+NEWSFEED_UPDATE_MIN_GAP_MINUTES = 45       # at most one update per post in this window (live stories move fast)
+NEWSFEED_MAX_AGE_HOURS = 18                # ignore articles published longer ago than this
+NEWSFEED_MATCH_DAYS = 3                    # open posts this recent are checked before opening a new one
+# Signal score, before any AI call: in BBC top stories +2, each hour it has stayed there +1 (up to +4), a BBC live
+# page +3, each other outlet (Sky, Guardian) running it +2 (up to +4), in three or more BBC feeds +1.
+NEWSFEED_MIN_SIGNAL = 5                    # score needed to be considered for a new post
+NEWSFEED_UPDATE_MIN_SIGNAL = 4             # score needed to be considered as an update to an open post
+NEWSFEED_MIN_IMPORTANCE = 7                # AI importance (1-10) needed for a new post
+NEWSFEED_UPDATE_MIN_IMPORTANCE = 5         # AI importance needed for an update reply
+NEWSFEED_SPORT_MIN_IMPORTANCE = 9          # sport only when it's huge
+NEWSFEED_MAX_JUDGEMENTS = 3                # AI calls per story at most (re-judged only when its signal climbs by 2+)
+NEWSFEED_CROSS_MATCH_MIN = 0.5             # headline word overlap for "the same story" across outlets (heuristic)
+NEWSFEED_THREAD_PREFILTER_MIN = 0.25       # word overlap for an open post to be shown to the AI as a possible match
+NEWSFEED_PIN_MEGATHREADS = True            # pin a live-page megathread when nothing else in the forum is pinned
+NEWSFEED_UNPIN_AFTER_HOURS = 6             # unpin Vic's megathread once its live page has left BBC top stories this long
+NEWSFEED_STATE_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_state.json")
+NEWSFEED_ENGAGEMENT_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_engagement.json")
+# name: (url, outlet, kind). kind "top" is a front page, "section" a section feed. Only BBC items are posted; Sky and
+# the Guardian are only used to check whether other outlets are covering a story. All verified from the VM, Nov 2026.
+NEWSFEED_FEEDS = {
+    "bbc_top": ("https://feeds.bbci.co.uk/news/rss.xml", "bbc", "top"),
+    "bbc_politics": ("https://feeds.bbci.co.uk/news/politics/rss.xml", "bbc", "section"),
+    "bbc_uk": ("https://feeds.bbci.co.uk/news/uk/rss.xml", "bbc", "section"),
+    "bbc_world": ("https://feeds.bbci.co.uk/news/world/rss.xml", "bbc", "section"),
+    "bbc_business": ("https://feeds.bbci.co.uk/news/business/rss.xml", "bbc", "section"),
+    "bbc_technology": ("https://feeds.bbci.co.uk/news/technology/rss.xml", "bbc", "section"),
+    "bbc_science": ("https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "bbc", "section"),
+    "bbc_scotland": ("https://feeds.bbci.co.uk/news/scotland/rss.xml", "bbc", "section"),
+    "bbc_wales": ("https://feeds.bbci.co.uk/news/wales/rss.xml", "bbc", "section"),
+    "bbc_northern_ireland": ("https://feeds.bbci.co.uk/news/northern_ireland/rss.xml", "bbc", "section"),
+    "bbc_us_canada": ("https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", "bbc", "section"),
+    "sky_home": ("https://feeds.skynews.com/feeds/rss/home.xml", "sky", "top"),
+    "sky_politics": ("https://feeds.skynews.com/feeds/rss/politics.xml", "sky", "section"),
+    "guardian_uk_news": ("https://www.theguardian.com/uk-news/rss", "guardian", "section"),
+    "guardian_politics": ("https://www.theguardian.com/politics/rss", "guardian", "section"),
+}

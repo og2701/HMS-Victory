@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+    <channel>
+        <title><![CDATA[BBC News]]></title>
+        <description><![CDATA[BBC News - News Front Page]]></description>
+        <link>https://www.bbc.co.uk/news</link>
+        <lastBuildDate>Sat, 07 Nov 2026 18:49:39 GMT</lastBuildDate>
+        <ttl>15</ttl>
+        <item>
+            <title><![CDATA[What we know about Krakow mass shooting so far]]></title>
+            <description><![CDATA[At least six people were killed by a gunman in military fatigues who opened fire in Poland's second largest city.]]></description>
+            <link>https://www.bbc.co.uk/news/articles/cmd7q15drwgeo?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/cmd7q15drwgeo#1</guid>
+            <pubDate>Sat, 07 Nov 2026 18:22:11 GMT</pubDate>
+            <media:thumbnail width="240" height="135" url="https://ichef.bbci.co.uk/ace/standard/240/x.jpg"/>
+        </item>
+        <item>
+            <title><![CDATA[UK cannot 'cherry pick' EU single market deal, Barnier tells BBC]]></title>
+            <description><![CDATA[The former Brexit negotiator says EU countries would reject any British attempts to follow economic rules "a la carte".]]></description>
+            <link>https://www.bbc.co.uk/news/articles/c9kgjj206nzpo?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/articles/c9kgjj206nzpo#1</guid>
+            <pubDate>Sat, 07 Nov 2026 15:19:35 GMT</pubDate>
+        </item>
+        <item>
+            <title><![CDATA[Krakow shooting: Live updates as police search for motive]]></title>
+            <description><![CDATA[Follow the latest after a gunman killed six people in the Polish city.]]></description>
+            <link>https://www.bbc.co.uk/news/live/c4g8xk2p1zzt?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/live/c4g8xk2p1zzt#1</guid>
+            <pubDate>Sat, 07 Nov 2026 18:40:00 GMT</pubDate>
+        </item>
+        <item>
+            <title><![CDATA[Watch: Fog rolls over London skyline]]></title>
+            <description><![CDATA[Time-lapse footage shows the city disappearing.]]></description>
+            <link>https://www.bbc.co.uk/news/videos/c0abc123?at_medium=RSS&amp;at_campaign=rss</link>
+            <guid isPermaLink="false">https://www.bbc.co.uk/news/videos/c0abc123#1</guid>
+            <pubDate>Sat, 07 Nov 2026 12:00:00 GMT</pubDate>
+        </item>
+        <item>
+            <title><![CDATA[Broken item with no link]]></title>
+        </item>
+    </channel>
+</rss>

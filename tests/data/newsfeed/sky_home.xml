@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>The Latest News from the UK and Around the World | Sky News</title>
+    <link>https://news.sky.com/home</link>
+    <item>
+      <title>Six killed in Krakow mass shooting as gunman opens fire</title>
+      <link>https://news.sky.com/story/six-killed-in-krakow-mass-shooting-13609300</link>
+      <description>A gunman wearing military fatigues opened fire in the Polish city of Krakow, killing at least six people.</description>
+      <pubDate>Sat, 07 Nov 2026 18:30:00 +0000</pubDate>
+      <guid>https://news.sky.com/story/six-killed-in-krakow-mass-shooting-13609300</guid>
+    </item>
+    <item>
+      <title>Travel delays feared as fog warning issued for parts of England</title>
+      <link>https://news.sky.com/story/travel-delays-feared-on-remembrance-sunday-as-fog-warning-issued-for-parts-of-england-13609282</link>
+      <description>Thick fog could lead to travel disruption across much of England from midnight on Saturday to late Sunday morning, the Met Office has warned.</description>
+      <pubDate>Sat, 07 Nov 2026 15:18:00 +0000</pubDate>
+      <guid>https://news.sky.com/story/travel-delays-feared-on-remembrance-sunday-as-fog-warning-issued-for-parts-of-england-13609282</guid>
+    </item>
+  </channel>
+</rss>
