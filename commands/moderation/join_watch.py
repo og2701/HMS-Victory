@@ -74,6 +74,34 @@ PERMANENT_FLOOR = (
 )
 
 
+RECENT_TEXT_BUDGET = 2400  # the whole card has to stay inside Components V2's 4000-character total
+
+
+def recent_messages_text(lines: list[str], budget: int = RECENT_TEXT_BUDGET) -> str:
+    """The "Recent Messages" block, kept whole-line and inside ``budget``.
+
+    It used to be cut at a fixed 1500 characters, which chopped the list mid-line and lost the newest messages,
+    including the one that got the member flagged. Now the oldest lines are dropped first (the newest, flagged
+    one always shows), with a note saying how many earlier ones were left out, and a single line that is still
+    too long is shortened rather than cut off unseen.
+    """
+    title = "### Recent Messages\n"
+    kept = list(lines)
+    dropped = 0
+
+    def render() -> str:
+        note = f"-# {dropped} earlier message{'s' if dropped != 1 else ''} not shown\n" if dropped else ""
+        return title + note + "\n".join(kept)
+
+    while len(kept) > 1 and len(render()) > budget:
+        kept.pop(0)
+        dropped += 1
+    text = render()
+    if len(text) > budget:
+        text = text[: budget - 1] + "…"
+    return text
+
+
 def floor_lines(prefix: str = "- ") -> str:
     """The floor as text. One bullet per line whatever the source wrapping, because the
     armed notice prefixes every line and a wrapped bullet came out as a stray fragment."""
@@ -1077,7 +1105,7 @@ def _report_view(
 
     lines = []
     for i, m in enumerate(entry["messages"], 1):
-        ch = m.get("channel", "chat")
+        ch = str(m.get("channel", "chat")).lstrip("#")  # stored as "#name"; the card adds its own "#"
         ts = m.get("ts", int(discord.utils.utcnow().timestamp()))
         content = discord.utils.escape_markdown(m.get("content", "")).strip()
         if len(content) > 250:
@@ -1096,7 +1124,7 @@ def _report_view(
                 else f"{i}. **#{ch}** <t:{ts}:R>{jump}:\n> {content}"
             )
 
-    card.add_item(discord.ui.TextDisplay(("### Recent Messages\n" + "\n".join(lines))[:1500]))
+    card.add_item(discord.ui.TextDisplay(recent_messages_text(lines)))
     card.add_item(discord.ui.Separator())
     # Ban sits next to the untimeout, because those are the two calls a screener report
     # actually invites - it read them right, or it read them wrong - and neither should

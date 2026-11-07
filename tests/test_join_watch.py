@@ -683,3 +683,22 @@ def test_jev_shadow_only_annotates_the_scan_and_never_acts(monkeypatch, tmp_path
     import json as _json
     row = _json.loads((tmp_path / "shadow.jsonl").read_text().splitlines()[-1])
     assert row["agree"] is False and row["openai"]["call"] == "fine" and row["jev"]["rule"] == "slur"
+
+
+def test_recent_messages_keep_the_newest_and_never_cut_mid_line():
+    from commands.moderation.join_watch import recent_messages_text
+    lines = [f"{i}. **#general** <t:1794093527:R> · [jump](https://discord.com/channels/959493056242008184/959493057076666380/15687667015944848{i:02d}): `message number {i}`" for i in range(1, 11)]
+    lines[-1] = "10. **#general** <t:1794093600:R> · 🗑️ **Deleted**:\n> **\"the flagged one\"**"
+    full = recent_messages_text(lines)
+    assert "the flagged one" in full and "1. **#general**" in full  # 10 short lines all fit
+    tight = recent_messages_text(lines, budget=600)
+    assert len(tight) <= 600
+    assert "the flagged one" in tight
+    assert "earlier messages not shown" in tight
+    assert tight.splitlines()[-1].endswith('"the flagged one"**')
+
+
+def test_card_channel_names_have_one_hash():
+    import inspect
+    from commands.moderation import join_watch
+    assert '.lstrip("#")' in inspect.getsource(join_watch)
