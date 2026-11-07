@@ -280,7 +280,7 @@ STATEMENT_HIDE_TAX = False
 
 # Economy-dormant tax: the chat-activity inactivity tax above only catches people who stopped
 # TALKING. This catches the other half - people who still chat (so they dodge that one) but
-# never gamble, shop, /pay, bond or enter the lottery, and so accumulate from the faucets
+# never gamble, shop, /pay or bond, and so accumulate from the faucets
 # without ever returning anything. Charged ONLY on the excess above the floor, like demurrage,
 # because the population is overwhelmingly small holders: a flat % would take a fifth of a
 # casual chatter's 200 UKP to reach the handful of accounts that actually matter.
@@ -405,33 +405,6 @@ BOND_COUNTS_FOR_DEMURRAGE = True     # bonded principal counts toward wealth dem
 BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this % of principal
 BOND_FUNNEL_LOOKBACK_DAYS = 3        # UKP /pay-received in this window can't be bonded
                                      # (stops a whale funnelling UKP to alts to invest past the cap)
-
-# --- National Lottery (shared pooled draw) ---
-# Each round picks a RANDOM ticket price and ticket cap from the ranges below (a little
-# mystery each week). A round draws when it sells out OR at the weekly time, whichever
-# comes first - but never sooner t  n LOTTERY_MIN_RUNTIME_MIN after opening (so a cheap
-# small round can't sell out and vanish in minutes), and a sold-out round won't reopen
-# until the next weekly tick. Winner takes the whole pot (LOTTERY_RAKE_PCT bank cut, 0 by default).
-LOTTERY_ENABLED = True
-LOTTERY_IMAGE_ENABLED = True
-LOTTERY_TICKET_PRICE_MIN = 2      # random ticket price per round, inclusive
-LOTTERY_TICKET_PRICE_MAX = 20
-LOTTERY_TICKET_CAP_MIN = 300      # random ticket cap (sellout threshold) per round
-LOTTERY_TICKET_CAP_MAX = 1000
-LOTTERY_MIN_RUNTIME_MIN = 30      # a round can't draw on sellout sooner than this (minutes)
-LOTTERY_RAKE_PCT = 0              # house bank keeps this %; 0 = winner takes the whole pot
-LOTTERY_DRAW_DOW = "sun"          # weekly draw day (APScheduler day_of_week)
-LOTTERY_DRAW_HOUR = 20            # 8pm UK
-LOTTERY_DRAW_MINUTE = 0
-# Random "feeling lucky?" reminders in the casino channel, linking to the live board.
-LOTTERY_REMINDER_START_HOUR = 10  # only remind during active UK hours
-LOTTERY_REMINDER_END_HOUR = 23
-LOTTERY_REMINDER_MIN_GAP_MIN = 45   # min minutes between reminders
-LOTTERY_REMINDER_MAX_GAP_MIN = 120  # max (2h); also suppressed if a reminder is already in recent msgs
-LOTTERY_REMINDER_RECENT_LOOKBACK = 10  # skip if a reminder is within this many of the channel's last msgs
-# Fallback defaults (only used if a range is missing); live rounds use the ranges above.
-LOTTERY_TICKET_PRICE = 10
-LOTTERY_TICKET_CAP = 500
 
 # --- File Paths & Directories ---
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -778,7 +751,7 @@ class CHANNELS:
     COMMONS = 959501347571531776
     BOT_SPAM = 968502541107228734
     GAMING = 1139977009389387959
-    CASINO = 1512095841517699213          # casino games + lottery board live here
+    CASINO = 1512095841517699213          # casino games live here
     VIP_LOUNGE = 1333482774157590609      # vip lounge channel; casino commands allowed here
     BOT_WORKSHOP = 1141037835445616640    # casino commands allowed here too
     POLITICS = 1141097424849481799
@@ -803,14 +776,12 @@ class CHANNELS:
     VOICE_ACTIVITY_THREAD = 1539312670761812019  # 'voice chat activity' thread under logs: 🎧 join/leave/move digests
     CHATBOT_CONTROLLER_THREAD = 1547254995320184833  # 'chat bot controller' thread under bot-workshop
 
-# Casino games + the lottery may only be used in these channels.
+# Casino games may only be used in these channels.
 CASINO_CHANNELS = [CHANNELS.CASINO, CHANNELS.VIP_LOUNGE, CHANNELS.BOT_SPAM, CHANNELS.BOT_WORKSHOP]
 # Where /Analyse User reports post.
 USER_ANALYSIS_CHANNEL_ID = CHANNELS.POLICE_STATION
 # Only these channels are scanned for the member's messages (the main chats), in parallel.
 USER_ANALYSIS_CHANNELS = [CHANNELS.VIP_LOUNGE, CHANNELS.GENERAL, CHANNELS.POLITICS]
-# The lottery board + winner announcements post here.
-LOTTERY_CHANNEL = CHANNELS.CASINO
 
 class CATEGORIES:
     TICKETS = 1139976595336069161
@@ -833,6 +804,14 @@ class USERS:
 BOT_ID = USERS.HMS_VICTORY
 
 DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.JOHNNY]
+
+# Vic's control panel: a thread under #bot-workshop with one card of buttons per admin switch
+# (news feed, bank, flags, overnight mute, UKP handouts, titles). Only these people can press
+# them; anyone else gets a private "not for you". Thread and card ids live in CONTROL_PANEL_STATE_FILE.
+CONTROL_PANEL_USER_IDS = [USERS.OGGERS, USERS.HADIDAS]
+CONTROL_PANEL_THREAD_NAME = "🎛️ Control panel"
+CONTROL_PANEL_REFRESH_MINUTES = 5
+CONTROL_PANEL_STATE_FILE = os.path.join(JSON_DATA_DIR, "control_panel.json")
 
 # ---------------------------------------------------------------------------
 # Big Brother (lib/features/big_brother.py) - TEMPORARY two-week event, Sept/Oct 2026.
@@ -1013,7 +992,7 @@ VC_LOCKDOWN_WHITELIST = [
 # Polls BBC News (top stories and section feeds) plus Sky and the Guardian for cross-checking, keeps only the strong
 # stories (time in BBC top stories, live pages, cross-outlet coverage, then an AI judgement), and opens one forum post
 # per story in the news forum. A later article on a story that already has a post goes into that post as an update.
-# /newsfeed status|pause|resume|run|dry-run|live controls it at runtime (pause and dry-run persist in the state file
+# The control panel's News feed card (pause/resume, run, dry run/live, status) controls it at runtime (pause and dry-run persist in the state file
 # and override these defaults until changed back). Engagement at 24h and 72h is logged for tuning the thresholds.
 NEWSFEED_ENABLED = True                    # kill switch: False stops the poller entirely (no fetches, no AI calls)
 NEWSFEED_DRY_RUN = False                   # True: judge and log "would post" to the log channel, post nothing

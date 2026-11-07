@@ -76,8 +76,6 @@ TABLES: Dict[str, str] = {
     "shop_inventory": "Shop stock: item_id, quantity, max_quantity, auto_restock, restock_amount, last_restock.",
     "county_instances": "Counties caught or owned: user_id, county, caught_at, channel_id, obtained ('catch', 'gift', ...), clout_bonus, grit_bonus.",
     "county_transfers": "County gifts/trades: instance_id, from_user, to_user, transferred_at.",
-    "lottery_rounds": "Lottery draws: status, ticket_price, ticket_cap, rake_pct, draw_ts, drawn_at, winner_id, winning_ticket, pot, prize.",
-    "lottery_entries": "Lottery tickets: round_id, user_id, tickets.",
     "bonds": "Savings bonds: user_id, principal, rate_pct, term_days, opened_ts, matures_ts, status, rate_bp, upper_rate_bp, tier_split. Tiered bonds pay rate_bp basis points on the first tier_split UKP and upper_rate_bp on the rest; when rate_bp is NULL (older bonds) interest is principal * rate_pct / 100.",
     "scheduled_predictions": "Prediction markets: creator_id, title, opt1, opt2, options_json, scheduled_ts, status, created_at.",
     "circulation_snapshots": "Total UKP in circulation over time (timestamp, total_circulation).",

@@ -960,7 +960,7 @@ async def unpin_stale_megathreads(client, state: Dict[str, Any], now: float) -> 
 
 async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, judge: Optional[Callable] = None
                    ) -> Dict[str, Any]:
-    """One poll: fetch, track, judge the strong candidates, post or update. Returns a summary for /newsfeed run."""
+    """One poll: fetch, track, judge the strong candidates, post or update. Returns a summary for the control panel's Run button."""
     now = now or time.time()
     poll_seconds = config.NEWSFEED_POLL_MINUTES * 60
     th = Thresholds()
@@ -1097,14 +1097,14 @@ async def newsfeed_tick(client, manual: bool = False) -> Optional[Dict[str, Any]
                 logger.exception("[NEWSFEED] could not save state")
 
 
-# ---------------------------------------------------------------- /newsfeed
+# ---------------------------------------------------------------- control panel (was /newsfeed)
 
 def status_text(state: Dict[str, Any], now: Optional[float] = None) -> str:
     now = now or time.time()
     if not config.NEWSFEED_ENABLED:
         running = "**off** (NEWSFEED_ENABLED is False in config)"
     elif state.get("paused"):
-        running = "**paused** (/newsfeed resume to start it again)"
+        running = "**paused** (Resume on the control panel starts it again)"
     else:
         running = "**running**"
     lines = [

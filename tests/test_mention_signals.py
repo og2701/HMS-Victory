@@ -279,9 +279,9 @@ class TestDataSignals(unittest.TestCase):
         self.assertIsNone(_signals().data_source)
 
     def test_a_confident_list_pick_beats_a_weak_shape(self):
-        # "what's the lottery pot": shape total, no metric, list lottery -> a list
+        # "what's in the house bank": shape total, no metric, list bank -> a list
         answers = _with_data(_answers(), metric="none", shape="total", shape_conf=0.62)
-        answers["data_list"] = {"choice": "lottery", "confidence": 0.83}
+        answers["data_list"] = {"choice": "bank", "confidence": 0.83}
         sig = parse_signals(answers, {})
         self.assertEqual(sig.effective_shape, "list")
         self.assertTrue(sig.data_query_requested())

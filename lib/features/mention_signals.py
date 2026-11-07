@@ -91,7 +91,7 @@ SERVER_DESCRIPTION = (
     "UK Place, the Discord server the bot lives in. It runs its own economy and keeps records of all of it: "
     "UKPence (UKP) balances and payments, XP and levels, messages, a house casino (slots, blackjack, roulette, mines, "
     "plinko, higher or lower, red dog, poker, darts, penalties, glass bridge and more), PvP games and wagers, badges, "
-    "counties, shutcoins, the lottery, predictions, the shop and the house bank. Questions about casino wins, losses, "
+    "counties, shutcoins, predictions, the shop and the house bank. Questions about casino wins, losses, "
     "balances, rankings or anyone's figures mean THIS server's records unless they clearly point at the outside world."
 )
 
@@ -276,7 +276,7 @@ QUESTIONS.update({
                 "The server runs its own casino and economy (see `server`): a question about its biggest win, richest member or most xp is a records question even without 'in the server'.",
                 "A superlative about an unnamed member ('who has the most', 'who's the richest', 'biggest yapper', 'most shut member', 'the single biggest casino win') is a leaderboard: the answer is the top of a ranked list.",
                 "person is only for a member identified by name, @mention, or as the caller.",
-                "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the lottery, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
+                "list is for things rather than a number: what someone owns or has done, or a server fact sheet (the house bank, the shop, the iceberg, open predictions), or who holds a particular badge or county.",
                 "A target figure in the message ('closest to 100k', 'nearest to a million', 'who has about 50') is closest: the members nearest to that number, not the top of the list.",
                 "A correction to a records answer the bot just gave ('users, not holders', 'no, this month', 'make it 20') keeps the shape of that answer (see `replied_to` and `recent_chat`) unless the correction changes it.",
             ],
@@ -409,7 +409,7 @@ class MentionSignals:
     @property
     def effective_shape(self) -> str:
         """The shape to answer in. A confident list pick wins whenever the shape is 'list' or no metric was
-        picked: "what's the lottery pot" comes back shape total with metric none and list lottery, and the
+        picked: "what's in the house bank" comes back shape total with metric none and list bank, and the
         list is the only one of the three that names something the code can produce."""
         list_sure = self.list_sure
         metric_sure = self.metric_sure

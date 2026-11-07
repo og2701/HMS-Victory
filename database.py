@@ -747,44 +747,8 @@ def init_db():
             )
         ''')
 
-        # National Lottery: one row per round, plus aggregated per-user entries. A round
-        # is 'open' (selling tickets) then 'drawn' (winner picked, pot paid). tickets_sold
-        # is SUM(lottery_entries.tickets); the draw weights by ticket count.
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS lottery_rounds (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                status TEXT NOT NULL DEFAULT 'open',
-                ticket_price INTEGER NOT NULL,
-                ticket_cap INTEGER NOT NULL,
-                rake_pct INTEGER NOT NULL DEFAULT 0,
-                draw_ts INTEGER NOT NULL,
-                created_at INTEGER NOT NULL,
-                drawn_at INTEGER,
-                winner_id TEXT,
-                winning_ticket INTEGER,
-                pot INTEGER,
-                prize INTEGER,
-                message_id TEXT,
-                channel_id TEXT
-            )
-        ''')
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS lottery_entries (
-                round_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                tickets INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (round_id, user_id)
-            )
-        ''')
-        c.execute("CREATE INDEX IF NOT EXISTS idx_lottery_entries_round ON lottery_entries(round_id)")
-        # Small key/value store for lottery scheduling state (e.g. the next random-reminder
-        # time) so it survives restarts instead of resetting each boot.
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS lottery_state (
-                key TEXT PRIMARY KEY,
-                value INTEGER NOT NULL
-            )
-        ''')
+        # lottery_rounds, lottery_entries and lottery_state are no longer created or used:
+        # the lottery was removed. Existing tables and their rows are left in place.
         c.execute('''
             CREATE TABLE IF NOT EXISTS circulation_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -627,7 +627,7 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, apply_seasonal_rank_colours, args=[client], id="seasonal_rank_colours_boot",
                      name="Seasonal rank colours (boot)", next_run_time=discord.utils.utcnow() + timedelta(seconds=90))
 
-    # News forum auto-poster: registered either way, NEWSFEED_ENABLED and /newsfeed pause are read at run time. The
+    # News forum auto-poster: registered either way, NEWSFEED_ENABLED and the panel's pause are read at run time. The
     # first poll waits two minutes after boot so a restart never hits the feeds (or the AI) while the bot settles.
     try:
         from lib.features.newsfeed import newsfeed_tick
@@ -644,12 +644,6 @@ def _register_client_jobs(client, scheduler):
     # Runs last of the three so the two wealth taxes have already taken their cut - a hoarder
     # who is also economy-dormant is charged on what's left, not on the same UKP twice.
     _add_process_job(scheduler, apply_economy_dormant_tax, CronTrigger(day_of_week="fri", hour=0, minute=10, timezone="Europe/London"), args=[client], id="apply_economy_dormant_tax_job", name="Weekly Economy-Dormant Tax")
-
-    # Lottery tick (every 2 min): while a round is open - started manually by staff via
-    # /lottery-start - this posts the periodic reminders and draws a sold-out round once
-    # it passes its minimum runtime. No weekly auto-draw/auto-open: the lottery is manual.
-    _add_process_job(scheduler, _lottery_tick, IntervalTrigger(minutes=2), args=[client],
-                     id="lottery_tick_job", name="Lottery tick (reminders + sellout)")
 
     # DISBOARD bump reminder: checks every minute if 2 hours have passed since the last bump
     # and reminds the @bumpity bumps role in #bot-spam.
@@ -669,11 +663,6 @@ def _register_client_jobs(client, scheduler):
 async def _bump_reminder_tick(client):
     from lib.features.ukp_rewards import check_bump_reminder
     await check_bump_reminder(client)
-
-
-async def _lottery_tick(client):
-    from lib.economy.lottery import lottery_tick
-    await lottery_tick(client)
 
 
 def _register_pending_scheduled_predictions(client, scheduler):
@@ -902,7 +891,7 @@ async def apply_economy_dormant_tax(client):
     The inactivity tax above keys off chat activity, so it only catches people who stopped
     talking. This catches the other half: still chatting (so exempt from that one), under the
     demurrage threshold (so exempt from that one too), but not having gambled, shopped, /paid,
-    bonded or entered the lottery in ECONOMY_DORMANT_DAYS. They accumulate from the faucets
+    or bonded in ECONOMY_DORMANT_DAYS. They accumulate from the faucets
     and never return anything, which is most of why the bank drains.
 
     Charged only on the excess above ECONOMY_DORMANT_FLOOR, exactly like demurrage: the
@@ -940,8 +929,6 @@ async def apply_economy_dormant_tax(client):
             "SELECT winner_id, MAX(timestamp) FROM connect4_results GROUP BY winner_id",
             "SELECT winner_id, MAX(timestamp) FROM game_transfers GROUP BY winner_id",
             "SELECT loser_id, MAX(timestamp) FROM game_transfers GROUP BY loser_id",
-            "SELECT e.user_id, MAX(r.created_at) FROM lottery_entries e "
-            "JOIN lottery_rounds r ON r.id = e.round_id GROUP BY e.user_id",
         ):
             try:
                 for uid, ts in (DatabaseManager.fetch_all(sql) or []):

@@ -104,6 +104,13 @@ class AClient(discord.Client):
             self.add_dynamic_items(*BOARD_BUTTONS)
         except Exception as e:
             logger.warning(f"Could not register task board buttons: {e}")
+        # Buttons on Vic's control panel thread under #bot-workshop (news feed, bank, flags,
+        # overnight mute, UKP handouts, titles). The custom_id carries the card and action.
+        try:
+            from lib.bot.control_panel import BUTTONS as CONTROL_PANEL_BUTTONS
+            self.add_dynamic_items(*CONTROL_PANEL_BUTTONS)
+        except Exception as e:
+            logger.warning(f"Could not register control panel buttons: {e}")
         # Persistent 'Remove timeout' buttons on join-watch police station reports.
         try:
             from commands.moderation.join_watch import UntimeoutButton
@@ -187,16 +194,6 @@ class AClient(discord.Client):
             logger.info("Registered persistent casino lobby + leaderboard views.")
         except Exception as e:
             logger.warning(f"Could not register casino lobby view: {e}")
-
-        # Reattach the open lottery board's buttons so Buy/My-Tickets survive restarts.
-        try:
-            from lib.economy.lottery import get_open_round, build_board_controls
-            rnd = get_open_round()
-            if rnd and rnd.get("message_id"):
-                self.add_view(build_board_controls(rnd), message_id=int(rnd["message_id"]))
-                logger.info("Registered persistent lottery board view.")
-        except Exception as e:
-            logger.warning(f"Could not register lottery board view: {e}")
 
         # Register persistent server verification button
         try:
@@ -306,6 +303,13 @@ class AClient(discord.Client):
         except Exception:
             logger.exception("could not ensure the persona bot card")
 
+        # Vic's control panel thread: create it and its cards if missing, redraw them, keep it fresh.
+        try:
+            from lib.bot.control_panel import ensure_panel
+            asyncio.create_task(ensure_panel(self))
+        except Exception:
+            logger.exception("could not ensure the control panel")
+
         # Tree payout lines whose 10-minute self-delete was lost to a restart.
         from lib.features.ukp_rewards import clear_stale_tree_payouts
         asyncio.create_task(clear_stale_tree_payouts(self))
@@ -400,10 +404,6 @@ class AClient(discord.Client):
         # event loop. The cancel buttons already work via the persistent views registered
         # in __init__, so the backfill was redundant.)
 
-
-        # The lottery is started manually by staff (/lottery-start) rather than
-        # auto-opened on boot. While a round is open, the lottery tick posts the
-        # periodic reminders to the casino channel.
 
     async def on_message(self, message):
         # Permanent history first: every early return below (bots, Ballsdex, DISBOARD)

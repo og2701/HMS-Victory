@@ -55,7 +55,7 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                    value="Open a genuine support ticket and staff can award you **+100 UKP** when it's closed.",
                    inline=False)
     earn.add_field(name="🎲 Gambling",
-                   value="Win at the **casino**, scoop the weekly **lottery** pot, call **predictions** right, "
+                   value="Win at the **casino**, call **predictions** right, "
                          "or beat someone in a **/wager** - winnings from these are yours to keep.",
                    inline=False)
 
@@ -73,8 +73,6 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                     value="**/casino** opens the lobby - Blackjack, Roulette, Slots, Video Poker, Red Dog and "
                           "3-Card Poker. The house keeps a small edge, so play for the fun of it.",
                     inline=False)
-    spend.add_field(name="🎫 /lottery",
-                    value="Buy tickets for the weekly National Lottery - one winner takes the whole pot.", inline=False)
     spend.add_field(name="🔮 Predictions & /wager",
                     value="Bet on event outcomes, or challenge another player to a head-to-head wager.", inline=False)
     spend.add_field(name="💸 /pay",
@@ -88,7 +86,7 @@ async def handle_ukpence_guide_command(interaction: discord.Interaction):
                            "**/ukpeconomy** - live economy dashboard\n"
                            "**/benefits** - daily handout if you're broke\n"
                            "**/bond** - open or manage a savings bond\n"
-                           "**/casino** · **/lottery** · **/shop** - play & spend\n"
+                           "**/casino** · **/shop** - play & spend\n"
                            "**/pay** - send UKP to someone\n"
                            "**/casino-stats** - your gambling record"),
                     inline=False)

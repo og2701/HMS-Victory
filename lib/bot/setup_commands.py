@@ -21,9 +21,6 @@ from lib.economy.economy_manager import get_bb, set_bb, add_bb, remove_bb
 from typing import Literal, Optional
 from commands.economy.shop import handle_shop_command
 from lib.features.glazes import STYLE_CHOICES as GLAZE_STYLES
-from commands.economy.bank_commands import (
-    handle_bank_status_command
-)
 from commands.social.medal_table import handle_medal_table_command
 try:
     from commands.social.rank_equip import handle_rank_equip_command
@@ -48,7 +45,6 @@ from commands.economy.red_dog import handle_reddog_command
 from commands.economy.roulette import handle_roulette_command
 from commands.economy.three_card_poker import handle_tcp_command
 from commands.economy.casino import handle_casino_command
-from lib.economy.lottery import handle_lottery_command, handle_lottery_start_command, handle_lottery_draw_command
 from commands.economy.casino_stats import handle_casino_stats_command
 from commands.moderation.anti_raid import open_anti_raid_control
 from commands.social.inbox import handle_inbox_command
@@ -67,7 +63,7 @@ def _usage_channel_label(interaction) -> str:
 
 
 async def _require_casino_channel(interaction) -> bool:
-    """Gate casino games + lottery to the allowed channels. Returns True (and sends an
+    """Gate casino games to the allowed channels. Returns True (and sends an
     ephemeral nudge to the casino channel) when the command should be blocked here."""
     import config
     channel_id = interaction.channel_id
@@ -77,7 +73,7 @@ async def _require_casino_channel(interaction) -> bool:
         return False
     await interaction.response.send_message(
         f"🎰 The casino's over in <#{config.CHANNELS.CASINO}> - head there to play! "
-        "(Casino games and the lottery can only be used in that channel.)",
+        "(Casino games can only be used in that channel.)",
         ephemeral=True,
     )
     return True
@@ -273,13 +269,6 @@ def define_commands(tree, client):
                                user_two: discord.User = None, action: Literal["toggle", "list"] = "toggle"):
         from lib.features.separate import handle_separate_command
         await handle_separate_command(interaction, user_one, user_two, action)
-
-    @app_commands.describe(action="status (default), pause, resume, run a poll now, dry-run (log only) or live")
-    @command("newsfeed", "Control the news forum auto-poster (admins)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def newsfeed_command(interaction: Interaction,
-                               action: Literal["status", "pause", "resume", "run", "dry-run", "live"] = "status"):
-        from lib.features.newsfeed import handle_newsfeed_command
-        await handle_newsfeed_command(interaction, action)
 
     @command("video-ban", "Toggles the Video Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def video_ban_command(interaction: Interaction, user: Member):
@@ -478,18 +467,6 @@ def define_commands(tree, client):
         await interaction.response.send_message(chunks[0], ephemeral=True)
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk, ephemeral=True)
-
-    @command("flags", "Review and lift anti-cheat flags (Oggers only)",
-             checks=[lambda i: i.user.id == USERS.OGGERS])
-    async def flags_command(interaction: Interaction):
-        """Interactive panel. The review buttons on an alert disable themselves once one is
-        pressed, so an alert cannot take back its own verdict - and a flagged member is
-        blocked from /pay. This is the way back."""
-        from lib.core import detection as _D
-        content, view = _D.build_flags_panel(interaction.client, interaction.user.id)
-        await interaction.response.send_message(
-            content, view=view, ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none())
 
     @command("pay", "Transfer UKPence to another member")
     async def pay_command(interaction: Interaction, recipient: Member, amount: int,
@@ -824,22 +801,6 @@ def define_commands(tree, client):
             return
         await handle_casino_command(interaction)
 
-    @command("lottery", "Buy tickets for the HMS Victory National Lottery")
-    async def lottery_command(interaction: Interaction):
-        if await _require_casino_channel(interaction):
-            return
-        await handle_lottery_command(interaction)
-
-    @command("lottery-start", "Open a new lottery round and start its reminders (Oggers only)",
-             checks=[lambda i: i.user.id == USERS.OGGERS])
-    async def lottery_start_command(interaction: Interaction):
-        await handle_lottery_start_command(interaction)
-
-    @command("lottery-draw", "Draw the open lottery round now (Oggers only)",
-             checks=[lambda i: i.user.id == USERS.OGGERS])
-    async def lottery_draw_command(interaction: Interaction):
-        await handle_lottery_draw_command(interaction)
-
     @command("video-poker", "Play Video Poker (Jacks or Better) against the house")
     async def video_poker_command(interaction: Interaction, amount: app_commands.Range[int, 1]):
         if await _require_casino_channel(interaction):
@@ -904,11 +865,6 @@ def define_commands(tree, client):
     async def ukpence_info_command(interaction: Interaction):
         from commands.economy.ukpence_guide import handle_ukpence_guide_command
         await handle_ukpence_guide_command(interaction)
-
-
-    @command("toggle-visitor-overnight-mute", "Toggles the overnight mute for visitors", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def toggle_overnight_mute_command(interaction: Interaction):
-        await toggle_overnight_mute(interaction)
 
     @command("shop", "Browse and purchase items with UKPence")
     async def shop_command(interaction: Interaction):
@@ -977,10 +933,6 @@ def define_commands(tree, client):
     async def poker_command(interaction: Interaction):
         from commands.economy.poker import handle_poker_command
         await handle_poker_command(interaction)
-
-    @command("bank-status", "View server bank status (Staff only)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
-    async def bank_status_command(interaction: Interaction):
-        await handle_bank_status_command(interaction)
 
     @command("medal-table", "Olympic-style leaderboard of badge holders by gold/silver/bronze count")
     async def medal_table_command(interaction: Interaction):

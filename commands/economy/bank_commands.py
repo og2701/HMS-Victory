@@ -95,7 +95,7 @@ def tax_overview_embed() -> discord.Embed:
             f"**60 days without chatting**.\n"
             f"**Economy-dormant** - {dorm_rate:.0%}/wk on the balance above "
             f"**{dorm_floor:,}** after **{dorm_days} days** without gambling, shopping, "
-            f"/pay, bonds or the lottery."
+            f"/pay or bonds."
         ),
         inline=False,
     )
@@ -108,7 +108,7 @@ def tax_overview_embed() -> discord.Embed:
 
 
 class BankStatusView(discord.ui.View):
-    """Bond + tax overviews hang off /bank-status so the headline stays scannable."""
+    """Bond + tax overviews hang off the bank report so the headline stays scannable."""
 
     def __init__(self):
         super().__init__(timeout=300)

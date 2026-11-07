@@ -60,7 +60,6 @@ CASES = [
     ("who has the highest paperboy score", {"research"}, None),
     ("who's caught the most counties", {"counties", "unique_counties", "research"}, None),
     ("when did kim last post", {"last_seen", "research"}, None),
-    ("how many lottery tickets have been sold", {"research", "lottery", "lottery_tickets"}, None),
     ("what's on the iceberg", {"iceberg", "research"}, None),
     ("how much did steven earn yesterday", {"research"}, None),
     ("what's the house edge on slots", {"research", "bank"}, None),
