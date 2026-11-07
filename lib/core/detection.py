@@ -452,7 +452,7 @@ class ReviewView(discord.ui.View):
         await self._finish(
             interaction,
             f"🚫 Restricted — <@{self.subject_id}> on **{R.tier_label(tier)}**, "
-            f"blocked from {R.summary(tier)}. Change the tier in /flags.")
+            f"blocked from {R.summary(tier)}. Change the tier on the control panel's Flags card.")
 
 
 # ---------------------------------------------------------------------------
@@ -661,7 +661,7 @@ class FlagsPanel(discord.ui.View):
 
 
 def build_flags_panel(client, viewer_id):
-    """(content, view) for the /flags panel."""
+    """(content, view) for the flags panel (the control panel's Review flags button)."""
     from lib.core import restrictions as R
     return _panel_text(client, R.restricted_members()), FlagsPanel(client, viewer_id)
 

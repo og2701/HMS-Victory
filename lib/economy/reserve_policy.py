@@ -107,7 +107,7 @@ def scale_reward(amount: int, reserves: int = None) -> int:
 
 
 def reserve_state() -> dict:
-    """Everything the /bank-status tax panel needs, in one read."""
+    """Everything the bank report's tax panel needs, in one read."""
     try:
         balance, bonded, supply = bank_balance(), locked_bond_principal(), total_supply()
     except Exception:

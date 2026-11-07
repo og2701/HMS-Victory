@@ -12,7 +12,7 @@ for and code fetches it:
            a particular game, an income or spending source).
   LIST     things rather than numbers: a member's badges, counties, bonds, purchases, recent
            messages, casino breakdown or PvP record, or a server fact sheet (house bank, money
-           supply, lottery, shop stock, iceberg, open predictions, the Skyrim graveyard). Some
+           supply, shop stock, iceberg, open predictions, the Skyrim graveyard). Some
            lists are about one named thing (who holds a badge, who owns a county); the thing is
            chosen by a second Jev call from the real catalogue so it can never be invented.
 
@@ -696,17 +696,7 @@ METRICS: Dict[str, Metric] = {m.key: m for m in [
        ["who's been given the most counties", "how many counties has kim been gifted"],
        lambda since, game: _agg("county_transfers", "COUNT(*)", user_col="to_user", ts_col="transferred_at", since=since),
        windowable=True),
-    # --- lottery, predictions, shop
-    _m("lottery_wins", "lottery wins", "wins",
-       "Lottery rounds won",
-       ["who's won the lottery", "how many lotteries has steven won", "luckiest lottery player"],
-       lambda since, game: _agg("lottery_rounds", "COUNT(*)", user_col="winner_id", ts_col="drawn_at", since=since,
-                                where="winner_id IS NOT NULL"),
-       windowable=True),
-    _m("lottery_tickets", "lottery tickets bought", "tickets",
-       "Lottery tickets bought across all rounds",
-       ["who buys the most lottery tickets", "how many tickets has johnny bought"],
-       lambda since, game: _agg("lottery_entries", "COALESCE(SUM(tickets),0)")),
+    # --- predictions, shop
     _m("predictions_bet", "prediction bets placed", "bets",
        "Bets placed on prediction events",
        ["who bets on predictions the most", "how many predictions has kim bet on"],
@@ -1018,29 +1008,6 @@ def _list_money_supply(uid, limit, since, pick) -> Lines:
     return out
 
 
-def _list_lottery_round(uid, limit, since, pick) -> Lines:
-    rows = _fetch("SELECT id, ticket_price, ticket_cap, rake_pct, draw_ts FROM lottery_rounds WHERE status = 'open' ORDER BY id DESC LIMIT 1")
-    out: Lines = []
-    if rows:
-        rid, price, cap, rake, draw = rows[0]
-        sold = _fetch("SELECT COALESCE(SUM(tickets),0), COUNT(*) FROM lottery_entries WHERE round_id = ?", (rid,))
-        tickets, players = (int(sold[0][0]), int(sold[0][1])) if sold else (0, 0)
-        pot = tickets * int(price) * (100 - int(rake or 0)) // 100
-        out.append((None, f"round {rid}: {tickets:,} tickets sold to {players:,} players at {int(price):,} UKP each (cap {int(cap):,})"))
-        out.append((None, f"pot about {pot:,} UKP after {int(rake or 0)}% rake, draw {_when(draw)} UTC"))
-    else:
-        out.append((None, "no lottery round is open right now"))
-    last = _fetch("SELECT winner_id, pot, drawn_at FROM lottery_rounds WHERE winner_id IS NOT NULL ORDER BY drawn_at DESC LIMIT 1")
-    if last:
-        out.append((str(last[0][0]), f"won the last draw: {int(last[0][1] or 0):,} UKP on {_dt(last[0][2])}"))
-    return out
-
-
-def _list_lottery_winners(uid, limit, since, pick) -> Lines:
-    rows = _fetch("SELECT winner_id, pot, drawn_at FROM lottery_rounds WHERE winner_id IS NOT NULL ORDER BY drawn_at DESC LIMIT ?", (int(limit),))
-    return [(str(w), f"{int(p or 0):,} UKP, {_dt(t)}") for w, p, t in rows]
-
-
 def _list_shop_stock(uid, limit, since, pick) -> Lines:
     rows = _fetch("SELECT item_id, quantity, max_quantity, auto_restock FROM shop_inventory ORDER BY item_id")
     out: Lines = []
@@ -1150,7 +1117,7 @@ def _list_economy_today(uid, limit, since, pick) -> Lines:
 
 
 PROFILE_METRICS = ("ukpence", "xp", "messages", "shutcoins", "shutcoins_used", "times_shut", "casino_net", "casino_staked",
-                   "pvp_wins", "pvp_losses", "badges", "gold_badges", "counties", "bonds", "paid_out", "lottery_wins",
+                   "pvp_wins", "pvp_losses", "badges", "gold_badges", "counties", "bonds", "paid_out",
                    "first_seen", "skyrim_level")
 
 
@@ -1231,10 +1198,6 @@ LISTS: Dict[str, ListKind] = {l.key: l for l in [
        ["what's in the house bank", "how much has the house made", "which game makes the bank the most"], _list_bank, per_person=False, empty="no bank record"),
     _l("money_supply", "money supply", "How much UKP, bonds and shutcoins exist across the server",
        ["how much money is there in total", "total ukp in circulation", "how many shutcoins exist"], _list_money_supply, per_person=False, empty="no economy data"),
-    _l("lottery", "lottery", "The current lottery round: tickets sold, pot, draw time, and the last winner",
-       ["what's the lottery pot", "when's the lottery draw", "who won the last lottery"], _list_lottery_round, per_person=False, empty="no lottery data"),
-    _l("lottery_winners", "recent lottery winners", "Recent lottery winners and what they won",
-       ["who's won the lottery recently", "last few lottery winners"], _list_lottery_winners, per_person=False, empty="no draws yet"),
     _l("shop_stock", "shop stock", "What the shop has in stock",
        ["what's in stock in the shop", "are there any shutcoins in the shop", "shop inventory"], _list_shop_stock, per_person=False, empty="the shop is empty"),
     _l("iceberg", "iceberg", "The server iceberg: entries by level",

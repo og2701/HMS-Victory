@@ -56,12 +56,6 @@ def _fake_fetch(calls=None):
             return [(1, 123456, 50000, 7000, 1000, 400, 300, 900)]
         if "PRAGMA table_info(bank)" in sql:
             return [(0, "id"), (1, "balance"), (2, "total_revenue"), (3, "total_tax_collected"), (4, "total_blackjack_in"), (5, "total_blackjack_out"), (6, "total_slots_in"), (7, "total_slots_out")]
-        if "FROM lottery_rounds WHERE status = 'open'" in sql:
-            return [(7, 10, 500, 10, 1_800_000_000)]
-        if "FROM lottery_entries WHERE round_id = ?" in sql:
-            return [(120, 9)]
-        if "FROM lottery_rounds WHERE winner_id IS NOT NULL" in sql:
-            return [("3", 900, 1_790_000_000)]
         if "FROM badges ORDER BY name" in sql:
             return [("Night Owl",), ("Shut Victim",), ("Warden",)]
         return []
@@ -295,13 +289,6 @@ class TestLists(unittest.TestCase):
         self.assertIn("house balance 123,456 UKP", text)
         self.assertIn("blackjack: house +600 UKP (took 1,000, paid 400)", text)
         self.assertIn("slots: house -600 UKP", text)
-
-    def test_lottery_round_and_names_in_lines(self):
-        res = compute(QuerySpec(metric="none", shape="list", list_kind="lottery"))
-        text = render(res, self.names)
-        self.assertIn("round 7: 120 tickets sold to 9 players at 10 UKP each (cap 500)", text)
-        self.assertIn("pot about 1,080 UKP after 10% rake", text)
-        self.assertIn("\nKim: won the last draw: 900 UKP on", text)
 
     def test_pick_lists_filter_bots_and_departed(self):
         holders = compute(QuerySpec(metric="none", shape="list", list_kind="badge_holders", pick="Warden"), exclude_ids={"2"})

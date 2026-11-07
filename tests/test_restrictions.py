@@ -30,7 +30,7 @@ def test_pay_only_blocks_pay_and_nothing_else(monkeypatch):
 
 def test_economy_blocks_the_casino_and_dailies_but_not_skyrim(monkeypatch):
     _rows(monkeypatch, ["economy"])
-    for blocked in ("pay", "blackjack", "roulette", "wager", "shop", "lottery", "wordle"):
+    for blocked in ("pay", "blackjack", "roulette", "wager", "shop", "bond", "wordle"):
         assert R.is_blocked(1, blocked) == "economy", blocked
     assert R.is_blocked(1, "skyrim") is None
 
@@ -97,5 +97,5 @@ def test_every_blocked_name_is_a_real_command():
 def test_the_money_commands_are_all_covered_by_the_economy_tier():
     """Anything that pays out or takes a stake must be caught, or a restricted member
     just plays a different game with the same money."""
-    must_block = {"pay", "benefits", "blockade", "chest", "wager", "shop", "lottery", "bond"}
+    must_block = {"pay", "benefits", "blockade", "chest", "wager", "shop", "bond"}
     assert must_block <= R.blocks("economy")

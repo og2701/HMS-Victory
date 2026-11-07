@@ -7,7 +7,7 @@ shop with money the detector had just decided was probably stolen.
 
 This module replaces that with three graded tiers and, crucially, one place that knows what
 each of them actually blocks. Every tier is defined as a set of command names, the gate in
-`setup_commands` reads those sets, and the `/flags` panel renders the same sets back to
+`setup_commands` reads those sets, and the flags panel renders the same sets back to
 staff - so what a reviewer is told matches what the bot enforces, because both come from
 this dict rather than from someone's memory of what the flag used to do.
 
@@ -36,7 +36,7 @@ _CASINO = {
     "penalty",
 }
 _PVP = {"battleship", "connect4", "rps", "wager", "bets"}
-_MARKET = {"shop", "bond", "lottery"}
+_MARKET = {"shop", "bond"}
 # Handouts straight from the bank. Someone under review for moving money around
 # should not still be drawing a daily from the treasury while it is looked at.
 _PAYOUTS = {"benefits"}
@@ -56,7 +56,7 @@ TIERS: dict[str, dict] = {
         "label": "Economy",
         "blocks": frozenset(_PAY | _CASINO | _PVP | _MARKET | _PAYOUTS | _DAILIES),
         "summary": "/pay, all casino games, wagers and PvP, the shop, bonds, "
-                   "the lottery, benefits, and daily puzzles",
+                   "benefits, and daily puzzles",
         "note": "Can still chat, rank up and play Skyrim.",
     },
     "full": {

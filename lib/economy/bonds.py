@@ -596,7 +596,7 @@ async def handle_bond_command(interaction: Interaction):
 
 
 # ---------------------------------------------------------------------------
-# Bond overview (a button on /bank-status)
+# Bond overview (a button on the bank report)
 # ---------------------------------------------------------------------------
 def bonds_overview_embed() -> discord.Embed:
     rows = DatabaseManager.fetch_all(
