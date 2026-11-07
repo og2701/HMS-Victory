@@ -274,6 +274,13 @@ def define_commands(tree, client):
         from lib.features.separate import handle_separate_command
         await handle_separate_command(interaction, user_one, user_two, action)
 
+    @app_commands.describe(action="status (default), pause, resume, run a poll now, dry-run (log only) or live")
+    @command("newsfeed", "Control the news forum auto-poster (admins)", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET])])
+    async def newsfeed_command(interaction: Interaction,
+                               action: Literal["status", "pause", "resume", "run", "dry-run", "live"] = "status"):
+        from lib.features.newsfeed import handle_newsfeed_command
+        await handle_newsfeed_command(interaction, action)
+
     @command("video-ban", "Toggles the Video Ban role for a user", checks=[lambda i: has_any_role(i, [ROLES.MINISTER, ROLES.CABINET, ROLES.BORDER_FORCE])])
     async def video_ban_command(interaction: Interaction, user: Member):
         await video_ban(interaction, user)

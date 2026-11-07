@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom feed</title>
+  <entry>
+    <title>Chancellor sets out autumn budget</title>
+    <link rel="alternate" href="https://example.com/budget?ref=feed"/>
+    <id>https://example.com/budget</id>
+    <updated>2026-11-07T12:30:00Z</updated>
+    <summary type="html">&lt;b&gt;Tax&lt;/b&gt; and spending plans</summary>
+  </entry>
+</feed>
