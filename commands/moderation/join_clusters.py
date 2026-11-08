@@ -1156,6 +1156,9 @@ async def report_voice_cluster(client: Any, member: Any, channel: Any) -> bool:
 # in and immediately taking the mic is a thing staff kept noticing, and nothing was
 # recording it.
 VOICE_RUSH_SECONDS = 5 * 60
+# Paused at Oggers' ask (8 Nov 2026): the "Straight from joining into a call" notes in #police-station were
+# mostly noise. Flip back to True to bring them back; the batch voice-cluster report is unaffected.
+VOICE_RUSH_REPORTS_ENABLED = False
 
 
 def _fast_join_seconds(member: Any, now: float | None = None) -> float | None:
@@ -1169,7 +1172,7 @@ def _fast_join_seconds(member: Any, now: float | None = None) -> float | None:
 async def report_fast_voice_join(client: Any, member: Any, channel: Any) -> bool:
     """Note a member who went into voice within minutes of arriving."""
     try:
-        if getattr(member, "bot", False):
+        if not VOICE_RUSH_REPORTS_ENABLED or getattr(member, "bot", False):
             return False
         seconds = _fast_join_seconds(member)
         if seconds is None or seconds > VOICE_RUSH_SECONDS or seconds < 0:
