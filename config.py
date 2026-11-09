@@ -990,7 +990,7 @@ VC_LOCKDOWN_WHITELIST = [
 ]
 
 # --- News forum auto-poster (lib/features/newsfeed.py) ---
-# Polls several outlets (BBC News, Sky News, the Guardian and the Independent; see NEWSFEED_FEEDS), groups the same event
+# Polls several outlets (BBC News, Sky News, the Guardian, the Independent, the Daily Mail and the Daily Express; see NEWSFEED_FEEDS), groups the same event
 # across outlets into one story, keeps only the strong ones (time on a front page, live pages, how many outlets carry
 # it, then an AI judgement), and opens one forum post per story in the news forum, linking the most neutral outlet that
 # has it (NEWSFEED_MAIN_LINK_ORDER) with the others listed as "Also covered by". A later article on a story that already
@@ -1034,10 +1034,14 @@ NEWSFEED_OUTLETS = {
     "itv": ("ITV News", "ITV", "free"),
     "guardian": ("the Guardian", "Guardian", "free"),
     "independent": ("the Independent", "Independent", "free"),
+    "mail": ("the Daily Mail", "Mail", "free"),
+    "express": ("the Daily Express", "Express", "free"),
     "telegraph": ("the Telegraph", "Telegraph", "partial"),
 }
 # Main link preference, most neutral first. Partial-paywall outlets always come after every free one.
-NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "telegraph")
+# The Mail and the Express (added 9 Nov 2026 at Oggers' ask for right-leaning coverage) come after the other free
+# outlets: they count towards coverage and show in "Also covered by", and are the main link only when nobody else has it.
+NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "mail", "express", "telegraph")
 # Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
 NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
 # name: (url, outlet, kind). kind "top" is a curated front page (being there, and for how long, counts), "section" any
@@ -1066,5 +1070,8 @@ NEWSFEED_FEEDS = {
     "guardian_politics": ("https://www.theguardian.com/politics/rss", "guardian", "section"),
     "independent_top": ("https://www.independent.co.uk/rss", "independent", "section"),
     "independent_uk": ("https://www.independent.co.uk/news/uk/rss", "independent", "section"),
+    "mail_news": ("https://www.dailymail.co.uk/news/index.rss", "mail", "section"),  # news only; home is mostly showbiz
+    "express_news": ("https://www.express.co.uk/posts/rss/1/news", "express", "section"),
+    "express_politics": ("https://www.express.co.uk/posts/rss/139/politics", "express", "section"),
     "independent_politics": ("https://www.independent.co.uk/news/uk/politics/rss", "independent", "section"),
 }

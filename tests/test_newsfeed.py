@@ -863,3 +863,13 @@ def test_a_big_feed_is_read_to_the_end():
     assert asyncio.run(N._read_body(resp, 1000)) == b"<rss><channel></channel></rss>"
     resp = SimpleNamespace(content=Content([b"x" * 600, b"y" * 600]))
     assert len(asyncio.run(N._read_body(resp, 1000))) == 1001                     # over the cap: parse_feed refuses it
+
+
+def test_mail_and_express_are_read_but_never_beat_neutral_outlets():
+    import config
+    assert config.NEWSFEED_OUTLETS["mail"][2] == "free" and config.NEWSFEED_OUTLETS["express"][2] == "free"
+    order = config.NEWSFEED_MAIN_LINK_ORDER
+    for neutral in ("bbc", "sky", "itv", "guardian", "independent"):
+        assert order.index(neutral) < order.index("mail") < order.index("express") < order.index("telegraph")
+    outlets = {o for _, o, _ in config.NEWSFEED_FEEDS.values()}
+    assert {"mail", "express"} <= outlets
