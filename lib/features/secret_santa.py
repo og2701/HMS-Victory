@@ -148,6 +148,11 @@ class DetailsModal(discord.ui.Modal, title="Secret Santa gifting details"):
         if not all(details[k] for k in ("locker", "parcel_name", "limits")):
             await interaction.response.send_message("Please complete the locker, parcel name and hard limits fields.", ephemeral=True)
             return
+        existing = participant.get("pending_details", {}).get("answers") or participant.get("details")
+        if existing is not None and details == {k: str(existing.get(k, "")).strip() for k in self.fields}:
+            status = "Your details are still awaiting review." if participant.get("pending_details") else "Your details remain approved."
+            await interaction.response.send_message("Nothing changed. " + status, ephemeral=True)
+            return
         revision = secrets.token_hex(8)
         participant.pop("details", None)
         participant["pending_details"] = {"revision": revision, "answers": details,

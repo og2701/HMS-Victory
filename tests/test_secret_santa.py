@@ -439,3 +439,30 @@ def test_form_cannot_save_for_nonparticipant_or_removed_participant(ss, monkeypa
         interaction.response.send_message.assert_awaited_once()
     ss._channel.assert_not_awaited()
     assert ss.load_state()["participants"] == {}
+
+
+@pytest.mark.parametrize("pending,coordinator_edit", [(False, False), (True, False), (True, True)])
+def test_unchanged_submission_preserves_review_and_approval(ss, monkeypatch, pending, coordinator_edit):
+    _setup_live(ss)
+    state = ss.load_state()
+    participant = state["participants"]["1"]
+    answers = {"locker": "Locker A", "parcel_name": "An alias", "email": "", "limits": "No candles"}
+    if pending:
+        participant.pop("details")
+        participant["pending_details"] = {"revision": "abcd", "answers": answers,
+                                           "submitted_at": "original"}
+    else:
+        participant["details"] = answers
+        participant["details_approved_by"] = 42
+        participant["details_approved_at"] = "original"
+    ss.save_state(state)
+    monkeypatch.setattr(ss, "_channel", AsyncMock())
+    monkeypatch.setattr(ss, "refresh_messages", AsyncMock())
+    form = ss.DetailsModal(answers, 1 if coordinator_edit else None, "abcd" if coordinator_edit else None)
+    _fill(form, "  Locker A  ")
+    interaction = _interaction(ss, next(iter(ss.operator_ids())) if coordinator_edit else 1)
+    asyncio.run(form.on_submit(interaction))
+    assert ss.load_state() == state
+    assert "Nothing changed" in interaction.response.send_message.call_args.args[0]
+    ss._channel.assert_not_awaited()
+    ss.refresh_messages.assert_not_awaited()
