@@ -1,6 +1,7 @@
-"""News forum auto-poster: the pure parts (parsing, tracking, scoring, caps, matching, the decision) without Discord,
-the network or a real AI call."""
+"""News forum auto-poster: the pure parts (parsing, tracking, clustering, scoring, caps, matching, the decision, the
+neutrality filter) and whole polls against a fake forum, without Discord, the network or a real AI call."""
 import asyncio
+import gzip
 import os
 import sys
 
@@ -13,13 +14,20 @@ FEEDS = {
     "bbc_top": ("u", "bbc", "top"),
     "bbc_world": ("u", "bbc", "section"),
     "sky_home": ("u", "sky", "top"),
+    "sky_politics": ("u", "sky", "section"),
     "guardian_politics": ("u", "guardian", "section"),
+    "independent_top": ("u", "independent", "section"),
 }
 NOW = 1_794_100_000.0  # Sat 7 Nov 2026, about 19:06 UTC
 POLL = 600
 KRAKOW = "https://www.bbc.co.uk/news/articles/cmd7q15drwgeo"
 BARNIER = "https://www.bbc.co.uk/news/articles/c9kgjj206nzpo"
 LIVE = "https://www.bbc.co.uk/news/live/c4g8xk2p1zzt"
+SKY_KRAKOW = "https://news.sky.com/story/six-killed-in-krakow-mass-shooting-13609300"
+GUARDIAN_BARNIER = "https://www.theguardian.com/politics/2026/nov/07/barnier-uk-cherry-pick-eu-single-market"
+INDY_KRAKOW = "https://www.independent.co.uk/news/world/europe/krakow-shooting-poland-gunman-b3081001.html"
+SKY_WATER = "https://news.sky.com/story/water-bills-to-rise-9-in-april-as-ofwat-confirms-increase-13609310"
+INDY_WATER = "https://www.independent.co.uk/news/uk/home-news/water-bills-rise-april-ofwat-b3081002.html"
 
 
 def fixture(name):
@@ -27,14 +35,28 @@ def fixture(name):
         return N.parse_feed(f.read())
 
 
+def all_results():
+    return {"bbc_top": fixture("bbc_top.xml"), "sky_home": fixture("sky_home.xml"),
+            "sky_politics": fixture("sky_politics.xml"), "guardian_politics": fixture("guardian.xml"),
+            "independent_top": fixture("independent.xml")}
+
+
 def tracked(polls=1, start=NOW):
-    """A state after `polls` polls of the fixtures, ten minutes apart."""
+    """A state after `polls` polls of the fixtures, ten minutes apart, with the articles grouped into stories."""
     state = N.empty_state()
-    results = {"bbc_top": fixture("bbc_top.xml"), "sky_home": fixture("sky_home.xml"),
-               "guardian_politics": fixture("guardian.xml")}
+    results = all_results()
     for i in range(polls):
         N.observe(state, results, FEEDS, start + i * POLL)
+    N.assign_clusters(state)
     return state
+
+
+def story_of(state, url):
+    return state["stories"][url]["cluster"]
+
+
+def outlets_of(state, url):
+    return sorted(N.cluster_outlets(state, story_of(state, url)))
 
 
 # ------------------------------------------------------------ parsing
@@ -72,26 +94,64 @@ def test_bad_xml_gives_nothing_rather_than_raising():
     assert N.parse_feed(b"<rss><channel><item>") == []
     assert N.parse_feed(b"") == []
     assert N.parse_feed("not xml at all") == []
+    assert N.parse_feed(b"\x1f\x8bnot really gzip") == []
+
+
+def test_independent_feed_parses_even_gzipped():
+    with open(os.path.join(FIXTURES, "independent.xml"), "rb") as f:
+        raw = f.read()
+    items = N.parse_feed(gzip.compress(raw))                   # the Independent gzips whatever it's asked
+    assert items == N.parse_feed(raw) and len(items) == 4
+    assert items[0]["url"] == INDY_KRAKOW
+    assert items[1]["summary"] == "Households in England and Wales will pay an average of £54 more a year."
 
 
 def test_url_rules():
     assert N.normalise_url("http://WWW.BBC.CO.UK/news/x/?at_medium=RSS#1") == "https://www.bbc.co.uk/news/x"
     assert N.normalise_url("https://www.bbc.com/news/x") == "https://www.bbc.co.uk/news/x"
     assert N.is_live_url(LIVE) and not N.is_live_url(KRAKOW)
+    assert N.is_live_url("https://www.theguardian.com/politics/live/2026/nov/09/uk-politics-latest")
+    assert not N.is_live_url("https://www.theguardian.com/politics/2026/nov/09/live-music-venues")
     assert N.is_postable_url(KRAKOW) and N.is_postable_url(LIVE)
     assert not N.is_postable_url("https://www.bbc.co.uk/news/videos/c0abc123")
     assert not N.is_postable_url("https://www.bbc.co.uk/sounds/play/x")
-    assert not N.is_postable_url("https://news.sky.com/story/x")
+    assert N.is_postable_url(SKY_KRAKOW) and N.is_postable_url(GUARDIAN_BARNIER) and N.is_postable_url(INDY_WATER)
+    assert not N.is_postable_url("https://news.sky.com/video/x-123")
+    assert not N.is_postable_url("https://www.theguardian.com/commentisfree/2026/nov/07/opinion")
+    assert not N.is_postable_url("https://www.independent.co.uk/voices/x-b1.html")
+    assert not N.is_postable_url("https://www.independent.co.uk/life-style/x-b1.html")
+    assert not N.is_postable_url("https://www.example.com/news/x")
     assert N.is_sport_url("https://www.bbc.co.uk/sport/football/123")
+    assert N.is_sport_url("https://www.theguardian.com/football/2026/nov/07/x")
+    assert N.outlet_of(SKY_KRAKOW) == "sky" and N.outlet_of(INDY_WATER) == "independent"
+    assert N.outlet_of("https://www.telegraph.co.uk/news/2026/11/07/x/") == "telegraph"
 
 
 # ------------------------------------------------------------ tracking, dedupe and scoring
 
-def test_only_bbc_stories_are_tracked_and_others_kept_for_cross_checking():
+def test_every_outlet_is_tracked_but_video_and_opinion_are_not():
     state = tracked()
-    assert KRAKOW in state["stories"] and LIVE in state["stories"]
-    assert all("bbc.co.uk" in u for u in state["stories"])
-    assert {o["outlet"] for o in state["others"].values()} == {"sky", "guardian"}
+    assert {KRAKOW, LIVE, SKY_KRAKOW, GUARDIAN_BARNIER, INDY_KRAKOW, SKY_WATER} <= set(state["stories"])
+    assert {e["outlet"] for e in state["stories"].values()} == {"bbc", "sky", "guardian", "independent"}
+    assert not any("/video" in u or "/voices/" in u for u in state["stories"])
+    assert not any("Fog rolls" in e["title"] for e in state["stories"].values())   # BBC video
+
+
+def test_an_old_bbc_only_state_loads(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    monkeypatch.setattr(N.config, "NEWSFEED_STATE_FILE", str(path))
+    old = N.empty_state()
+    old.pop("clusters")
+    old["others"] = {SKY_KRAKOW: {"outlet": "sky", "title": "t"}}
+    old["stories"] = {KRAKOW: {"title": "Krakow", "feeds": ["bbc_top"], "verdict": {"importance": 6}, "judgements": 1},
+                      "https://www.bbc.co.uk/news/videos/c0abc": {"title": "Watch"}}
+    N.save_state(old)
+    state = N.load_state()
+    assert "others" not in state and state["clusters"] == {}
+    assert list(state["stories"]) == [KRAKOW] and state["stories"][KRAKOW]["outlet"] == "bbc"
+    N.assign_clusters(state)
+    cluster = state["clusters"][story_of(state, KRAKOW)]
+    assert cluster["verdict"] == {"importance": 6} and cluster["judgements"] == 1   # its judgement comes along
 
 
 def test_time_in_top_stories_is_tracked_from_first_to_last_seen():
@@ -116,31 +176,105 @@ def test_dedupe_by_url_and_guid_persists_through_the_state():
 
 
 def test_cross_outlet_matching_on_headlines():
-    state = tracked()
-    assert N.cross_outlets(state["stories"][KRAKOW], state["others"]) == {"sky"}
-    assert N.cross_outlets(state["stories"][BARNIER], state["others"]) == {"guardian"}
     assert N.same_story_heuristic("Six killed in Krakow shooting", "Krakow mass shooting: what we know")
     assert not N.same_story_heuristic("Labour sets out housing plan", "Labour MP suspended over remarks")
+    assert N.same_story_heuristic("UK cannot 'cherry pick' EU single market deal, Barnier tells BBC",
+                                  "Barnier warns UK it cannot cherry pick from EU single market")
+
+
+def test_the_same_event_across_outlets_becomes_one_story():
+    state = tracked()
+    assert outlets_of(state, KRAKOW) == ["bbc", "sky"]
+    assert story_of(state, SKY_KRAKOW) == story_of(state, KRAKOW) == KRAKOW      # the story keeps the first article's id
+    assert outlets_of(state, BARNIER) == ["bbc", "guardian"]
+    assert outlets_of(state, SKY_WATER) == ["independent", "sky"]                 # no BBC needed for a story
+    assert story_of(state, INDY_WATER) == story_of(state, SKY_WATER)
+    # At most one article per outlet: the BBC's live page is its own story, never folded into the BBC article.
+    assert story_of(state, LIVE) != story_of(state, KRAKOW)
+    assert outlets_of(state, INDY_KRAKOW) == ["bbc", "independent"]               # its best match was the live page
+    fog = next(u for u, e in state["stories"].items() if "fog" in e["title"].lower())
+    assert outlets_of(state, fog) == ["sky"]
+
+
+def test_stories_keep_their_articles_across_polls():
+    state = tracked(polls=3)
+    assert len(state["clusters"]) == 5
+    link = "https://www.theguardian.com/world/2026/nov/07/krakow-shooting"
+    late = {"title": "Krakow mass shooting: Six killed by gunman in Poland", "summary": "", "link": link,
+            "url": N.normalise_url(link), "guid": "", "published": NOW}
+    N.observe(state, {"guardian_politics": [late]}, FEEDS, NOW + 3 * POLL)
+    joins = N.assign_clusters(state)
+    assert joins == [(late["url"], KRAKOW)]
+    assert outlets_of(state, KRAKOW) == ["bbc", "guardian", "sky"]
+
+
+def test_a_second_outlet_on_a_posted_story_is_recorded_against_that_post():
+    state = tracked()
+    N.mark_story_posted(state, N.cluster_entries(state, KRAKOW)[:1], NOW, 4242, "new", KRAKOW)
+    assert not N.already_posted(state, SKY_KRAKOW)
+    N.sync_posted(state, NOW)
+    assert state["posted"][SKY_KRAKOW] == {"ts": NOW, "thread_id": "4242", "kind": "also covered"}
+    assert state["clusters"][KRAKOW]["done"]
+
+
+def test_near_matches_go_to_the_ai_and_merge_when_it_agrees():
+    state = N.empty_state()
+    indy = {"title": "Chancellor confirms fuel duty freeze in autumn budget statement", "summary": "",
+            "link": "https://www.independent.co.uk/news/uk/politics/fuel-duty-b1.html"}
+    guardian = {"title": "Reeves keeps fuel duty frozen in budget, sparing drivers", "summary": "",
+                "link": "https://www.theguardian.com/politics/2026/nov/07/fuel-duty"}
+    for item in (indy, guardian):
+        item.update(url=N.normalise_url(item["link"]), guid="", published=NOW)
+    N.observe(state, {"independent_top": [indy], "guardian_politics": [guardian]}, FEEDS, NOW)
+    N.assign_clusters(state)
+    assert 0.3 <= N.match_score(indy["title"], guardian["title"]) < 0.5           # borderline: not merged on words alone
+    assert len(state["clusters"]) == 2
+    g, i = story_of(state, guardian["url"]), story_of(state, indy["url"])
+    assert [m for _, m in N.maybe_same(state, g)] == [i]
+    assert N.merge_clusters(state, g, i, NOW)
+    assert list(state["clusters"]) == [g] and outlets_of(state, indy["url"]) == ["guardian", "independent"]
+
+
+def test_merging_into_a_posted_story_marks_the_whole_story_posted():
+    state = tracked()
+    water = story_of(state, SKY_WATER)
+    N.mark_story_posted(state, N.cluster_entries(state, water), NOW, 77, "new", water)
+    # A Guardian-only story the AI says is the same event: it joins the posted story and is never posted itself.
+    link = "https://www.theguardian.com/business/2026/nov/07/water-bills"
+    item = {"title": "Households face higher water charges next spring", "summary": "", "link": link,
+            "url": N.normalise_url(link), "guid": "", "published": NOW}
+    N.observe(state, {"guardian_politics": [item]}, FEEDS, NOW)
+    N.assign_clusters(state)
+    assert N.merge_clusters(state, water, story_of(state, item["url"]), NOW)
+    assert state["posted"][item["url"]]["thread_id"] == "77"
 
 
 def test_signal_score_weights():
     state = tracked()
-    fresh = state["stories"][BARNIER]
-    assert N.signal_score(fresh, NOW, set(), POLL) == (2, ["BBC top"])
-    score, reasons = N.signal_score(state["stories"][LIVE], NOW, set(), POLL)
-    assert score == 5 and "live page" in reasons
-    assert N.signal_score(dict(fresh, feeds=["bbc_top", "bbc_politics"]), NOW, set(), POLL)[0] == 2
-    long_running = dict(fresh, top_first=NOW - 3 * 3600, top_last=NOW, feeds=["bbc_top", "bbc_politics", "bbc_uk"])
-    score, reasons = N.signal_score(long_running, NOW, {"sky", "guardian"}, POLL)
-    assert score == 2 + 3 + 4 + 1
-    capped = dict(long_running, top_first=NOW - 10 * 3600)
-    assert N.signal_score(capped, NOW, {"sky", "guardian"}, POLL)[0] == 2 + 4 + 4 + 1
+    barnier = N.cluster_entries(state, story_of(state, BARNIER))
+    bbc_only = [e for e in barnier if e["outlet"] == "bbc"]
+    assert N.signal_score(bbc_only, NOW, POLL) == (2, ["front page BBC"])
+    assert N.signal_score(barnier, NOW, POLL) == (4, ["front page BBC", "2 outlets"])
+    live = N.cluster_entries(state, story_of(state, LIVE))
+    score, reasons = N.signal_score(live, NOW, POLL)
+    assert score == 2 + 3 + 2 and "live page" in reasons
+    krakow = N.cluster_entries(state, story_of(state, KRAKOW))
+    assert N.signal_score(krakow, NOW, POLL) == (2 + 1 + 2, ["front page BBC, Sky", "2 outlets"])
+    long_running = [dict(e, top_first=NOW - 3 * 3600, top_last=NOW) for e in krakow]
+    assert N.signal_score(long_running, NOW, POLL)[0] == 2 + 1 + 3 + 2
+    capped = [dict(e, top_first=NOW - 10 * 3600) for e in long_running]
+    assert N.signal_score(capped, NOW, POLL)[0] == 2 + 1 + 3 + 2
+    many = [{"outlet": o, "url": f"https://x/{o}"} for o in ("bbc", "sky", "itv", "guardian", "independent", "telegraph")]
+    assert N.signal_score(many, NOW, POLL) == (6, ["6 outlets"])                  # outlets capped at +6
+    blog = {"outlet": "guardian", "url": "https://www.theguardian.com/politics/live/2026/nov/09/uk-politics-latest"}
+    assert N.signal_score(blog, NOW, POLL) == (1, ["live blog"])                   # a rolling blog counts for less
+    assert not N.is_megathread_url(blog["url"]) and N.is_megathread_url(LIVE)
 
 
 def test_a_story_that_left_top_stories_loses_the_top_point():
-    entry = {"top_first": NOW - 7200, "top_last": NOW - 3600, "url": KRAKOW, "feeds": ["bbc_top"]}
-    score, reasons = N.signal_score(entry, NOW, set(), POLL)
-    assert "BBC top" not in reasons and score == 1
+    entry = {"top_first": NOW - 7200, "top_last": NOW - 3600, "url": KRAKOW, "feeds": ["bbc_top"], "outlet": "bbc"}
+    score, reasons = N.signal_score(entry, NOW, POLL)
+    assert not any("front page" == r[:10] for r in reasons) and score == 1
 
 
 def test_signal_thresholds_from_config(monkeypatch):
@@ -204,6 +338,104 @@ def test_editorial_tails_are_trimmed_from_why_it_matters():
         == "Two men were arrested after a sword attack."
     assert N.strip_commentary("Rates rose to 5%.") == "Rates rose to 5%."
     assert N.strip_commentary("") == ""
+
+
+def test_commentary_from_live_posts_is_removed():
+    # The two phrases that got through in the first live days.
+    assert N.strip_commentary("Police are investigating drones seen over RAF Lakenheath, raising security concerns.") \
+        == "Police are investigating drones seen over RAF Lakenheath."
+    assert N.strip_commentary("Russia expelled two British diplomats, which indicates ongoing international tensions "
+                              "and concerns.") == "Russia expelled two British diplomats."
+    assert N.strip_commentary("Russia expelled two British diplomats. This indicates ongoing international tensions "
+                              "and concerns.") == "Russia expelled two British diplomats."
+    # A sentence that is nothing but commentary can't be cleaned, so the "why" goes rather than post loaded wording.
+    assert N.strip_commentary("The expulsions indicate ongoing international tensions and concerns.") == ""
+    assert N.strip_commentary("It is the end of an era for the town.") == ""
+    assert N.strip_commentary("The vote highlights divisions in the party.") == ""
+
+
+def test_loaded_adjectives_and_clauses_are_rephrased_or_dropped():
+    assert N.strip_commentary("The Supreme Court issued a landmark ruling on the definition of a woman.") \
+        == "The Supreme Court issued a ruling on the definition of a woman."
+    assert N.strip_commentary("MPs passed a controversial bill on assisted dying. It goes to the Lords next.") \
+        == "MPs passed a bill on assisted dying. It goes to the Lords next."
+    assert N.strip_commentary("An unprecedented alert was issued for Wales.") == "An alert was issued for Wales."
+    assert N.strip_commentary("The plant shuts in March, marking the end of an era for steelmaking.") \
+        == "The plant shuts in March."
+    assert N.strip_commentary("The fire spread to three homes, amid concerns over cladding.") \
+        == "The fire spread to three homes."
+    assert N.strip_commentary("The vote was delayed, raising questions about the timetable.") == "The vote was delayed."
+    # Closing speculation the AI added in the multi-outlet dry check.
+    assert N.strip_commentary("Nvidia's chief executive admitted an affair with a suspected Chinese spy. This could "
+                              "have implications for company security and international relations.") \
+        == "Nvidia's chief executive admitted an affair with a suspected Chinese spy."
+    assert N.strip_commentary("Andy Burnham wants closer ties with the EU. This could influence future UK-EU relations "
+                              "and domestic political dynamics.") == "Andy Burnham wants closer ties with the EU."
+    # Plain facts that only look like it are left alone.
+    for fact in ("Ofgem is raising the price cap to £1,800 from January.", "Thousands marched in London, amid heavy rain.",
+                 "Three people are feared dead after the U.S. strike.", "The vote marks the bill's third reading."):
+        assert N.strip_commentary(fact) == fact
+
+
+def test_the_verdict_drops_a_why_it_cannot_clean():
+    v = N.normalise_verdict({"importance": 8, "newsworthy": True, "tag": "World",
+                             "why": "This indicates ongoing international tensions and concerns."}, TAGS, [])
+    assert v["why"] == ""
+    assert N.build_post_body("https://l", v["why"]).split("\n\n")[1].startswith("-# Posted automatically")
+    v = N.normalise_verdict({"why": "Police are investigating drones over RAF Lakenheath, raising security concerns."},
+                            TAGS, [])
+    assert v["why"] == "Police are investigating drones over RAF Lakenheath."
+
+
+# ------------------------------------------------------------ main link, also covered
+
+def _e(outlet, url=None, **kw):
+    url = url or {"bbc": KRAKOW, "sky": SKY_KRAKOW, "guardian": GUARDIAN_BARNIER, "independent": INDY_KRAKOW,
+                  "itv": "https://www.itv.com/news/2026-11-07/krakow-shooting",
+                  "telegraph": "https://www.telegraph.co.uk/world-news/2026/11/07/krakow-shooting"}[outlet]
+    return dict({"outlet": outlet, "url": url, "link": url + "?ref=rss", "title": outlet}, **kw)
+
+
+def test_main_link_prefers_the_most_neutral_outlet():
+    pick = lambda *entries: N.main_entry(list(entries))["outlet"]
+    assert pick(_e("guardian"), _e("sky"), _e("bbc"), _e("independent")) == "bbc"
+    assert pick(_e("guardian"), _e("sky"), _e("independent")) == "sky"
+    assert pick(_e("guardian"), _e("itv"), _e("telegraph")) == "itv"
+    assert pick(_e("independent"), _e("guardian"), _e("telegraph")) == "guardian"
+    assert pick(_e("telegraph"), _e("independent")) == "independent"
+    assert pick(_e("telegraph")) == "telegraph"            # partly paywalled: only when nothing else has it
+
+
+def test_a_paywalled_link_is_never_the_main_link(monkeypatch):
+    premium = _e("independent", "https://www.independent.co.uk/independentpremium/news-analysis/x-b1.html")
+    assert N.main_entry([premium, _e("telegraph")])["outlet"] == "telegraph"
+    assert N.main_entry([premium]) is None
+    monkeypatch.setitem(N.config.NEWSFEED_OUTLETS, "telegraph", ("the Telegraph", "Telegraph", "full"))
+    assert N.main_entry([_e("telegraph")]) is None
+    assert N.main_entry([_e("telegraph"), _e("guardian")])["outlet"] == "guardian"
+
+
+def test_also_covered_lists_the_other_outlets_with_embeds_suppressed():
+    entries = [_e("independent"), _e("bbc"), _e("telegraph"), _e("sky")]
+    main = N.main_entry(entries)
+    also = N.also_covered(entries, main)
+    assert [name for name, _ in also] == ["Sky", "Independent", "Telegraph"]
+    body = N.build_post_body(main["link"], "Six people were killed.", source="BBC News", also=also)
+    parts = body.split("\n\n")
+    assert parts[0] == KRAKOW + "?ref=rss"                                        # the one unwrapped link: it previews
+    assert parts[1] == "Six people were killed."
+    assert parts[2] == (f"-# Also covered by: [Sky](<{SKY_KRAKOW}?ref=rss>) · [Independent](<{INDY_KRAKOW}?ref=rss>)"
+                        f" · [Telegraph](<{_e('telegraph')['url']}?ref=rss>)")
+    assert parts[3].startswith("-# Posted automatically from BBC News.")
+    assert len(parts) == 4 and "?" not in parts[1]
+    sky = N.build_post_body(SKY_KRAKOW, "", source=N.outlet_label("sky"), also=[("Guardian", GUARDIAN_BARNIER)])
+    assert sky.split("\n\n")[-1].startswith("-# Posted automatically from Sky News.")
+    assert N.build_post_body("https://l", "x") == "https://l\n\nx\n\n" + N.FOOTER.format(source="BBC News")
+
+
+def test_updates_name_the_outlet_they_link():
+    body = N.build_update_body("Gunman named", SKY_KRAKOW, "Police named the suspect.", source="Sky News")
+    assert body == f"**Update:** Gunman named (Sky News)\n{SKY_KRAKOW}\n-# Police named the suspect."
 
 
 def test_post_body_matches_the_forum_style():
@@ -382,20 +614,25 @@ def poll(tmp_path, monkeypatch):
     monkeypatch.setattr(N.config, "NEWSFEED_ENGAGEMENT_FILE", str(tmp_path / "eng.json"))
     monkeypatch.setattr(N.config, "NEWSFEED_DRY_RUN", False)
     monkeypatch.setattr(N.config, "NEWSFEED_FEEDS", FEEDS)
-    results = {"bbc_top": fixture("bbc_top.xml"), "sky_home": fixture("sky_home.xml"),
-               "guardian_politics": fixture("guardian.xml")}
+    # These tests are about the flow, not the tuning: pin the signal bars they were written against.
+    monkeypatch.setattr(N.config, "NEWSFEED_MIN_SIGNAL", 5)
+    monkeypatch.setattr(N.config, "NEWSFEED_UPDATE_MIN_SIGNAL", 4)
+    current = {"results": all_results()}
 
     async def fake_fetch(state, now, feeds=None):
-        return results
+        return current["results"]
     monkeypatch.setattr(N, "fetch_feeds", fake_fetch)
 
-    def run(forum, verdicts, state=None, now=NOW):
-        """verdicts: headline word -> AI reply; anything else is judged dull."""
+    def run(forum, verdicts, state=None, now=NOW, results=None, calls=None):
+        """verdicts: headline word -> AI reply; anything else is judged dull. results replaces the fixtures' feeds."""
         state = state or N.empty_state()
+        current["results"] = results if results is not None else all_results()
 
         def complete(system, payload):
+            if calls is not None:
+                calls.append(payload)
             for word, reply in verdicts.items():
-                if word in payload.split('"open_posts"')[0]:
+                if word in payload.split('"covered_by"')[0]:
                     return reply, 1, 1
             return {"importance": 2, "newsworthy": False, "tag": "World", "same_story_post": None}, 1, 1
         summary = asyncio.run(N.run_once(FakeClient(forum), state, now=now, judge=complete))
@@ -403,12 +640,10 @@ def poll(tmp_path, monkeypatch):
     return run
 
 
-def _aged_state():
-    """The fixtures have already been in BBC top stories for two hours."""
+def _aged_state(results=None):
+    """The fixtures have already been on the front pages for two hours."""
     state = N.empty_state()
-    results = {"bbc_top": fixture("bbc_top.xml"), "sky_home": fixture("sky_home.xml"),
-               "guardian_politics": fixture("guardian.xml")}
-    N.observe(state, results, FEEDS, NOW - 7200)
+    N.observe(state, results or all_results(), FEEDS, NOW - 7200)
     return state
 
 
@@ -492,3 +727,139 @@ def test_new_post_never_includes_a_question(poll):
     poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
     _, content, _ = forum.created[0]
     assert "How should Europe respond?" not in content
+
+
+# ------------------------------------------------------------ several outlets, one post
+
+def _item(title, link, summary=""):
+    return {"title": title, "summary": summary, "link": link, "url": N.normalise_url(link), "guid": "",
+            "published": NOW}
+
+
+def test_a_strong_story_links_bbc_and_lists_the_other_outlets(poll):
+    forum = FakeForum()
+    poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
+    _, content, _ = forum.created[0]
+    parts = content.split("\n\n")
+    assert parts[0].startswith("https://www.bbc.co.uk/news/articles/c9kgjj206nzpo?at_medium=RSS")
+    assert parts[2].startswith("-# Also covered by: [Guardian](<https://www.theguardian.com/politics/2026/nov/07/")
+    assert parts[3].startswith("-# Posted automatically from BBC News.")
+
+
+def test_two_outlets_on_one_event_make_one_post_linking_the_preferred_outlet(poll, monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_MIN_SIGNAL", 2)
+    forum = FakeForum()
+    state, summary = poll(forum, {"Water bills": dict(BIG, tag="UK Politics", why="Bills rise by £54 a year.")})
+    water = [c for c in forum.created if "Water" in c[0]]
+    assert len(water) == 1                                                        # Sky and the Independent: one post
+    name, content, _ = water[0]
+    assert name == "Water bills to rise 9% in April as Ofwat confirms increase"   # the linked outlet's headline
+    assert content.split("\n\n") == [
+        SKY_WATER,
+        "Bills rise by £54 a year.",
+        f"-# Also covered by: [Independent](<{INDY_WATER}>)",
+        N.FOOTER.format(source="Sky News"),
+    ]
+    assert state["posted"][SKY_WATER]["thread_id"] == state["posted"][INDY_WATER]["thread_id"]
+    rec = next(t for t in state["threads"] if t["url"] == SKY_WATER)
+    assert rec["outlet"] == "sky" and set(rec["urls"]) == {SKY_WATER, INDY_WATER}
+
+
+def test_a_story_is_never_posted_twice_through_another_outlet(poll):
+    forum = FakeForum()
+    state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
+    assert len(forum.created) == 1
+    thread_id = state["posted"][BARNIER]["thread_id"]
+    # Next poll the Independent runs it too.
+    indy = _item("Barnier tells UK it cannot cherry pick from the EU single market",
+                 "https://www.independent.co.uk/news/uk/politics/barnier-uk-cherry-pick-single-market-b3081100.html")
+    later = dict(all_results(), independent_top=[indy])
+    state, summary = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, state, now=NOW + 600, results=later)
+    assert len(forum.created) == 1 and summary["posted"] == []
+    assert state["posted"][indy["url"]] == {"ts": NOW + 600, "thread_id": thread_id, "kind": "also covered"}
+
+
+FUEL_BBC = ("Chancellor confirms fuel duty freeze in autumn budget statement",
+            "https://www.bbc.co.uk/news/articles/cfuel1")
+FUEL_GUARDIAN = ("Reeves keeps fuel duty frozen in budget, sparing drivers",
+                 "https://www.theguardian.com/politics/2026/nov/07/fuel-duty")
+
+
+def test_the_ai_settles_a_borderline_match_and_the_stories_merge(poll):
+    bbc, guardian = _item(*FUEL_BBC), _item(*FUEL_GUARDIAN)
+    sky = _item("Fuel duty freeze confirmed by chancellor in budget statement", "https://news.sky.com/story/fuel-1")
+    results = {"bbc_top": [bbc], "sky_home": [sky], "guardian_politics": [guardian]}
+    state = _aged_state(results)
+    N.assign_clusters(state)
+    assert outlets_of(state, bbc["url"]) == ["bbc", "sky"] and outlets_of(state, guardian["url"]) == ["guardian"]
+    guardian_story = story_of(state, guardian["url"])
+    forum, calls = FakeForum(), []
+    verdict = dict(BIG, tag="UK Politics", why="Fuel duty stays at its current rate.", same_coverage=[guardian_story])
+    state, summary = poll(forum, {"Chancellor": verdict}, state, results=results, calls=calls)
+    # The AI was shown the Guardian article as a possible match, said it's the same event, and it joined the story.
+    assert '"maybe_same_coverage": [{"id": "%s"' % guardian_story in calls[0]
+    assert len(forum.created) == 1
+    _, content, _ = forum.created[0]
+    assert content.startswith(bbc["link"]) and "[Sky](<" in content and "[Guardian](<" in content
+    assert outlets_of(state, guardian["url"]) == ["bbc", "guardian", "sky"]
+    assert N.already_posted(state, guardian["url"])
+
+
+def test_a_borderline_match_the_ai_rejects_stays_apart(poll):
+    bbc, guardian = _item(*FUEL_BBC), _item(*FUEL_GUARDIAN)
+    results = {"bbc_top": [bbc], "guardian_politics": [guardian]}
+    forum, calls = FakeForum(), []
+    state, _ = poll(forum, {"Chancellor": dict(BIG, tag="UK Politics", same_coverage=[])}, _aged_state(results),
+                    results=results, calls=calls)
+    # The BBC article alone (front page 2h: 4) is short of the bar of 5, but the Guardian near-match could have made
+    # it 6, so the AI was asked. It said no: the stories stay apart, and the BBC one on its own isn't posted.
+    assert len(calls) == 1 and '"maybe_same_coverage": [{"id"' in calls[0]
+    assert story_of(state, bbc["url"]) != story_of(state, guardian["url"])
+    assert forum.created == [] and not N.already_posted(state, guardian["url"])
+    # It isn't asked again about the same near-match next poll.
+    state, _ = poll(forum, {}, state, now=NOW + 600, results=results, calls=calls)
+    assert len(calls) == 1
+
+
+def test_an_update_can_come_from_another_outlet(poll):
+    member = FakeThread(558, "Water bills going up 9%", "Ofwat says water bills will rise 9% in April")
+    forum = FakeForum(threads=[member])
+    later = {"sky_home": fixture("sky_politics.xml"), "independent_top": fixture("independent.xml")}
+    state, _ = poll(forum, {"Water bills": dict(BIG, tag="UK Politics", same_story_post="558")}, _aged_state(later),
+                    results=later)
+    assert forum.created == []
+    assert member.sent[0].startswith("**Update:** Water bills to rise 9% in April as Ofwat confirms increase "
+                                     f"(Sky News)\n{SKY_WATER}")
+    assert state["posted"][INDY_WATER]["thread_id"] == "558"
+
+
+def test_status_shows_each_outlets_feeds():
+    state = N.empty_state()
+    state["feed_health"] = {"bbc_top": {"failures": 0}, "bbc_world": {"failures": 0},
+                            "sky_home": {"failures": 2, "error": "HTTP 503"}, "sky_politics": {"failures": 0},
+                            "guardian_politics": {"failures": 3, "error": "timeout"}}
+    assert N.outlet_health_line(state, FEEDS) == "BBC ✅ · Sky ⚠️ 1/2 failing · Guardian ❌ · Independent ⏳"
+
+
+def test_full_status_names_outlets_and_stories(monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_FEEDS", FEEDS)
+    state = tracked()
+    state["feed_health"] = {"sky_home": {"failures": 2, "error": "HTTP 503"}}
+    state["clusters"][KRAKOW]["signal"] = 5
+    text = N.status_text(dict(state, last_run=NOW), NOW)
+    assert "Outlets: BBC ⏳ · Sky ❌" in text and "sky_home (2x: HTTP 503)" in text
+    assert "What we know about Krakow mass shooting so far (BBC, Sky; signal 5)" in text
+    assert "Tracking 9 articles in 5 stories." in text
+
+
+def test_a_big_feed_is_read_to_the_end():
+    class Content:
+        def __init__(self, parts):
+            self.parts = list(parts)
+
+        async def read(self, n):
+            return self.parts.pop(0)[:n] if self.parts else b""
+    resp = SimpleNamespace(content=Content([b"<rss>", b"<channel>", b"</channel></rss>"]))
+    assert asyncio.run(N._read_body(resp, 1000)) == b"<rss><channel></channel></rss>"
+    resp = SimpleNamespace(content=Content([b"x" * 600, b"y" * 600]))
+    assert len(asyncio.run(N._read_body(resp, 1000))) == 1001                     # over the cap: parse_feed refuses it

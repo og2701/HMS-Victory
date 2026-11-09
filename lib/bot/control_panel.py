@@ -119,6 +119,14 @@ def newsfeed_card(state: dict, enabled: bool, dry: bool, now: float) -> dict:
     last = f"<t:{int(state['last_run'])}:R>" if state.get("last_run") else "never"
     lines = [f"{running} · {mode}",
              f"Last poll {last} · today {posts} posts, {updates} updates"]
+    try:
+        from lib.features.newsfeed import outlet_health_line
+        outlets = outlet_health_line(state)
+    except Exception:
+        logger.debug("control panel: could not work out news feed health", exc_info=True)
+        outlets = ""
+    if outlets:
+        lines.append(f"-# Outlets: {outlets}")
     if state.get("last_error"):
         lines.append(f"-# Last error: {str((state['last_error'] or {}).get('error', ''))[:150]}")
     buttons = [
@@ -127,7 +135,7 @@ def newsfeed_card(state: dict, enabled: bool, dry: bool, now: float) -> dict:
         _button("newsfeed", "live", "Go live", "📣") if dry else _button("newsfeed", "dry-run", "Dry run", "🧪"),
         _button("newsfeed", "status", "Full status", "📋"),
     ]
-    return {"title": "### 📰 News feed", "sub": "The BBC news forum auto-poster (was /newsfeed)",
+    return {"title": "### 📰 News feed", "sub": "The news forum auto-poster (was /newsfeed)",
             "status": "\n".join(lines), "accent": accent, "buttons": buttons}
 
 

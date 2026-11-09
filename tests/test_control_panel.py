@@ -211,6 +211,16 @@ def test_newsfeed_card_follows_the_state():
     assert "Off" in off["status"] and off["accent"] == cp.GREY
 
 
+def test_newsfeed_card_shows_each_outlets_feeds():
+    health = {name: {"failures": 0} for name in config.NEWSFEED_FEEDS}
+    health["sky_home"] = {"failures": 4, "error": "HTTP 503"}
+    card = cp.newsfeed_card({"feed_health": health}, True, False, NOW)
+    line = next(l for l in card["status"].split("\n") if "Outlets:" in l)
+    assert line.startswith("-# Outlets: BBC ✅ · Sky ⚠️ 1/3 failing")
+    assert "Guardian ✅" in line and "Independent ✅" in line
+    assert len(card["buttons"]) == 4                         # no extra components
+
+
 def test_bank_card_shows_the_balance_and_the_throttle():
     calm = cp.bank_card({"balance": 123456, "total_revenue": 50000, "total_tax_collected": 7000},
                         {"reserves": 100000, "pct_of_supply": 12.5, "throttled": False})

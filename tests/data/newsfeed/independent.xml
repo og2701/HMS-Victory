@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>The Independent</title>
+    <link>https://www.independent.co.uk</link>
+    <item>
+      <title><![CDATA[Krakow shooting: Six dead after gunman opens fire in Polish city]]></title>
+      <link>https://www.independent.co.uk/news/world/europe/krakow-shooting-poland-gunman-b3081001.html</link>
+      <description><![CDATA[Police in Poland are searching for a motive after a gunman killed six people.]]></description>
+      <pubDate>Sat, 07 Nov 2026 18:40:00 GMT</pubDate>
+      <guid isPermaLink="true">https://www.independent.co.uk/news/world/europe/krakow-shooting-poland-gunman-b3081001.html</guid>
+    </item>
+    <item>
+      <title><![CDATA[Water bills to rise by 9% from April, Ofwat confirms]]></title>
+      <link>https://www.independent.co.uk/news/uk/home-news/water-bills-rise-april-ofwat-b3081002.html</link>
+      <description><![CDATA[Households in England and Wales will pay an average of &#163;54 more a year.]]></description>
+      <pubDate>Sat, 07 Nov 2026 16:05:00 GMT</pubDate>
+      <guid isPermaLink="true">https://www.independent.co.uk/news/uk/home-news/water-bills-rise-april-ofwat-b3081002.html</guid>
+    </item>
+    <item>
+      <title><![CDATA[Barnier is right about the single market, and Labour knows it]]></title>
+      <link>https://www.independent.co.uk/voices/barnier-single-market-labour-b3081003.html</link>
+      <description><![CDATA[An opinion piece.]]></description>
+      <pubDate>Sat, 07 Nov 2026 17:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://www.independent.co.uk/voices/barnier-single-market-labour-b3081003.html</guid>
+    </item>
+    <item>
+      <title><![CDATA[Inside the race to replace the Bank of England governor]]></title>
+      <link>https://www.independent.co.uk/independentpremium/news-analysis/bank-of-england-governor-b3081004.html</link>
+      <description><![CDATA[A subscriber article.]]></description>
+      <pubDate>Sat, 07 Nov 2026 15:00:00 GMT</pubDate>
+      <guid isPermaLink="true">https://www.independent.co.uk/independentpremium/news-analysis/bank-of-england-governor-b3081004.html</guid>
+    </item>
+  </channel>
+</rss>
