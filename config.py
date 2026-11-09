@@ -990,9 +990,11 @@ VC_LOCKDOWN_WHITELIST = [
 ]
 
 # --- News forum auto-poster (lib/features/newsfeed.py) ---
-# Polls BBC News (top stories and section feeds) plus Sky and the Guardian for cross-checking, keeps only the strong
-# stories (time in BBC top stories, live pages, cross-outlet coverage, then an AI judgement), and opens one forum post
-# per story in the news forum. A later article on a story that already has a post goes into that post as an update.
+# Polls several outlets (BBC News, Sky News, the Guardian and the Independent; see NEWSFEED_FEEDS), groups the same event
+# across outlets into one story, keeps only the strong ones (time on a front page, live pages, how many outlets carry
+# it, then an AI judgement), and opens one forum post per story in the news forum, linking the most neutral outlet that
+# has it (NEWSFEED_MAIN_LINK_ORDER) with the others listed as "Also covered by". A later article on a story that already
+# has a post goes into that post as an update.
 # The control panel's News feed card (pause/resume, run, dry run/live, status) controls it at runtime (pause and dry-run persist in the state file
 # and override these defaults until changed back). Engagement at 24h and 72h is logged for tuning the thresholds.
 NEWSFEED_ENABLED = True                    # kill switch: False stops the poller entirely (no fetches, no AI calls)
@@ -1007,22 +1009,43 @@ NEWSFEED_MAX_NEW_PER_RUN = 1               # new posts per poll, so a busy hour 
 NEWSFEED_UPDATE_MIN_GAP_MINUTES = 45       # at most one update per post in this window (live stories move fast)
 NEWSFEED_MAX_AGE_HOURS = 18                # ignore articles published longer ago than this
 NEWSFEED_MATCH_DAYS = 3                    # open posts this recent are checked before opening a new one
-# Signal score, before any AI call: in BBC top stories +2, each hour it has stayed there +1 (up to +4), a BBC live
-# page +3, each other outlet (Sky, Guardian) running it +2 (up to +4), in three or more BBC feeds +1.
-NEWSFEED_MIN_SIGNAL = 5                    # score needed to be considered for a new post
-NEWSFEED_UPDATE_MIN_SIGNAL = 4             # score needed to be considered as an update to an open post
+# Signal score for a story (every outlet carrying it), before any AI call: on a front page now +2, on the front pages
+# of two outlets +1, each hour it has stayed on one +1 (up to +3), a BBC live page +3 (another outlet's live blog +1),
+# and each outlet beyond the first +2 (up to +6). Front pages are the feeds marked "top" below; the outlet count is the
+# strongest signal.
+NEWSFEED_MIN_SIGNAL = 7                    # score needed to be considered for a new post
+NEWSFEED_UPDATE_MIN_SIGNAL = 5             # score needed to be considered as an update to an open post
 NEWSFEED_MIN_IMPORTANCE = 7                # AI importance (1-10) needed for a new post
 NEWSFEED_UPDATE_MIN_IMPORTANCE = 5         # AI importance needed for an update reply
 NEWSFEED_SPORT_MIN_IMPORTANCE = 9          # sport only when it's huge
 NEWSFEED_MAX_JUDGEMENTS = 3                # AI calls per story at most (re-judged only when its signal climbs by 2+)
 NEWSFEED_CROSS_MATCH_MIN = 0.5             # headline word overlap for "the same story" across outlets (heuristic)
+NEWSFEED_CROSS_MATCH_BORDERLINE = 0.3      # overlap from here up to CROSS_MATCH_MIN: the AI is asked if it's the same story
 NEWSFEED_THREAD_PREFILTER_MIN = 0.25       # word overlap for an open post to be shown to the AI as a possible match
 NEWSFEED_PIN_MEGATHREADS = True            # pin a live-page megathread when nothing else in the forum is pinned
-NEWSFEED_UNPIN_AFTER_HOURS = 6             # unpin Vic's megathread once its live page has left BBC top stories this long
+NEWSFEED_UNPIN_AFTER_HOURS = 6             # unpin Vic's megathread once its live page has left the front page this long
 NEWSFEED_STATE_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_state.json")
 NEWSFEED_ENGAGEMENT_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_engagement.json")
-# name: (url, outlet, kind). kind "top" is a front page, "section" a section feed. Only BBC items are posted; Sky and
-# the Guardian are only used to check whether other outlets are covering a story. All verified from the VM, Nov 2026.
+# outlet: (name in the footer, short name for "Also covered by", paywall). paywall "free" can be the main link, "partial"
+# only when no free outlet has the story, "full" never (the Times and the FT are left out entirely for that reason).
+NEWSFEED_OUTLETS = {
+    "bbc": ("BBC News", "BBC", "free"),
+    "sky": ("Sky News", "Sky", "free"),
+    "itv": ("ITV News", "ITV", "free"),
+    "guardian": ("the Guardian", "Guardian", "free"),
+    "independent": ("the Independent", "Independent", "free"),
+    "telegraph": ("the Telegraph", "Telegraph", "partial"),
+}
+# Main link preference, most neutral first. Partial-paywall outlets always come after every free one.
+NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "telegraph")
+# Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
+NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
+# name: (url, outlet, kind). kind "top" is a curated front page (being there, and for how long, counts), "section" any
+# other feed (it only counts as coverage). The Guardian's UK front and the Independent's main feed carry everything they
+# publish (100+ items), so they are sections. All verified from the VM on 9 Nov 2026.
+# Not read: ITV News (www.itv.com accepts the connection from the VM but never answers, on every feed and User-Agent
+# tried) and the Telegraph (its news and politics feeds are stale, newest item about 40 days old, and its main feed is
+# almost all sport). Both stay in NEWSFEED_OUTLETS, so a working feed only needs adding here.
 NEWSFEED_FEEDS = {
     "bbc_top": ("https://feeds.bbci.co.uk/news/rss.xml", "bbc", "top"),
     "bbc_politics": ("https://feeds.bbci.co.uk/news/politics/rss.xml", "bbc", "section"),
@@ -1036,7 +1059,12 @@ NEWSFEED_FEEDS = {
     "bbc_northern_ireland": ("https://feeds.bbci.co.uk/news/northern_ireland/rss.xml", "bbc", "section"),
     "bbc_us_canada": ("https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", "bbc", "section"),
     "sky_home": ("https://feeds.skynews.com/feeds/rss/home.xml", "sky", "top"),
+    "sky_uk": ("https://feeds.skynews.com/feeds/rss/uk.xml", "sky", "section"),
     "sky_politics": ("https://feeds.skynews.com/feeds/rss/politics.xml", "sky", "section"),
+    "guardian_uk": ("https://www.theguardian.com/uk/rss", "guardian", "section"),
     "guardian_uk_news": ("https://www.theguardian.com/uk-news/rss", "guardian", "section"),
     "guardian_politics": ("https://www.theguardian.com/politics/rss", "guardian", "section"),
+    "independent_top": ("https://www.independent.co.uk/rss", "independent", "section"),
+    "independent_uk": ("https://www.independent.co.uk/news/uk/rss", "independent", "section"),
+    "independent_politics": ("https://www.independent.co.uk/news/uk/politics/rss", "independent", "section"),
 }

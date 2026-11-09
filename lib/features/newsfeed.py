@@ -1,38 +1,53 @@
-"""News forum auto-poster: BBC News into the news forum, one post per story.
+"""News forum auto-poster: several outlets into the news forum, one post per story.
 
-Every NEWSFEED_POLL_MINUTES the bot reads BBC News (top stories and the section feeds) and, for cross-checking only,
-Sky News and the Guardian. Each BBC story is tracked: when it was first and last seen, which feeds carried it, and
-when it entered and last sat in BBC top stories. Those give a signal score before any AI is involved:
+Every NEWSFEED_POLL_MINUTES the bot reads the feeds in config.NEWSFEED_FEEDS (BBC News, Sky News, the Guardian and the
+Independent; ITV and the Telegraph are set up as outlets but have no working feed). Every article is tracked: when it
+was first and last seen, which feeds carried it, and when it entered and last sat on its outlet's front page.
 
-    in BBC top stories now        +2
-    each hour it has stayed there +1 (up to +4)
-    a BBC live page (/news/live/) +3   (a major ongoing event: a megathread)
-    each other outlet running it  +2 (up to +4; Sky, Guardian, matched on headline words)
-    in three or more BBC feeds    +1   (top stories plus one section is the norm)
+Articles on the same event are grouped into one story (a "cluster") across outlets, at most one article per outlet: a
+new article joins the story whose headlines (and summaries) share most of its words (NEWSFEED_CROSS_MATCH_MIN). When
+the overlap is only borderline (NEWSFEED_CROSS_MATCH_BORDERLINE up to the minimum), the story's AI judgement is shown
+those near-matches and says which are the same event, and they are merged then. A story gets a signal score before
+any AI is involved:
+
+    on a front page now            +2   (BBC top stories, Sky's home feed)
+    on two outlets' front pages    +1
+    each hour on a front page      +1   (up to +3)
+    a BBC live page                +3   (/news/live/: a major ongoing event, posted as a megathread)
+    another outlet's live blog     +1   (Guardian /live/: often a general rolling blog, so it counts for less)
+    each outlet beyond the first   +2   (up to +6: the strongest signal)
 
 Only a story over the signal threshold goes to the AI, through the chat responder's own OpenAI client. The AI rates
-its importance for this server, picks the forum tag, writes a neutral "why it matters",
-and says whether it is the same developing story as one of the forum's open posts from the last few days. Then:
+its importance for this server, picks the forum tag, writes a neutral "why it matters", and says whether it is the
+same developing story as one of the forum's open posts from the last few days. Then:
 
-    article already linked in an open post -> nothing (no duplicate)
+    an article of the story already linked in an open post -> nothing (no duplicate)
     same story as an open post  -> an "Update:" reply in that post (unarchived if needed)
+    strong enough on its own    -> a new post
+    otherwise                   -> nothing; it may be judged again if its signal climbs
 
 "Open posts" means every unlocked post in the forum from the last NEWSFEED_MATCH_DAYS, members' as well as Vic's:
 if a member got there first, the article goes into their post as an update. Members' posts are only ever replied
 to, never edited, retagged or pinned.
-    strong enough on its own    -> a new post (title = headline, body = link, why it matters)
-    otherwise                   -> nothing; it may be judged again if its signal climbs
 
-New posts are capped per UK day and per poll. A story is only ever posted once (by URL, persisted). Live pages get
-the Megathread tag and are pinned when nothing else in the forum is. Every post's message count and reactions are
-recorded at 24h and 72h so the thresholds can be tuned.
+A post links one article, the most neutral outlet that has the story (NEWSFEED_MAIN_LINK_ORDER: BBC, then Sky, ITV,
+the Guardian, the Independent; a partly paywalled outlet only when nothing else has it, a paywalled article never),
+then the "why it matters", an "Also covered by" line linking the other outlets (embeds suppressed, so only the main
+link previews) and a footer naming the outlet linked. Updates link the same way.
 
-Everything that can be is a pure function (parsing, scoring, matching, caps, the decision) so it can be tested
-without Discord or the network. State: data/json/newsfeed_state.json and data/json/newsfeed_engagement.json.
+New posts are capped per UK day and per poll. A story is only ever posted once: every article URL in it is recorded
+(persisted), and an article from another outlet that joins a posted story later is recorded against that post too.
+BBC live pages get the Megathread tag and are pinned when nothing else in the forum is. Every post's message count and
+reactions are recorded at 24h and 72h so the thresholds can be tuned.
+
+Everything that can be is a pure function (parsing, clustering, scoring, matching, caps, the decision) so it can be
+tested without Discord or the network. State: data/json/newsfeed_state.json and data/json/newsfeed_engagement.json.
 """
 
 import asyncio
 import email.utils
+import functools
+import gzip
 import html
 import json
 import logging
@@ -56,16 +71,51 @@ USER_AGENT = "Mozilla/5.0 (compatible; HMSVictoryBot/1.0; news forum)"
 FETCH_TIMEOUT = 20            # seconds per feed
 MAX_FEED_BYTES = 3 * 1024 * 1024
 MAX_JUDGE_PER_RUN = 6         # AI calls per poll at most
+MAX_MAYBE_SAME = 4            # borderline other-outlet stories shown to the AI per judgement
 MEGATHREAD_TAG = "Megathread"
 SPORT_TAG = "Sport"
 TITLE_LIMIT = 100             # Discord's thread name limit
-STORY_TTL = 3 * 86400         # forget a story this long after it was last seen in any feed
+STORY_TTL = 3 * 86400         # forget an article this long after it was last seen in any feed
 POSTED_TTL = 30 * 86400       # remember posted URLs this long (dedupe)
-OTHERS_TTL = 86400            # other outlets' headlines count for cross-checking this long
 THREAD_TTL = 7 * 86400
 FOOTER = "-# Posted automatically from {source}. Comments here are about this story; something new? Start a new post."
 
 _lock = asyncio.Lock()
+
+
+# ---------------------------------------------------------------- outlets
+
+def outlet_info(outlet: str) -> Tuple[str, str, str]:
+    """(footer name, short name, paywall) for an outlet key."""
+    return tuple(config.NEWSFEED_OUTLETS.get(outlet) or (outlet, outlet, "free"))
+
+
+def outlet_label(outlet: str) -> str:
+    return outlet_info(outlet)[0]
+
+
+def outlet_short(outlet: str) -> str:
+    return outlet_info(outlet)[1]
+
+
+_HOSTS = (("bbc.co.uk", "bbc"), ("bbc.com", "bbc"), ("news.sky.com", "sky"), ("skynews.com", "sky"),
+          ("itv.com", "itv"), ("theguardian.com", "guardian"), ("independent.co.uk", "independent"),
+          ("telegraph.co.uk", "telegraph"))
+
+
+def outlet_of(url: str) -> Optional[str]:
+    host = (urlsplit(url or "").netloc or "").lower()
+    for suffix, outlet in _HOSTS:
+        if host == suffix or host.endswith("." + suffix):
+            return outlet
+    return None
+
+
+def outlet_rank(outlet: str) -> Tuple[int, int]:
+    """Sort key for the main link: free outlets before partly paywalled ones, then NEWSFEED_MAIN_LINK_ORDER."""
+    order = list(config.NEWSFEED_MAIN_LINK_ORDER)
+    pos = order.index(outlet) if outlet in order else len(order)
+    return (0 if outlet_info(outlet)[2] == "free" else 1, pos)
 
 
 # ---------------------------------------------------------------- parsing
@@ -131,9 +181,15 @@ def _child_text(el, name: str) -> str:
 
 
 def parse_feed(data) -> List[Dict[str, Any]]:
-    """Items from an RSS 2.0 or Atom feed: [{title, summary, link, url, guid, published}]. Bad XML gives []."""
+    """Items from an RSS 2.0 or Atom feed: [{title, summary, link, url, guid, published}]. Bad XML gives []. A gzipped
+    body (the Independent gzips even when not asked to) is unpacked first."""
     if isinstance(data, str):
         data = data.encode("utf-8")
+    if data and data[:2] == b"\x1f\x8b":
+        try:
+            data = gzip.decompress(data)
+        except (OSError, EOFError):
+            return []
     if not data or len(data) > MAX_FEED_BYTES:
         return []
     try:
@@ -176,26 +232,63 @@ def parse_feed(data) -> List[Dict[str, Any]]:
 
 
 def is_live_url(url: str) -> bool:
-    """BBC live pages (/news/live/...) mark major ongoing events."""
-    return "/news/live/" in (url or "")
+    """Live pages: BBC /news/live/..., Guardian .../live/YYYY/... blogs."""
+    parts = urlsplit(url or "")
+    outlet = outlet_of(url)
+    if outlet == "bbc":
+        return parts.path.startswith("/news/live/")
+    if outlet == "guardian":
+        return "/live/" in parts.path
+    return False
 
 
-_NOT_POSTABLE = ("/videos/", "/av/", "/sounds/", "/iplayer/", "/programmes/", "/reel/", "/newsbeat/", "/news/in_pictures",
-                 "/news/resources/")
+def is_megathread_url(url: str) -> bool:
+    """A BBC live page marks a major ongoing event, so its post is a megathread (tagged, and pinned when nothing else
+    is). The Guardian's live blogs are often general rolling ones ("UK politics live"), so they never are."""
+    return is_live_url(url) and outlet_of(url) == "bbc"
+
+
+# What is never posted or tracked: video, audio, galleries, opinion and comment, games and puzzles.
+_NOT_POSTABLE = ("/videos/", "/video/", "/av/", "/sounds/", "/iplayer/", "/programmes/", "/reel/", "/newsbeat/",
+                 "/news/in_pictures", "/news/resources/", "/audio/", "/gallery/", "/picture/", "/commentisfree/",
+                 "/voices/", "/opinion/", "/comment/", "/crosswords/", "/games/", "/podcasts/", "/extra/")
+_SECTIONS = {
+    "bbc": ("/news/", "/sport/"),
+    "sky": ("/story/",),
+    "itv": ("/news/",),
+    "guardian": ("/",),
+    "independent": ("/news/", "/bulletin/", "/climate-change/", "/sport/", "/money/", "/tech/"),
+    "telegraph": ("/news/", "/politics/", "/world-news/", "/business/", "/money/", "/sport/", "/football/",
+                  "/global-health/", "/royal-family/", "/us/"),
+}
 
 
 def is_postable_url(url: str) -> bool:
-    """BBC articles and live pages only: no video, audio, iPlayer or picture galleries."""
-    parts = urlsplit(url or "")
-    if not parts.netloc.endswith("bbc.co.uk"):
+    """Articles and live pages from a known outlet: no video, audio, galleries, opinion pieces or puzzles."""
+    outlet = outlet_of(url)
+    if outlet is None:
         return False
-    if not (parts.path.startswith("/news/") or parts.path.startswith("/sport/")):
+    path = urlsplit(url or "").path
+    if not any(path.startswith(prefix) for prefix in _SECTIONS.get(outlet, ("/",))) or path in ("", "/"):
         return False
-    return not any(bit in parts.path for bit in _NOT_POSTABLE)
+    return not any(bit in path for bit in _NOT_POSTABLE)
+
+
+def is_paywalled_url(url: str) -> bool:
+    outlet = outlet_of(url)
+    if outlet and outlet_info(outlet)[2] == "full":
+        return True
+    path = urlsplit(url or "").path
+    return any(p in path for p in config.NEWSFEED_PAYWALL_URL_PATTERNS)
+
+
+_SPORT_SECTIONS = ("/sport/", "/football/", "/rugby-union/", "/rugby-league/", "/cricket/", "/formula-1/", "/tennis/",
+                   "/golf/", "/boxing/")
 
 
 def is_sport_url(url: str) -> bool:
-    return urlsplit(url or "").path.startswith("/sport/")
+    path = urlsplit(url or "").path
+    return any(path.startswith(s) or (outlet_of(url) == "independent" and s in path) for s in _SPORT_SECTIONS)
 
 
 # ---------------------------------------------------------------- matching
@@ -208,26 +301,32 @@ said she should so some such than that the their them then there these they this
 very was we were what when where which while who whom why will with would you your yet so far amid over after us uk
 how what why who year years day days week weeks live latest update updates news bbc first last back know get gets got
 make makes made take takes told tells call calls one two three four five six seven eight nine ten
+sky guardian independent itv telegraph
 """.split())
 _WORD_RE = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
 
 
-def tokens(text: str) -> set:
-    """Significant words: lower-case, no stopwords, no short words, a plain plural 's' folded."""
+@functools.lru_cache(maxsize=20000)
+def _tokens(text: str) -> frozenset:
     out = set()
-    for word in _WORD_RE.findall((text or "").lower().replace("’", "'")):
+    for word in _WORD_RE.findall((text or "").lower().replace("’", "'").replace("‘", "'")):
         word = word.split("'")[0]
         if len(word) < 3 or word in STOPWORDS:
             continue
         if len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
             word = word[:-1]
         out.add(word)
-    return out
+    return frozenset(out)
+
+
+def tokens(text: str) -> set:
+    """Significant words: lower-case, no stopwords, no short words, a plain plural 's' folded."""
+    return set(_tokens(text or ""))
 
 
 def overlap(a: str, b: str, min_shared: int = 2) -> float:
     """Share of the shorter text's significant words that the other also has (0 when fewer than min_shared match)."""
-    ta, tb = tokens(a), tokens(b)
+    ta, tb = _tokens(a or ""), _tokens(b or "")
     if not ta or not tb:
         return 0.0
     shared = len(ta & tb)
@@ -236,29 +335,28 @@ def overlap(a: str, b: str, min_shared: int = 2) -> float:
     return shared / min(len(ta), len(tb))
 
 
+def match_score(title_a: str, title_b: str, summary_a: str = "", summary_b: str = "") -> float:
+    """How alike two articles are (0-1): the headlines' word overlap, or headline plus summary overlap (needing 4 shared
+    words, and scaled so 0.8 of the threshold there counts as the threshold)."""
+    score = overlap(title_a, title_b)
+    if summary_a and summary_b:
+        score = max(score, overlap(f"{title_a} {summary_a}", f"{title_b} {summary_b}", min_shared=4) / 0.8)
+    return score
+
+
 def same_story_heuristic(title_a: str, title_b: str, summary_a: str = "", summary_b: str = "",
                          threshold: Optional[float] = None) -> bool:
     """Cheap cross-outlet check: the headlines share most of their words, or headline plus summary share a lot."""
     threshold = config.NEWSFEED_CROSS_MATCH_MIN if threshold is None else threshold
-    if overlap(title_a, title_b) >= threshold:
-        return True
-    if summary_a and summary_b:
-        full_a, full_b = f"{title_a} {summary_a}", f"{title_b} {summary_b}"
-        return overlap(full_a, full_b, min_shared=4) >= threshold * 0.8
-    return False
+    return match_score(title_a, title_b, summary_a, summary_b) >= threshold
 
 
-def cross_outlets(entry: Dict[str, Any], others: Dict[str, Dict[str, Any]], threshold: Optional[float] = None) -> set:
-    """Which other outlets (sky, guardian) are running this BBC story."""
-    found = set()
-    for other in others.values():
-        outlet = other.get("outlet")
-        if not outlet or outlet in found:
-            continue
-        if same_story_heuristic(entry.get("title", ""), other.get("title", ""), entry.get("summary", ""),
-                                other.get("summary", ""), threshold):
-            found.add(outlet)
-    return found
+def _entry_score(a: Dict[str, Any], b: Dict[str, Any]) -> float:
+    return match_score(a.get("title", ""), b.get("title", ""), a.get("summary", ""), b.get("summary", ""))
+
+
+def _full_tokens(entry: Dict[str, Any]) -> frozenset:
+    return _tokens(f"{entry.get('title', '')} {entry.get('summary', '')}")
 
 
 def candidate_threads(entry: Dict[str, Any], threads: Iterable[Dict[str, Any]], threshold: Optional[float] = None,
@@ -276,14 +374,14 @@ def candidate_threads(entry: Dict[str, Any], threads: Iterable[Dict[str, Any]], 
     return [thread for _, thread in scored[:limit]]
 
 
-# ---------------------------------------------------------------- tracking and scoring
+# ---------------------------------------------------------------- tracking
 
 def empty_state() -> Dict[str, Any]:
     return {
-        "stories": {},       # BBC url -> tracking + verdict
-        "others": {},        # other outlets' url -> {outlet, title, summary, last_seen}
+        "stories": {},       # article url -> {outlet, title, summary, link, feeds, first_seen, top_first, cluster, ...}
+        "clusters": {},      # cluster id -> {members: [urls], created, verdict, judgements, signal, done, thread_id}
         "posted": {},        # url (and guid) -> {ts, thread_id, kind}: dedupe
-        "threads": [],       # posts Vic opened: {id, title, summary, url, tag, created, live, last_update, updates, pinned}
+        "threads": [],       # posts Vic opened: {id, title, summary, url, urls, outlet, tag, created, live, ...}
         "daily": {},         # UK day -> new posts
         "daily_updates": {},
         "daily_dry": {},
@@ -306,6 +404,12 @@ def load_state() -> Dict[str, Any]:
         state = {}
     for key, value in empty_state().items():
         state.setdefault(key, value)
+    # The BBC-only version kept other outlets' headlines apart (they are stories now, re-read on the next poll) and
+    # tracked BBC video and audio items too (never postable, so they'd only take the BBC's place in a story).
+    state.pop("others", None)
+    state["stories"] = {u: e for u, e in state["stories"].items() if is_postable_url(u)}
+    for url, entry in state["stories"].items():
+        entry.setdefault("outlet", outlet_of(url))
     return state
 
 
@@ -319,20 +423,17 @@ def is_dry_run(state: Dict[str, Any]) -> bool:
 
 def observe(state: Dict[str, Any], results: Dict[str, List[Dict[str, Any]]], feeds: Dict[str, Tuple[str, str, str]],
             now: float) -> None:
-    """Fold one poll's feed items into the state: BBC stories are tracked, other outlets kept for cross-checking."""
-    stories, others = state["stories"], state["others"]
+    """Fold one poll's feed items into the state. Every outlet's articles are tracked; video, audio, opinion and the
+    like are left out (they could never be posted, and would only crowd a story's one place per outlet)."""
+    stories = state["stories"]
     for name, items in results.items():
         _, outlet, kind = feeds[name]
         for item in items:
             url = item["url"]
-            if not url:
-                continue
-            if outlet != "bbc":
-                others[url] = {"outlet": outlet, "title": item["title"], "summary": item["summary"][:300],
-                               "last_seen": now}
+            if not url or not is_postable_url(url) or outlet_of(url) != outlet:
                 continue
             entry = stories.setdefault(url, {"first_seen": now, "feeds": []})
-            entry.update({"title": item["title"], "summary": item["summary"], "link": item["link"],
+            entry.update({"outlet": outlet, "title": item["title"], "summary": item["summary"], "link": item["link"],
                           "guid": item.get("guid") or "", "last_seen": now})
             if item.get("published"):
                 entry["published"] = item["published"]
@@ -345,7 +446,6 @@ def observe(state: Dict[str, Any], results: Dict[str, List[Dict[str, Any]]], fee
 
 def prune(state: Dict[str, Any], now: float) -> None:
     state["stories"] = {u: e for u, e in state["stories"].items() if now - e.get("last_seen", now) < STORY_TTL}
-    state["others"] = {u: e for u, e in state["others"].items() if now - e.get("last_seen", now) < OTHERS_TTL}
     state["posted"] = {u: e for u, e in state["posted"].items() if now - e.get("ts", now) < POSTED_TTL}
     state["threads"] = [t for t in state["threads"] if now - t.get("created", now) < THREAD_TTL]
     cutoff = uk_day(now - 14 * 86400)
@@ -353,8 +453,195 @@ def prune(state: Dict[str, Any], now: float) -> None:
         state[key] = {d: n for d, n in state[key].items() if d >= cutoff}
 
 
+# ---------------------------------------------------------------- clustering
+
+_CLUSTER_FIELDS = ("verdict", "judgements", "judged_signal", "judged_threads", "done", "failures")
+
+
+def cluster_outlets(state: Dict[str, Any], cid: str) -> set:
+    stories = state["stories"]
+    return {stories[u]["outlet"] for u in state["clusters"].get(cid, {}).get("members", []) if u in stories}
+
+
+def assign_clusters(state: Dict[str, Any], threshold: Optional[float] = None) -> List[Tuple[str, str]]:
+    """Put every article not yet in a story into one: the story it matches best (score at or over the threshold,
+    against any of the story's articles) where that outlet isn't already represented, else a new story of its own.
+    Stories keep their id (the first article's URL) and their judgement as articles join. Returns the (url, cluster)
+    joins made, for logging and tests."""
+    threshold = config.NEWSFEED_CROSS_MATCH_MIN if threshold is None else threshold
+    stories, clusters = state["stories"], state.setdefault("clusters", {})
+    for cid, cluster in list(clusters.items()):
+        cluster["members"] = [u for u in cluster.get("members", []) if u in stories and stories[u].get("cluster") == cid]
+        if not cluster["members"]:
+            del clusters[cid]
+    index: Dict[str, set] = {}
+    for cid, cluster in clusters.items():
+        for url in cluster["members"]:
+            for tok in _full_tokens(stories[url]):
+                index.setdefault(tok, set()).add(cid)
+    fresh = [u for u, e in stories.items() if e.get("cluster") not in clusters]
+    fresh.sort(key=lambda u: (outlet_rank(stories[u].get("outlet", "")), stories[u].get("first_seen", 0), u))
+    joins = []
+    for url in fresh:
+        entry = stories[url]
+        toks = _full_tokens(entry)
+        counts: Dict[str, int] = {}
+        for tok in toks:
+            for cid in index.get(tok, ()):
+                counts[cid] = counts.get(cid, 0) + 1
+        best, best_score = None, 0.0
+        for cid, shared in counts.items():
+            if shared < 2:
+                continue
+            members = clusters[cid]["members"]
+            if any(stories[m].get("outlet") == entry.get("outlet") for m in members):
+                continue
+            score = max(_entry_score(entry, stories[m]) for m in members)
+            if score > best_score:
+                best, best_score = cid, score
+        if best is not None and best_score >= threshold:
+            clusters[best]["members"].append(url)
+            entry["cluster"] = best
+            joins.append((url, best))
+            cid = best
+        else:
+            cid = url
+            cluster = {"members": [url], "created": entry.get("first_seen")}
+            for field in _CLUSTER_FIELDS:  # an article tracked by the BBC-only version brings its judgement along
+                if field in entry:
+                    cluster[field] = entry.pop(field)
+            clusters[cid] = cluster
+            entry["cluster"] = cid
+        for tok in toks:
+            index.setdefault(tok, set()).add(cid)
+    return joins
+
+
+def cluster_entries(state: Dict[str, Any], cid: str) -> List[Dict[str, Any]]:
+    stories = state["stories"]
+    out = []
+    for url in state["clusters"].get(cid, {}).get("members", []):
+        if url in stories:
+            out.append(dict(stories[url], url=url))
+    return out
+
+
+def sync_posted(state: Dict[str, Any], now: float) -> None:
+    """A story with any article already posted (or linked in a post) is done: every other article in it is recorded
+    against the same post, so a second outlet's version is never posted again."""
+    posted = state["posted"]
+    for cid, cluster in state["clusters"].items():
+        members = cluster.get("members", [])
+        hit = None
+        for url in members:
+            entry = state["stories"].get(url, {})
+            hit = posted.get(url) or (posted.get(entry.get("guid")) if entry.get("guid") else None)
+            if hit:
+                break
+        if not hit:
+            continue
+        cluster["done"] = True
+        if hit.get("thread_id"):
+            cluster.setdefault("thread_id", hit.get("thread_id"))
+        for url in members:
+            if url not in posted:
+                posted[url] = {"ts": now, "thread_id": hit.get("thread_id"), "kind": "also covered"}
+
+
+def merge_clusters(state: Dict[str, Any], keep: str, other: str, now: float) -> bool:
+    """The AI says `other` is the same event as `keep`. With no outlet in common, other's articles move into keep (a
+    posted side makes the whole story posted). With one in common they can't share a story, but if `other` was
+    posted, `keep` is marked as covered by that post. Returns whether anything changed."""
+    clusters, stories = state["clusters"], state["stories"]
+    if keep not in clusters or other not in clusters or keep == other:
+        return False
+    a, b = clusters[keep], clusters[other]
+    if not (cluster_outlets(state, keep) & cluster_outlets(state, other)):
+        for url in b["members"]:
+            stories[url]["cluster"] = keep
+            a["members"].append(url)
+        if b.get("done"):
+            a["done"] = True
+            a.setdefault("thread_id", b.get("thread_id"))
+        del clusters[other]
+        sync_posted(state, now)
+        return True
+    if b.get("done"):
+        hit = {"ts": now, "thread_id": b.get("thread_id"), "kind": "same story"}
+        for url in a["members"]:
+            state["posted"].setdefault(url, dict(hit))
+        a["done"] = True
+        a.setdefault("thread_id", b.get("thread_id"))
+        return True
+    return False
+
+
+def maybe_same(state: Dict[str, Any], cid: str, index: Optional[Dict[str, set]] = None,
+               low: Optional[float] = None, high: Optional[float] = None, limit: int = MAX_MAYBE_SAME
+               ) -> List[Tuple[float, str]]:
+    """Other stories that might be the same event (score from the borderline up to the match threshold), best first,
+    from outlets this story lacks (another article from an outlet it already has is a follow-up, which is the update
+    path's job). These go to the AI to settle."""
+    low = config.NEWSFEED_CROSS_MATCH_BORDERLINE if low is None else low
+    high = config.NEWSFEED_CROSS_MATCH_MIN if high is None else high
+    clusters, stories = state["clusters"], state["stories"]
+    mine = cluster_entries(state, cid)
+    if not mine:
+        return []
+    outlets = {e["outlet"] for e in mine}
+    if index is None:
+        index = cluster_index(state)
+    counts: Dict[str, int] = {}
+    for entry in mine:
+        for tok in _full_tokens(entry):
+            for other in index.get(tok, ()):
+                if other != cid:
+                    counts[other] = counts.get(other, 0) + 1
+    scored = []
+    for other, shared in counts.items():
+        if shared < 2 or other not in clusters:
+            continue
+        theirs = cluster_entries(state, other)
+        if not theirs or {e["outlet"] for e in theirs} & outlets:
+            continue
+        score = max(_entry_score(x, y) for x in mine for y in theirs)
+        if low <= score < high:
+            scored.append((score, other))
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    return scored[:limit]
+
+
+def cluster_index(state: Dict[str, Any]) -> Dict[str, set]:
+    index: Dict[str, set] = {}
+    for cid, cluster in state["clusters"].items():
+        for url in cluster.get("members", []):
+            entry = state["stories"].get(url)
+            if entry:
+                for tok in _full_tokens(entry):
+                    index.setdefault(tok, set()).add(cid)
+    return index
+
+
+def main_entry(entries: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The article to link: postable and not paywalled, from the most neutral outlet that has the story (a partly
+    paywalled outlet only when no free one does)."""
+    usable = [e for e in entries if is_postable_url(e["url"]) and not is_paywalled_url(e["url"])]
+    if not usable:
+        return None
+    return min(usable, key=lambda e: (outlet_rank(e["outlet"]), e.get("first_seen", 0)))
+
+
+def also_covered(entries: List[Dict[str, Any]], main: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """(short outlet name, link) for every other outlet in the story, most neutral first."""
+    others = [e for e in entries if e["url"] != main["url"]]
+    others.sort(key=lambda e: outlet_rank(e["outlet"]))
+    return [(outlet_short(e["outlet"]), e.get("link") or e["url"]) for e in others]
+
+
+# ---------------------------------------------------------------- scoring
+
 def in_top_now(entry: Dict[str, Any], now: float, poll_seconds: float) -> bool:
-    """Still in BBC top stories: seen there on this poll (or the last, allowing for a slow fetch)."""
+    """Still on its outlet's front page: seen there on this poll (or the last, allowing for a slow fetch)."""
     top_last = entry.get("top_last")
     return top_last is not None and now - top_last <= poll_seconds * 1.6
 
@@ -365,25 +652,34 @@ def hours_in_top(entry: Dict[str, Any]) -> float:
     return max(0.0, (entry["top_last"] - entry["top_first"]) / 3600)
 
 
-def signal_score(entry: Dict[str, Any], now: float, outlets: set, poll_seconds: float) -> Tuple[int, List[str]]:
-    """The pre-AI importance signal and the reasons for it (see the module docstring for the weights)."""
+def signal_score(entries, now: float, poll_seconds: float) -> Tuple[int, List[str]]:
+    """The pre-AI importance signal for a story (all its outlets' articles) and the reasons for it. A single article
+    dict is taken as a story of one."""
+    if isinstance(entries, dict):
+        entries = [entries]
     score, reasons = 0, []
-    if in_top_now(entry, now, poll_seconds):
+    fronts = sorted({e.get("outlet", "?") for e in entries if in_top_now(e, now, poll_seconds)},
+                    key=outlet_rank)
+    if fronts:
         score += 2
-        reasons.append("BBC top")
-    hours = int(hours_in_top(entry))
+        reasons.append("front page " + ", ".join(outlet_short(o) for o in fronts))
+        if len(fronts) >= 2:
+            score += 1
+    hours = int(max((hours_in_top(e) for e in entries), default=0))
     if hours:
-        score += min(hours, 4)
-        reasons.append(f"{hours}h in top")
-    if is_live_url(entry.get("link") or entry.get("url") or ""):
+        score += min(hours, 3)
+        reasons.append(f"{hours}h on a front page")
+    lives = [e.get("link") or e.get("url") or "" for e in entries]
+    if any(is_megathread_url(u) for u in lives):
         score += 3
         reasons.append("live page")
-    if outlets:
-        score += min(2 * len(outlets), 4)
-        reasons.append("also " + ", ".join(sorted(outlets)))
-    if len(set(entry.get("feeds") or [])) >= 3:
+    elif any(is_live_url(u) for u in lives):
         score += 1
-        reasons.append(f"{len(set(entry['feeds']))} BBC feeds")
+        reasons.append("live blog")
+    outlets = {e.get("outlet") for e in entries}
+    if len(outlets) > 1:
+        score += min(2 * (len(outlets) - 1), 6)
+        reasons.append(f"{len(outlets)} outlets")
     return score, reasons
 
 
@@ -403,6 +699,17 @@ def mark_posted(state: Dict[str, Any], entry_url: str, guid: str, now: float, th
     state["posted"][entry_url] = record
     if guid and guid != entry_url:
         state["posted"][guid] = record
+
+
+def mark_story_posted(state: Dict[str, Any], entries: List[Dict[str, Any]], now: float, thread_id, kind: str,
+                      cid: Optional[str] = None) -> None:
+    """Record every article of a story (URL and guid) against one post, and the story as done."""
+    for entry in entries:
+        mark_posted(state, entry["url"], entry.get("guid", ""), now, thread_id, kind)
+    cluster = state.get("clusters", {}).get(cid) if cid else None
+    if cluster is not None:
+        cluster["done"] = True
+        cluster["thread_id"] = str(thread_id) if thread_id else None
 
 
 def uk_day(ts: float) -> str:
@@ -450,20 +757,111 @@ def trim_title(title: str, limit: int = TITLE_LIMIT) -> str:
     return cut.rstrip(",;:-–— ") + "…"
 
 
-def build_post_body(link: str, why: str = "", source: str = "BBC News") -> str:
-    """A post is the link and a brief neutral description, nothing else (no discussion question, at Oggers' ask)."""
+def also_covered_line(others: List[Tuple[str, str]]) -> str:
+    """'Also covered by: [Sky](<url>) · [Guardian](<url>)'. The <> stops Discord embedding those links, so only the
+    main link shows a preview."""
+    if not others:
+        return ""
+    links = [f"[{name}](<{url.replace('>', '%3E').replace(')', '%29')}>)" for name, url in others]
+    return "-# Also covered by: " + " · ".join(links)
+
+
+def build_post_body(link: str, why: str = "", source: str = "BBC News",
+                    also: Optional[List[Tuple[str, str]]] = None) -> str:
+    """A post is the link, a brief neutral description, the other outlets covering it, and the footer naming the
+    outlet linked. No discussion question (at Oggers' ask)."""
     parts = [link]
     if why:
         parts.append(why)
+    line = also_covered_line(also or [])
+    if line:
+        parts.append(line)
     parts.append(FOOTER.format(source=source))
     return "\n\n".join(parts)
 
 
-def build_update_body(headline: str, link: str, why: str = "") -> str:
-    lines = [f"**Update:** {clean_text(headline, 200)}", link]
+def build_update_body(headline: str, link: str, why: str = "", source: str = "") -> str:
+    first = f"**Update:** {clean_text(headline, 200)}"
+    if source:
+        first += f" ({source})"
+    lines = [first, link]
     if why:
         lines.append(f"-# {why}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- the neutrality filter
+
+# Participle clauses that are commentary whatever follows them (", highlighting ...", ", which underscores ...").
+_ALWAYS_COMMENTARY = (r"highlight(?:s|ing)|underscor(?:es|ing)|underlin(?:es|ing)|signal(?:s|l?ing)|showcas(?:es|ing)|"
+                      r"illustrat(?:es|ing)|demonstrat(?:es|ing)|reflect(?:s|ing)|indicat(?:es|ing)|"
+                      r"emphasi[sz](?:es|ing)|point(?:s|ing) to")
+# Clauses that are commentary only when they carry a loaded word (", raising security concerns" goes,
+# ", raising the cap to £1,800" stays).
+_MAYBE_COMMENTARY = (r"rais(?:es|ing)|spark(?:s|ing)|prompt(?:s|ing)|fuel(?:s|l?ing)|add(?:s|ing) to|amid|"
+                     r"mark(?:s|ing)|caus(?:es|ing)|leav(?:es|ing)|deepen(?:s|ing)|stok(?:es|ing)|renew(?:s|ing)|"
+                     r"intensify(?:ing)?|intensifies")
+_CLAUSE_RE = re.compile(r",\s+(?:which\s+|this\s+|in a move that\s+|a move that\s+)?"
+                        rf"(?P<verb>{_ALWAYS_COMMENTARY}|{_MAYBE_COMMENTARY})\b(?P<rest>[^.!?;]*)", re.I)
+_ALWAYS_RE = re.compile(rf"^(?:{_ALWAYS_COMMENTARY})$", re.I)
+# Words that make a sentence commentary. A sentence still holding one after the clauses and adjectives are dealt
+# with is dropped, and the "why" with it if nothing is left.
+_LOADED_RE = re.compile(
+    r"\b(?:concern(?:s|ed|ing)?|tensions?|highlight(?:s|ed|ing)?|underscor\w*|landmark|controvers\w*|"
+    r"end of an era|alarm(?:s|ed|ing)?|outrage\w*|backlash|uproar|furore|turmoil|unprecedented|historic|"
+    r"dramatic(?:ally)?|shock(?:ing|ed)?|stark|fears? (?:of|over|that|for)|sparks? fears|raises? questions|"
+    r"questions over|blow to|major blow|escalating|deepening|bombshell|explosive|seismic|watershed|"
+    r"game[- ]changer|implications|dynamics)\b", re.I)
+# A closing sentence that only speculates about what it might mean ("This could influence future UK-EU relations.").
+_SPECULATION_RE = re.compile(r"^(?:this|that|it|these|the (?:move|decision|development|ruling|change|incident|case|"
+                             r"announcement|plan|vote|result))\s+(?:could|may|might|would|will likely|is likely to|"
+                             r"is set to have|has the potential)\b", re.I)
+# Evaluative adjectives that can simply be dropped in front of a noun ("a landmark ruling" -> "a ruling").
+_ADJECTIVE_RE = re.compile(r"\b(?:(?P<art>[Aa]n?|[Tt]he)\s+)?(?:landmark|controversial|historic|dramatic|shocking|"
+                           r"unprecedented|bombshell|explosive|seismic|sweeping|stark)\s+(?=(?P<next>[A-Za-z0-9£$€]))")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'‘“])")
+
+
+def _drop_clause(match) -> str:
+    verb, rest = match.group("verb"), match.group("rest") or ""
+    if _ALWAYS_RE.match(verb) or _LOADED_RE.search(f"{verb}{rest}") or re.search(r"\bfears?\b|\bquestions\b",
+                                                                                  rest, re.I):
+        return ""
+    return match.group(0)
+
+
+def _drop_adjective(match) -> str:
+    art = match.group("art")
+    if not art:
+        return ""
+    if art.lower() == "the":
+        return art + " "
+    vowel = match.group("next").lower() in "aeiou8"
+    article = ("an" if vowel else "a")
+    return (article.capitalize() if art[0].isupper() else article) + " "
+
+
+def strip_commentary(text: Optional[str]) -> str:
+    """Make the AI's "why it matters" neutral or drop it: trailing editorial clauses (", highlighting ...",
+    ", raising security concerns", ", which indicates ongoing tensions") are cut, evaluative adjectives in front of a
+    noun ("a landmark ruling") are dropped, and any sentence still built on a loaded word (concerns, tensions,
+    highlights, landmark, controversial, end of an era and the like) or only speculating ("This could influence ...")
+    is removed. Returns "" when nothing clean is left,
+    so the post goes out without a "why" rather than with loaded wording."""
+    text = _WS_RE.sub(" ", str(text or "")).strip()
+    if not text:
+        return ""
+    kept = []
+    for sentence in _SENTENCE_RE.split(text):
+        sentence = _CLAUSE_RE.sub(_drop_clause, sentence)
+        sentence = _ADJECTIVE_RE.sub(_drop_adjective, sentence)
+        sentence = _WS_RE.sub(" ", sentence).strip(" ,;:-")
+        if not sentence or _LOADED_RE.search(sentence) or _SPECULATION_RE.match(sentence):
+            continue
+        if not sentence.endswith((".", "?", "!", "…")):
+            sentence += "."
+        kept.append(sentence[0].upper() + sentence[1:])
+    return " ".join(kept)
 
 
 # ---------------------------------------------------------------- the AI and the decision
@@ -473,7 +871,7 @@ from all over the UK, mostly young adults, and most interested in UK politics, t
 Each story the forum takes gets one post where members discuss it, so only stories people will want to talk about \
 should get one.
 
-Judge the one story you are given and reply as JSON.
+Judge the one story you are given and reply as JSON. "covered_by" lists the outlets running it.
 
 - "importance" (1-10): how much this server would want a discussion post on it today.
   9-10: a major national or world event (a general election result, a prime minister resigning, a budget, a major \
@@ -488,46 +886,47 @@ when the event itself is major.
 - "same_story_post": if one of "open_posts" is about the same developing story (the same event or the same specific \
 ongoing issue, where this article is a new development or follow-up on it), give that post's "id"; otherwise null. \
 Two different stories on the same broad subject (two separate stories about one party, say) are NOT the same story.
+- "same_coverage": the "id" of every item in "maybe_same_coverage" that reports the same news event as this story \
+(another outlet's article on the same thing); [] if none. Same subject but a different event does NOT count.
 - "why": one or two short sentences (at most 220 characters) on why it matters, for someone who has not read it.
 - "reason": a few words on your call.
 
 "why" must be strictly neutral and factual, to the standard of BBC impartiality: no opinions, no \
 loaded or emotive words, no jokes, no persona, and no taking sides on parties, politicians, countries or groups. \
 Nothing that promotes non-British nationalism or disparages Britain or the British. No @mentions, no emojis, no \
-hashtags. Say plainly what happened and what it directly affects or decides; avoid commentary words such as \
-"highlights", "tensions", "concerns", "landmark", "end of an era" or "controversial".
+hashtags. Say plainly what happened and what it directly affects or decides. Never use commentary words or \
+phrases such as "highlights", "underscores", "tensions", "concerns", "raising concerns", "landmark", "historic", \
+"end of an era", "controversial" or "indicates", and never end on a clause or sentence interpreting what it means or \
+speculating about what it could lead to ("This could ...").
 
 Reply with JSON only: {"importance": int, "newsworthy": bool, "tag": str, "same_story_post": str or null, \
-"why": str, "reason": str}"""
+"same_coverage": [str], "why": str, "reason": str}"""
 
 
 def judge_payload(entry: Dict[str, Any], signal: int, reasons: List[str], threads: List[Dict[str, Any]],
-                  tag_names: List[str]) -> str:
+                  tag_names: List[str], maybes: Optional[List[Dict[str, Any]]] = None) -> str:
+    url = entry.get("link") or entry.get("url", "")
+    covered = entry.get("covered_by") or [outlet_label(entry.get("outlet") or outlet_of(url) or "bbc")]
     return json.dumps({
         "headline": entry.get("title", ""),
         "summary": entry.get("summary", ""),
-        "url": entry.get("link") or entry.get("url", ""),
-        "live_page": is_live_url(entry.get("link") or entry.get("url") or ""),
+        "url": url,
+        "covered_by": covered,
+        "live_page": is_live_url(url),
         "signals": {"score": signal, "reasons": reasons},
         "open_posts": [{"id": str(t["id"]), "title": t.get("title", ""), "summary": (t.get("summary") or "")[:300]}
                        for t in threads],
+        "maybe_same_coverage": [{"id": str(m["id"]), "outlet": m.get("outlet", ""), "headline": m.get("title", ""),
+                                 "summary": (m.get("summary") or "")[:300]} for m in (maybes or [])],
         "allowed_tags": tag_names,
     }, ensure_ascii=False)
 
 
-_COMMENTARY_RE = re.compile(r",?\s+(?:highlighting|underscoring|underlining|signalling|signaling|raising concerns|"
-                            r"sparking concerns|marking the end of an era)\b[^.]*", re.I)
-
-
-def strip_commentary(text: Optional[str]) -> str:
-    """Drop a trailing editorial clause the AI sometimes adds anyway (", highlighting ongoing tensions")."""
-    text = _COMMENTARY_RE.sub("", str(text or "")).strip()
-    return text if not text or text.endswith((".", "?", "!")) else text + "."
-
-
-def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str]) -> Dict[str, Any]:
-    """The AI's answer, checked: importance clamped 1-10, a tag from the forum's list, a match only to a post it was
-    shown, and the text cleaned. Anything unusable comes back as an error verdict that never posts."""
+def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
+                      maybe_ids: Iterable[str] = ()) -> Dict[str, Any]:
+    """The AI's answer, checked: importance clamped 1-10, a tag from the forum's list, a match only to a post (or a
+    near-match story) it was shown, and the text made neutral. Anything unusable comes back as an error verdict that
+    never posts."""
     if not isinstance(raw, dict):
         return {"error": "bad reply", "importance": 0, "newsworthy": False}
     try:
@@ -542,6 +941,10 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str])
     match = str(match).strip() if match not in (None, "", "null", False) else None
     if match is not None and match not in {str(t) for t in thread_ids}:
         match = None
+    allowed = {str(m) for m in maybe_ids}
+    same = raw.get("same_coverage")
+    same = [str(s).strip() for s in same] if isinstance(same, list) else []
+    same = [s for i, s in enumerate(same) if s in allowed and s not in same[:i]]
     newsworthy = raw.get("newsworthy")
     if isinstance(newsworthy, str):
         newsworthy = newsworthy.strip().lower() in ("true", "yes", "1")
@@ -550,7 +953,8 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str])
         "newsworthy": bool(newsworthy),
         "tag": tag,
         "same_story_thread": match,
-        "why": clean_text(strip_commentary(raw.get("why")), 240),
+        "same_coverage": same,
+        "why": clean_text(strip_commentary(clean_text(raw.get("why"), 400)), 240),
         "reason": clean_text(raw.get("reason"), 120),
     }
 
@@ -574,10 +978,11 @@ def _record_usage(prompt_tokens: int, completion_tokens: int) -> None:
 
 
 async def judge_story(entry: Dict[str, Any], signal: int, reasons: List[str], threads: List[Dict[str, Any]],
-                      tag_names: List[str], complete: Optional[Callable] = None) -> Dict[str, Any]:
+                      tag_names: List[str], complete: Optional[Callable] = None,
+                      maybes: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Ask the AI about one story. `complete(system, payload) -> (json, prompt_tokens, completion_tokens)` can be
     swapped out (tests); by default it is the chat responder's OpenAI client."""
-    payload = judge_payload(entry, signal, reasons, threads, tag_names)
+    payload = judge_payload(entry, signal, reasons, threads, tag_names, maybes)
     try:
         if complete is None:
             raw, p_tok, c_tok = await asyncio.to_thread(_openai_complete, JUDGE_PROMPT, payload)
@@ -590,7 +995,7 @@ async def judge_story(entry: Dict[str, Any], signal: int, reasons: List[str], th
     except Exception as e:
         logger.warning("[NEWSFEED] judgement failed for %s: %s", entry.get("url"), e)
         return {"error": str(e)[:200], "importance": 0, "newsworthy": False}
-    return normalise_verdict(raw, tag_names, [t["id"] for t in threads])
+    return normalise_verdict(raw, tag_names, [t["id"] for t in threads], [m["id"] for m in (maybes or [])])
 
 
 class Thresholds:
@@ -624,9 +1029,11 @@ def decide(signal: int, verdict: Dict[str, Any], th: Thresholds, sport: bool = F
     return "new", f"importance {importance}"
 
 
-def needs_judgement(entry: Dict[str, Any], signal: int, shown_threads: List[Dict[str, Any]], th: Thresholds) -> bool:
-    """Ask the AI (again)? Yes when never judged, when an open post it hasn't been compared with now looks close,
-    or when a borderline story's signal has climbed by 2 or more since, up to max_judgements calls."""
+def needs_judgement(entry: Dict[str, Any], signal: int, shown_threads: List[Dict[str, Any]], th: Thresholds,
+                    shown_maybes: Iterable[str] = ()) -> bool:
+    """Ask the AI (again)? Yes when never judged, when an open post or a near-match story it hasn't been compared with
+    now looks close, or when a borderline story's signal has climbed by 2 or more since, up to max_judgements calls.
+    `entry` is the story's record (its cluster)."""
     verdict = entry.get("verdict")
     if not verdict:
         return True
@@ -635,6 +1042,8 @@ def needs_judgement(entry: Dict[str, Any], signal: int, shown_threads: List[Dict
         return False
     seen = set(entry.get("judged_threads") or [])
     if any(str(t["id"]) not in seen for t in shown_threads):
+        return True
+    if any(str(m) not in set(entry.get("judged_maybe") or []) for m in shown_maybes):
         return True
     if verdict.get("error"):
         return signal >= entry.get("judged_signal", 0) + 1
@@ -681,6 +1090,19 @@ async def _log(client, text: str) -> None:
         logger.debug("[NEWSFEED] log channel send failed", exc_info=True)
 
 
+async def _read_body(resp, limit: int) -> bytes:
+    """The whole response body up to limit+1 bytes. StreamReader.read(n) returns whatever has arrived, which for a big
+    feed (the Guardian's UK front is ~500KB) is only the first chunk, so read until the end."""
+    chunks, size = [], 0
+    while size <= limit:
+        chunk = await resp.content.read(min(65536, limit + 1 - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b"".join(chunks)
+
+
 async def fetch_feeds(state: Dict[str, Any], now: float, feeds: Optional[Dict[str, Tuple[str, str, str]]] = None
                       ) -> Dict[str, List[Dict[str, Any]]]:
     """Fetch every feed not in backoff, concurrently, each with its own timeout. A dead feed is skipped, logged and
@@ -688,6 +1110,9 @@ async def fetch_feeds(state: Dict[str, Any], now: float, feeds: Optional[Dict[st
     import aiohttp
     feeds = feeds or config.NEWSFEED_FEEDS
     health = state.setdefault("feed_health", {})
+    for name in list(health):
+        if name not in feeds:
+            del health[name]
     base = config.NEWSFEED_POLL_MINUTES * 60
     due = {n: f for n, f in feeds.items() if float(health.get(n, {}).get("until", 0)) <= now}
     results: Dict[str, List[Dict[str, Any]]] = {}
@@ -697,7 +1122,7 @@ async def fetch_feeds(state: Dict[str, Any], now: float, feeds: Optional[Dict[st
             async with session.get(url) as resp:
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status}")
-                data = await resp.content.read(MAX_FEED_BYTES + 1)
+                data = await _read_body(resp, MAX_FEED_BYTES)
             items = parse_feed(data)
             if not items:
                 raise RuntimeError("no items parsed")
@@ -745,10 +1170,12 @@ def urls_in(text: str) -> set:
     return {normalise_url(u.rstrip(".,!?;:'\"*_~|")) for u in _URL_RE.findall(text or "")}
 
 
-def thread_linking(url: str, threads: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """The open post (anyone's) that already links this article, if one does."""
+def thread_linking(url, threads: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The open post (anyone's) that already links this article (or any of these articles), if one does."""
+    wanted = {url} if isinstance(url, str) else set(url or ())
+    wanted.discard("")
     for thread in threads:
-        if url and url in set(thread.get("urls") or ()):
+        if wanted & set(thread.get("urls") or ()):
             return thread
     return None
 
@@ -836,12 +1263,30 @@ def _forum_tags(forum, names: List[str]):
     return tags[:5]
 
 
-async def _create_post(client, forum, state, entry, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
-    live = is_live_url(entry.get("link") or entry["url"])
-    title = trim_title(entry["title"])
-    body = build_post_body(entry["link"], verdict.get("why", ""))
+def story_view(state: Dict[str, Any], cid: str) -> Optional[Dict[str, Any]]:
+    """Everything about one story needed to judge and post it: its articles, the main one, the other outlets."""
+    entries = cluster_entries(state, cid)
+    main = main_entry(entries)
+    if main is None:
+        return None
+    entries.sort(key=lambda e: outlet_rank(e["outlet"]))
+    return {
+        "cid": cid, "entries": entries, "main": main, "url": main["url"], "link": main.get("link") or main["url"],
+        "title": main.get("title", ""), "summary": main.get("summary", ""), "guid": main.get("guid", ""),
+        "outlet": main["outlet"], "also": also_covered(entries, main),
+        "covered_by": [outlet_label(e["outlet"]) for e in entries],
+    }
+
+
+async def _create_post(client, forum, state, view, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
+    live = is_megathread_url(view["link"])
+    title = trim_title(view["title"])
+    source = outlet_label(view["outlet"])
+    body = build_post_body(view["link"], verdict.get("why", ""), source=source, also=view["also"])
     tag_names = [verdict.get("tag") or ""] + ([MEGATHREAD_TAG] if live else [])
-    detail = (f"\"{title}\" <{entry['link']}> (signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
+    also = ", ".join(name for name, _ in view["also"])
+    detail = (f"\"{title}\" <{view['link']}> via {outlet_short(view['outlet'])}{f' (also {also})' if also else ''} "
+              f"(signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
               f"{verdict.get('tag')}{', megathread' if live else ''})")
     if dry:
         await _log(client, f"[dry run] would post {detail}")
@@ -860,22 +1305,27 @@ async def _create_post(client, forum, state, entry, verdict, signal, reasons, no
                 logger.warning("[NEWSFEED] could not pin megathread %s", thread.id, exc_info=True)
         await _log(client, f"posted <#{thread.id}> {detail}")
         engagement = load_engagement()
-        engagement[rec["id"]] = {"title": title, "url": entry["url"], "tag": verdict.get("tag"), "live": live,
-                                 "created": now, "signal": signal, "importance": verdict.get("importance")}
+        engagement[rec["id"]] = {"title": title, "url": view["url"], "outlet": view["outlet"],
+                                 "outlets": sorted({e["outlet"] for e in view["entries"]}), "tag": verdict.get("tag"),
+                                 "live": live, "created": now, "signal": signal,
+                                 "importance": verdict.get("importance")}
         atomic_write_json(config.NEWSFEED_ENGAGEMENT_FILE, engagement, indent=1)
-    rec.update({"title": title, "summary": entry.get("summary", ""), "url": entry["url"], "tag": verdict.get("tag"),
-                "created": now, "live": live, "last_update": None, "updates": 0})
+    urls = [e["url"] for e in view["entries"]]
+    rec.update({"title": title, "summary": view.get("summary", ""), "url": view["url"], "urls": urls,
+                "outlet": view["outlet"], "tag": verdict.get("tag"), "created": now, "live": live,
+                "last_update": None, "updates": 0})
     state["threads"].append(rec)
-    mark_posted(state, entry["url"], entry.get("guid", ""), now, rec["id"], "dry" if dry else "new")
+    mark_story_posted(state, view["entries"], now, rec["id"], "dry" if dry else "new", view["cid"])
     bump_cap(state, "daily_dry" if dry else "daily", now)
-    return {"id": rec["id"], "title": title, "summary": entry.get("summary", ""), "own": True, "created": now,
-            "last_update": None, "urls": [entry["url"]]}
+    return {"id": rec["id"], "title": title, "summary": view.get("summary", ""), "own": True, "created": now,
+            "last_update": None, "urls": list(urls)}
 
 
-async def _post_update(client, state, entry, verdict, target, now, dry: bool) -> bool:
-    body = build_update_body(entry["title"], entry["link"], verdict.get("why", ""))
+async def _post_update(client, state, view, verdict, target, now, dry: bool) -> bool:
+    source = outlet_label(view["outlet"])
+    body = build_update_body(view["title"], view["link"], verdict.get("why", ""), source=source)
     tid = target["id"]
-    detail = f"\"{entry['title']}\" <{entry['link']}> (AI {verdict.get('importance')}/10)"
+    detail = f"\"{view['title']}\" <{view['link']}> via {outlet_short(view['outlet'])} (AI {verdict.get('importance')}/10)"
     if dry or str(tid).startswith("dry-"):
         await _log(client, f"[dry run] would add an update to {target.get('title')!r}: {detail}")
     else:
@@ -890,16 +1340,17 @@ async def _post_update(client, state, entry, verdict, target, now, dry: bool) ->
         await thread.send(body, allowed_mentions=discord.AllowedMentions.none())
         whose = "" if target.get("own") else " (a member's post)"
         await _log(client, f"update in <#{tid}>{whose} {detail}")
+    urls = [e["url"] for e in view["entries"]]
     for rec in state["threads"]:
         if str(rec["id"]) == str(tid):
             rec["last_update"] = now
             rec["updates"] = int(rec.get("updates", 0)) + 1
-            rec.setdefault("urls", [rec.get("url")]).append(entry["url"])
+            rec.setdefault("urls", [rec.get("url")]).extend(urls)
     if not target.get("own"):
         state.setdefault("member_updates", {})[str(tid)] = now
     target["last_update"] = now
-    target.setdefault("urls", []).append(entry["url"])
-    mark_posted(state, entry["url"], entry.get("guid", ""), now, tid, "dry-update" if dry else "update")
+    target.setdefault("urls", []).extend(urls)
+    mark_story_posted(state, view["entries"], now, tid, "dry-update" if dry else "update", view["cid"])
     bump_cap(state, "daily_dry_updates" if dry else "daily_updates", now)
     return True
 
@@ -947,28 +1398,59 @@ async def unpin_stale_megathreads(client, state: Dict[str, Any], now: float) -> 
         thread = await _get_thread(client, rec["id"])
         try:
             if thread is not None and getattr(thread.flags, "pinned", False):
-                await thread.edit(pinned=False, reason="News auto-poster: live page has left BBC top stories")
-                await _log(client, f"unpinned <#{rec['id']}> (live page off BBC top stories)")
+                await thread.edit(pinned=False, reason="News auto-poster: live page has left the front page")
+                await _log(client, f"unpinned <#{rec['id']}> (live page off the front page)")
         except Exception:
             logger.warning("[NEWSFEED] could not unpin %s", rec["id"], exc_info=True)
         rec["pinned"] = False
 
 
+def candidate_stories(state: Dict[str, Any], now: float, th: Thresholds, poll_seconds: float
+                      ) -> List[Tuple[int, List[str], Dict[str, Any], List[Tuple[float, str]]]]:
+    """Stories worth looking at this poll, strongest first: (signal, reasons, view, near-matches). A story whose own
+    signal is short of the update bar can still be a candidate when it has some signal of its own (a front page or a
+    second outlet) and near-matches from other outlets would lift it over the new-post bar, since the AI settles
+    those in the same call."""
+    out = []
+    index = cluster_index(state)
+    floor = min(th.min_signal, th.update_min_signal)
+    for cid, cluster in state["clusters"].items():
+        if cluster.get("done"):
+            continue
+        view = story_view(state, cid)
+        if view is None or not any(is_fresh(e, now) for e in view["entries"]):
+            continue
+        signal, reasons = signal_score(view["entries"], now, poll_seconds)
+        cluster["signal"] = signal
+        maybes = maybe_same(state, cid, index) if signal >= 2 else []
+        if signal < floor:
+            extra = {o for _, m in maybes for o in cluster_outlets(state, m)} - {e["outlet"] for e in view["entries"]}
+            room = max(0, 6 - 2 * (len(view["entries"]) - 1))
+            if signal < 2 or signal + min(2 * len(extra), room) < th.min_signal:
+                continue
+        out.append((signal, reasons, view, maybes))
+    out.sort(key=lambda c: (c[0], len(c[2]["entries"])), reverse=True)
+    return out
+
+
 async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, judge: Optional[Callable] = None
                    ) -> Dict[str, Any]:
-    """One poll: fetch, track, judge the strong candidates, post or update. Returns a summary for the control panel's Run button."""
+    """One poll: fetch, track, cluster, judge the strong candidates, post or update. Returns a summary for the control
+    panel's Run button (and the dry check)."""
     now = now or time.time()
     poll_seconds = config.NEWSFEED_POLL_MINUTES * 60
     th = Thresholds()
     dry = is_dry_run(state)
     summary = {"feeds_ok": 0, "feeds_failed": 0, "candidates": 0, "judged": 0, "posted": [], "updated": [],
-               "dry": dry}
+               "dry": dry, "decisions": []}
 
     results = await fetch_feeds(state, now)
     summary["feeds_ok"] = len(results)
     summary["feeds_failed"] = sum(1 for n in config.NEWSFEED_FEEDS if n not in results)
     observe(state, results, config.NEWSFEED_FEEDS, now)
     prune(state, now)
+    assign_clusters(state)
+    sync_posted(state, now)
     state["last_run"] = now
 
     try:
@@ -977,8 +1459,8 @@ async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, j
     except Exception:
         logger.exception("[NEWSFEED] engagement/unpin pass failed")
 
-    if "bbc_top" not in results and not any(n.startswith("bbc") for n in results):
-        return summary  # nothing new from the BBC this poll
+    if not results:
+        return summary  # nothing new from any outlet this poll
 
     forum = client.get_channel(config.NEWSFEED_FORUM_ID)
     if forum is None:
@@ -986,80 +1468,95 @@ async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, j
         return summary
     tag_names = [t.name for t in getattr(forum, "available_tags", []) if t.name != MEGATHREAD_TAG]
 
-    candidates = []
-    for url, entry in state["stories"].items():
-        entry["url"] = url
-        if entry.get("done") or already_posted(state, url, entry.get("guid", "")):
-            continue
-        if not is_postable_url(url) or not is_fresh(entry, now):
-            continue
-        outlets = cross_outlets(entry, state["others"])
-        signal, reasons = signal_score(entry, now, outlets, poll_seconds)
-        entry["signal"] = signal
-        if signal >= min(th.min_signal, th.update_min_signal):
-            candidates.append((signal, reasons, entry))
-    candidates.sort(key=lambda c: c[0], reverse=True)
+    candidates = candidate_stories(state, now, th, poll_seconds)
     summary["candidates"] = len(candidates)
     if not candidates:
         return summary
 
     pool = await build_thread_pool(client, forum, state, now)
     new_this_run, judged = 0, 0
-    for signal, reasons, entry in candidates:
-        linked = thread_linking(entry["url"], pool)
+    for signal, reasons, view, maybes in candidates:
+        cid = view["cid"]
+        cluster = state["clusters"].get(cid)
+        if cluster is None or cluster.get("done"):
+            continue  # merged into another story, or posted, earlier this poll
+        linked = thread_linking([e["url"] for e in view["entries"]], pool)
         if linked:
-            # Someone (often a member) has already posted this very article: nothing to add, no duplicate.
-            mark_posted(state, entry["url"], entry.get("guid", ""), now, linked["id"], "already linked")
-            entry["done"] = True
-            logger.info("[NEWSFEED] %r is already linked in post %s; skipped", entry["title"], linked["id"])
+            # Someone (often a member) has already posted one of its articles: nothing to add, no duplicate.
+            mark_story_posted(state, view["entries"], now, linked["id"], "already linked", cid)
+            logger.info("[NEWSFEED] %r is already linked in post %s; skipped", view["title"], linked["id"])
             continue
-        shown = candidate_threads(entry, pool)
-        if signal < th.min_signal and not shown and not (entry.get("verdict") or {}).get("same_story_thread"):
+        maybes = [(s, m) for s, m in maybes if m in state["clusters"]]
+        maybe_views = []
+        for _, m in maybes:
+            other = cluster_entries(state, m)
+            if other:
+                best = min(other, key=lambda e: outlet_rank(e["outlet"]))
+                maybe_views.append({"id": m, "outlet": outlet_label(best["outlet"]), "title": best.get("title", ""),
+                                    "summary": best.get("summary", "")})
+        shown = candidate_threads(view, pool)
+        if (signal < th.min_signal and not shown and not maybe_views
+                and not (cluster.get("verdict") or {}).get("same_story_thread")):
             continue  # only strong enough to be an update, and there's no open post it could update
-        if needs_judgement(entry, signal, shown, th):
+        if needs_judgement(cluster, signal, shown, th, [m["id"] for m in maybe_views]):
             if judged >= MAX_JUDGE_PER_RUN:
                 continue
             judged += 1
-            verdict = await judge_story(entry, signal, reasons, shown, tag_names, complete=judge)
-            entry["verdict"] = verdict
-            entry["judgements"] = int(entry.get("judgements", 0)) + 1
-            entry["judged_signal"] = signal
-            entry["judged_threads"] = sorted(set(entry.get("judged_threads") or []) | {str(t["id"]) for t in shown})
-            logger.info("[NEWSFEED] judged %r: signal %d %s -> %s", entry["title"], signal, reasons, verdict)
-        verdict = entry.get("verdict") or {}
-        action, why = decide(signal, verdict, th, sport=is_sport_url(entry["url"]))
+            verdict = await judge_story(view, signal, reasons, shown, tag_names, complete=judge, maybes=maybe_views)
+            cluster["verdict"] = verdict
+            cluster["judgements"] = int(cluster.get("judgements", 0)) + 1
+            cluster["judged_signal"] = signal
+            cluster["judged_threads"] = sorted(set(cluster.get("judged_threads") or []) | {str(t["id"]) for t in shown})
+            cluster["judged_maybe"] = sorted(set(cluster.get("judged_maybe") or []) | {m["id"] for m in maybe_views})
+            logger.info("[NEWSFEED] judged %r: signal %d %s -> %s", view["title"], signal, reasons, verdict)
+            merged = []
+            for m in verdict.get("same_coverage") or []:
+                if verdict.get("same_story_thread") and state["clusters"].get(m, {}).get("done"):
+                    continue  # a development on a posted story: it goes in as an update, not folded away
+                if merge_clusters(state, cid, m, now):
+                    merged.append(m)
+            if merged:
+                if cluster.get("done"):
+                    summary["decisions"].append((view["title"], "skip", "same story as an existing post"))
+                    continue  # one of the near-matches was already posted: this is that story
+                view = story_view(state, cid) or view
+                signal, reasons = signal_score(view["entries"], now, poll_seconds)
+                cluster["signal"] = signal
+                logger.info("[NEWSFEED] merged %s into %r: now %s", merged, view["title"],
+                            [e["outlet"] for e in view["entries"]])
+        verdict = cluster.get("verdict") or {}
+        action, why = decide(signal, verdict, th, sport=is_sport_url(view["url"]))
         target = None
         if action == "update":
             target = next((t for t in pool if str(t["id"]) == str(verdict.get("same_story_thread"))), None)
             if target is None:
                 # The post it matched has gone (locked or deleted): judge it as a story of its own.
-                action, why = decide(signal, dict(verdict, same_story_thread=None), th, sport=is_sport_url(entry["url"]))
+                action, why = decide(signal, dict(verdict, same_story_thread=None), th, sport=is_sport_url(view["url"]))
+        summary["decisions"].append((view["title"], action, why))
         try:
             if action == "new":
                 if new_this_run >= config.NEWSFEED_MAX_NEW_PER_RUN:
                     continue
                 if not cap_allows(state, "daily_dry" if dry else "daily", now, config.NEWSFEED_DAILY_CAP):
                     continue
-                made = await _create_post(client, forum, state, entry, verdict, signal, reasons, now, dry)
+                made = await _create_post(client, forum, state, view, verdict, signal, reasons, now, dry)
                 if made:
                     pool.append(made)
                     new_this_run += 1
-                    entry["done"] = True
-                    summary["posted"].append(entry["title"])
+                    summary["posted"].append(view["title"])
             elif action == "update":
                 if not thread_gap_ok(target, now):
                     continue
                 if not cap_allows(state, "daily_dry_updates" if dry else "daily_updates", now, config.NEWSFEED_DAILY_UPDATE_CAP):
                     continue
-                if await _post_update(client, state, entry, verdict, target, now, dry):
-                    entry["done"] = True
-                    summary["updated"].append(entry["title"])
+                if await _post_update(client, state, view, verdict, target, now, dry):
+                    summary["updated"].append(view["title"])
         except Exception as e:
-            logger.exception("[NEWSFEED] %s failed for %s", action, entry["url"])
-            entry["failures"] = int(entry.get("failures", 0)) + 1
-            if entry["failures"] >= 3:
-                entry["done"] = True  # stop retrying (and logging) a story Discord keeps refusing
-            await _log(client, f"{action} failed for <{entry['link']}> (try {entry['failures']}): "
+            logger.exception("[NEWSFEED] %s failed for %s", action, view["url"])
+            cluster["failures"] = int(cluster.get("failures", 0)) + 1
+            if cluster["failures"] >= 3:
+                cluster["done"] = True  # stop retrying (and logging) a story Discord keeps refusing
+            await _log(client, f"{action} failed for <{view['link']}> (try {cluster['failures']}): "
                                f"{type(e).__name__}: {str(e)[:200]}")
     summary["judged"] = judged
     return summary
@@ -1095,6 +1592,40 @@ async def newsfeed_tick(client, manual: bool = False) -> Optional[Dict[str, Any]
 
 # ---------------------------------------------------------------- control panel (was /newsfeed)
 
+def outlet_health(state: Dict[str, Any], feeds: Optional[Dict[str, Tuple[str, str, str]]] = None
+                  ) -> List[Tuple[str, int, int, int]]:
+    """(outlet, feeds working, feeds failing, feeds never fetched) for each outlet that has feeds, in link order."""
+    feeds = feeds or config.NEWSFEED_FEEDS
+    health = state.get("feed_health") or {}
+    per: Dict[str, List[int]] = {}
+    for name, (_, outlet, _) in feeds.items():
+        counts = per.setdefault(outlet, [0, 0, 0])
+        rec = health.get(name)
+        if not rec:
+            counts[2] += 1
+        elif rec.get("failures"):
+            counts[1] += 1
+        else:
+            counts[0] += 1
+    return [(o, *per[o]) for o in sorted(per, key=outlet_rank)]
+
+
+def outlet_health_line(state: Dict[str, Any], feeds: Optional[Dict[str, Tuple[str, str, str]]] = None) -> str:
+    """'BBC ✅ · Sky ✅ · Guardian ⚠️ 1/3 failing · Independent ❌' (or ⏳ before the first poll)."""
+    bits = []
+    for outlet, ok, failing, never in outlet_health(state, feeds):
+        name = outlet_short(outlet)
+        if failing and not ok:
+            bits.append(f"{name} ❌")
+        elif failing:
+            bits.append(f"{name} ⚠️ {failing}/{ok + failing + never} failing")
+        elif ok:
+            bits.append(f"{name} ✅")
+        else:
+            bits.append(f"{name} ⏳")
+    return " · ".join(bits)
+
+
 def status_text(state: Dict[str, Any], now: Optional[float] = None) -> str:
     now = now or time.time()
     if not config.NEWSFEED_ENABLED:
@@ -1107,6 +1638,7 @@ def status_text(state: Dict[str, Any], now: Optional[float] = None) -> str:
         f"State: {running}",
         f"Mode: {'**dry run** (nothing is posted; decisions go to the log)' if is_dry_run(state) else '**live**'}",
         f"Forum: <#{config.NEWSFEED_FORUM_ID}>, every {config.NEWSFEED_POLL_MINUTES} min",
+        f"Outlets: {outlet_health_line(state)}",
     ]
     if state.get("last_run"):
         lines.append(f"Last poll: <t:{int(state['last_run'])}:R>")
@@ -1120,22 +1652,29 @@ def status_text(state: Dict[str, Any], now: Optional[float] = None) -> str:
                                                    for n, h in sorted(failing.items())))
     if state.get("last_error"):
         lines.append(f"Last error: {state['last_error'].get('error')}")
-    top = sorted((e for e in state["stories"].values() if not e.get("done")),
-                 key=lambda e: e.get("signal", 0), reverse=True)[:5]
-    if top:
+    clusters = state.get("clusters") or {}
+    waiting = sorted((cid for cid, c in clusters.items() if not c.get("done") and c.get("signal")),
+                     key=lambda cid: clusters[cid].get("signal", 0), reverse=True)[:5]
+    if waiting:
         lines.append("\n**Strongest waiting**")
-        for e in top:
-            v = e.get("verdict") or {}
+        for cid in waiting:
+            c = clusters[cid]
+            view = story_view(state, cid)
+            title = view["title"] if view else state["stories"].get(cid, {}).get("title", "")
+            outlets = ", ".join(outlet_short(e["outlet"]) for e in view["entries"]) if view else ""
+            v = c.get("verdict") or {}
             ai = f", AI {v.get('importance')}/10" if v and not v.get("error") else ""
-            lines.append(f"- {trim_title(e.get('title', ''), 80)} (signal {e.get('signal', 0)}{ai})")
+            lines.append(f"- {trim_title(title, 70)} ({outlets}; signal {c.get('signal', 0)}{ai})")
     recent = [t for t in state["threads"] if not t.get("dry")][-5:]
     if recent:
         lines.append("\n**Recent posts**")
         for t in reversed(recent):
-            lines.append(f"- <#{t['id']}> {t.get('updates', 0)} updates")
+            via = f" via {outlet_short(t['outlet'])}" if t.get("outlet") else ""
+            lines.append(f"- <#{t['id']}>{via}, {t.get('updates', 0)} updates")
     lines.append(f"\n-# Thresholds: signal {config.NEWSFEED_MIN_SIGNAL} (updates {config.NEWSFEED_UPDATE_MIN_SIGNAL}), "
                  f"AI {config.NEWSFEED_MIN_IMPORTANCE}/10 (updates {config.NEWSFEED_UPDATE_MIN_IMPORTANCE}, sport "
-                 f"{config.NEWSFEED_SPORT_MIN_IMPORTANCE}). Tracking {len(state['stories'])} BBC stories.")
+                 f"{config.NEWSFEED_SPORT_MIN_IMPORTANCE}). Tracking {len(state['stories'])} articles in "
+                 f"{len(clusters)} stories.")
     return "\n".join(lines)
 
 

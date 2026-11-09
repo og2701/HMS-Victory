@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Politics News | Sky News</title>
+    <link>https://news.sky.com/politics</link>
+    <item>
+      <title>Water bills to rise 9% in April as Ofwat confirms increase</title>
+      <link>https://news.sky.com/story/water-bills-to-rise-9-in-april-as-ofwat-confirms-increase-13609310</link>
+      <description>The average household bill in England and Wales will go up by about &#163;54 a year.</description>
+      <pubDate>Sat, 07 Nov 2026 16:20:00 +0000</pubDate>
+      <guid>https://news.sky.com/story/water-bills-to-rise-9-in-april-as-ofwat-confirms-increase-13609310</guid>
+    </item>
+    <item>
+      <title>Watch: Water bills explained</title>
+      <link>https://news.sky.com/video/water-bills-explained-13609311</link>
+      <description>A video.</description>
+      <pubDate>Sat, 07 Nov 2026 16:25:00 +0000</pubDate>
+      <guid>https://news.sky.com/video/water-bills-explained-13609311</guid>
+    </item>
+  </channel>
+</rss>
