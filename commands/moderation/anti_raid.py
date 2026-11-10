@@ -35,8 +35,9 @@ QUARANTINE_ROLE_ID = 962009285116710922
 ANTI_RAID_LOG_CHANNEL_ID = 1172677237988929646
 BATCH_SIZE = 10
 MAX_RECENT_JOINS = 100
+QUARANTINE_PAGE_SIZE = 25
 RECENT_JOIN_TTL_SECONDS = 24 * 60 * 60
-ROLE_PERMISSION_BACKUP_VERSION = 2
+ROLE_PERMISSION_BACKUP_VERSION = 3
 # Kept in step with the /anti-raid command gate in setup_commands: opening the panel and
 # being able to press anything on it have to be the same set, or the people most likely to
 # be in the room during a raid get a control centre that does nothing.
@@ -91,14 +92,19 @@ def _anti_raid_state_payload(
     active: bool,
     failures: Iterable[str] = (),
     mode: str = MODE_FULL,
+    quarantine_failures: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     clean_failures = [str(failure)[:500] for failure in failures if str(failure).strip()]
+    pending = dict(quarantine_failures or {})
     return {
         "version": 1,
         "active": bool(active),
         "mode": mode if mode in VALID_MODES else MODE_FULL,
-        "degraded": bool(clean_failures),
+        "degraded": bool(clean_failures or pending),
         "failures": clean_failures[:20],
+        # Unlike the bounded recent-joins display, pending enforcement must survive
+        # both a large raid and a restart until retried or explicitly released.
+        "quarantine_failures": pending,
         "updated_at": int(time.time()),
     }
 
@@ -120,6 +126,12 @@ def _load_anti_raid_state() -> dict[str, Any]:
             if not isinstance(raw_failures, list):
                 raise ValueError("failures is not a list")
             failures = [str(value)[:500] for value in raw_failures[:20]]
+            pending = payload.get("quarantine_failures", {})
+            if not isinstance(pending, dict) or any(
+                not str(uid).isdecimal() or not isinstance(reason, str)
+                for uid, reason in pending.items()
+            ):
+                raise ValueError("quarantine failures are invalid")
             mode = str(payload.get("mode") or MODE_FULL)
             return {
                 "version": 1,
@@ -127,8 +139,9 @@ def _load_anti_raid_state() -> dict[str, Any]:
                 # State written before modes existed was always the full lockdown, so an
                 # in-flight deployment keeps restoring the permissions it actually backed up.
                 "mode": mode if mode in VALID_MODES else MODE_FULL,
-                "degraded": bool(payload.get("degraded", False) or failures),
+                "degraded": bool(payload.get("degraded", False) or failures or pending),
                 "failures": failures,
+                "quarantine_failures": {str(uid): reason[:500] for uid, reason in pending.items()},
                 "updated_at": int(payload.get("updated_at", 0) or 0),
             }
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -163,11 +176,16 @@ def anti_raid_mode() -> str:
 
 
 def set_anti_raid_status(active: bool, failures: Iterable[str] = (),
-                         mode: str = MODE_FULL) -> None:
+                         mode: str = MODE_FULL, *,
+                         quarantine_failures: dict[str, str] | None = None) -> None:
     """Persist canonical JSON state first; retain the old marker for compatibility."""
     atomic_write_json(
         ANTI_RAID_STATE_FILE,
-        _anti_raid_state_payload(active, failures, mode),
+        _anti_raid_state_payload(
+            active, failures, mode,
+            _load_anti_raid_state()["quarantine_failures"]
+            if quarantine_failures is None else quarantine_failures,
+        ),
         indent=2,
     )
     try:
@@ -335,84 +353,129 @@ def backup_role_permissions(guild: discord.Guild) -> None:
             "version": ROLE_PERMISSION_BACKUP_VERSION,
             "guild_id": str(guild.id),
             "created_at": int(time.time()),
+            "restricted_permissions": list(RESTRICTED_RAID_PERMS),
             "roles": role_permissions,
         },
         indent=2,
     )
 
 
+def _read_role_permission_backup(guild: discord.Guild) -> dict[str, Any]:
+    """Validate every entry before either restoring or extending a backup."""
+    with open(PERMISSIONS_BACKUP_FILE, "r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError("backup root is not an object")
+
+    is_structured = any(
+        key in payload for key in ("version", "guild_id", "roles", "created_at")
+    )
+    if is_structured:
+        if payload.get("version") not in (2, ROLE_PERMISSION_BACKUP_VERSION):
+            raise ValueError("backup version is unsupported")
+        if str(payload.get("guild_id")) != str(guild.id):
+            raise ValueError("backup belongs to a different guild")
+        if (
+            isinstance(payload.get("created_at"), bool)
+            or not isinstance(payload.get("created_at"), int)
+            or payload["created_at"] < 0
+        ):
+            raise ValueError("backup timestamp is invalid")
+        roles = payload.get("roles")
+        fields = (
+            payload.get("restricted_permissions")
+            if payload["version"] == ROLE_PERMISSION_BACKUP_VERSION
+            else list(RESTRICTED_RAID_PERMS)
+        )
+    else:
+        roles = payload
+        fields = list(RESTRICTED_RAID_PERMS)
+    if not isinstance(roles, dict) or not roles:
+        raise ValueError("backup contains no role permissions")
+    if not isinstance(fields, list) or not fields or any(
+        not isinstance(field, str) or field not in RESTRICTED_RAID_PERMS for field in fields
+    ) or set(fields) != set(RESTRICTED_RAID_PERMS):
+        raise ValueError("backup restricted permissions are invalid")
+    for uid, saved in roles.items():
+        if not str(uid).isdecimal():
+            raise ValueError("backup role ID is invalid")
+        if isinstance(saved, dict):
+            if (
+                not saved or not set(saved).issubset(RESTRICTED_RAID_PERMS)
+                or any(not isinstance(value, bool) for value in saved.values())
+                or (not (is_structured and payload["version"] == ROLE_PERMISSION_BACKUP_VERSION)
+                    and set(saved) != {"use_external_apps"})
+            ):
+                raise ValueError("backup permission flags are invalid")
+        elif isinstance(saved, bool) or not isinstance(saved, (int, str)) or int(saved) < 0:
+            raise ValueError("backup permission integer is invalid")
+    return {
+        "version": ROLE_PERMISSION_BACKUP_VERSION,
+        "guild_id": str(guild.id),
+        "created_at": payload["created_at"] if is_structured else int(time.time()),
+        "restricted_permissions": fields,
+        "roles": roles,
+    }
+
+
+def _extend_role_permission_backup(guild: discord.Guild) -> None:
+    """Snapshot new roles before a retry restricts them; never replace old entries."""
+    payload = _read_role_permission_backup(guild)
+    added = False
+    for role in _editable_roles(guild):
+        saved = payload["roles"].get(str(role.id))
+        if saved is None:
+            payload["roles"][str(role.id)] = role.permissions.value
+            added = True
+        elif isinstance(saved, dict):
+            # The oldest lockdown only controlled external apps. Before a new
+            # enforcement pass controls more flags, snapshot those flags too.
+            current = discord.Permissions(role.permissions.value)
+            for field in RESTRICTED_RAID_PERMS:
+                if field not in saved:
+                    saved[field] = getattr(current, field)
+                    added = True
+    if added:
+        atomic_write_json(PERMISSIONS_BACKUP_FILE, payload, indent=2)
+
+
 def _prepare_role_permission_restore(
     guild: discord.Guild,
 ) -> tuple[list[tuple[discord.Role, discord.Permissions]], list[str]]:
-    """Validate backup identity, coverage, and values before making any edits."""
+    """Merge only lockdown-controlled flags into current roles, including old backups."""
     if not os.path.exists(PERMISSIONS_BACKUP_FILE):
         return [], ["The role-permission backup is missing; lockdown remains enabled."]
     try:
-        with open(PERMISSIONS_BACKUP_FILE, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        if not isinstance(payload, dict):
-            raise ValueError("backup root is not an object")
-
-        is_structured = any(
-            key in payload for key in ("version", "guild_id", "roles", "created_at")
-        )
-        if is_structured:
-            if payload.get("version") != ROLE_PERMISSION_BACKUP_VERSION:
-                raise ValueError("backup version is unsupported")
-            if str(payload.get("guild_id")) != str(guild.id):
-                raise ValueError("backup belongs to a different guild")
-            if (
-                isinstance(payload.get("created_at"), bool)
-                or not isinstance(payload.get("created_at"), int)
-                or payload["created_at"] < 0
-            ):
-                raise ValueError("backup timestamp is invalid")
-            role_permissions = payload.get("roles")
-        else:
-            # Compatibility with the original role-id keyed backup.
-            role_permissions = payload
-        if not isinstance(role_permissions, dict) or not role_permissions:
-            raise ValueError("backup contains no role permissions")
+        payload = _read_role_permission_backup(guild)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         return [], [f"The role-permission backup could not be validated: {exc}"]
 
-    roles = _editable_roles(guild)
-    if not roles:
-        return [], ["The guild has no restorable unmanaged roles."]
-    missing_role_ids = [
-        str(role.id) for role in roles if str(role.id) not in role_permissions
+    editable = _editable_roles(guild)
+    editable_ids = {role.id for role in editable}
+    blocked = [
+        f"{role.name}: backed-up role is no longer editable; lockdown remains enabled."
+        for role in guild.roles
+        if str(role.id) in payload["roles"] and role.id not in editable_ids
     ]
-    if missing_role_ids:
-        shown = ", ".join(missing_role_ids[:5])
-        suffix = "…" if len(missing_role_ids) > 5 else ""
-        return [], [
-            "The role-permission backup does not cover every live role "
-            f"(missing: {shown}{suffix}); lockdown remains enabled."
-        ]
-
+    if blocked:
+        return [], blocked
     prepared: list[tuple[discord.Role, discord.Permissions]] = []
-    invalid: list[str] = []
-    for role in roles:
-        try:
-            saved = role_permissions[str(role.id)]
-            if isinstance(saved, dict):
-                # Compatibility with the oldest one-bit backup format.
-                external_apps = saved.get("use_external_apps")
-                if not isinstance(external_apps, bool):
-                    raise ValueError("legacy use_external_apps value is missing or invalid")
-                permissions = discord.Permissions(role.permissions.value)
-                permissions.update(use_external_apps=external_apps)
-            else:
-                if isinstance(saved, bool):
-                    raise ValueError("permission integer cannot be boolean")
-                permission_value = int(saved)
-                if permission_value < 0:
-                    raise ValueError("permission integer cannot be negative")
-                permissions = discord.Permissions(permission_value)
-            prepared.append((role, permissions))
-        except (TypeError, ValueError, KeyError) as exc:
-            invalid.append(f"{role.name}: invalid backup ({exc})")
-    return ([], invalid) if invalid else (prepared, [])
+    for role in editable:
+        # A new role that we never restricted needs no restoration. Deleted roles
+        # likewise need no replacement or edit.
+        if str(role.id) not in payload["roles"]:
+            continue
+        saved = payload["roles"][str(role.id)]
+        permissions = discord.Permissions(role.permissions.value)
+        if isinstance(saved, dict):
+            permissions.update(**{field: value for field, value in saved.items() if value})
+        else:
+            original = discord.Permissions(int(saved))
+            permissions.update(**{
+                field: True for field in payload["restricted_permissions"] if getattr(original, field)
+            })
+        prepared.append((role, permissions))
+    return prepared, []
 
 
 async def restore_role_permissions(guild: discord.Guild) -> list[str]:
@@ -449,6 +512,10 @@ async def restore_role_permissions(guild: discord.Guild) -> list[str]:
 
 async def disable_role_permissions(guild: discord.Guild) -> list[str]:
     """Apply the restricted permission set and report partial failures."""
+    try:
+        _extend_role_permission_backup(guild)
+    except (OSError, ValueError, TypeError) as exc:
+        return [f"Could not back up roles before restriction: {exc}"]
     roles = _editable_roles(guild)
     failures: list[str] = []
     for offset in range(0, len(roles), BATCH_SIZE):
@@ -483,16 +550,19 @@ async def disable_role_permissions(guild: discord.Guild) -> list[str]:
 
 
 async def enable_anti_raid(guild: discord.Guild,
-                           mode: str = MODE_FULL) -> AntiRaidTransition:
+                           mode: str | None = MODE_FULL, *,
+                           retry_only: bool = False) -> AntiRaidTransition:
     """Enable, retry, or switch mode without ever replacing an active-mode backup.
 
     MODE_QUARANTINE_ONLY quarantines joins and touches no role permissions at all, so it
     takes no backup and has nothing to restore on the way out.
     """
-    mode = mode if mode in VALID_MODES else MODE_FULL
     async with _mode_lock:
         state = _load_anti_raid_state()
         current_mode = state.get("mode", MODE_FULL)
+        if retry_only and not state["active"]:
+            return AntiRaidTransition(active=False, changed=False, mode=current_mode)
+        mode = current_mode if mode is None else (mode if mode in VALID_MODES else MODE_FULL)
         if state["active"] and not state["degraded"] and current_mode == mode:
             return AntiRaidTransition(active=True, changed=False, mode=mode)
 
@@ -503,17 +573,25 @@ async def enable_anti_raid(guild: discord.Guild,
                 failures = await restore_role_permissions(guild)
             except Exception as exc:
                 logger.exception("Could not restore permissions while narrowing anti-raid")
-                return AntiRaidTransition(active=True, changed=False, mode=current_mode,
-                                          failures=(f"Could not restore permissions: {exc}",))
-            set_anti_raid_status(True, failures, MODE_QUARANTINE_ONLY)
-            return AntiRaidTransition(active=True, changed=True,
-                                      mode=MODE_QUARANTINE_ONLY, failures=tuple(failures))
+                failures = [f"Could not restore permissions: {exc}"]
+            # Keep the full-mode recovery path until EVERY restore succeeded.
+            next_mode = current_mode if failures else MODE_QUARANTINE_ONLY
+            try:
+                set_anti_raid_status(True, failures, next_mode)
+            except Exception as exc:
+                logger.exception("Could not persist anti-raid mode change")
+                failures = [*failures, f"Could not persist mode change: {exc}"]
+                next_mode = current_mode
+            return AntiRaidTransition(
+                active=True, changed=next_mode != current_mode,
+                mode=next_mode, failures=tuple(failures),
+            )
         quarantine_role = guild.get_role(QUARANTINE_ROLE_ID)
         if quarantine_role is None:
             failures = ("Lockdown was not enabled because the quarantine role is missing.",)
             if state["active"]:
                 try:
-                    set_anti_raid_status(True, failures)
+                    set_anti_raid_status(True, failures, current_mode)
                 except Exception:
                     logger.exception("Could not persist degraded anti-raid preflight state")
             return AntiRaidTransition(
@@ -528,7 +606,7 @@ async def enable_anti_raid(guild: discord.Guild,
                 failures = ("Lockdown was not enabled because the bot lacks Manage Roles.",)
                 if state["active"]:
                     try:
-                        set_anti_raid_status(True, failures)
+                        set_anti_raid_status(True, failures, current_mode)
                     except Exception:
                         logger.exception("Could not persist degraded anti-raid preflight state")
                 return AntiRaidTransition(
@@ -541,7 +619,7 @@ async def enable_anti_raid(guild: discord.Guild,
                 failures = ("Lockdown was not enabled because the quarantine role is above the bot.",)
                 if state["active"]:
                     try:
-                        set_anti_raid_status(True, failures)
+                        set_anti_raid_status(True, failures, current_mode)
                     except Exception:
                         logger.exception("Could not persist degraded anti-raid preflight state")
                 return AntiRaidTransition(
@@ -576,7 +654,7 @@ async def enable_anti_raid(guild: discord.Guild,
             except Exception as exc:
                 logger.exception("Could not initialise anti-raid lockdown")
                 return AntiRaidTransition(
-                    active=False,
+                    active=bool(state["active"]),
                     changed=False,
                     failures=(f"Lockdown was not enabled: {exc}",),
                     mode=current_mode,
@@ -742,12 +820,12 @@ def _panel_theme(active: bool, degraded: bool) -> tuple[int, str]:
     if active and degraded:
         return 0xF39C12, (
             "🟠 **Protection enabled - degraded**\n"
-            "-# New members are still quarantined, but one or more role operations need attention."
+            "-# Some protection operations need attention; check failures and retry enforcement."
         )
     if active:
         return 0xE74C3C, (
             "🔴 **Protection enabled**\n"
-            "-# New members are quarantined and high-abuse role permissions are restricted."
+            "-# New members are quarantined according to the mode below."
         )
     return 0x2ECC71, (
         "🟢 **Protection disabled**\n"
@@ -762,15 +840,18 @@ def _vitals_block(guild: discord.Guild, records: list[dict[str, Any]]) -> tuple[
     degraded = bool(mode_state["degraded"])
     ten_minutes, one_hour = _join_velocity(records)
 
-    _, backup_failures = _prepare_role_permission_restore(guild)
-    if not os.path.exists(PERMISSIONS_BACKUP_FILE):
+    needs_backup = active and mode_state["mode"] == MODE_FULL
+    _, backup_failures = _prepare_role_permission_restore(guild) if needs_backup else ([], [])
+    if not needs_backup:
+        backup_ok, backup_text = True, "Not needed"
+    elif not os.path.exists(PERMISSIONS_BACKUP_FILE):
         backup_ok, backup_text = False, "Missing"
     elif backup_failures:
         backup_ok, backup_text = False, "Invalid"
     else:
         backup_ok, backup_text = True, "Ready"
     role_ok = guild.get_role(QUARANTINE_ROLE_ID) is not None
-    enforcement_ok = not (active and degraded)
+    enforcement_ok = not (active and (degraded or not role_ok))
 
     def check(ok: bool, warn: bool) -> str:
         return "✅" if ok else ("⚠️" if warn else "◻️")
@@ -787,6 +868,12 @@ def _vitals_block(guild: discord.Guild, records: list[dict[str, Any]]) -> tuple[
         warnings.append(f"⚠️ **Recovery warning**\n{_failure_summary(backup_failures)[:600]}")
     if active and degraded and mode_state["failures"]:
         warnings.append(f"⚠️ **Enforcement failures**\n{_failure_summary(mode_state['failures'])[:600]}")
+    pending = mode_state["quarantine_failures"]
+    if pending:
+        warnings.append(
+            f"⚠️ **Pending quarantines · {len(pending)}**\n"
+            f"{_failure_summary(f'{uid}: {reason}' for uid, reason in pending.items())[:600]}"
+        )
     return "\n".join(lines), warnings
 
 
@@ -866,13 +953,16 @@ def _is_staff(member: discord.Member) -> bool:
 
 
 class QuarantineMemberSelect(discord.ui.Select):
-    def __init__(self, members: list[discord.Member]):
-        visible = members[:25]
+    def __init__(self, members: list[discord.Member], selected: set[int] | None = None):
+        visible = members[:QUARANTINE_PAGE_SIZE]
+        options = [_member_option(member) for member in visible]
+        for option in options:
+            option.default = int(option.value) in (selected or set())
         super().__init__(
             placeholder="Select quarantined members to release…",
             min_values=1,
             max_values=len(visible),
-            options=[_member_option(member) for member in visible],
+            options=options,
         )
 
     async def callback(self, interaction: Interaction) -> None:
@@ -886,6 +976,23 @@ class QuarantineMemberSelect(discord.ui.Select):
         await interaction.response.edit_message(
             view=dashboard,
             allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+
+class QuarantinePageButton(discord.ui.Button):
+    def __init__(self, delta: int, *, disabled: bool):
+        super().__init__(
+            label="Previous" if delta < 0 else "Next",
+            style=discord.ButtonStyle.secondary, disabled=disabled,
+        )
+        self.delta = delta
+
+    async def callback(self, interaction: Interaction) -> None:
+        dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
+        dashboard.quarantine_page += self.delta
+        dashboard.render()
+        await interaction.response.edit_message(
+            view=dashboard, allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
@@ -1163,7 +1270,7 @@ class RetryEnforcementButton(discord.ui.Button):
 
     async def callback(self, interaction: Interaction) -> None:
         dashboard: AntiRaidControlView = self.view  # type: ignore[assignment]
-        dashboard.notice = "⏳ Retrying enforcement - reapplying role restrictions…"
+        dashboard.notice = "⏳ Retrying enforcement for the current mode and pending quarantines…"
         dashboard.busy = True
         dashboard.render()
         await interaction.response.edit_message(
@@ -1171,7 +1278,7 @@ class RetryEnforcementButton(discord.ui.Button):
             allowed_mentions=discord.AllowedMentions.none(),
         )
         try:
-            result = await enable_anti_raid(dashboard.guild)
+            result = await retry_anti_raid_enforcement(dashboard.guild)
         finally:
             dashboard.busy = False
         if result.failures:
@@ -1179,8 +1286,10 @@ class RetryEnforcementButton(discord.ui.Button):
                 f"⚠️ Enforcement retry still has {len(result.failures)} failure(s).\n"
                 f"{_failure_summary(result.failures)}"
             )
-        else:
+        elif result.active:
             dashboard.notice = "✅ Anti-raid enforcement retry completed successfully."
+        else:
+            dashboard.notice = "Protection is disabled; no enforcement was applied."
         await _log_action(
             dashboard.guild,
             f"Anti-raid enforcement retry by {interaction.user} ({interaction.user.id}): "
@@ -1225,20 +1334,16 @@ class ReleaseButton(discord.ui.Button):
             if member is None:
                 failed.append(f"{member_id}: member is no longer in the guild")
                 continue
-            if quarantine_role not in member.roles:
-                continue
             try:
-                await member.remove_roles(
-                    quarantine_role,
-                    reason=f"Released from anti-raid quarantine by {interaction.user}",
-                )
+                if not await release_quarantined_member(member, interaction.user):
+                    continue
                 released.append(member_id)
                 _persist_moderation_notice(
                     member_id,
                     "Quarantine released",
-                    "A staff member removed your anti-raid quarantine role.",
+                    "A staff member released your anti-raid quarantine and granted normal membership.",
                 )
-            except (discord.Forbidden, discord.HTTPException) as exc:
+            except (discord.Forbidden, discord.HTTPException, ValueError, OSError) as exc:
                 failed.append(f"{member.display_name}: {exc}")
         if released:
             try:
@@ -1272,6 +1377,7 @@ class AntiRaidControlView(discord.ui.LayoutView):
         self.guild = guild
         self.author_id = author_id
         self.selected_member_ids: list[int] = []
+        self.quarantine_page = 0
         self.notice: str | None = None
         self.message: discord.Message | None = None
         self.busy = False
@@ -1303,6 +1409,12 @@ class AntiRaidControlView(discord.ui.LayoutView):
         degraded = bool(mode_state["degraded"])
         records = _load_recent_joins()
         quarantined = _quarantined_members(self.guild)
+        page_count = max(1, (len(quarantined) + QUARANTINE_PAGE_SIZE - 1) // QUARANTINE_PAGE_SIZE)
+        self.quarantine_page = max(0, min(self.quarantine_page, page_count - 1))
+        start = self.quarantine_page * QUARANTINE_PAGE_SIZE
+        visible = quarantined[start : start + QUARANTINE_PAGE_SIZE]
+        visible_ids = {member.id for member in visible}
+        self.selected_member_ids = [uid for uid in self.selected_member_ids if uid in visible_ids]
         selected = set(self.selected_member_ids)
 
         accent, status = _panel_theme(active, degraded)
@@ -1344,8 +1456,19 @@ class AntiRaidControlView(discord.ui.LayoutView):
 
         panel.add_item(discord.ui.TextDisplay(_quarantine_block(quarantined, selected)))
         if quarantined:
-            panel.add_item(discord.ui.ActionRow(QuarantineMemberSelect(quarantined)))
-            panel.add_item(discord.ui.ActionRow(ReleaseButton(disabled=not selected)))
+            if page_count > 1:
+                panel.add_item(discord.ui.TextDisplay(
+                    f"-# Page {self.quarantine_page + 1}/{page_count} · "
+                    f"showing {start + 1}–{start + len(visible)} of {len(quarantined)}"
+                ))
+            panel.add_item(discord.ui.ActionRow(QuarantineMemberSelect(visible, selected)))
+            release_controls: list[discord.ui.Item] = [ReleaseButton(disabled=not selected)]
+            if page_count > 1:
+                release_controls.extend([
+                    QuarantinePageButton(-1, disabled=self.quarantine_page == 0),
+                    QuarantinePageButton(1, disabled=self.quarantine_page == page_count - 1),
+                ])
+            panel.add_item(discord.ui.ActionRow(*release_controls))
         panel.add_item(discord.ui.Separator())
 
         panel.add_item(discord.ui.TextDisplay(_recent_joins_block(records)))
@@ -1420,37 +1543,119 @@ async def handle_new_member_anti_raid(member: discord.Member) -> AntiRaidJoinOut
     if not is_anti_raid_enabled():
         return AntiRaidJoinOutcome(protection_active=False, quarantined=False)
 
-    quarantine_role = member.guild.get_role(QUARANTINE_ROLE_ID)
-    if quarantine_role is None:
-        logger.error("Anti-raid is enabled but quarantine role %s is missing", QUARANTINE_ROLE_ID)
-        await _log_action(
-            member.guild,
-            f"⚠️ Anti-raid could not quarantine {member} ({member.id}): role is missing.",
-        )
-        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
+    async with _mode_lock:
+        return await _quarantine_member_locked(member)
+
+
+def _set_pending_quarantine(user_id: int, reason: str | None) -> None:
+    """Called under the mode lock so retries, releases, and mode changes cannot race."""
+    state = _load_anti_raid_state()
+    pending = dict(state["quarantine_failures"])
+    if reason is None:
+        pending.pop(str(user_id), None)
+    else:
+        pending[str(user_id)] = reason[:500]
+    set_anti_raid_status(
+        state["active"], state["failures"], state["mode"], quarantine_failures=pending,
+    )
+
+
+async def _quarantine_member_locked(member: discord.Member) -> AntiRaidJoinOutcome:
+    """Enforce a join or retry, keeping a durable entry until enforcement succeeds."""
+    if not is_anti_raid_enabled():
+        return AntiRaidJoinOutcome(False, False)
     try:
-        await member.add_roles(quarantine_role, reason="Anti-raid protection is active")
+        _set_pending_quarantine(member.id, "Quarantine enforcement did not finish; retry required.")
+    except Exception:
+        logger.exception("Could not persist pending quarantine for %s", member.id)
+    quarantine_role = member.guild.get_role(QUARANTINE_ROLE_ID)
+    failure = "quarantine role is missing" if quarantine_role is None else None
+    if quarantine_role is not None:
         try:
-            mark_join_quarantined(member.id)
+            if quarantine_role not in getattr(member, "roles", []):
+                await member.add_roles(quarantine_role, reason="Anti-raid protection is active")
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            failure = str(exc)
+    if failure is not None:
+        logger.error("Could not quarantine joining member %s: %s", member.id, failure)
+        try:
+            _set_pending_quarantine(member.id, failure)
         except Exception:
-            logger.exception("Could not update anti-raid quarantine history for %s", member.id)
-        _persist_moderation_notice(
-            member.id,
-            "Anti-raid quarantine applied",
-            "You were placed in the temporary quarantine role because anti-raid protection was active when you joined.",
-        )
+            logger.exception("Could not persist quarantine failure for %s", member.id)
         await _log_action(
-            member.guild,
-            f"🛡️ Anti-raid quarantined {member} ({member.id}) on join.",
+            member.guild, f"⚠️ Anti-raid failed to quarantine {member} ({member.id}): {failure}",
         )
-        return AntiRaidJoinOutcome(protection_active=True, quarantined=True)
-    except (discord.Forbidden, discord.HTTPException) as exc:
-        logger.error("Could not quarantine joining member %s: %s", member.id, exc)
-        await _log_action(
-            member.guild,
-            f"⚠️ Anti-raid failed to quarantine {member} ({member.id}): {exc}",
-        )
-        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
+        return AntiRaidJoinOutcome(True, False)
+
+    try:
+        _set_pending_quarantine(member.id, None)
+        mark_join_quarantined(member.id)
+    except Exception:
+        logger.exception("Could not update anti-raid quarantine state for %s", member.id)
+    _persist_moderation_notice(
+        member.id, "Anti-raid quarantine applied",
+        "You were placed in the temporary quarantine role because anti-raid protection was active when you joined.",
+    )
+    await _log_action(
+        member.guild, f"🛡️ Anti-raid quarantined {member} ({member.id}) on join or enforcement retry.",
+    )
+    return AntiRaidJoinOutcome(True, True)
+
+
+async def retry_anti_raid_enforcement(guild: discord.Guild) -> AntiRaidTransition:
+    """Retry the current mode and pending joins, including after a process restart."""
+    result = await enable_anti_raid(guild, mode=None, retry_only=True)
+    if not result.active:
+        return result
+    for uid in list(_load_anti_raid_state()["quarantine_failures"]):
+        async with _mode_lock:
+            state = _load_anti_raid_state()
+            # Another panel may have disabled protection or released this member
+            # since we took the snapshot. Never undo that staff action.
+            if not state["active"]:
+                break
+            if uid not in state["quarantine_failures"]:
+                continue
+            member = guild.get_member(int(uid))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(uid))
+                except discord.NotFound:
+                    _set_pending_quarantine(int(uid), None)
+                    continue
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    _set_pending_quarantine(int(uid), f"Could not fetch member: {exc}")
+                    continue
+            await _quarantine_member_locked(member)
+    state = _load_anti_raid_state()
+    failures = [*state["failures"], *(
+        f"{uid}: {reason}" for uid, reason in state["quarantine_failures"].items()
+    )]
+    return AntiRaidTransition(
+        active=state["active"], changed=result.changed, mode=state["mode"],
+        failures=tuple(failures),
+    )
+
+
+async def release_quarantined_member(member: discord.Member, actor: Any) -> bool:
+    """Complete onboarding before removing the hold, even while protection is active."""
+    async with _mode_lock:
+        quarantine_role = member.guild.get_role(QUARANTINE_ROLE_ID)
+        if quarantine_role is None:
+            raise ValueError("The quarantine role no longer exists")
+        if quarantine_role not in member.roles:
+            return False
+        normal_role = member.guild.get_role(ROLES.MEMBER)
+        if normal_role is None:
+            raise ValueError("The normal member role is missing; quarantine was kept")
+        reason = f"Released from anti-raid quarantine by {actor}"
+        # Clearing a pending retry first prevents it re-quarantining a released
+        # member. If storage fails, leave the quarantine in place for staff.
+        _set_pending_quarantine(member.id, None)
+        if normal_role not in member.roles:
+            await member.add_roles(normal_role, reason=reason)
+        await member.remove_roles(quarantine_role, reason=reason)
+        return True
 
 
 async def grant_normal_member_role_if_safe(
@@ -1475,7 +1680,13 @@ async def handle_new_member_roles(
     if outcome.protection_active:
         return outcome
     if not await grant_normal_member_role_if_safe(member, normal_role):
-        # Protection activated between the initial check and normal onboarding.
-        # No normal role was granted, so remain fail-closed for staff review.
-        return AntiRaidJoinOutcome(protection_active=True, quarantined=False)
+        # Protection activated between checks. Actually enforce the hold rather
+        # than silently leaving a member without either role or a retry entry.
+        async with _mode_lock:
+            if is_anti_raid_enabled():
+                return await _quarantine_member_locked(member)
+            # Protection may have been disabled again while waiting for the lock.
+            if normal_role is not None:
+                await member.add_roles(normal_role, reason="Normal member onboarding")
+            return AntiRaidJoinOutcome(False, False)
     return outcome
