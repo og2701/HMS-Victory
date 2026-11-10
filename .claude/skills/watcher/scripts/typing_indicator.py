@@ -3,7 +3,8 @@
 start keeps Vic 'typing' in that channel for one request (Discord's indicator lasts ~10s per call, so it re-sends
 every 8s) in a detached process for up to 10 minutes. Each request gets its own loop, keyed by the request's message
 id, so parallel jobs never cut each other's typing off: stop <request_id> ends that one, a plain stop ends them all.
-card.py replies and react.py reactions end the loop for the message they answer."""
+card.py replies and react.py reactions end the loop for the message they answer. Hits that arrived in the same batch
+and channel share one loop (watch.py writes <id>.alias files), so answering any one of them ends it."""
 import glob, os, signal, subprocess, sys
 from dotenv import load_dotenv
 
@@ -24,8 +25,28 @@ while time.time() < end:
 '''
 
 
+def resolve(request_id):
+    """A hit that shares its batch's loop has <id>.alias naming the loop's request id (see watch.py start_typing)."""
+    try:
+        return open(f"{DIR}/{request_id}.alias").read().strip() or request_id
+    except OSError:
+        return request_id
+
+
 def stop(request_id=None):
-    files = glob.glob(f"{DIR}/*.pid") + ["/tmp/vic_typing.pid"] if request_id is None else [f"{DIR}/{request_id}.pid"]
+    if request_id is None:
+        files = glob.glob(f"{DIR}/*.pid") + ["/tmp/vic_typing.pid"]
+        for a in glob.glob(f"{DIR}/*.alias"):
+            os.remove(a)
+    else:
+        loop = resolve(request_id)
+        files = [f"{DIR}/{loop}.pid"]
+        for a in glob.glob(f"{DIR}/*.alias"):  # every hit sharing that loop is answered with it
+            try:
+                if os.path.basename(a) == f"{request_id}.alias" or open(a).read().strip() == loop:
+                    os.remove(a)
+            except OSError:
+                pass
     for f in files:
         try:
             os.kill(int(open(f).read()), signal.SIGTERM)

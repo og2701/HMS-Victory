@@ -45,9 +45,20 @@ if method == "PUT" and emoji != ACK and "keep" not in flags:
         urllib.request.urlopen(reaction("DELETE", ACK), timeout=20)
     except urllib.error.HTTPError:
         pass
-if "keep" not in flags:  # only this message's typing loop; parallel jobs keep theirs
+if "keep" not in flags:  # only this message's typing loop (shared with its batch's other hits); parallel jobs keep theirs
+    import glob
     try:
-        os.kill(int(open(f"/tmp/vic_typing/{message_id}.pid").read()), signal.SIGTERM)
-        os.remove(f"/tmp/vic_typing/{message_id}.pid")
+        loop = open(f"/tmp/vic_typing/{message_id}.alias").read().strip() or message_id
+    except OSError:
+        loop = message_id
+    for a in glob.glob("/tmp/vic_typing/*.alias"):
+        try:
+            if a.endswith(f"/{message_id}.alias") or open(a).read().strip() == loop:
+                os.remove(a)
+        except OSError:
+            pass
+    try:
+        os.kill(int(open(f"/tmp/vic_typing/{loop}.pid").read()), signal.SIGTERM)
+        os.remove(f"/tmp/vic_typing/{loop}.pid")
     except (OSError, ValueError):
         pass
