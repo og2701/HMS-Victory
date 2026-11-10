@@ -1839,7 +1839,8 @@ async def on_bot_message_delete(client, message):
         deleter = await find_message_deleter(message)
         if deleter is None or deleter.id == message.author.id:
             return
-        log_channel = client.get_channel(CHANNELS.LOGS)
+        # Their own thread in #bot-workshop (Oggers, 10 Nov), out of the main #logs feed
+        log_channel = await _get_channel(client, CHANNELS.BOT_DELETE_LOGS) or client.get_channel(CHANNELS.LOGS)
         if log_channel is None:
             return
         embed = discord.Embed(
