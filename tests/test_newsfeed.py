@@ -873,3 +873,72 @@ def test_mail_and_express_are_read_but_never_beat_neutral_outlets():
         assert order.index(neutral) < order.index("mail") < order.index("express") < order.index("telegraph")
     outlets = {o for _, o, _ in config.NEWSFEED_FEEDS.values()}
     assert {"mail", "express"} <= outlets
+
+
+# ------------------------------------------------------------ multiple tags
+
+MORE_TAGS = TAGS + ["Business & Economy", "Nations & Regions", "Education", "Environment", "Tech & Science"]
+
+
+def test_a_verdict_can_carry_several_tags_primary_first():
+    v = N.normalise_verdict({"importance": 8, "newsworthy": True, "tags": ["uk politics", "Business & Economy"]},
+                            MORE_TAGS, [])
+    assert v["tags"] == ["UK Politics", "Business & Economy"] and v["tag"] == "UK Politics"
+
+
+def test_an_old_single_tag_answer_still_works():
+    v = N.normalise_verdict({"importance": 8, "newsworthy": True, "tag": "world"}, MORE_TAGS, [])
+    assert v["tags"] == ["World"] and v["tag"] == "World"
+    assert N.normalise_verdict({"tags": "Sport"}, MORE_TAGS, [])["tags"] == ["Sport"]
+    assert N.post_tags({"tag": "World"}) == ["World"]          # a verdict stored before tags were lists
+
+
+def test_unknown_tags_are_dropped_deduped_and_capped():
+    v = N.normalise_verdict({"tags": ["Made Up", "World", "world", "Megathread", "Sport", "Education",
+                                      "Environment"]}, MORE_TAGS + [N.MEGATHREAD_TAG], [])
+    assert v["tags"] == ["World", "Sport", "Education"]       # never Megathread, at most three
+    v = N.normalise_verdict({"tags": ["Made Up"]}, MORE_TAGS, [])
+    assert v["tags"] == [] and v["tag"] is None
+    assert N.normalise_verdict({"tags": [], "tag": "Sport"}, MORE_TAGS, [])["tags"] == ["Sport"]
+
+
+def test_the_sport_bar_applies_only_when_sport_is_the_primary_tag():
+    th = N.Thresholds(min_signal=5, update_min_signal=4, min_importance=7, update_min_importance=5,
+                      sport_min_importance=9)
+    v = {"importance": 8, "newsworthy": True}
+    assert N.decide(6, dict(v, tags=["Sport", "Business & Economy"], tag="Sport"), th)[0] == "skip"
+    assert N.decide(6, dict(v, tags=["Business & Economy", "Sport"], tag="Business & Economy"), th)[0] == "new"
+    assert N.decide(6, dict(v, tag="Sport"), th)[0] == "skip"   # an older stored verdict
+
+
+def test_forum_tags_keep_order_and_the_megathread_within_discords_cap():
+    forum = SimpleNamespace(available_tags=[SimpleNamespace(name=n) for n in MORE_TAGS + [N.MEGATHREAD_TAG]])
+
+    def names(tags):
+        return [t.name for t in tags]
+    assert names(N._forum_tags(forum, ["Crime & Courts", "Nations & Regions"])) == ["Crime & Courts",
+                                                                                     "Nations & Regions"]
+    assert names(N._forum_tags(forum, ["World", "world", "Nope"])) == ["World"]
+    many = ["World", "Sport", "Education", "Environment", "Tech & Science", N.MEGATHREAD_TAG]
+    assert names(N._forum_tags(forum, many)) == ["World", "Sport", "Education", "Environment", N.MEGATHREAD_TAG]
+    assert names(N._forum_tags(forum, ["Nope"])) == [MORE_TAGS[0]]   # the forum needs a tag
+
+
+def test_the_prompt_defines_every_tag_and_asks_for_a_list():
+    for name in ("World", "UK Politics", "Nations & Regions", "Local", "Business & Economy", "Elections",
+                 "Crime & Courts", "Conflict & Defence", "Health", "Education", "Environment", "Tech & Science",
+                 "Sport"):
+        assert f"  {name}: " in N.JUDGE_PROMPT
+    assert '"tags": [str]' in N.JUDGE_PROMPT and "US Politics" not in N.JUDGE_PROMPT
+    assert '"tag": exactly one' not in N.JUDGE_PROMPT
+
+
+def test_a_post_gets_every_tag_and_the_megathread_and_records_them(poll):
+    forum = FakeForum()
+    forum.available_tags = [SimpleNamespace(name=n) for n in MORE_TAGS + [N.MEGATHREAD_TAG]]
+    state, _ = poll(forum, {"Live updates": dict(BIG, tags=["World", "Environment"])}, _aged_state())
+    _, _, tags = forum.created[0]
+    assert tags == ["World", "Environment", "Megathread"]
+    rec = state["threads"][0]
+    assert rec["tags"] == ["World", "Environment"] and rec["tag"] == "World"
+    assert N.load_engagement()[rec["id"]]["tags"] == ["World", "Environment"]

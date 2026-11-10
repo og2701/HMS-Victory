@@ -18,7 +18,7 @@ any AI is involved:
     each outlet beyond the first   +2   (up to +6: the strongest signal)
 
 Only a story over the signal threshold goes to the AI, through the chat responder's own OpenAI client. The AI rates
-its importance for this server, picks the forum tag, writes a neutral "why it matters", and says whether it is the
+its importance for this server, picks one to three forum tags (most relevant first), writes a neutral "why it matters", and says whether it is the
 same developing story as one of the forum's open posts from the last few days. Then:
 
     an article of the story already linked in an open post -> nothing (no duplicate)
@@ -74,6 +74,8 @@ MAX_JUDGE_PER_RUN = 6         # AI calls per poll at most
 MAX_MAYBE_SAME = 4            # borderline other-outlet stories shown to the AI per judgement
 MEGATHREAD_TAG = "Megathread"
 SPORT_TAG = "Sport"
+MAX_AI_TAGS = 3          # tags the AI may give a post (the primary first)
+MAX_POST_TAGS = 5        # Discord's limit on tags per forum post
 TITLE_LIMIT = 100             # Discord's thread name limit
 STORY_TTL = 3 * 86400         # forget an article this long after it was last seen in any feed
 POSTED_TTL = 30 * 86400       # remember posted URLs this long (dedupe)
@@ -882,7 +884,23 @@ attack or disaster, a war starting).
 explainer, analysis or opinion piece, a quiz, or a video or audio item.
 - "newsworthy": true only if it is a real development worth discussing now. A "what we know" round-up counts only \
 when the event itself is major.
-- "tag": exactly one name from "allowed_tags". Sport only for sport stories.
+- "tags": one to three names from "allowed_tags", the most relevant first. The first is the story's primary tag; \
+add others only when they clearly apply too. Use the most specific tag that fits rather than a general one:
+  World: international news without a better specific tag. US stories go here, with others such as Conflict & \
+Defence or Elections when they apply.
+  UK Politics: Westminster, the government, parties and legislation, but not a policy area that has its own tag \
+unless the politics itself is central.
+  Nations & Regions: Scotland, Wales, Northern Ireland and the regions of England.
+  Local: a story about one specific town or city.
+  Business & Economy: companies, markets, jobs, the cost of living, taxes and the economy.
+  Elections: any election anywhere, its campaigns and its results.
+  Crime & Courts: crime, police, trials, sentencing and prisons.
+  Conflict & Defence: wars, strikes and attacks by states or armed groups, the military and defence policy.
+  Health: the NHS, public health, medicine and care.
+  Education: schools, exams, universities and pupils.
+  Environment: climate, extreme weather, nature and the energy transition.
+  Tech & Science: technology, AI, science and research.
+  Sport: sport stories only.
 - "same_story_post": if one of "open_posts" is about the same developing story (the same event or the same specific \
 ongoing issue, where this article is a new development or follow-up on it), give that post's "id"; otherwise null. \
 Two different stories on the same broad subject (two separate stories about one party, say) are NOT the same story.
@@ -899,7 +917,7 @@ phrases such as "highlights", "underscores", "tensions", "concerns", "raising co
 "end of an era", "controversial" or "indicates", and never end on a clause or sentence interpreting what it means or \
 speculating about what it could lead to ("This could ...").
 
-Reply with JSON only: {"importance": int, "newsworthy": bool, "tag": str, "same_story_post": str or null, \
+Reply with JSON only: {"importance": int, "newsworthy": bool, "tags": [str], "same_story_post": str or null, \
 "same_coverage": [str], "why": str, "reason": str}"""
 
 
@@ -922,9 +940,36 @@ def judge_payload(entry: Dict[str, Any], signal: int, reasons: List[str], thread
     }, ensure_ascii=False)
 
 
+def verdict_tag_names(raw: Dict[str, Any], tag_names: List[str]) -> List[str]:
+    """The AI's tags matched to the forum's names (any case), unknown ones and Megathread dropped (that one is only
+    ever set for live pages), deduped and capped at MAX_AI_TAGS. Reads "tags" (a list, or a single string) and falls
+    back to an old single "tag"."""
+    lookup = {t.lower(): t for t in tag_names if t != MEGATHREAD_TAG}
+    given = raw.get("tags")
+    if isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list) or not given:
+        given = [raw.get("tag")]
+    tags = []
+    for name in given:
+        tag = lookup.get(str(name or "").strip().lower())
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags[:MAX_AI_TAGS]
+
+
+def post_tags(verdict: Dict[str, Any]) -> List[str]:
+    """A verdict's tags, primary first: its "tags", or a stored older verdict's single "tag"."""
+    tags = [t for t in (verdict.get("tags") or []) if t]
+    if not tags and verdict.get("tag"):
+        tags = [verdict["tag"]]
+    return tags
+
+
 def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
                       maybe_ids: Iterable[str] = ()) -> Dict[str, Any]:
-    """The AI's answer, checked: importance clamped 1-10, a tag from the forum's list, a match only to a post (or a
+    """The AI's answer, checked: importance clamped 1-10, one to three tags from the forum's list (deduped, in the
+    AI's order; an old single "tag" answer still works), a match only to a post (or a
     near-match story) it was shown, and the text made neutral. Anything unusable comes back as an error verdict that
     never posts."""
     if not isinstance(raw, dict):
@@ -934,9 +979,7 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
     except (TypeError, ValueError):
         importance = 0
     importance = max(0, min(10, importance))
-    tag = raw.get("tag")
-    lookup = {t.lower(): t for t in tag_names}
-    tag = lookup.get(str(tag or "").strip().lower())
+    tags = verdict_tag_names(raw, tag_names)
     match = raw.get("same_story_post")
     match = str(match).strip() if match not in (None, "", "null", False) else None
     if match is not None and match not in {str(t) for t in thread_ids}:
@@ -951,7 +994,8 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
     return {
         "importance": importance,
         "newsworthy": bool(newsworthy),
-        "tag": tag,
+        "tag": tags[0] if tags else None,   # the primary tag (kept for older readers of the state)
+        "tags": tags,
         "same_story_thread": match,
         "same_coverage": same,
         "why": clean_text(strip_commentary(clean_text(raw.get("why"), 400)), 240),
@@ -1023,7 +1067,8 @@ def decide(signal: int, verdict: Dict[str, Any], th: Thresholds, sport: bool = F
         return "skip", f"signal {signal} under {th.min_signal}"
     if not verdict.get("newsworthy"):
         return "skip", "not newsworthy: " + (verdict.get("reason") or "")
-    needed = th.sport_min_importance if (sport or verdict.get("tag") == SPORT_TAG) else th.min_importance
+    primary = (post_tags(verdict) or [None])[0]   # the sport bar applies when Sport is the primary tag
+    needed = th.sport_min_importance if (sport or primary == SPORT_TAG) else th.min_importance
     if importance < needed:
         return "skip", f"importance {importance} under {needed}"
     return "new", f"importance {importance}"
@@ -1249,6 +1294,8 @@ async def build_thread_pool(client, forum, state: Dict[str, Any], now: float) ->
 
 
 def _forum_tags(forum, names: List[str]):
+    """The forum's tag objects for `names`, in order and deduped. Megathread is always kept and the rest trimmed so a
+    post stays within Discord's limit; a fallback tag goes in when none of the names is usable, as the forum needs one."""
     by_name = {t.name.lower(): t for t in getattr(forum, "available_tags", [])}
     tags = []
     for name in names:
@@ -1260,7 +1307,9 @@ def _forum_tags(forum, names: List[str]):
         fallback = next((t for t in getattr(forum, "available_tags", []) if t.name != MEGATHREAD_TAG), None)
         if fallback:
             tags.insert(0, fallback)
-    return tags[:5]
+    mega = [t for t in tags if t.name == MEGATHREAD_TAG]
+    rest = [t for t in tags if t.name != MEGATHREAD_TAG]
+    return rest[:MAX_POST_TAGS - len(mega)] + mega
 
 
 def story_view(state: Dict[str, Any], cid: str) -> Optional[Dict[str, Any]]:
@@ -1283,11 +1332,12 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
     title = trim_title(view["title"])
     source = outlet_label(view["outlet"])
     body = build_post_body(view["link"], verdict.get("why", ""), source=source, also=view["also"])
-    tag_names = [verdict.get("tag") or ""] + ([MEGATHREAD_TAG] if live else [])
+    chosen = post_tags(verdict)
+    tag_names = chosen + ([MEGATHREAD_TAG] if live else [])
     also = ", ".join(name for name, _ in view["also"])
     detail = (f"\"{title}\" <{view['link']}> via {outlet_short(view['outlet'])}{f' (also {also})' if also else ''} "
               f"(signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
-              f"{verdict.get('tag')}{', megathread' if live else ''})")
+              f"{', '.join(chosen) or 'no tag'}{', megathread' if live else ''})")
     if dry:
         await _log(client, f"[dry run] would post {detail}")
         rec = {"id": f"dry-{int(now)}-{len(state['threads'])}", "dry": True}
@@ -1307,12 +1357,12 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
         engagement = load_engagement()
         engagement[rec["id"]] = {"title": title, "url": view["url"], "outlet": view["outlet"],
                                  "outlets": sorted({e["outlet"] for e in view["entries"]}), "tag": verdict.get("tag"),
-                                 "live": live, "created": now, "signal": signal,
+                                 "tags": chosen, "live": live, "created": now, "signal": signal,
                                  "importance": verdict.get("importance")}
         atomic_write_json(config.NEWSFEED_ENGAGEMENT_FILE, engagement, indent=1)
     urls = [e["url"] for e in view["entries"]]
     rec.update({"title": title, "summary": view.get("summary", ""), "url": view["url"], "urls": urls,
-                "outlet": view["outlet"], "tag": verdict.get("tag"), "created": now, "live": live,
+                "outlet": view["outlet"], "tag": verdict.get("tag"), "tags": chosen, "created": now, "live": live,
                 "last_update": None, "updates": 0})
     state["threads"].append(rec)
     mark_story_posted(state, view["entries"], now, rec["id"], "dry" if dry else "new", view["cid"])
