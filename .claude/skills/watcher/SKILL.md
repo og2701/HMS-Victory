@@ -55,12 +55,17 @@ means start it again.
 
 ## Orchestrating
 
-1. **On every wake** restart the watcher first, then sort the hits.
-2. **Do it here** when that's quicker than writing a brief: a thanks or a joke (react), a one-line answer you
-   already know, a go or a no on a card a worker posted (see 5), "stop the watcher", or a follow-up to something
-   you're handling yourself.
-3. **Hand it to a worker** when it needs digging: data pulls, analyses, charts, CVs, investigations, planning a
-   code or server change. One worker per request, started with the Agent tool (`subagent_type: "general-purpose"`,
+1. **On every wake** restart the watcher first, then sort the hits. Never answer first and restart after,
+   and never chain "post the reply && restart the watcher" in one command: while you answer, nobody's ACK lands
+   and every request waits in a queue behind the one you're on (Oggers, 10 Nov: "i don't like waiting for a
+   response in a queue with these normies"). Restart, then answer.
+   **Oggers first:** when a batch has several hits, his are answered (or handed to a worker) before anyone else's.
+2. **Do it here** only when it takes a minute or less: a thanks or a joke (react), a one-line answer or a short
+   card you can write straight off, a go or a no on a card a worker posted (see 5), "stop the watcher", or a
+   follow-up to something you're handling yourself.
+3. **Hand it to a worker** when it needs digging or making: data pulls, analyses, charts, CVs, investigations,
+   planning a code or server change, and anything you'd have to build and render (pictures, GIFs, comics,
+   portraits, long stories). A worker keeps those off the main thread, so the next ping is answered while it draws. One worker per request, started with the Agent tool (`subagent_type: "general-purpose"`,
    `run_in_background: true`, a `description` naming the request); start several at once when several came in. A
    follow-up to a request a worker is still on goes to that worker with SendMessage, not to a new one.
 4. **The brief.** Workers know nothing but what you give them:
@@ -133,8 +138,7 @@ python3 <scripts>/board.py show | R -
    later ones get `<id>.alias` files pointing at the first), so a card reply or a react.py reaction to ANY of them
    ends that channel's typing, while other batches' loops (parallel jobs) carry on; plain chatter in pending mode
    gets neither. **Every hit aimed at Vic still needs closing:** answer it, react to it, or for a hit that needs
-   nothing (a "lol", an "oh..."), react anyway. Before restarting the watcher, check no ACK is left on the batch's
-   hits. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`.
+   nothing (a "lol", an "oh..."), react anyway. Once a batch is handled, check no ACK is left on its hits. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`.
    Answered one hit of a batch but still working on another? `R typing_indicator.py start <channel> <request_id>`
    turns typing back on. It gives up by itself after 10 minutes. `R typing_indicator.py stop` (no id) clears every
    loop and alias if one is ever orphaned.
