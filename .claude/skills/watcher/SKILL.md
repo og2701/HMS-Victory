@@ -80,7 +80,10 @@ means start it again.
 
    For a code change, also pass `isolation: "worktree"` so it builds in its own checkout.
 5. **Keep a ledger.** It's the task board (see "Task board"): add a row for each request
-   you take on, and keep its status current. `board.py show` prints it, so a fresh session can pick up where the
+   you take on, and keep its status current. **Every #bot-workshop request that asks for work gets a row the
+   moment you take it**, even one you finish in five minutes (add it straight as `done` with the commit or result
+   link). Only chat, jokes and reactions skip it, and banter in another watched channel stays off it. Oggers
+   (10 Nov) noticed a whole evening of workshop jobs missing from it: "what happened to vic's table?" `board.py show` prints it, so a fresh session can pick up where the
    last left off. Note the worker id against each board row in the conversation too. A worker that posts a
    confirmation card ends its turn saying so. Put the watcher in pending mode (and set the row to `waiting`), and when the answer comes, by text or a board press, send it to that
    worker with SendMessage, quoted, so it carries on with its own context.
