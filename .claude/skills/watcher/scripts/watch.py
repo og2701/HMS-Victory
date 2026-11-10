@@ -192,8 +192,20 @@ def ack(h):
         print("ack failed", h["id"], e, file=sys.stderr)
 
 
+BATCH_LOOPS = {}  # channel id -> the request id whose loop this batch's other hits in that channel share
+
+
 def start_typing(h):
-    """One typing loop per request (keyed by its message id), so parallel jobs end only their own."""
+    """One typing loop per channel per batch, keyed by the first request's id. Later hits in the same channel get a
+    <id>.alias file pointing at it, so answering ANY of them (card.py reply, react.py, typing_indicator.py stop <id>)
+    ends the loop. Discord shows one "Vic is typing" per channel anyway, and a hit left unanswered in a burst can't
+    orphan a loop. Separate batches (parallel jobs) still keep separate loops."""
+    cid = channel_id(h["channel"])
+    if cid in BATCH_LOOPS and BATCH_LOOPS[cid] != h["id"]:
+        os.makedirs("/tmp/vic_typing", exist_ok=True)
+        open(f"/tmp/vic_typing/{h['id']}.alias", "w").write(BATCH_LOOPS[cid])
+        return
+    BATCH_LOOPS[cid] = h["id"]
     pid_file = f"/tmp/vic_typing/{h['id']}.pid"
     try:
         os.kill(int(open(pid_file).read()), signal.SIGTERM)

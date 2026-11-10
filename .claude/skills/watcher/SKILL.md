@@ -129,10 +129,15 @@ python3 <scripts>/board.py show | R -
 
 1. **Vic has already acked it and is typing when you wake** for a message aimed at Vic (hits have
    `addresses_vic`): the watcher puts its ACK reaction (`hmmnote:1179638366275383297`) on each request within
-   about 5 seconds, and starts a typing loop for that request alone. A card reply or a react.py reaction to it
-   takes both off without touching other requests; plain chatter in pending mode gets neither. If you decide not
-   to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`. Typing gives up by itself after
-   10 minutes; `R typing_indicator.py start <channel> <request_id>` turns it back on for a long job.
+   about 5 seconds, and starts typing. All the hits of one batch in one channel share a single typing loop (the
+   later ones get `<id>.alias` files pointing at the first), so a card reply or a react.py reaction to ANY of them
+   ends that channel's typing, while other batches' loops (parallel jobs) carry on; plain chatter in pending mode
+   gets neither. **Every hit aimed at Vic still needs closing:** answer it, react to it, or for a hit that needs
+   nothing (a "lol", an "oh..."), react anyway. Before restarting the watcher, check no ACK is left on the batch's
+   hits. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`.
+   Answered one hit of a batch but still working on another? `R typing_indicator.py start <channel> <request_id>`
+   turns typing back on. It gives up by itself after 10 minutes. `R typing_indicator.py stop` (no id) clears every
+   loop and alias if one is ever orphaned.
 2. **Nobody else is answering.** Vic's own chat responder stays out of #bot-workshop (and #cabinet, which
    now gets no answers to pings at all, by Oggers' choice), so every message aimed at Vic in #bot-workshop needs a card or a reaction from you.
 3. **Get the whole thread.** A fresh session knows nothing of earlier talk beyond those 30 messages. If the ask

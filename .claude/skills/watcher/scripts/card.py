@@ -97,8 +97,19 @@ if {mode == "reply"}:  # the answer is in, so the watcher's "looking into it" co
             headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"}}), timeout=20)
     except urllib.error.HTTPError:
         pass
-    try:  # and only this request's typing stops; parallel jobs keep theirs
-        os.kill(int(open("/tmp/vic_typing/{target}.pid").read()), signal.SIGTERM); os.remove("/tmp/vic_typing/{target}.pid")
+    import glob  # and only this request's typing stops (its loop is shared with its batch's other hits); parallel jobs keep theirs
+    try:
+        loop = open("/tmp/vic_typing/{target}.alias").read().strip() or "{target}"
+    except OSError:
+        loop = "{target}"
+    for a in glob.glob("/tmp/vic_typing/*.alias"):
+        try:
+            if a.endswith("/{target}.alias") or open(a).read().strip() == loop:
+                os.remove(a)
+        except OSError:
+            pass
+    try:
+        os.kill(int(open(f"/tmp/vic_typing/{{loop}}.pid").read()), signal.SIGTERM); os.remove(f"/tmp/vic_typing/{{loop}}.pid")
     except (OSError, ValueError):
         pass
 ''')
