@@ -4,7 +4,9 @@ Everything is gated on config.SECRET_SANTA_ENABLED and reads its channel and ope
 from the SECRET_SANTA_* block in config.py.
 
 The organisers pick who's in from the control panel (operators only); there's no public
-sign-up. Nobody is messaged until the live draw.
+sign-up. Adding someone DMs them a private gifting-details form. Everyone must complete
+it before the live draw. Coordinators review the answers in the private event channel;
+approved answers are included in the assigned Santa's match DM.
 
 The draw is a single loop (A buys for B, B for C, ... the last person for A), so nobody
 gets themselves and no two people have each other.
@@ -22,6 +24,7 @@ import datetime
 import logging
 import os
 import random
+import secrets
 from typing import Optional
 
 import discord
@@ -104,6 +107,199 @@ def is_drawn(state: dict) -> bool:
     return bool(state.get("draw"))
 
 
+def missing_details(state: dict) -> list[int]:
+    return [int(uid) for uid, p in state["participants"].items()
+            if not all(p.get("details", {}).get(k, "").strip()
+                       for k in ("locker", "parcel_name", "limits"))]
+
+
+class DetailsModal(discord.ui.Modal, title="Secret Santa gifting details"):
+    def __init__(self, details: Optional[dict] = None, target_id: Optional[int] = None,
+                 revision: Optional[str] = None):
+        super().__init__(timeout=600)
+        self.target_id = target_id
+        self.revision = revision
+        details = details or {}
+        self.fields = {}
+        for key, label, required, limit, placeholder in (
+            ("locker", "InPost locker name or address", True, 400, "Your preferred locker"),
+            ("parcel_name", "Name on your parcel", True, 100, "Your real name or an alias"),
+            ("email", "Email for tracking (optional)", False, 254, "Leave blank if you prefer"),
+            ("limits", "Anything you don't want to receive?", True, 700, "Write none if you have no hard limits"),
+        ):
+            field = discord.ui.TextInput(label=label, required=required, max_length=limit,
+                                         default=details.get(key) or None, placeholder=placeholder)
+            self.fields[key] = field
+            self.add_item(field)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        state = load_state()
+        key = str(self.target_id or interaction.user.id)
+        if not enabled() or key not in state["participants"] or is_drawn(state):
+            await interaction.response.send_message("This form is no longer available.", ephemeral=True)
+            return
+        participant = state["participants"][key]
+        if self.target_id is not None and (
+                not is_operator(interaction.user.id)
+                or participant.get("pending_details", {}).get("revision") != self.revision):
+            await interaction.response.send_message("This review has changed or you cannot edit it.", ephemeral=True)
+            return
+        details = {k: str(field.value).strip() for k, field in self.fields.items()}
+        if not all(details[k] for k in ("locker", "parcel_name", "limits")):
+            await interaction.response.send_message("Please complete the locker, parcel name and hard limits fields.", ephemeral=True)
+            return
+        existing = participant.get("pending_details", {}).get("answers") or participant.get("details")
+        if existing is not None and details == {k: str(existing.get(k, "")).strip() for k in self.fields}:
+            status = "Your details are still awaiting review." if participant.get("pending_details") else "Your details remain approved."
+            await interaction.response.send_message("Nothing changed. " + status, ephemeral=True)
+            return
+        revision = secrets.token_hex(8)
+        participant.pop("details", None)
+        participant["pending_details"] = {"revision": revision, "answers": details,
+                                           "submitted_at": _now(), "submitted_by": interaction.user.id}
+        save_state(state)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        ch = await _channel(interaction.client, channel_id())
+        try:
+            if ch is None:
+                raise RuntimeError("review channel unavailable")
+            await ch.send(view=DetailsReviewView(int(key), revision, details), allowed_mentions=NO_PINGS)
+        except (discord.HTTPException, RuntimeError):
+            await interaction.followup.send(
+                "Your answers are pending, but I couldn't post the review in the coordinator channel. "
+                "Please ask a coordinator to press Review pending details.", ephemeral=True)
+        else:
+            await interaction.followup.send(
+                "Submitted for coordinator review! Once approved, your Santa will receive these details "
+                "when names are drawn. You can use the form again to update them until then.", ephemeral=True)
+        await refresh_messages(interaction.client)
+
+
+class DetailsButton(discord.ui.DynamicItem[discord.ui.Button], template=r"ss:details"):
+    def __init__(self):
+        super().__init__(discord.ui.Button(label="Enter or edit gifting details",
+                                           style=discord.ButtonStyle.primary, custom_id="ss:details"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls()
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        state = load_state()
+        participant = state["participants"].get(str(interaction.user.id))
+        if not enabled() or participant is None or is_drawn(state):
+            await interaction.response.send_message("This form is no longer available.", ephemeral=True)
+            return
+        details = participant.get("pending_details", {}).get("answers") or participant.get("details")
+        await interaction.response.send_modal(DetailsModal(details))
+
+
+def _details_text(details: dict) -> str:
+    safe = {k: discord.utils.escape_markdown(discord.utils.escape_mentions(str(v)))
+            for k, v in details.items()}
+    return (f"📦 **InPost locker:** {safe.get('locker', '')}\n"
+            f"🏷️ **Parcel name:** {safe.get('parcel_name', '')}\n"
+            f"✉️ **Email:** {safe.get('email') or 'Not provided'}\n"
+            f"🚫 **Hard limits:** {safe.get('limits', '')}")
+
+
+class DetailsReviewButton(discord.ui.DynamicItem[discord.ui.Button],
+                          template=r"ss:review:(?P<action>edit|approve):(?P<uid>[0-9]+):(?P<revision>[a-f0-9]+)"):
+    def __init__(self, action: str, uid: int, revision: str):
+        self.action, self.uid, self.revision = action, uid, revision
+        super().__init__(discord.ui.Button(
+            label="Looks good" if action == "approve" else "Edit",
+            style=discord.ButtonStyle.success if action == "approve" else discord.ButtonStyle.secondary,
+            custom_id=f"ss:review:{action}:{uid}:{revision}"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match, /):
+        return cls(match["action"], int(match["uid"]), match["revision"])
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled() or not is_operator(interaction.user.id) or interaction.channel_id != channel_id():
+            await interaction.response.send_message("Only coordinators can review details in the Secret Santa channel.", ephemeral=True)
+            return
+        state = load_state()
+        participant = state["participants"].get(str(self.uid), {})
+        pending = participant.get("pending_details", {})
+        if is_drawn(state) or pending.get("revision") != self.revision:
+            await interaction.response.send_message("This review is no longer current.", ephemeral=True)
+            return
+        if self.action == "edit":
+            await interaction.response.send_modal(DetailsModal(pending["answers"], self.uid, self.revision))
+            return
+        participant["details"] = pending["answers"]
+        participant["details_approved_by"] = interaction.user.id
+        participant["details_approved_at"] = _now()
+        del participant["pending_details"]
+        save_state(state)
+        await interaction.response.edit_message(
+            view=DetailsReviewView(self.uid, self.revision, participant["details"], approved=True),
+            allowed_mentions=NO_PINGS)
+        await refresh_messages(interaction.client)
+
+
+class DetailsReviewView(discord.ui.LayoutView):
+    def __init__(self, uid: int, revision: str, details: dict, approved: bool = False):
+        super().__init__(timeout=None)
+        card = discord.ui.Container(accent_colour=ACCENT)
+        card.add_item(discord.ui.TextDisplay(
+            f"## Gifting details for <@{uid}>\n"
+            + ("✅ Approved and saved.\n\n" if approved else "Awaiting coordinator approval.\n\n")
+            + _details_text(details)))
+        if not approved:
+            card.add_item(discord.ui.ActionRow(DetailsReviewButton("edit", uid, revision),
+                                               DetailsReviewButton("approve", uid, revision)))
+        self.add_item(card)
+
+
+class DetailsRequestView(discord.ui.LayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        card = discord.ui.Container(accent_colour=ACCENT)
+        card.add_item(discord.ui.TextDisplay(
+            "## 🎁 Secret Santa - gifting details 🎄\n"
+            "You're in the Secret Santa list! Please use the button to provide your preferred "
+            "InPost locker, parcel name (a real name or alias), optional email for tracking, "
+            "and anything you don't want to receive.\n\n"
+            "Find your locker: https://inpost.co.uk/lockers\n\n"
+            "These aren't wishlists, just guidelines to avoid unwanted gifts. "
+            "Your answers are posted in the private Secret Santa coordinator channel for review. "
+            "Once approved, they are saved and shared with your assigned Santa when names are drawn. "
+            "You can edit them until the draw. Please don't reply to this DM; use the form.\n\n"
+            "Thanks everyone, and happy gifting! 🎅"))
+        card.add_item(discord.ui.ActionRow(DetailsButton()))
+        self.add_item(card)
+
+
+async def send_details_requests(client: discord.Client, user_ids: list[int]) -> tuple[int, list[int]]:
+    sent, failed = 0, []
+    for uid in user_ids:
+        state = load_state()
+        if (is_drawn(state) or uid not in missing_details(state)
+                or state["participants"][str(uid)].get("pending_details")):
+            continue
+        user = await _user(client, uid)
+        delivered = False
+        if user is not None:
+            try:
+                await user.send(view=DetailsRequestView(), allowed_mentions=NO_PINGS)
+                delivered = True
+            except discord.HTTPException:
+                log.info("Secret Santa: details request to %s failed", uid)
+        fresh = load_state()
+        if str(uid) in fresh["participants"]:
+            fresh["participants"][str(uid)]["details_dm"] = "sent" if delivered else "failed"
+            save_state(fresh)
+        if delivered:
+            sent += 1
+        else:
+            failed.append(uid)
+        await asyncio.sleep(DM_GAP_SECONDS)
+    return sent, failed
+
+
 def undelivered(state: dict) -> list[int]:
     """Givers whose match DM hasn't gone through: it failed, or the bot stopped before trying."""
     draw = state.get("draw") or {}
@@ -182,7 +378,8 @@ async def send_match_dms(client: discord.Client) -> tuple[int, list[int]]:
             user = await _user(client, giver)
             if user is not None:
                 try:
-                    await user.send(view=MatchDMView(receiver, _person(client, receiver), name),
+                    details = state["participants"].get(str(receiver), {}).get("details")
+                    await user.send(view=MatchDMView(receiver, _person(client, receiver), name, details),
                                     allowed_mentions=NO_PINGS)
                     status = "sent"
                     sent += 1
@@ -205,6 +402,8 @@ async def run_live_draw(client: discord.Client, by: int) -> tuple[int, list[int]
             raise RuntimeError("names have already been drawn")
         if state["mode"] != MODE_LIVE:
             raise RuntimeError("the panel is in test mode")
+        if missing_details(state):
+            raise RuntimeError("everyone must have approved gifting details before the live draw")
         pairs = draw_loop(participant_ids(state))
         state["draw"] = {"drawn_at": _now(), "drawn_by": int(by),
                          "pairs": {str(g): str(r) for g, r in pairs.items()}, "dms": {}}
@@ -217,7 +416,7 @@ async def run_live_draw(client: discord.Client, by: int) -> tuple[int, list[int]
 # Views
 # ---------------------------------------------------------------------------
 
-def _match_container(receiver_id: int, person, name: str) -> discord.ui.Container:
+def _match_container(receiver_id: int, person, name: str, details: Optional[dict] = None) -> discord.ui.Container:
     display = getattr(person, "display_name", None) or name
     handle = f" (@{person.name})" if person is not None and getattr(person, "name", None) else ""
     text = (f"## {SANTA} Secret Santa\n"
@@ -230,15 +429,19 @@ def _match_container(receiver_id: int, person, name: str) -> discord.ui.Containe
                                          accessory=discord.ui.Thumbnail(avatar)))
     else:
         card.add_item(discord.ui.TextDisplay(text))
+    if details:
+        card.add_item(discord.ui.TextDisplay(
+            "### Gifting details\n" + _details_text(details) + "\n\n"
+            "Please keep these details private and use them only for this gift."))
     return card
 
 
 class MatchDMView(discord.ui.LayoutView):
     """The DM a giver gets: who they're buying for."""
 
-    def __init__(self, receiver_id: int, person=None, name: str = "someone"):
+    def __init__(self, receiver_id: int, person=None, name: str = "someone", details: Optional[dict] = None):
         super().__init__(timeout=None)
-        self.add_item(_match_container(receiver_id, person, name))
+        self.add_item(_match_container(receiver_id, person, name, details))
 
 
 def _test_draw_views(client: discord.Client, state: dict, pairs: dict[int, int]) -> list[discord.ui.LayoutView]:
@@ -259,7 +462,8 @@ def _test_draw_views(client: discord.Client, state: dict, pairs: dict[int, int])
     preview = discord.ui.LayoutView(timeout=None)
     preview.add_item(discord.ui.TextDisplay(
         f"-# The DM <@{giver}> would get. The live draw reshuffles from scratch, so none of these pairings carry over."))
-    preview.add_item(_match_container(receiver, person, name))
+    preview.add_item(_match_container(receiver, person, name,
+        {"locker": "Example locker", "parcel_name": "Example name", "email": "", "limits": "Example limits"}))
     views.append(preview)
     return views
 
@@ -279,6 +483,17 @@ def panel_text(state: dict) -> str:
     lines = [f"## {SANTA} Secret Santa - control panel",
              f"**Mode:** {mode}",
              f"**In the hat ({len(state['participants'])}):** {_participant_line(state)}"]
+    missing = missing_details(state)
+    lines.append(f"**Gifting details approved:** {len(state['participants']) - len(missing)}/{len(state['participants'])}")
+    pending = [int(uid) for uid, p in state["participants"].items() if p.get("pending_details")]
+    if pending and not is_drawn(state):
+        lines.append("**Awaiting review:** " + ", ".join(f"<@{u}>" for u in pending[:60]))
+    if missing and not is_drawn(state):
+        lines.append("**Awaiting details:** " + ", ".join(f"<@{u}>" for u in missing if u not in pending)[:1500])
+    failed_requests = [uid for uid, p in state["participants"].items() if p.get("details_dm") == "failed"]
+    if failed_requests and not is_drawn(state):
+        lines.append("**Request DM failed:** " + ", ".join(f"<@{u}>" for u in failed_requests[:60])
+                     + "\n-# Ask them to open DMs, then press Request missing details.")
     draw = state.get("draw")
     if draw:
         when = datetime.datetime.fromisoformat(draw["drawn_at"])
@@ -340,6 +555,9 @@ class ControlPanelView(discord.ui.LayoutView):
                           emoji="\N{TEST TUBE}" if live else "\N{LARGE RED CIRCLE}", disabled=drawn),
             draw_btn,
         ))
+        card.add_item(discord.ui.ActionRow(
+            ControlButton("details", "Request missing details", emoji="✉️", disabled=drawn),
+            ControlButton("review", "Review pending details", emoji="📋", disabled=drawn)))
         if drawn and undelivered(state):
             card.add_item(discord.ui.ActionRow(
                 ControlButton("retry", "Retry failed DMs", discord.ButtonStyle.primary, "\N{ENVELOPE}")))
@@ -425,6 +643,9 @@ class _PeopleSelect(discord.ui.UserSelect):
         self.adding = adding
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if not enabled() or not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only the Secret Santa coordinators can use this panel.", ephemeral=True)
+            return
         if is_drawn(load_state()):
             await interaction.response.edit_message(content="Names have already been drawn.", view=None)
             return
@@ -436,6 +657,12 @@ class _PeopleSelect(discord.ui.UserSelect):
         names = ", ".join(f"<@{u}>" for u in changed) or "nobody new"
         await interaction.response.edit_message(content=f"{verb} {names}.", view=None,
                                                 allowed_mentions=NO_PINGS)
+        if self.adding and changed:
+            sent, failed = await send_details_requests(interaction.client, changed)
+            await interaction.edit_original_response(
+                content=f"{verb} {names}. {sent} gifting-details requests delivered."
+                + (" Could not DM: " + ", ".join(f"<@{u}>" for u in failed) if failed else ""),
+                allowed_mentions=NO_PINGS)
         await refresh_messages(interaction.client)
 
 
@@ -447,7 +674,8 @@ class _PeoplePicker(discord.ui.View):
 
 async def _act_add(interaction: discord.Interaction) -> None:
     await interaction.response.send_message(
-        "Who should go in the hat? Nobody is messaged until the live draw. Up to 25 at a time.",
+        "Who should go in the hat? Each new person gets a gifting-details form by DM, "
+        "including in test mode. Up to 25 at a time.",
         view=_PeoplePicker(True), ephemeral=True)
 
 
@@ -463,6 +691,9 @@ class _LiveDrawConfirm(discord.ui.View):
 
     @discord.ui.button(label="Draw and DM everyone", style=discord.ButtonStyle.danger, emoji=SANTA)
     async def go(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not enabled() or not is_operator(interaction.user.id):
+            await interaction.response.send_message("Only the Secret Santa coordinators can draw.", ephemeral=True)
+            return
         await interaction.response.edit_message(content="Drawing names and sending DMs...", view=None)
         try:
             sent, missing = await run_live_draw(interaction.client, interaction.user.id)
@@ -491,6 +722,11 @@ async def _act_draw(interaction: discord.Interaction) -> None:
             f"Need at least {MIN_PARTICIPANTS} people in the hat to draw (there are {n}).", ephemeral=True)
         return
     if state["mode"] == MODE_LIVE:
+        if missing_details(state):
+            await interaction.response.send_message(
+                "Everyone must have approved gifting details first. Request missing details or review pending submissions.",
+                ephemeral=True)
+            return
         await interaction.response.send_message(
             f"This draws for real: all {n} people get a DM with their match, "
             "and it can't be undone or redrawn. Go?",
@@ -512,7 +748,43 @@ async def _act_retry(interaction: discord.Interaction) -> None:
     await refresh_messages(interaction.client)
 
 
+async def _act_details(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    state = load_state()
+    if is_drawn(state):
+        await interaction.followup.send("Names have already been drawn.", ephemeral=True)
+        return
+    sent, failed = await send_details_requests(interaction.client, missing_details(state))
+    await interaction.followup.send(
+        f"{sent} gifting-details requests delivered."
+        + (" Could not DM: " + ", ".join(f"<@{u}>" for u in failed) if failed else ""),
+        ephemeral=True, allowed_mentions=NO_PINGS)
+    await refresh_messages(interaction.client)
+
+
+async def _act_review(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    state = load_state()
+    if is_drawn(state):
+        await interaction.followup.send("Names have already been drawn.", ephemeral=True)
+        return
+    ch = await _channel(interaction.client, channel_id())
+    if ch is None:
+        await interaction.followup.send("The coordinator channel is unavailable.", ephemeral=True)
+        return
+    count = 0
+    for uid, participant in state["participants"].items():
+        pending = participant.get("pending_details")
+        if pending:
+            await ch.send(view=DetailsReviewView(int(uid), pending["revision"], pending["answers"]),
+                          allowed_mentions=NO_PINGS)
+            count += 1
+    await interaction.followup.send(f"Posted {count} pending reviews.", ephemeral=True)
+
+
 PANEL_ACTIONS = {
+    "review": _act_review,
+    "details": _act_details,
     "mode": _act_mode,
     "refresh": _act_refresh,
     "add": _act_add,

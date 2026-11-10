@@ -853,6 +853,8 @@ BIG_BROTHER_SHOP_CHANNEL = None                     # where shop tasks post; Non
 # they pick who's in. The panel starts in test mode, where a draw posts the pairings and a
 # DM preview in the channel and sends nothing. A live draw DMs everyone their match and
 # keeps the pairings only in SECRET_SANTA_FILE on the VM.
+# Adding participants DMs a private gifting-details form, even in test mode. Everyone's
+# details must be approved in this channel before a live draw; match DMs include those answers.
 # ---------------------------------------------------------------------------
 SECRET_SANTA_ENABLED = True
 SECRET_SANTA_CHANNEL = 1566485382504382514           # coordinators only: the control panel and test draws post here
