@@ -80,7 +80,8 @@ NORMAL: Dict[str, Colours] = {
 # each Deputy follows its Minister on holidays: see _add_deputies below
 DEPUTY_OF = {"dep_moderation": "moderation", "dep_community": "community", "dep_engineering": "engineering",
              "dep_diplomacy": "diplomacy", "dep_art": "art"}
-DEPUTY_LIGHTEN = 0.55  # a Deputy runs from its Minister's holiday colour to this much of the way to white
+DULL_SATURATION = 0.6  # a Deputy's second colour is the holiday's Cabinet colour with its saturation cut to this
+DULL_LIGHTNESS = 0.9   # ... and its lightness to this, so it reads as a quieter echo of Cabinet
 
 
 def easter_sunday(year: int) -> dt.date:
@@ -151,20 +152,24 @@ HOLIDAYS: List[dict] = [
 # 11 Nov 2026 (Hadidas): Moderation keeps a blue on every holiday, as its base colour is blue again, and the staff
 # roles that had holiday blues (Community and PCSO at Halloween and Easter; Engineering, Turing and Art at Christmas)
 # take the reds Moderation used to have.
-def _mix_white(code: str, amount: float) -> str:
-    r, g, b = (int(code.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
-    return "#%02X%02X%02X" % tuple(round(c + (255 - c) * amount) for c in (r, g, b))
+def dull(code: str) -> str:
+    """A slightly dulled colour: less saturated and a touch darker."""
+    import colorsys
+    r, g, b = (int(code.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    r, g, b = colorsys.hls_to_rgb(h, l * DULL_LIGHTNESS, s * DULL_SATURATION)
+    return "#%02X%02X%02X" % tuple(round(c * 255) for c in (r, g, b))
 
 
 def _add_deputies() -> None:
-    """Deputies get their ministry's holiday theme (Hadidas, 11 Nov 2026), the same way their normal colours work:
-    from the ministry's colour (the Minister's second colour) to a pale tint of it."""
+    """Deputies get their ministry's holiday theme (Hadidas, 11 Nov 2026): the mirror of their Minister, from the
+    ministry's colour (the Minister's second colour) to that holiday's Cabinet colour, dulled a little."""
     for h in HOLIDAYS:
+        cabinet = h["colours"].get("cabinet")
         for dep, minister in DEPUTY_OF.items():
-            if minister in h["colours"] and dep not in h["colours"]:
+            if minister in h["colours"] and cabinet and dep not in h["colours"]:
                 p, s = h["colours"][minister]
-                accent = s or p
-                h["colours"][dep] = (accent, _mix_white(accent, DEPUTY_LIGHTEN))
+                h["colours"][dep] = (s or p, dull(cabinet[0]))
 
 
 _add_deputies()
