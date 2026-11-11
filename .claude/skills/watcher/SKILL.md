@@ -289,7 +289,9 @@ work, without being asked:
   🔴 `Closed` 1263525696886673519 (dropped or not doable).
 - **A new feature or code change** gets a post as soon as its plan card goes up: a short sentence-case title in
   the forum's plain style ("Bond cap raised to 10k", not "[FEATURE] ..."), a few plain lines on what it does and
-  who asked (link the request), tagged To do. If a post for it already exists, use that one instead.
+  who asked (link the request), tagged To do. If a post for it already exists, use that one instead: a change to
+  an existing feature (a tweak to the news feed, say) is a reply on that feature's ticket, never a new post. List the
+  forum's active and archived threads and check the titles before creating one.
 - **Updates** go in as short replies in the thread: plan approved, built, a snag, a change of plan.
 - **When it ships**, reply with a ✅ line naming the commit and date, and swap the tag to Done. Dropped ideas get a
   one-line reason and Closed.
