@@ -13,9 +13,11 @@ waiting row, following SKILL.md's go rules: oggers (the default: code, data, mon
 permissions, roles, moderation) or asker (easy changes). --link is the message id of the plan or result card the
 row points to. --note is one short line under the row ("" clears it).
 
-Every change reposts the board at the bottom of #bot-workshop and deletes the old message, so it stays in view
-(Oggers asked for that over pinning). Add --edit to change it in place instead, for a tweak nobody needs to see
-jump. All changes run under the board's file lock, the same one the bot takes when someone presses a button."""
+The board only jumps to the bottom of #bot-workshop (reposted, old one deleted) when a row needs someone: one added
+or set to waiting (on a go) or blocked. Everything else (working, done, notes, links) edits it in place, so it doesn't
+keep landing under the conversation (Oggers, 11 Nov 2026). --repost forces a jump, --edit forces an in-place edit.
+If an in-place edit is rate-limited it waits once and retries before falling back to a repost. All changes run under
+the board's file lock, the same one the bot takes when someone presses a button."""
 import base64, json, sys
 
 OPS = {"init", "show", "add", "set", "remove", "redraw"}
@@ -26,11 +28,13 @@ def parse(argv):
     if not argv or argv[0] in ("-h", "--help") or argv[0] not in OPS:
         sys.exit(__doc__)
     op, rest = argv[0], argv[1:]
-    args, pos, edit = {}, [], False
+    args, pos, edit = {}, [], None  # None: decide from the change (repost only when a row needs someone)
     while rest:
         a = rest.pop(0)
         if a == "--edit":
             edit = True
+        elif a == "--repost":
+            edit = False
         elif a in FLAGS:
             if not rest:
                 sys.exit(f"{a} needs a value")
@@ -60,6 +64,10 @@ def parse(argv):
             sys.exit(f"{key} must be a Discord id")
     if op in ("redraw",):
         edit = True
+    if op == "init":
+        edit = False
+    if edit is None:
+        edit = not (op in ("add", "set") and args.get("status") in ("waiting", "blocked"))
     return op, args, edit
 
 
@@ -98,12 +106,23 @@ with cb.locked():
     body = cb.payload(state)
     new = None
     if edit and old:
-        try:
-            call("PATCH", f"/channels/{{cid}}/messages/{{old}}", body)
-            new = old
-        except urllib.error.HTTPError as e:
-            if e.code != 404:
-                sys.exit(f"board: edit failed {{e.code}} {{e.read().decode()[:400]}}")
+        for attempt in (1, 2):
+            try:
+                call("PATCH", f"/channels/{{cid}}/messages/{{old}}", body)
+                new = old
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt == 1:  # rate-limited: wait it out once, then repost if still refused
+                    import time
+                    try:
+                        wait = float(json.loads(e.read().decode()).get("retry_after", 2))
+                    except ValueError:
+                        wait = 2
+                    time.sleep(min(wait, 10) + 0.5)
+                    continue
+                if e.code not in (404, 429):
+                    sys.exit(f"board: edit failed {{e.code}} {{e.read().decode()[:400]}}")
+                break
     if new is None:  # repost at the bottom, then take the old one away
         try:
             new = call("POST", f"/channels/{{cid}}/messages", body)["id"]

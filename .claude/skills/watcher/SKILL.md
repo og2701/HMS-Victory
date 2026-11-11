@@ -108,8 +108,10 @@ means start it again.
 
 ## Task board
 
-#bot-workshop has one live Components V2 board listing every request Vic is on there, grouped 🟠 waiting on a go
-(with Approve, Reject and Reply buttons), ⏳ received, 🔴 blocked, 🔵 working and 🟢 done (the last 5). Only the orchestrator runs board.py; workers report and you update the row.
+#bot-workshop has one live Components V2 board ("Vic's desk") listing every request Vic is on there, one line per
+row: 🟠 waiting on a go (with Approve, Reject and Reply buttons), ⏳ received, 🔴 blocked, 🔵 working, and the last
+3 🟢 done on one small line. Oggers found the old one too big (11 Nov 2026), so keep `--what` to a few words and
+notes to a short phrase. Only the orchestrator runs board.py; workers report and you update the row.
 
 ```bash
 python3 <scripts>/board.py add <request_id> <asker_id> "<what, a few words>" [status] [--rule ..] | R -
@@ -125,8 +127,9 @@ python3 <scripts>/board.py show | R -
   deleting data, money), `mods` (Oggers or Hadidas: code, permissions, roles, moderation), `asker` (easy changes the
   person running it can approve). The asker can also press Reject or Reply on their own row. Anyone else
   gets a private "waiting on X" and nothing reaches you.
-- **Every change reposts the board** at the bottom of #bot-workshop and deletes the old one, so it stays in view.
-  Add `--edit` for a change that doesn't need to move it.
+- **It only jumps to the bottom when a row needs someone:** added or set to `waiting` or `blocked`. Every other
+  change (working, done, notes, links) edits it in place, wherever it is. `--repost` forces a jump, `--edit` forces
+  an in-place edit; neither is normally needed.
 - **A press** comes in as a watcher hit with `"type": "board"`: `action` (approve, reject or reply), `id` (the
   request), `no`, `what`, `user_id` and, for a reply, the text in `content`. The bot has already checked who
   pressed, answered them privately and put the row on ⏳ received; an approve or reply also restarts that request's
