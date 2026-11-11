@@ -135,7 +135,8 @@ def test_christmas_then_back_to_normal():
     assert holidays == ["christmas"] and changed == len(H.ROLES) and failed == 0
     pcso = g.roles[H.ROLES["pcso"][0]]
     assert pcso.colour.value == 0x38E54D and pcso.secondary_colour.value == 0x21A835
-    assert g.roles[H.ROLES["border_force"][0]].colour.value == 0x2563EB  # Moderation stays blue
+    bf = g.roles[H.ROLES["border_force"][0]]
+    assert bf.colour.value == 0x3D7BFF and bf.secondary_colour.value == 0x4DB0E3  # mint hint, Hadidas 11 Nov
     assert g.cabinet.sent == ["🎄 Christmas role colours are on"]
     assert run(g, (2026, 12, 19), True)[1] == 0          # same day colours again: no edits
     _, changed, _ = run(g, (2026, 12, 28), True)        # Christmas over: everyone back to normal
