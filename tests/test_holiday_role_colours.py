@@ -72,9 +72,9 @@ def run(guild, day, enabled):
 
 def test_goes_live_on_christmas_morning():
     assert config.HOLIDAY_ROLE_COLOURS_ENABLED is True and config.SEASONAL_RANK_COLOURS_ENABLED is True
-    assert H.go_live_at() == H.UK.localize(dt.datetime(2026, 12, 25, 0, 1))
-    assert not H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 25, 0, 0, 59)))
-    assert H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 25, 0, 1)))
+    assert H.go_live_at() == H.UK.localize(dt.datetime(2026, 12, 25))
+    assert not H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 24, 23, 59, 59)))
+    assert H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 25)))
 
 
 def test_before_go_live_a_default_run_does_nothing(monkeypatch):
