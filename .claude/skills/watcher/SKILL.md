@@ -45,6 +45,13 @@ posted in the few seconds after) and `last_id`. Answer in the channel the hit ca
 card scripts below take `workshop` (the default), `dm`, `cabinet`, or a channel id (see "Watching another channel"). #cabinet is no longer watched (Oggers, 4 Nov
 2026), but a card can still be posted there when someone asks; `R watch.py <id> cabinet` watches it again if he wants.
 
+**Edited messages come back.** A hit with `"edited": true` is a message that was already seen (often already
+answered) whose text has changed since, or one that an edit has just aimed at Vic. Re-read it as it now stands and
+act on the change: if the request itself changed, redo or adjust the work and edit Vic's earlier reply card
+(`card.py ... edit <reply id>`) or post a short follow-up saying what changed; if the edit is just a typo fix that
+changes nothing, react 👍 to it so the ACK and typing come off. Never ignore one: the asker edited because the
+first wording wasn't what they meant (Oggers asked for this on 11 Nov 2026).
+
 **Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
 while a card waits on a go there). Always restart from `last_id`,
 never from the id of your own post: a request sent while you were working sits between the two and would be

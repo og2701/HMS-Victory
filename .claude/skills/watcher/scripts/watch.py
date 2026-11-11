@@ -10,6 +10,11 @@ react.py reaction to that message takes both off). It then waits a few seconds s
 person lands, and prints the channel, the hits, the 30 messages before them, everything posted after them and the
 last id seen. Gives up after 6 hours with "timeout": true.
 
+Edits count too: every poll also looks at the last EDIT_WINDOW messages in each channel, and a message that would
+have been a hit and has been edited since the watcher last saw it comes through again with "edited": true, so the
+new wording gets re-read (an @Vic added in an edit counts as well). What it has seen is kept in EDITS_FILE, so an
+edit made while no watcher was running (between a hit and the restart) still turns up on the next run.
+
 It also wakes when someone presses a button on the task board in #bot-workshop (lib/bot/cabinet_board.py): the
 bot writes each press to data/cabinet_board/events/, and each one comes through as a hit with "type": "board",
 the action (approve, reject or reply), the task (its request id, number and what), who pressed (user_id) and, for
@@ -41,6 +46,8 @@ EXTRA_FILE = os.path.join(EXTRA_DIR, "extra_channels.json")
 EXTRA_LOCK = os.path.join(EXTRA_DIR, ".lock")
 EXTRA_LOG = os.path.join(EXTRA_DIR, "log.jsonl")
 HEARTBEAT = os.path.join(EXTRA_DIR, "heartbeat")
+EDITS_FILE = "/tmp/vic_watch_edits.json"  # channel id -> {message id: its edited_timestamp when last seen}
+EDIT_WINDOW = 25
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
 # #bot-workshop always; Oggers' DM and #cabinet only when asked for: watch.py <id> [pending...] [dm] [cabinet]
@@ -252,6 +259,42 @@ def poll(cid):
     return hits
 
 
+try:
+    edits = json.load(open(EDITS_FILE))
+except (OSError, ValueError):
+    edits = {}
+
+
+def check_edits(cid):
+    """Messages already past this channel's place that have been edited since they were last seen. Anything seen
+    for the first time just becomes the baseline, so old edits don't fire."""
+    try:
+        page = get(f"/channels/{cid}/messages?limit={EDIT_WINDOW}")
+    except urllib.error.HTTPError as e:
+        if cid not in extra:
+            raise
+        print("can't read watched channel", cid, e.code, file=sys.stderr)
+        return []
+    known = edits.setdefault(cid, {})
+    hits = []
+    for m in sorted(page, key=lambda m: int(m["id"])):
+        ts = m.get("edited_timestamp")
+        first = m["id"] not in known
+        prev = known.get(m["id"])
+        known[m["id"]] = ts
+        if not first and ts and ts != prev and int(m["id"]) <= int(after[cid]) and wanted(m, cid):
+            hits.append(dict(brief(m), addresses_vic=addresses_vic(m), channel=channel_name(cid), edited=True))
+    for mid in sorted(known, key=int)[:-4 * EDIT_WINDOW]:  # keep a few windows' worth
+        known.pop(mid, None)
+    try:
+        tmp = EDITS_FILE + ".tmp"
+        json.dump(edits, open(tmp, "w"))
+        os.replace(tmp, EDITS_FILE)
+    except OSError as e:
+        print("couldn't save edits", e, file=sys.stderr)
+    return hits
+
+
 def board_hits():
     """Task board presses the bot has recorded since the last look. Each file is moved to seen/ as it's read, so a
     press is handed over once; seen/ keeps a day of them for reference."""
@@ -297,6 +340,7 @@ while time.time() < deadline:
     try:
         expired = refresh_extra()
         hits = [h for cid in polled_channels() for h in poll(cid)]
+        hits += [h for cid in polled_channels() for h in check_edits(cid)]  # after the polls, so new ones aren't "edits"
         board = board_hits()  # after the polls, so a network blip can't drop a press it has already taken
     except Exception as e:  # network blips just retry
         print("poll error", e, file=sys.stderr)
@@ -327,12 +371,12 @@ while time.time() < deadline:
                 hits.append(h)
         for other in polled_channels():  # anything aimed at Vic elsewhere during the wait comes along too
             if other != cid:
-                extra = poll(other)
-                for h in extra:
+                more = poll(other)  # (not "extra": that's the watched-channels dict)
+                for h in more:
                     if h["addresses_vic"]:
                         ack(h)
                         start_typing(h)
-                hits += extra
+                hits += more
         board += board_hits()  # presses come along after the messages
         board_typing(board)
         hits += board
