@@ -39,7 +39,7 @@ PREDICTION_IMAGE_ENABLED = False
 # Both colour switches below go live together at ROLE_COLOURS_GO_LIVE (UK time): Christmas morning 2026, so everyone
 # wakes up to the new colours (Hadidas and Oggers, 11 Nov 2026). Before then the flags do nothing; a one-off job at
 # that minute puts winter and Christmas up. Set a flag False to turn its switching off again.
-ROLE_COLOURS_GO_LIVE = "2026-12-25 00:01"
+ROLE_COLOURS_GO_LIVE = "2026-12-25 00:00"
 
 # Seasonal colours for the 20 chat level roles (lib/features/seasonal_rank_colours.py): switched on the 1st of
 # Mar/Jun/Sep/Dec and checked at boot. Turning it off after a season has gone up puts the original colours back
