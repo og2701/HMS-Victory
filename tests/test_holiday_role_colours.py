@@ -160,7 +160,8 @@ def test_deputies_follow_their_ministry_on_holidays():
         hol = H.HOLIDAY_BY_KEY[h]["colours"]
         for dep, minister in H.DEPUTY_OF.items():
             accent = hol[minister][1] or hol[minister][0]
-            assert hol[dep][0] == accent and hol[dep][1] == H._mix_white(accent, H.DEPUTY_LIGHTEN)
+            assert hol[dep] == (accent, H.dull(hol["cabinet"][0]))
     assert H.HOLIDAY_BY_KEY["halloween"]["colours"]["dep_moderation"][0] == "#2F6BFF"
+    assert H.dull("#FFFFFF") == "#E6E6E6"
     for d in ("new_year", "bonfire"):  # booster/VIP days leave them alone
         assert not set(H.DEPUTY_OF) & set(H.HOLIDAY_BY_KEY[d]["colours"])
