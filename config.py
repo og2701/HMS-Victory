@@ -41,6 +41,12 @@ PREDICTION_IMAGE_ENABLED = False
 # up puts the original colours back at the next boot.
 SEASONAL_RANK_COLOURS_ENABLED = False
 
+# Holiday colours for the staff roles, Server Booster and VIP (lib/features/holiday_role_colours.py): Halloween,
+# Christmas and Easter recolour all of them; New Year, Valentine's, St David's, St George's, Bonfire Night and
+# St Andrew's recolour boosters and VIPs only. Checked at 00:00 UK daily and at boot. Off until it's decided to go
+# live; turning it off while a holiday is up puts the usual colours back at the next run.
+HOLIDAY_ROLE_COLOURS_ENABLED = False
+
 # --- Blackjack (vs-the-house) ---
 #   BLACKJACK_ENABLED        - master toggle for the /blackjack command.
 #   BLACKJACK_IMAGE_ENABLED  - render the premium HTML→PNG felt table each action
