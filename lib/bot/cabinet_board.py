@@ -1,7 +1,7 @@
 """Vic's task board in #bot-workshop: one Components V2 message that lists every request
 the watcher skill is on, with Approve / Reject / Reply buttons on the rows waiting for a go.
-board.py reposts it at the bottom of the channel (and deletes the old one) whenever it
-changes a row, so it stays in view; a button press edits it in place, since the presser is
+board.py reposts it at the bottom of the channel (and deletes the old one) only when a row
+needs someone (waiting on a go, or blocked); every other change edits it in place. A button press edits it in place, since the presser is
 looking right at it, and moves the row to ⏳ received until the session acts.
 
 Two processes touch it, and both go through this module:
@@ -217,17 +217,28 @@ def _url(message_id) -> str:
     return f"https://discord.com/channels/{GUILD_ID}/{CHANNEL_ID}/{message_id}"
 
 
+ICONS = {"waiting": "🟠", "received": "⏳", "blocked": "🔴", "working": "🔵", "done": "🟢"}
+SHOW_DONE = 3            # done rows on the board's one-line "done" strip
+DONE_WHAT = 36
+
+
 def _row(task: dict, waiting: bool) -> str:
+    """One line per row: icon, number, what (linked to the request), who asked, then the note and link."""
     what = task["what"].replace("[", "(").replace("]", ")")
-    line = f"**#{task['no']} [{what}]({_url(task['id'])})** · <@{task['asker']}>"
-    small = []
+    bits = [f"{ICONS[task['status']]} **#{task['no']}** [{what}]({_url(task['id'])}) · <@{task['asker']}>"]
     if waiting:
-        small.append("needs " + waiting_on(task.get("rule", "o"), int(task["asker"])))
+        bits.append("needs " + waiting_on(task.get("rule", "o"), int(task["asker"])))
     if task.get("note"):
-        small.append(task["note"])
+        bits.append(f"*{task['note']}*")
     if task.get("link"):
-        small.append(f"[{'plan' if waiting else 'result'} ↗]({_url(task['link'])})")
-    return line + ("\n-# " + " · ".join(small) if small else "")
+        bits.append(f"[{'plan' if waiting else 'result'} ↗]({_url(task['link'])})")
+    return " · ".join(bits)
+
+
+def _done_chip(task: dict) -> str:
+    what = task["what"].replace("[", "(").replace("]", ")")
+    what = what if len(what) <= DONE_WHAT else what[:DONE_WHAT - 1].rstrip() + "…"
+    return f"[#{task['no']} {what}]({_url(task.get('link') or task['id'])})"
 
 
 def _button(verb: str, task: dict) -> dict:
@@ -256,64 +267,57 @@ def _text_len(components: list) -> int:
 
 
 def render(state: dict, now: float = None) -> list:
-    """The board as raw CV2 components, kept inside Discord's limits (40 components, 4000
-    characters). Rows that don't fit are dropped from the bottom of a group with a "+N more"
-    line: done first, then the overflow waiting rows, working, blocked and received."""
+    """The board as raw CV2 components, compact (Oggers, 11 Nov 2026: it was too big): a one-line header with the
+    counts, one line per open row with buttons only under rows waiting on a go, and the last few done rows on one
+    small line. Kept inside Discord's limits (40 components, 4000 characters): rows that don't fit come off the
+    bottom of a group with a "+N more", done first, then the overflow waiting rows, working, blocked and received."""
     now = time.time() if now is None else now
     groups = {s: sorted((t for t in state["tasks"] if t["status"] == s),
                         key=lambda t: (t["updated"] if s == "done" else t["no"]),
                         reverse=(s == "done")) for s in STATUSES}
-    groups["done"] = groups["done"][:KEEP_DONE]
-    counts = " · ".join(f"{len(groups[s])} {s}" for s in STATUSES if groups[s])
+    counts = " ".join(f"{ICONS[s]} {len(groups[s])}" for s in STATUSES if groups[s] and s != "done")
     accent = next((ACCENTS[s] for s in STATUSES if groups[s]), ACCENTS["done"])
-    header = ("## 📋 Vic's desk\n-# #bot-workshop requests · " + (counts or "nothing on")
-              + f" · updated <t:{int(now)}:t>")
-    footer = ("-# Buttons are for whoever the row needs; anyone else gets a private note. "
-              "Plans and answers still come as replies.")
+    header = f"**📋 Vic's desk** · {counts or 'nothing open'} · <t:{int(now)}:t>"
 
     waiting = groups["waiting"]
     button_rows = [(task, _row(task, True)) for task in waiting[:MAX_BUTTON_ROWS]]
-    # Text blocks that can lose rows, in the order they give them up.
-    blocks = {s: [_row(t, False) for t in groups[s]] for s in ("received", "blocked", "working", "done")}
-    blocks["overflow"] = [_row(t, True) for t in waiting[MAX_BUTTON_ROWS:]]
+    blocks = {"overflow": [_row(t, True) for t in waiting[MAX_BUTTON_ROWS:]],
+              "open": [_row(t, False) for s in ("received", "blocked", "working") for t in groups[s]],
+              "done": [_done_chip(t) for t in groups["done"][:SHOW_DONE]]}
     dropped = {k: 0 for k in blocks}
 
     def block_text(key):
         rows = blocks[key]
         if not rows and not dropped[key]:
             return ""
+        more = f"+{dropped[key]} more" if dropped[key] else ""
+        if key == "done":
+            return "-# 🟢 Done: " + " · ".join(rows + ([more] if more else []))
         if key == "overflow":
-            head, tail = "", "\n-# no room for more buttons: answer these on their cards"
-        else:
-            head, tail = HEADINGS[key] + "\n", ""
-        more = f"\n-# +{dropped[key]} more" if dropped[key] else ""
-        return head + "\n".join(rows) + more + tail
+            return "\n".join(rows) + (f"\n-# {more}" if more else "") + "\n-# no room for more buttons: answer these on their cards"
+        return "\n".join(rows) + (f"\n-# {more}" if more else "")
 
     def total():
-        return (len(header) + len(footer) + len(HEADINGS["waiting"]) + 1
-                + sum(len(r) for _, r in button_rows) + sum(len(block_text(k)) for k in blocks))
+        return len(header) + sum(len(r) for _, r in button_rows) + sum(len(block_text(k)) for k in blocks)
 
-    for key in ("done", "overflow", "working", "blocked", "received"):
+    for key in ("done", "overflow", "open"):
         while total() > MAX_TEXT and blocks[key]:
             blocks[key].pop()
             dropped[key] += 1
 
     items = [{"type": 10, "content": header}]
     if not state["tasks"]:
-        items += [{"type": 14, "divider": True, "spacing": 1},
-                  {"type": 10, "content": "Nothing on right now. Ping Vic here to add something."}]
-    if button_rows:
-        items.append({"type": 14, "divider": True, "spacing": 2})
-        for i, (task, row) in enumerate(button_rows):
-            items.append({"type": 10, "content": (HEADINGS["waiting"] + "\n" if i == 0 else "") + row})
-            items.append({"type": 1, "components": [_button(v, task) for v in ("ok", "no", "say")]})
-        if block_text("overflow"):
-            items.append({"type": 10, "content": block_text("overflow")})
-    for key in ("received", "blocked", "working", "done"):
+        items.append({"type": 10, "content": "-# Nothing on right now. Ping Vic here to add something."})
+    for task, row in button_rows:
+        items.append({"type": 10, "content": row})
+        items.append({"type": 1, "components": [_button(v, task) for v in ("ok", "no", "say")]})
+    for key in ("overflow", "open"):
         if block_text(key):
-            items.append({"type": 14, "divider": True, "spacing": 2})
             items.append({"type": 10, "content": block_text(key)})
-    items += [{"type": 14, "divider": True, "spacing": 1}, {"type": 10, "content": footer}]
+    if block_text("done"):
+        if len(items) > 1:
+            items.append({"type": 14, "divider": True, "spacing": 1})
+        items.append({"type": 10, "content": block_text("done")})
     components = [{"type": 17, "accent_color": accent, "components": items}]
     assert _count(components) <= MAX_COMPONENTS, _count(components)
     return components

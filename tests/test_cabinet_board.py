@@ -164,7 +164,7 @@ def test_the_right_press_answers_privately_and_redraws_the_board(board):
     [(method, path, body)] = i.client.http.calls
     assert method == "PATCH" and path.endswith("/messages/{message_id}")
     text = json.dumps(body, ensure_ascii=False)
-    assert "Received" in text and "Go from" in text
+    assert "⏳" in text and "Go from" in text
     assert len(_events(board)) == 1
 
 
@@ -274,3 +274,35 @@ def test_board_helper_builds_a_vm_script(argv):
 def test_board_helper_refuses_bad_input(argv):
     r = subprocess.run([sys.executable, BOARD_PY, *argv], capture_output=True, text=True)
     assert r.returncode != 0
+
+
+def test_the_board_is_compact():
+    state = cb.empty_state()
+    cb.apply_op(state, "add", {"id": "1", "asker": ASKER, "what": "a", "status": "working", "note": "on it"}, now=1)
+    for n in range(6):
+        cb.apply_op(state, "add", {"id": str(10 + n), "asker": ASKER, "what": f"done {n}", "status": "done"}, now=2 + n)
+    comps = cb.render(state, now=10)
+    items = comps[0]["components"]
+    # header, the one working row, a divider and one done line: nothing else
+    assert [i["type"] for i in items] == [10, 10, 14, 10]
+    assert items[1]["content"].count("\n") == 0 and "on it" in items[1]["content"]
+    done = items[3]["content"]
+    assert done.startswith("-# 🟢 Done:") and done.count("[#") == cb.SHOW_DONE and "#7 done 5" in done
+
+
+
+@pytest.mark.parametrize("argv,edit", [
+    (["add", "1", str(ASKER), "x"], True),                      # working: edit in place
+    (["add", "1", str(ASKER), "x", "waiting"], False),          # needs a go: jump to the bottom
+    (["set", "1", "blocked"], False),
+    (["set", "1", "done"], True),
+    (["set", "1", "-", "--note", "hi"], True),
+    (["set", "1", "done", "--repost"], False),
+    (["add", "1", str(ASKER), "x", "waiting", "--edit"], True),
+    (["init"], False), (["redraw"], True),
+])
+def test_board_helper_only_reposts_when_a_row_needs_someone(argv, edit):
+    import base64, re
+    out = subprocess.run([sys.executable, BOARD_PY, *argv], capture_output=True, text=True, check=True).stdout
+    blob = re.search(r'b64decode\("([^"]+)"\)', out).group(1)
+    assert json.loads(base64.b64decode(blob))["edit"] is edit
