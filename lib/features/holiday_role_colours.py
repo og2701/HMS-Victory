@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 UK = pytz.timezone("Europe/London")
 STATE = os.path.join("data", "json", "holiday_role_colours.json")
-PAUSE = 1.0  # between role edits, to stay clear of the role-edit rate limit (a staff holiday is 14 edits)
+PAUSE = 1.0  # between role edits, to stay clear of the role-edit rate limit (a staff holiday is 19 edits)
 
 # key -> (role id, display name)
 ROLES = {
@@ -54,6 +54,11 @@ ROLES = {
     "diplomacy": (1133479650782347385, "Minister of Diplomacy"),
     "diplomat": (959582102565830716, "UK Diplomat"),
     "art": (1133479348704383048, "Minister of Art and Design"),
+    "dep_moderation": (1142860905110048880, "Deputy Minister of Moderation"),
+    "dep_community": (1142859374088437952, "Deputy Minister of Community"),
+    "dep_engineering": (1142859665022124163, "Deputy Minister of Engineering"),
+    "dep_diplomacy": (1142877722079658015, "Deputy Minister of Diplomacy"),
+    "dep_art": (1142860091473805334, "Deputy Minister of Art and Design"),
     "banksy": (959897952787267595, "Banksy"),
 }
 BOOSTER_VIP = ("booster", "vip")
@@ -68,7 +73,14 @@ NORMAL: Dict[str, Colours] = {
     "community": ("#FFCD33", "#9D52D9"), "pcso": ("#8D6BEA", None), "engineering": ("#FFCD33", "#8C9EFF"),
     "turing": ("#8C9EFF", None), "diplomacy": ("#FFCD33", "#08EBFA"), "diplomat": ("#04B5C1", None),
     "art": ("#FFCD33", "#7FE035"), "banksy": ("#496A2F", None),
+    "dep_moderation": ("#2A73E5", "#72B0EA"), "dep_community": ("#9D52D9", "#D7C3EE"),
+    "dep_engineering": ("#8C9EFF", "#DDE3FF"), "dep_diplomacy": ("#05DBE9", "#CDF7FA"),
+    "dep_art": ("#618E3E", "#A0BB8B"),
 }
+# each Deputy follows its Minister on holidays: see _add_deputies below
+DEPUTY_OF = {"dep_moderation": "moderation", "dep_community": "community", "dep_engineering": "engineering",
+             "dep_diplomacy": "diplomacy", "dep_art": "art"}
+DEPUTY_LIGHTEN = 0.55  # a Deputy runs from its Minister's holiday colour to this much of the way to white
 
 
 def easter_sunday(year: int) -> dt.date:
@@ -139,6 +151,23 @@ HOLIDAYS: List[dict] = [
 # 11 Nov 2026 (Hadidas): Moderation keeps a blue on every holiday, as its base colour is blue again, and the staff
 # roles that had holiday blues (Community and PCSO at Halloween and Easter; Engineering, Turing and Art at Christmas)
 # take the reds Moderation used to have.
+def _mix_white(code: str, amount: float) -> str:
+    r, g, b = (int(code.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02X%02X%02X" % tuple(round(c + (255 - c) * amount) for c in (r, g, b))
+
+
+def _add_deputies() -> None:
+    """Deputies get their ministry's holiday theme (Hadidas, 11 Nov 2026), the same way their normal colours work:
+    from the ministry's colour (the Minister's second colour) to a pale tint of it."""
+    for h in HOLIDAYS:
+        for dep, minister in DEPUTY_OF.items():
+            if minister in h["colours"] and dep not in h["colours"]:
+                p, s = h["colours"][minister]
+                accent = s or p
+                h["colours"][dep] = (accent, _mix_white(accent, DEPUTY_LIGHTEN))
+
+
+_add_deputies()
 HOLIDAY_BY_KEY = {h["key"]: h for h in HOLIDAYS}
 
 
