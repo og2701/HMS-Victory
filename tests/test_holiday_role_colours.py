@@ -144,3 +144,12 @@ def test_turning_off_mid_holiday_restores_once():
     for k, (rid, _) in H.ROLES.items():
         assert g.roles[rid].colour.value == H._hex(H.NORMAL[k][0])
     assert run(g, (2026, 10, 30), False) is None
+
+
+def test_solid_holiday_colours_get_a_subtle_second_colour():
+    assert H.shine("#FF2E55") == "#FF5C7A"
+    plan = H.plan_for(dt.date(2026, 10, 31))
+    (p, s), src = plan["border_force"]
+    assert src == "halloween" and p == "#2F6BFF" and s == H.shine("#2F6BFF")
+    assert all(colours[1] for colours, src in plan.values() if src)
+    assert H.plan_for(dt.date(2026, 11, 11))["border_force"] == (H.NORMAL["border_force"], None)  # normal days untouched

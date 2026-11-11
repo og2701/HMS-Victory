@@ -142,6 +142,16 @@ HOLIDAYS: List[dict] = [
 HOLIDAY_BY_KEY = {h["key"]: h for h in HOLIDAYS}
 
 
+SHINE = 0.22  # how far a holiday's solid colour is lifted towards white for its subtle second colour
+
+
+def shine(code: str) -> str:
+    """A slightly lighter shade of a colour, so a solid holiday colour becomes a subtle gradient and gets the shine
+    Discord gives every gradient role (the same idea as Cabinet's gold, Hadidas, 11 Nov 2026)."""
+    r, g, b = (int(code.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    return "#%02X%02X%02X" % tuple(round(c + (255 - c) * SHINE) for c in (r, g, b))
+
+
 def active_holidays(day: dt.date) -> List[str]:
     return [h["key"] for h in HOLIDAYS if h["when"](day)]
 
@@ -152,7 +162,11 @@ def plan_for(day: dt.date) -> Dict[str, Tuple[Colours, Optional[str]]]:
     active = [HOLIDAY_BY_KEY[k] for k in active_holidays(day)]
     for key in ROLES:
         source = next((h for h in active if key in h["colours"]), None)
-        plan[key] = (source["colours"][key], source["key"]) if source else (NORMAL[key], None)
+        if source:
+            primary, secondary = source["colours"][key]
+            plan[key] = ((primary, secondary or shine(primary)), source["key"])  # no solid colours on holidays
+        else:
+            plan[key] = (NORMAL[key], None)
     return plan
 
 
