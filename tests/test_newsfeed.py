@@ -942,3 +942,15 @@ def test_a_post_gets_every_tag_and_the_megathread_and_records_them(poll):
     rec = state["threads"][0]
     assert rec["tags"] == ["World", "Environment"] and rec["tag"] == "World"
     assert N.load_engagement()[rec["id"]]["tags"] == ["World", "Environment"]
+
+
+def test_excluded_topics_israel_palestine():
+    from lib.features import newsfeed as nf
+    assert nf.excluded_topic("Israeli strikes hit Gaza City") == "israeli"
+    assert nf.excluded_topic("", "Pro-Palestinian march in London") == "palestinian"
+    assert nf.excluded_topic("", "", "https://www.bbc.co.uk/news/articles/west-bank-settlers-123") == "west bank"
+    assert nf.excluded_topic("Netanyahu speaks") == "netanyahu"
+    assert nf.excluded_topic("Budget: Reeves raises income tax thresholds") is None
+    assert nf.excluded_topic("Hamstrung council cuts bins") is None  # word boundary, not "hamas" inside a word
+    assert nf.story_excluded([{"title": "UK economy grows"}, {"title": "x", "summary": "Hamas says talks stalled"}]) == "hamas"
+    assert nf.story_excluded([{"title": "UK economy grows", "summary": "", "url": "https://x/y"}]) is None

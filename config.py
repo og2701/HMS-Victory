@@ -1021,6 +1021,12 @@ NEWSFEED_UPDATE_MIN_SIGNAL = 5             # score needed to be considered as an
 NEWSFEED_MIN_IMPORTANCE = 7                # AI importance (1-10) needed for a new post
 NEWSFEED_UPDATE_MIN_IMPORTANCE = 5         # AI importance needed for an update reply
 NEWSFEED_SPORT_MIN_IMPORTANCE = 9          # sport only when it's huge
+# Topics never posted (or used for updates): a story whose headline, summary or link matches any of these is skipped
+# before the AI sees it. Case-insensitive regexes matched on word boundaries. Oggers: no Israel/Palestine news.
+NEWSFEED_EXCLUDED_TOPICS = (
+    r"israel\w*", r"palestin\w*", r"gaza\w*", r"west bank", r"hamas", r"netanyahu", r"idf", r"zionis\w*",
+    r"intifada", r"rafah", r"ramallah", r"jerusalem", r"tel aviv", r"al-aqsa", r"hezbollah",
+)
 NEWSFEED_MAX_JUDGEMENTS = 3                # AI calls per story at most (re-judged only when its signal climbs by 2+)
 NEWSFEED_CROSS_MATCH_MIN = 0.5             # headline word overlap for "the same story" across outlets (heuristic)
 NEWSFEED_CROSS_MATCH_BORDERLINE = 0.3      # overlap from here up to CROSS_MATCH_MIN: the AI is asked if it's the same story
