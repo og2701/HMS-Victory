@@ -49,7 +49,9 @@ card scripts below take `workshop` (the default), `dm`, `cabinet`, or a channel 
 answered) whose text has changed since, or one that an edit has just aimed at Vic. Re-read it as it now stands and
 act on the change: if the request itself changed, redo or adjust the work and edit Vic's earlier reply card
 (`card.py ... edit <reply id>`) or post a short follow-up saying what changed; if the edit is just a typo fix that
-changes nothing, react 👍 to it so the ACK and typing come off. Never ignore one: the asker edited because the
+changes nothing, react 👍 to it so the ACK comes off. Edited hits get the ACK but no typing loop (11 Nov 2026: one
+left "Vic is typing" running), so if you do redo the work, start typing yourself (`R typing_indicator.py start <channel> <id>`)
+if it'll take a while. Never ignore one: the asker edited because the
 first wording wasn't what they meant (Oggers asked for this on 11 Nov 2026).
 
 **Restart it the moment you wake, before doing the work:** `R watch.py <last_id>` in the background (add `pending`
