@@ -65,17 +65,17 @@ BOOSTER_VIP = ("booster", "vip")
 
 Colours = Tuple[str, Optional[str]]  # (primary, secondary or None for a solid colour)
 
-# the usual colours, read off the live roles on 11 Nov 2026 (Alan Turing moved off teal to periwinkle that day,
-# and Minister of Engineering became Cabinet gold to periwinkle: Oggers's picks)
+# the usual colours: Hadidas's new base staff set, applied 11 Nov 2026 (Engineering on Oggers's periwinkle; Deputies
+# end on a dulled Cabinet gold)
 NORMAL: Dict[str, Colours] = {
-    "booster": ("#FF5DD6", "#FFDBDC"), "vip": ("#FF74DD", "#5AFFF1"), "cabinet": ("#FFCD33", "#DCB84E"),
-    "pm": ("#FFCD33", "#FFF5D9"), "moderation": ("#FFCD33", "#2A73E5"), "border_force": ("#2A73E5", None),
-    "community": ("#FFCD33", "#9D52D9"), "pcso": ("#8D6BEA", None), "engineering": ("#FFCD33", "#8C9EFF"),
-    "turing": ("#8C9EFF", None), "diplomacy": ("#FFCD33", "#08EBFA"), "diplomat": ("#04B5C1", None),
-    "art": ("#FFCD33", "#7FE035"), "banksy": ("#496A2F", None),
-    "dep_moderation": ("#2A73E5", "#72B0EA"), "dep_community": ("#9D52D9", "#D7C3EE"),
-    "dep_engineering": ("#8C9EFF", "#DDE3FF"), "dep_diplomacy": ("#05DBE9", "#CDF7FA"),
-    "dep_art": ("#618E3E", "#A0BB8B"),
+    "booster": ("#FF5DD6", "#FFDBDC"), "vip": ("#FF74DD", "#5AFFF1"), "cabinet": ("#D4AF37", "#E6C35C"),
+    "pm": ("#FFF8CC", "#D4AF37"), "moderation": ("#D4AF37", "#2563EB"), "border_force": ("#2563EB", None),
+    "community": ("#D4AF37", "#E03DE2"), "pcso": ("#E03DE2", None), "engineering": ("#D4AF37", "#8C9EFF"),
+    "turing": ("#8C9EFF", None), "diplomacy": ("#D4AF37", "#14B8A6"), "diplomat": ("#14B8A6", None),
+    "art": ("#D4AF37", "#22C55E"), "banksy": ("#22C55E", None),
+    "dep_moderation": ("#2563EB", "#A7914A"), "dep_community": ("#E03DE2", "#A7914A"),
+    "dep_engineering": ("#8C9EFF", "#DDE3FF"), "dep_diplomacy": ("#14B8A6", "#A7914A"),
+    "dep_art": ("#22C55E", "#A7914A"),
 }
 # each Deputy follows its Minister on holidays: see _add_deputies below
 DEPUTY_OF = {"dep_moderation": "moderation", "dep_community": "community", "dep_engineering": "engineering",
