@@ -627,6 +627,14 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, apply_seasonal_rank_colours, args=[client], id="seasonal_rank_colours_boot",
                      name="Seasonal rank colours (boot)", next_run_time=discord.utils.utcnow() + timedelta(seconds=90))
 
+    # Holiday colours for staff, boosters and VIP: checked every midnight and once after boot (the flag is read at run
+    # time, so turning it off restores the usual colours). Boot run waits past the seasonal one so their edits don't overlap.
+    from lib.features.holiday_role_colours import apply_holiday_role_colours
+    _add_process_job(scheduler, apply_holiday_role_colours, CronTrigger(hour=0, minute=0, second=15, timezone="Europe/London"),
+                     args=[client], id="holiday_role_colours_daily", name="Holiday role colours")
+    _add_process_job(scheduler, apply_holiday_role_colours, args=[client], id="holiday_role_colours_boot",
+                     name="Holiday role colours (boot)", next_run_time=discord.utils.utcnow() + timedelta(seconds=150))
+
     # News forum auto-poster: registered either way, NEWSFEED_ENABLED and the panel's pause are read at run time. The
     # first poll waits two minutes after boot so a restart never hits the feeds (or the AI) while the bot settles.
     try:
