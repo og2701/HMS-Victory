@@ -153,3 +153,14 @@ def test_solid_holiday_colours_get_a_subtle_second_colour():
     assert src == "halloween" and p == "#2F6BFF" and s == H.shine("#2F6BFF")
     assert all(colours[1] for colours, src in plan.values() if src)
     assert H.plan_for(dt.date(2026, 11, 11))["border_force"] == (H.NORMAL["border_force"], None)  # normal days untouched
+
+
+def test_deputies_follow_their_ministry_on_holidays():
+    for h in ("halloween", "christmas", "easter"):
+        hol = H.HOLIDAY_BY_KEY[h]["colours"]
+        for dep, minister in H.DEPUTY_OF.items():
+            accent = hol[minister][1] or hol[minister][0]
+            assert hol[dep][0] == accent and hol[dep][1] == H._mix_white(accent, H.DEPUTY_LIGHTEN)
+    assert H.HOLIDAY_BY_KEY["halloween"]["colours"]["dep_moderation"][0] == "#2F6BFF"
+    for d in ("new_year", "bonfire"):  # booster/VIP days leave them alone
+        assert not set(H.DEPUTY_OF) & set(H.HOLIDAY_BY_KEY[d]["colours"])
