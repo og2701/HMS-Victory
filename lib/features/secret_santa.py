@@ -421,7 +421,12 @@ def _match_container(receiver_id: int, person, name: str, details: Optional[dict
     handle = f" (@{person.name})" if person is not None and getattr(person, "name", None) else ""
     text = (f"## {SANTA} Secret Santa\n"
             f"You're buying a present for **{display}**{handle}: <@{receiver_id}>\n\n"
-            "Keep it secret! The fun is that they don't know it's you.")
+            "Keep it secret! The fun is that they don't know it's you.\n\n"
+            "📦 **Post your parcel by 15-20 December at the latest.** Sending it earlier is fine. "
+            "Once it arrives at a locker, they have 3 days to collect it.\n\n"
+            "Please reach out to Oggers or Kaizo if you have *any* problems. This is all about fun and "
+            "we don't want anyone to feel any stress over it. We'd rather know and sort out an "
+            "alternative than anyone ends up with nothing!")
     card = discord.ui.Container(accent_colour=ACCENT)
     avatar = getattr(getattr(person, "display_avatar", None), "url", None)
     if avatar:
