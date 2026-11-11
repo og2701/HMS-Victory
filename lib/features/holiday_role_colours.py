@@ -1,8 +1,8 @@
 """Holiday colours for the staff roles, Server Booster and VIP. Hadidas's draft 3 from #cabinet (5 Nov 2026, the
 "staff holidays" and "booster and VIP only days" charts), built at Oggers's request:
 
-- Staff holidays: Halloween (24 Oct to 7 Nov) and Christmas (18 Dec to 1 Jan), a week either side of the day
-  (Oggers, 11 Nov 2026), and Easter (Good Friday to Easter Monday)
+- Staff holidays: Halloween (24 Oct to 2 Nov) and Christmas (18 to 27 Dec), from a week before the day to two
+  days after (Oggers, 11 Nov 2026), and Easter (Good Friday to Easter Monday)
   recolour every role in ROLES, staff and booster/VIP alike.
 - Booster and VIP days: New Year (31 Dec to 2 Jan), Valentine's (12 to 15 Feb), St David's (1 Mar), St George's
   (23 Apr), Bonfire Night (5 Nov) and St Andrew's (30 Nov) recolour Server Booster and VIP only.
@@ -117,13 +117,13 @@ HOLIDAYS: List[dict] = [
         "booster": ("#FF4FD8", "#4FC3FF"), "vip": ("#B98CFF", "#FFFFFF")}},
     {"key": "st_andrews", "name": "St Andrew's Day", "emoji": "🦄", "when": _between((11, 30), (11, 30)), "colours": {
         "booster": ("#4C8DFF", "#FFFFFF"), "vip": ("#FFFFFF", "#4C8DFF")}},
-    {"key": "halloween", "name": "Halloween", "emoji": "🎃", "when": _between((10, 24), (11, 7)), "colours": {
+    {"key": "halloween", "name": "Halloween", "emoji": "🎃", "when": _between((10, 24), (11, 2)), "colours": {
         "booster": ("#FF6B00", "#3DCE6D"), "vip": ("#E2F1FF", "#7CFF6B"), "cabinet": ("#9B30FF", "#6B17C2"),
         "pm": ("#9B30FF", "#CD88FF"), "moderation": ("#9B30FF", "#2F6BFF"), "border_force": ("#2F6BFF", None),
         "community": ("#9B30FF", "#FF2E55"), "pcso": ("#FF2E55", None), "engineering": ("#9B30FF", "#7CFF6B"),
         "turing": ("#7CFF6B", None), "diplomacy": ("#9B30FF", "#FF702E"), "diplomat": ("#FF702E", None),
         "art": ("#9B30FF", "#FFC800"), "banksy": ("#FFC800", None)}},
-    {"key": "christmas", "name": "Christmas", "emoji": "🎄", "when": _between((12, 18), (1, 1)), "colours": {
+    {"key": "christmas", "name": "Christmas", "emoji": "🎄", "when": _between((12, 18), (12, 27)), "colours": {
         "booster": ("#FF6584", "#65FFB8"), "vip": ("#1FB855", "#FFD447"), "cabinet": ("#C47D3B", "#9E5D20"),
         "pm": ("#FFFFFF", "#FF2E4D"), "moderation": ("#C47D3B", "#2563EB"), "border_force": ("#2563EB", None),
         "community": ("#C47D3B", "#38E54D"), "pcso": ("#38E54D", "#21A835"), "engineering": ("#0F8A3C", "#FF2E4D"),
