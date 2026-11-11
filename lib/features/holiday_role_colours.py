@@ -127,7 +127,7 @@ HOLIDAYS: List[dict] = [
         "pm": ("#FFFFFF", "#FF2E4D"), "moderation": ("#C47D3B", "#2563EB"), "border_force": ("#2563EB", None),
         "community": ("#C47D3B", "#38E54D"), "pcso": ("#38E54D", "#21A835"), "engineering": ("#0F8A3C", "#FF2E4D"),
         "turing": ("#FF2E4D", None), "diplomacy": ("#C47D3B", "#FFD700"), "diplomat": ("#FFD700", None),
-        "art": ("#C47D3B", "#4AD9FF"), "banksy": ("#FF9933", None)}},
+        "art": ("#C47D3B", "#4AD9FF"), "banksy": ("#4AD9FF", None)}},
     {"key": "easter", "name": "Easter", "emoji": "🐣", "when": _easter, "colours": {
         "booster": ("#FF94D8", "#75F0C0"), "vip": ("#5EC8FF", "#FFE666"), "cabinet": ("#FFA347", "#5CE65C"),
         "pm": ("#FFBCFC", "#FFFFFF"), "moderation": ("#FFA347", "#4D7CFF"), "border_force": ("#4D7CFF", None),
