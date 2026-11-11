@@ -35,7 +35,6 @@ def _load_scheduled_tasks_for_test():
     """Load the real module while replacing optional runtime-only dependencies."""
     noop = lambda *args, **kwargs: None
     stubs = {
-        "pytz": _module("pytz", timezone=noop),
         "apscheduler": _module("apscheduler"),
         "apscheduler.triggers": _module("apscheduler.triggers"),
         "apscheduler.triggers.cron": _module(
@@ -61,12 +60,6 @@ def _load_scheduled_tasks_for_test():
         ),
         "lib.economy.economy_stats_html": _module(
             "lib.economy.economy_stats_html", create_economy_stats_image=noop
-        ),
-        "lib.core.file_operations": _module(
-            "lib.core.file_operations",
-            load_webhook_deletions=noop,
-            save_webhook_deletions=noop,
-            atomic_write_json=noop,
         ),
         "lib.economy.prediction_system": _module(
             "lib.economy.prediction_system",

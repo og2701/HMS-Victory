@@ -20,7 +20,7 @@ jobs:
       - name: Install test dependencies
         # Only the deps the logic tests actually import (discord.py pulls aiohttp).
         # The full requirements.txt (selenium/Chrome) isn't needed for these.
-        run: pip install pytest discord.py Pillow
+        run: pip install pytest discord.py Pillow pytz
 
       - name: Run economy + safety + logic tests
         run: >-
