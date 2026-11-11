@@ -118,23 +118,26 @@ HOLIDAYS: List[dict] = [
         "booster": ("#4C8DFF", "#FFFFFF"), "vip": ("#FFFFFF", "#4C8DFF")}},
     {"key": "halloween", "name": "Halloween", "emoji": "🎃", "when": _between((10, 1), (11, 1)), "colours": {
         "booster": ("#FF6B00", "#3DCE6D"), "vip": ("#E2F1FF", "#7CFF6B"), "cabinet": ("#9B30FF", "#6B17C2"),
-        "pm": ("#9B30FF", "#CD88FF"), "moderation": ("#9B30FF", "#FF2E55"), "border_force": ("#FF2E55", None),
-        "community": ("#9B30FF", "#4AE3FF"), "pcso": ("#4AE3FF", None), "engineering": ("#9B30FF", "#7CFF6B"),
+        "pm": ("#9B30FF", "#CD88FF"), "moderation": ("#9B30FF", "#2F6BFF"), "border_force": ("#2F6BFF", None),
+        "community": ("#9B30FF", "#FF2E55"), "pcso": ("#FF2E55", None), "engineering": ("#9B30FF", "#7CFF6B"),
         "turing": ("#7CFF6B", None), "diplomacy": ("#9B30FF", "#FF702E"), "diplomat": ("#FF702E", None),
         "art": ("#9B30FF", "#FFC800"), "banksy": ("#FFC800", None)}},
     {"key": "christmas", "name": "Christmas", "emoji": "🎄", "when": _between((12, 1), (12, 30)), "colours": {
         "booster": ("#FF6584", "#65FFB8"), "vip": ("#1FB855", "#FFD447"), "cabinet": ("#C47D3B", "#9E5D20"),
-        "pm": ("#FFFFFF", "#FF2E4D"), "moderation": ("#C47D3B", "#FF2E4D"), "border_force": ("#FF2E4D", None),
-        "community": ("#C47D3B", "#38E54D"), "pcso": ("#38E54D", "#21A835"), "engineering": ("#C47D3B", "#4AD9FF"),
-        "turing": ("#4AD9FF", None), "diplomacy": ("#C47D3B", "#FFD700"), "diplomat": ("#FFD700", None),
-        "art": ("#C47D3B", "#8A8CFF"), "banksy": ("#FF9933", None)}},
+        "pm": ("#FFFFFF", "#FF2E4D"), "moderation": ("#C47D3B", "#2563EB"), "border_force": ("#2563EB", None),
+        "community": ("#C47D3B", "#38E54D"), "pcso": ("#38E54D", "#21A835"), "engineering": ("#C47D3B", "#FF2E4D"),
+        "turing": ("#FF2E4D", None), "diplomacy": ("#C47D3B", "#FFD700"), "diplomat": ("#FFD700", None),
+        "art": ("#C47D3B", "#FF2E4D"), "banksy": ("#FF9933", None)}},
     {"key": "easter", "name": "Easter", "emoji": "🐣", "when": _easter, "colours": {
         "booster": ("#FF94D8", "#75F0C0"), "vip": ("#5EC8FF", "#FFE666"), "cabinet": ("#FFA347", "#5CE65C"),
-        "pm": ("#FFBCFC", "#FFFFFF"), "moderation": ("#FFA347", "#FF4466"), "border_force": ("#FF4466", None),
-        "community": ("#FFA347", "#6680FF"), "pcso": ("#6680FF", None), "engineering": ("#FFA347", "#1FFFB0"),
+        "pm": ("#FFBCFC", "#FFFFFF"), "moderation": ("#FFA347", "#4D7CFF"), "border_force": ("#4D7CFF", None),
+        "community": ("#FFA347", "#FF4466"), "pcso": ("#FF4466", None), "engineering": ("#FFA347", "#1FFFB0"),
         "turing": ("#1FFFB0", None), "diplomacy": ("#FFA347", "#B77CFF"), "diplomat": ("#B77CFF", None),
         "art": ("#FFA347", "#7FE035"), "banksy": ("#7FE035", None)}},
 ]
+# 11 Nov 2026 (Hadidas): Moderation keeps a blue on every holiday, as its base colour is blue again, and the staff
+# roles that had holiday blues (Community and PCSO at Halloween and Easter; Engineering, Turing and Art at Christmas)
+# take the reds Moderation used to have.
 HOLIDAY_BY_KEY = {h["key"]: h for h in HOLIDAYS}
 
 
