@@ -16,7 +16,8 @@ row points to. --note is one short line under the row ("" clears it).
 The board only jumps to the bottom of #bot-workshop (reposted, old one deleted) when a row needs someone: one added
 or set to waiting (on a go) or blocked. Everything else (working, done, notes, links) edits it in place, so it doesn't
 keep landing under the conversation (Oggers, 11 Nov 2026). --repost forces a jump, --edit forces an in-place edit.
-If an in-place edit is rate-limited it waits once and retries before falling back to a repost. All changes run under
+If an in-place edit is rate-limited it waits once and retries before falling back to a repost. Setting a row to
+done, blocked or waiting (or removing it) also stops that request's typing loop. All changes run under
 the board's file lock, the same one the bot takes when someone presses a button."""
 import base64, json, sys
 
@@ -136,6 +137,22 @@ with cb.locked():
                     print(f"board: could not delete the old board {{old}}: {{e.code}}", file=sys.stderr)
     state["message_id"] = new
     cb.save_state(state)
+# A row that's done, blocked or back to waiting no longer has Vic working on it, so its typing loop stops (a desk
+# press starts one, and a row closed without a card reply used to leave "Vic is typing" running).
+if op in ("set", "add", "remove") and (op == "remove" or args.get("status") in ("done", "blocked", "waiting")):
+    import glob, signal
+    rid = str(args["id"])
+    for a in glob.glob("/tmp/vic_typing/*.alias"):
+        try:
+            if a.endswith("/" + rid + ".alias") or open(a).read().strip() == rid:
+                os.remove(a)
+        except OSError:
+            pass
+    try:
+        os.kill(int(open(f"/tmp/vic_typing/{{rid}}.pid").read()), signal.SIGTERM)
+        os.remove(f"/tmp/vic_typing/{{rid}}.pid")
+    except (OSError, ValueError):
+        pass
 print(json.dumps({{"ok": True, "op": op, "message_id": new, "task": task}}, ensure_ascii=False))
 '''
 
