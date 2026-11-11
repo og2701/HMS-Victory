@@ -116,7 +116,7 @@ HOLIDAYS: List[dict] = [
     {"key": "bonfire", "name": "Bonfire Night", "emoji": "🎇", "when": _between((11, 5), (11, 5)), "colours": {
         "booster": ("#FF4FD8", "#4FC3FF"), "vip": ("#B98CFF", "#FF4FD8")}},
     {"key": "st_andrews", "name": "St Andrew's Day", "emoji": "🦄", "when": _between((11, 30), (11, 30)), "colours": {
-        "booster": ("#4C8DFF", "#FFFFFF"), "vip": ("#FFFFFF", "#4C8DFF")}},
+        "booster": ("#5AB4FF", "#FFFFFF"), "vip": ("#FFFFFF", "#5AB4FF")}},
     {"key": "halloween", "name": "Halloween", "emoji": "🎃", "when": _between((10, 24), (11, 2)), "colours": {
         "booster": ("#FF6B00", "#3DCE6D"), "vip": ("#E2F1FF", "#7CFF6B"), "cabinet": ("#9B30FF", "#6B17C2"),
         "pm": ("#9B30FF", "#CD88FF"), "moderation": ("#9B30FF", "#2F6BFF"), "border_force": ("#2F6BFF", None),
