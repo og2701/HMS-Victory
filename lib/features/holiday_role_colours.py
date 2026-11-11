@@ -186,6 +186,18 @@ def shine(code: str) -> str:
     return "#%02X%02X%02X" % tuple(round(c + (255 - c) * SHINE) for c in (r, g, b))
 
 
+def go_live_at() -> Optional[dt.datetime]:
+    """config.ROLE_COLOURS_GO_LIVE as an aware UK datetime, or None when there's no go-live time (live straight away)."""
+    when = getattr(config, "ROLE_COLOURS_GO_LIVE", None)
+    return UK.localize(dt.datetime.strptime(when, "%Y-%m-%d %H:%M")) if when else None
+
+
+def go_live_reached(now: Optional[dt.datetime] = None) -> bool:
+    """Whether the role-colour switching (holidays and seasons) has gone live yet."""
+    start = go_live_at()
+    return start is None or (now or dt.datetime.now(UK)) >= start
+
+
 def active_holidays(day: dt.date) -> List[str]:
     return [h["key"] for h in HOLIDAYS if h["when"](day)]
 
@@ -233,7 +245,7 @@ async def apply_holiday_role_colours(client, today: Optional[dt.date] = None, en
     nothing to do."""
     today = today or dt.datetime.now(UK).date()
     if enabled is None:
-        enabled = getattr(config, "HOLIDAY_ROLE_COLOURS_ENABLED", False)
+        enabled = getattr(config, "HOLIDAY_ROLE_COLOURS_ENABLED", False) and go_live_reached()
     last = _last()
     if enabled:
         plan = plan_for(today)

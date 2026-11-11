@@ -70,8 +70,19 @@ def run(guild, day, enabled):
     return asyncio.run(H.apply_holiday_role_colours(Client(guild), dt.date(*day), enabled))
 
 
-def test_flag_ships_off():
-    assert config.HOLIDAY_ROLE_COLOURS_ENABLED is False
+def test_goes_live_on_christmas_morning():
+    assert config.HOLIDAY_ROLE_COLOURS_ENABLED is True and config.SEASONAL_RANK_COLOURS_ENABLED is True
+    assert H.go_live_at() == H.UK.localize(dt.datetime(2026, 12, 25, 0, 1))
+    assert not H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 25, 0, 0, 59)))
+    assert H.go_live_reached(H.UK.localize(dt.datetime(2026, 12, 25, 0, 1)))
+
+
+def test_before_go_live_a_default_run_does_nothing(monkeypatch):
+    monkeypatch.setattr(H, "go_live_reached", lambda now=None: False)
+    g = Guild()
+    assert asyncio.run(H.apply_holiday_role_colours(Client(g), dt.date(2026, 12, 20))) is None and g.edits == []
+    monkeypatch.setattr(H, "go_live_reached", lambda now=None: True)
+    assert asyncio.run(H.apply_holiday_role_colours(Client(g), dt.date(2026, 12, 20)))[0] == ["christmas"]
 
 
 def test_easter_dates():

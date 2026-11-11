@@ -73,8 +73,12 @@ def run(guild, day, enabled):
     return asyncio.run(S.apply_seasonal_rank_colours(Client(guild), dt.date(*day), enabled))
 
 
-def test_flag_ships_off():
-    assert config.SEASONAL_RANK_COLOURS_ENABLED is False
+def test_flag_on_but_waits_for_go_live(monkeypatch):
+    assert config.SEASONAL_RANK_COLOURS_ENABLED is True
+    from lib.features import holiday_role_colours as H
+    monkeypatch.setattr(H, "go_live_reached", lambda now=None: False)
+    g = Guild("original")
+    assert asyncio.run(S.apply_seasonal_rank_colours(Client(g), dt.date(2026, 12, 20))) is None and g.edits == []
 
 
 def test_seasons_go_by_month():

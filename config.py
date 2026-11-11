@@ -36,16 +36,21 @@ IMAGE_HOST_ENABLED = False
 PREDICTION_CV2_ENABLED = True
 PREDICTION_IMAGE_ENABLED = False
 
+# Both colour switches below go live together at ROLE_COLOURS_GO_LIVE (UK time): Christmas morning 2026, so everyone
+# wakes up to the new colours (Hadidas and Oggers, 11 Nov 2026). Before then the flags do nothing; a one-off job at
+# that minute puts winter and Christmas up. Set a flag False to turn its switching off again.
+ROLE_COLOURS_GO_LIVE = "2026-12-25 00:01"
+
 # Seasonal colours for the 20 chat level roles (lib/features/seasonal_rank_colours.py): switched on the 1st of
-# Mar/Jun/Sep/Dec and checked at boot. Off until a start date is picked; turning it off after a season has gone
-# up puts the original colours back at the next boot.
-SEASONAL_RANK_COLOURS_ENABLED = False
+# Mar/Jun/Sep/Dec and checked at boot. Turning it off after a season has gone up puts the original colours back
+# at the next boot.
+SEASONAL_RANK_COLOURS_ENABLED = True
 
 # Holiday colours for the staff roles, Server Booster and VIP (lib/features/holiday_role_colours.py): Halloween,
 # Christmas and Easter recolour all of them; New Year, Valentine's, St David's, St George's, Bonfire Night and
-# St Andrew's recolour boosters and VIPs only. Checked at 00:00 UK daily and at boot. Off until it's decided to go
-# live; turning it off while a holiday is up puts the usual colours back at the next run.
-HOLIDAY_ROLE_COLOURS_ENABLED = False
+# St Andrew's recolour boosters and VIPs only. Checked at 00:00 UK daily and at boot. Turning it off while a holiday
+# is up puts the usual colours back at the next run.
+HOLIDAY_ROLE_COLOURS_ENABLED = True
 
 # --- Blackjack (vs-the-house) ---
 #   BLACKJACK_ENABLED        - master toggle for the /blackjack command.

@@ -79,7 +79,8 @@ async def apply_seasonal_rank_colours(client, today: dt.date | None = None, enab
     or None when there was nothing to do."""
     today = today or dt.datetime.now(UK).date()
     if enabled is None:
-        enabled = getattr(config, "SEASONAL_RANK_COLOURS_ENABLED", False)
+        from lib.features.holiday_role_colours import go_live_reached
+        enabled = getattr(config, "SEASONAL_RANK_COLOURS_ENABLED", False) and go_live_reached()
     name = wanted(today, enabled)
     if name is None:
         return None
