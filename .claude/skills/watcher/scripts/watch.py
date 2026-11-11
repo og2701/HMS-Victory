@@ -357,7 +357,8 @@ while time.time() < deadline:
         aimed = [h for h in hits if h["addresses_vic"]]
         for h in aimed:  # plain chatter in pending mode gets neither the ACK nor typing
             ack(h)
-            start_typing(h)
+            if not h.get("edited"):  # an edit usually needs no answer, so it gets the ACK but no typing to orphan
+                start_typing(h)
         time.sleep(FOLLOW_UP_SECONDS)
         before = sorted(get(f"/channels/{cid}/messages?before={hits[0]['id']}&limit=30"), key=lambda m: int(m["id"]))
         later = sorted(get(f"/channels/{cid}/messages?after={hits[0]['id']}&limit=50"), key=lambda m: int(m["id"]))
