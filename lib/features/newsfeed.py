@@ -293,6 +293,31 @@ def is_sport_url(url: str) -> bool:
     return any(path.startswith(s) or (outlet_of(url) == "independent" and s in path) for s in _SPORT_SECTIONS)
 
 
+@functools.lru_cache(maxsize=4)
+def _excluded_re(terms: Tuple[str, ...]):
+    return re.compile(r"\b(?:" + "|".join(terms) + r")\b", re.I) if terms else None
+
+
+def excluded_topic(*texts: Optional[str]) -> Optional[str]:
+    """The first config.NEWSFEED_EXCLUDED_TOPICS match in any of the texts (headline, summary, link), else None."""
+    rx = _excluded_re(tuple(getattr(config, "NEWSFEED_EXCLUDED_TOPICS", ()) or ()))
+    if rx is None:
+        return None
+    for text in texts:
+        m = rx.search((text or "").replace("-", " ").replace("_", " ")) or rx.search(text or "")
+        if m:
+            return m.group(0).lower()
+    return None
+
+
+def story_excluded(entries: Iterable[Dict[str, Any]]) -> Optional[str]:
+    for e in entries:
+        hit = excluded_topic(e.get("title"), e.get("summary"), e.get("url"))
+        if hit:
+            return hit
+    return None
+
+
 # ---------------------------------------------------------------- matching
 
 STOPWORDS = frozenset("""
@@ -917,6 +942,9 @@ phrases such as "highlights", "underscores", "tensions", "concerns", "raising co
 "end of an era", "controversial" or "indicates", and never end on a clause or sentence interpreting what it means or \
 speculating about what it could lead to ("This could ...").
 
+Never take a story about Israel, Palestine, Gaza, the West Bank, Hamas or the Israeli-Palestinian conflict, or one \
+mainly about Israel's wars with its neighbours: give it "newsworthy": false and "importance": 1.
+
 Reply with JSON only: {"importance": int, "newsworthy": bool, "tags": [str], "same_story_post": str or null, \
 "same_coverage": [str], "why": str, "reason": str}"""
 
@@ -1469,6 +1497,8 @@ def candidate_stories(state: Dict[str, Any], now: float, th: Thresholds, poll_se
             continue
         view = story_view(state, cid)
         if view is None or not any(is_fresh(e, now) for e in view["entries"]):
+            continue
+        if story_excluded(view["entries"]):
             continue
         signal, reasons = signal_score(view["entries"], now, poll_seconds)
         cluster["signal"] = signal
