@@ -160,8 +160,10 @@ def test_turning_off_mid_holiday_restores_once():
 def test_solid_holiday_colours_get_a_subtle_second_colour():
     assert H.shine("#FF2E55") == "#FF5C7A"
     plan = H.plan_for(dt.date(2026, 10, 31))
-    (p, s), src = plan["border_force"]
-    assert src == "halloween" and p == "#2F6BFF" and s == H.shine("#2F6BFF")
+    (p, s), src = plan["turing"]
+    assert src == "halloween" and p == "#7CFF6B" and s == H.shine("#7CFF6B")
+    assert plan["border_force"] == (("#3D7BFF", "#C5B2BC"), "halloween")  # Hadidas, 11 Nov 2026
+    assert H.plan_for(dt.date(2026, 12, 20))["border_force"] == (("#3D7BFF", "#4DB0E3"), "christmas")
     assert all(colours[1] for colours, src in plan.values() if src)
     assert H.plan_for(dt.date(2026, 11, 11))["border_force"] == (H.NORMAL["border_force"], None)  # normal days untouched
 
