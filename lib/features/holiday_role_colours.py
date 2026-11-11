@@ -59,12 +59,12 @@ BOOSTER_VIP = ("booster", "vip")
 
 Colours = Tuple[str, Optional[str]]  # (primary, secondary or None for a solid colour)
 
-# the usual colours, read off the live roles on 11 Nov 2026
+# the usual colours, read off the live roles on 11 Nov 2026 (Alan Turing moved off teal to periwinkle that day, Oggers's pick)
 NORMAL: Dict[str, Colours] = {
     "booster": ("#FF5DD6", "#FFDBDC"), "vip": ("#FF74DD", "#5AFFF1"), "cabinet": ("#FFCD33", "#DCB84E"),
     "pm": ("#FFCD33", "#FFF5D9"), "moderation": ("#FFCD33", "#2A73E5"), "border_force": ("#2A73E5", None),
     "community": ("#FFCD33", "#9D52D9"), "pcso": ("#8D6BEA", None), "engineering": ("#FFCD33", None),
-    "turing": ("#017368", None), "diplomacy": ("#FFCD33", "#08EBFA"), "diplomat": ("#04B5C1", None),
+    "turing": ("#8C9EFF", "#DDE3FF"), "diplomacy": ("#FFCD33", "#08EBFA"), "diplomat": ("#04B5C1", None),
     "art": ("#FFCD33", "#7FE035"), "banksy": ("#496A2F", None),
 }
 
