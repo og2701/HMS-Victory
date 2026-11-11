@@ -85,14 +85,20 @@ def test_easter_dates():
 
 def test_windows():
     on = lambda *d: H.active_holidays(dt.date(*d))  # noqa: E731
-    assert on(2026, 10, 1) == on(2026, 11, 1) == ["halloween"]
-    assert on(2026, 11, 2) == []
-    assert on(2026, 11, 5) == ["bonfire"] and on(2026, 11, 30) == ["st_andrews"]
-    assert on(2026, 12, 1) == on(2026, 12, 30) == ["christmas"]
-    assert on(2026, 12, 31) == on(2027, 1, 2) == ["new_year"] and on(2027, 1, 3) == []
+    assert on(2026, 10, 23) == [] and on(2026, 10, 24) == on(2026, 11, 7) == ["halloween"]
+    assert on(2026, 11, 5) == ["bonfire", "halloween"] and on(2026, 11, 8) == []
+    assert on(2026, 11, 30) == ["st_andrews"]
+    assert on(2026, 12, 17) == [] and on(2026, 12, 18) == on(2026, 12, 30) == ["christmas"]
+    assert on(2026, 12, 31) == on(2027, 1, 1) == ["new_year", "christmas"] and on(2027, 1, 2) == ["new_year"]
+    assert on(2027, 1, 3) == []
     assert on(2027, 2, 12) == on(2027, 2, 15) == ["valentines"]
     assert on(2027, 3, 1) == ["st_davids"] and on(2027, 4, 23) == ["st_georges"]
     assert on(2026, 11, 11) == []
+
+
+def test_new_year_boosters_inside_christmas_staff_week():
+    plan = H.plan_for(dt.date(2026, 12, 31))
+    assert plan["booster"][1] == "new_year" and plan["cabinet"][1] == "christmas"
 
 
 def test_every_holiday_covers_known_roles():
@@ -119,26 +125,28 @@ def test_flag_off_does_nothing():
 
 def test_christmas_then_back_to_normal():
     g = Guild()
-    holidays, changed, failed = run(g, (2026, 12, 1), True)
+    holidays, changed, failed = run(g, (2026, 12, 18), True)
     assert holidays == ["christmas"] and changed == len(H.ROLES) and failed == 0
     pcso = g.roles[H.ROLES["pcso"][0]]
     assert pcso.colour.value == 0x38E54D and pcso.secondary_colour.value == 0x21A835
     assert g.roles[H.ROLES["border_force"][0]].colour.value == 0x2563EB  # Moderation stays blue
     assert g.cabinet.sent == ["🎄 Christmas role colours are on"]
-    assert run(g, (2026, 12, 2), True)[1] == 0          # same day colours again: no edits
-    _, changed, _ = run(g, (2026, 12, 31), True)        # New Year: boosters/VIP change, staff go back to normal
-    assert changed == len(H.ROLES)
-    assert g.roles[H.ROLES["border_force"][0]].secondary_colour is None
+    assert run(g, (2026, 12, 19), True)[1] == 0          # same day colours again: no edits
+    _, changed, _ = run(g, (2026, 12, 31), True)        # New Year: boosters/VIP change, staff stay on Christmas
+    assert changed == 2
     assert g.cabinet.sent[-1] == "🎆 New Year role colours are on"
+    _, changed, _ = run(g, (2027, 1, 2), True)          # Christmas over: staff back to normal
+    assert changed == len(H.ROLES) - 2
+    assert g.roles[H.ROLES["border_force"][0]].secondary_colour is None
     _, changed, _ = run(g, (2027, 1, 3), True)
     assert changed == 2 and g.cabinet.sent[-1].startswith("🎨")
 
 
 def test_turning_off_mid_holiday_restores_once():
     g = Guild()
-    run(g, (2026, 10, 15), True)
-    holidays, changed, _ = run(g, (2026, 10, 16), False)
+    run(g, (2026, 10, 28), True)
+    holidays, changed, _ = run(g, (2026, 10, 29), False)
     assert holidays == [] and changed == len(H.ROLES)
     for k, (rid, _) in H.ROLES.items():
         assert g.roles[rid].colour.value == H._hex(H.NORMAL[k][0])
-    assert run(g, (2026, 10, 17), False) is None
+    assert run(g, (2026, 10, 30), False) is None
