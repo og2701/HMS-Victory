@@ -255,9 +255,58 @@ async def offer_transcription(client, message) -> bool:
     if not is_voice_note(message):
         return False
     try:
-        await message.reply(view=_offer_view(message.channel.id, message.id),
-                            mention_author=False)
+        reply = await message.reply(view=_offer_view(message.channel.id, message.id),
+                                    mention_author=False)
+        reply_id = getattr(reply, "id", None)
+        if reply_id:
+            _remember_reply(message.id, reply_id, message.channel.id)
         return True
     except discord.HTTPException as e:
         logger.warning("could not offer transcription on %s: %s", message.id, e)
         return False
+
+
+# --- removing Vic's reply when the note is deleted ---------------------------------------
+# The button is a separate reply from Vic (and becomes the transcript when pressed), so
+# deleting the note leaves it orphaned. The reply's id is kept against the note's id, and
+# only ids Vic itself posted ever go in, so only Vic's own messages are ever deleted.
+
+def _remember_reply(note_id: int, reply_id: int, channel_id: int) -> None:
+    try:
+        DatabaseManager.execute(
+            "INSERT OR REPLACE INTO voice_note_replies (note_id, reply_id, channel_id) "
+            "VALUES (?, ?, ?)", (str(note_id), str(reply_id), str(channel_id)))
+    except Exception:
+        logger.warning("could not store voice note reply for %s", note_id, exc_info=True)
+
+
+def pop_replies(note_ids) -> list[tuple[int, int, int]]:
+    """Forget these notes and return (note_id, reply_id, channel_id) for each one Vic
+    replied to. Notes Vic never replied to are simply absent from the result."""
+    found = []
+    for nid in {int(n) for n in note_ids}:
+        row = DatabaseManager.fetch_one(
+            "SELECT reply_id, channel_id FROM voice_note_replies WHERE note_id = ?", (str(nid),))
+        if row is None:
+            continue
+        found.append((nid, int(row[0]), int(row[1])))
+        DatabaseManager.execute("DELETE FROM voice_note_replies WHERE note_id = ?", (str(nid),))
+        DatabaseManager.execute("DELETE FROM voice_note_transcripts WHERE message_id = ?", (str(nid),))
+    return found
+
+
+async def handle_notes_deleted(client, note_ids) -> int:
+    """Delete Vic's button/transcript reply for each deleted voice note. Driven by the RAW
+    delete events, which fire whether or not the note was cached. Returns how many removed."""
+    removed = 0
+    for note_id, reply_id, channel_id in pop_replies(note_ids):
+        try:
+            channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+            await channel.get_partial_message(reply_id).delete()
+            removed += 1
+        except discord.NotFound:
+            pass    # already gone
+        except Exception:
+            logger.warning("could not delete reply %s to deleted voice note %s",
+                           reply_id, note_id, exc_info=True)
+    return removed

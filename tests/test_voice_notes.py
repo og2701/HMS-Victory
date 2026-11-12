@@ -319,3 +319,73 @@ def _run_all():
 
 if __name__ == "__main__":
     sys.exit(0 if _run_all() else 1)
+
+
+# --- deleting the note removes Vic's reply -----------------------------------------------
+import tempfile
+
+
+def _fresh_db():
+    import database
+    if database.DatabaseManager._connection is not None:
+        database.DatabaseManager._connection.close()
+        database.DatabaseManager._connection = None
+    database.DB_FILE = os.path.join(tempfile.mkdtemp(), "t.db")
+    database.init_db()
+
+
+class _Partial:
+    def __init__(self, log, mid, exc=None):
+        self.log, self.mid, self.exc = log, mid, exc
+
+    async def delete(self):
+        if self.exc:
+            raise self.exc
+        self.log.append(self.mid)
+
+
+def _client(log, exc=None):
+    chan = types.SimpleNamespace(get_partial_message=lambda mid: _Partial(log, mid, exc))
+    return types.SimpleNamespace(get_channel=lambda _c: chan)
+
+
+def test_offer_remembers_the_reply_and_delete_removes_only_it():
+    _fresh_db()
+    m = Msg()
+
+    async def reply(**kw):
+        return types.SimpleNamespace(id=999)
+    m.reply = reply
+    assert _run(V.offer_transcription(None, m)) is True
+    log = []
+    assert _run(V.handle_notes_deleted(_client(log), [VN_ID])) == 1
+    assert log == [999]                       # Vic's reply, never the note itself
+    assert _run(V.handle_notes_deleted(_client(log), [VN_ID])) == 0   # mapping is gone
+    assert log == [999]
+
+
+def test_deleting_an_unrelated_message_touches_nothing():
+    _fresh_db()
+    V._remember_reply(1, 2, CH_ID)
+    log = []
+    assert _run(V.handle_notes_deleted(_client(log), [12345])) == 0
+    assert log == []
+
+
+def test_delete_also_drops_the_stored_transcript_and_survives_a_missing_reply():
+    _fresh_db()
+    V._remember_reply(VN_ID, 999, CH_ID)
+    V._save(VN_ID, "<@1>", "words", "gist", "Mod", 3.0)
+    assert _run(V.handle_notes_deleted(_client([], discord.NotFound(
+        types.SimpleNamespace(status=404, reason="x"), "gone")), [VN_ID])) == 0
+    assert V._load(VN_ID) is None
+    assert V.pop_replies([VN_ID]) == []
+
+
+def test_bulk_delete_handles_many_notes():
+    _fresh_db()
+    V._remember_reply(10, 110, CH_ID)
+    V._remember_reply(11, 111, CH_ID)
+    log = []
+    assert _run(V.handle_notes_deleted(_client(log), [10, 11, 12])) == 2
+    assert sorted(log) == [110, 111]

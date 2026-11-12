@@ -721,6 +721,11 @@ class AClient(discord.Client):
         except Exception:
             pass
         try:
+            from lib.features.voice_notes import handle_notes_deleted
+            await handle_notes_deleted(self, payload.message_ids)
+        except Exception:
+            logger.debug("voice note reply cleanup failed", exc_info=True)
+        try:
             from lib.features.message_archive import handle_raw_bulk_delete
             await handle_raw_bulk_delete(self, payload)
         except Exception:
@@ -729,6 +734,11 @@ class AClient(discord.Client):
     async def on_raw_message_delete(self, payload):
         if payload.cached_message is None:   # the cached path already marked it deleted
             chronicle.record_delete([payload.message_id])
+        try:
+            from lib.features.voice_notes import handle_notes_deleted
+            await handle_notes_deleted(self, [payload.message_id])
+        except Exception:
+            logger.debug("voice note reply cleanup failed", exc_info=True)
         # Uncached single deletes (the cached path is handled by on_message_delete).
         try:
             from lib.features.message_archive import handle_raw_single_delete

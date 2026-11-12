@@ -884,6 +884,15 @@ def init_db():
                 seconds       REAL
             )
         ''')
+        # Vic's reply (the transcribe button, later the transcript) under each voice note, so
+        # the reply can be removed when the note is deleted (lib/features/voice_notes.py).
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS voice_note_replies (
+                note_id    TEXT PRIMARY KEY,
+                reply_id   TEXT NOT NULL,
+                channel_id TEXT NOT NULL
+            )
+        ''')
         # Everyone holding the Spayed role, and why (lib/features/ball_spay.py). Rows outlive
         # a leave so the role goes straight back on a rejoin; 'auto' rows are the ones the
         # bot may lift by itself, 'staff' ones were put on by hand and only come off by hand.
