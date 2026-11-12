@@ -916,22 +916,10 @@ class PredAdminView(discord.ui.View):
         )
 
     async def _draw_confirmed(self, interaction: discord.Interaction):
-        if self.pred.msg_id not in self.client.predictions:
+        if not await draw_prediction(self.client, self.pred, interaction.channel):
             return await interaction.followup.send(
                 "This prediction has already been resolved.", ephemeral=True
             )
-        self.client.predictions.pop(self.pred.msg_id, None)
-        self.pred.locked = True
-        for side, pool in self.pred.bets.items():
-            for uid, amt in pool.items():
-                add_bb(uid, amt, reason=f"Prediction refund (Draw): {self.pred.title[:50]}", taxable=False)
-        self.pred.drawn = True
-        try:
-            msg = await _fetch_pred_message(interaction, self.pred, self.client)
-            await _edit_prediction_message(msg, self.pred, self.client, interactive=False)
-        except discord.NotFound:
-            pass
-        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
         try:
             await interaction.followup.edit_message(message_id="@original", content="✅ Settle complete. Result was a **Draw** (all bets refunded).", view=None)
         except discord.NotFound:
@@ -946,94 +934,15 @@ class PredAdminView(discord.ui.View):
                 return await interaction.response.send_message(
                     "This prediction has already been resolved.", ephemeral=True
                 )
-        self.client.predictions.pop(self.pred.msg_id, None)
-        self.pred.locked = True
-        _save({k: v.to_dict() for k, v in self.client.predictions.items()})
-
+        # Claim first (pop + save, no await in between) so a double click can't settle twice,
+        # then acknowledge the interaction, then settle and announce where /pred-admin was run.
+        claim_prediction(self.client, self.pred)
         if not already_deferred:
             await interaction.response.defer(ephemeral=True)
 
-        payouts = self.pred.resolve(winner)
-        win_side = self.pred.options[winner - 1]
-        msg = None
-        try:
-            # Fetch from the channel the prediction LIVES in, not wherever /pred-admin
-            # was run, so we can mark the winner on the card and cross-link it to the
-            # result regardless of which channel the admin resolved from.
-            msg = await _fetch_pred_message(interaction, self.pred, self.client)
-        except discord.NotFound:
-            pass  # Original post was deleted; still pay out and announce below.
-
-        lines = []
-        for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
-            member = interaction.guild.get_member(uid)
-            name = discord.utils.escape_markdown(member.display_name) if member else f"<@{uid}>"
-            lines.append(f"**{name}** won **{amt:,}**")
-
-        descr = "\n".join(lines) or "*Nobody backed the winner*"
-        summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
-
-        mentions = " ".join([f"<@{uid}>" for uid in payouts.keys()])
-
-        summary_msg = None
-        same_channel = bool(msg) and msg.channel.id == interaction.channel.id
-
-        # Announce the result in the channel where /pred-admin was run. Same channel
-        # as the prediction -> reply so it threads under the card. Different channel
-        # -> a reply can't cross channels, so post a standalone message with a jump
-        # link back to the prediction instead.
-        if msg and not same_channel:
-            summary.add_field(
-                name="\u200b", value=f"🔗 [Jump to the prediction]({msg.jump_url})", inline=False
-            )
-        if same_channel:
-            summary_msg = await msg.reply(content=mentions, embed=summary, mention_author=False)
-        else:
-            summary_msg = await interaction.channel.send(content=mentions, embed=summary)
-
-        # Re-render the original card now that the summary exists: this marks the
-        # winning outcome AND links the card to the result message (two-way link).
-        # Done after posting the summary because we need its jump URL.
-        if msg:
-            try:
-                await _edit_prediction_message(
-                    msg, self.pred, self.client, interactive=False,
-                    result_url=(summary_msg.jump_url if summary_msg else None),
-                )
-            except discord.NotFound:
-                pass  # Original deleted between the reply and the edit.
-
-        # (Already popped from client.predictions and persisted at the top of this
-        # method as the idempotency claim.)
-
-        # Award streak badges
-        from lib.economy.prediction_system import track_prediction_streak
-        from lib.bot.event_handlers import award_badge_with_notify
-        import asyncio
-
-        # Everyone who backed a non-winning outcome is a loser (generalised from the
-        # old 2-way model where there was a single losing side).
-        loser_uids = [
-            uid
-            for side, pool in self.pred.bets.items()
-            if side != winner
-            for uid in pool.keys()
-        ]
-
-        async def award_streaks():
-            # Process winners
-            for uid in self.pred.bets.get(winner, {}).keys():
-                win_streak, lose_streak = track_prediction_streak(uid, is_win=True)
-                if win_streak >= 7:
-                    await award_badge_with_notify(self.client, uid, 'oracle')
-
-            # Process losers
-            for uid in loser_uids:
-                win_streak, lose_streak = track_prediction_streak(uid, is_win=False)
-                if lose_streak >= 5:
-                    await award_badge_with_notify(self.client, uid, 'unlucky')
-
-        asyncio.create_task(award_streaks())
+        result = await resolve_prediction(self.client, self.pred, winner, interaction.channel,
+                                          fallback_channel=interaction.channel, claimed=True)
+        win_side = result["winner"]
 
         # We deferred at the top or edited the original message, so update the admin panel.
         try:
@@ -1044,6 +953,138 @@ class PredAdminView(discord.ui.View):
         except discord.NotFound:
             pass  # Admin interaction might be old/invalid too
         self.stop()
+
+
+def claim_prediction(client: discord.Client, pred: Prediction) -> bool:
+    """Take a live prediction out of play so it can only be settled once: pop it from
+    client.predictions, lock it and save. Synchronous on purpose (no await between the
+    check and the pop). Returns False when it was already gone (settled elsewhere)."""
+    if client.predictions.pop(pred.msg_id, None) is None:
+        return False
+    pred.locked = True
+    _save({k: v.to_dict() for k, v in client.predictions.items()})
+    return True
+
+
+async def draw_prediction(client: discord.Client, pred: Prediction, fallback_channel=None) -> bool:
+    """Settle a live prediction as a Draw: refund every stake, mark the card and save.
+    Returns False (changing nothing) when it has already been settled. Shared by
+    /pred-admin's Draw button and the bot-action queue."""
+    if pred.msg_id not in client.predictions:
+        return False
+    client.predictions.pop(pred.msg_id, None)
+    pred.locked = True
+    for side, pool in pred.bets.items():
+        for uid, amt in pool.items():
+            add_bb(uid, amt, reason=f"Prediction refund (Draw): {pred.title[:50]}", taxable=False)
+    pred.drawn = True
+    try:
+        msg = await _fetch_pred_message_in(client, pred, fallback_channel)
+        await _edit_prediction_message(msg, pred, client, interactive=False)
+    except discord.NotFound:
+        pass
+    _save({k: v.to_dict() for k, v in client.predictions.items()})
+    return True
+
+
+async def resolve_prediction(client: discord.Client, pred: Prediction, winner: int, announce_channel,
+                             fallback_channel=None, claimed: bool = False) -> Optional[dict]:
+    """Settle a live prediction with ``winner`` (1-based side): pay out, post the 🏁 summary
+    in ``announce_channel`` (a reply under the card when the card is in that channel,
+    else a standalone message with a jump link), mark the card and link it to the
+    summary, and start the streak badges. Returns None when it was already settled.
+    ``claimed`` means the caller already ran claim_prediction. Shared by /pred-admin
+    and the bot-action queue."""
+    if not claimed and not claim_prediction(client, pred):
+        return None
+
+    payouts = pred.resolve(winner)
+    win_side = pred.options[winner - 1]
+    msg = None
+    try:
+        # Fetch from the channel the prediction LIVES in, not wherever the result is
+        # announced, so we can mark the winner on the card and cross-link it to the
+        # result regardless of where it was resolved from.
+        msg = await _fetch_pred_message_in(client, pred, fallback_channel)
+    except discord.NotFound:
+        pass  # Original post was deleted; still pay out and announce below.
+
+    guild = getattr(announce_channel, "guild", None)
+    lines = []
+    for uid, amt in sorted(payouts.items(), key=lambda x: x[1], reverse=True):
+        member = guild.get_member(uid) if guild else None
+        name = discord.utils.escape_markdown(member.display_name) if member else f"<@{uid}>"
+        lines.append(f"**{name}** won **{amt:,}**")
+
+    descr = "\n".join(lines) or "*Nobody backed the winner*"
+    summary = discord.Embed(title=f"🏁 Prediction settled: **{win_side}** wins!", description=descr, color=0x2ECC71)
+
+    mentions = " ".join([f"<@{uid}>" for uid in payouts.keys()])
+
+    summary_msg = None
+    same_channel = bool(msg) and msg.channel.id == announce_channel.id
+
+    # Same channel as the prediction -> reply so it threads under the card. Different
+    # channel -> a reply can't cross channels, so post a standalone message with a jump
+    # link back to the prediction instead.
+    if msg and not same_channel:
+        summary.add_field(
+            name="\u200b", value=f"🔗 [Jump to the prediction]({msg.jump_url})", inline=False
+        )
+    if same_channel:
+        summary_msg = await msg.reply(content=mentions, embed=summary, mention_author=False)
+    else:
+        summary_msg = await announce_channel.send(content=mentions, embed=summary)
+
+    # Re-render the original card now that the summary exists: this marks the
+    # winning outcome AND links the card to the result message (two-way link).
+    # Done after posting the summary because we need its jump URL.
+    if msg:
+        try:
+            await _edit_prediction_message(
+                msg, pred, client, interactive=False,
+                result_url=(summary_msg.jump_url if summary_msg else None),
+            )
+        except discord.NotFound:
+            pass  # Original deleted between the reply and the edit.
+
+    # Award streak badges
+    from lib.bot.event_handlers import award_badge_with_notify
+    import asyncio
+
+    # Everyone who backed a non-winning outcome is a loser (generalised from the
+    # old 2-way model where there was a single losing side).
+    winner_uids = list(pred.bets.get(winner, {}).keys())
+    loser_uids = [
+        uid
+        for side, pool in pred.bets.items()
+        if side != winner
+        for uid in pool.keys()
+    ]
+
+    async def award_streaks():
+        # Process winners
+        for uid in winner_uids:
+            win_streak, lose_streak = track_prediction_streak(uid, is_win=True)
+            if win_streak >= 7:
+                await award_badge_with_notify(client, uid, 'oracle')
+
+        # Process losers
+        for uid in loser_uids:
+            win_streak, lose_streak = track_prediction_streak(uid, is_win=False)
+            if lose_streak >= 5:
+                await award_badge_with_notify(client, uid, 'unlucky')
+
+    asyncio.create_task(award_streaks())
+
+    return {
+        "winner": win_side,
+        "winner_side": winner,
+        "payouts": {str(uid): amt for uid, amt in payouts.items()},
+        "summary_message_id": getattr(summary_msg, "id", None),
+        "summary_channel_id": getattr(getattr(summary_msg, "channel", None), "id", None),
+        "summary_url": getattr(summary_msg, "jump_url", None),
+    }
 
 
 def _remap_live_options(pred: Prediction, new_options: list) -> tuple:

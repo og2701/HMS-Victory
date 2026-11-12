@@ -328,8 +328,12 @@ python3 <scripts>/bot_action.py pred_schedule '{"channel_id": 123, "title": "Eng
   from a file: `@/full/path/args.json`.
 - Actions: `pred_list`, `pred_list_scheduled`, `pred_schedule` (channel_id, title, options, when, duration),
   `pred_create` (channel_id, title, options, duration), `pred_cancel_scheduled` (sched_id), `pred_lock` and
-  `pred_unlock` (message_id). `when` and `duration` take what /pred-schedule takes. Anything else is refused, and
-  resolving or drawing a pred (payouts) stays a manual /pred-admin job.
+  `pred_unlock` (message_id), `pred_resolve` (message_id, winner as the option's text or 1-based number,
+  optional announce_channel_id) and `pred_draw` (message_id). `when` and `duration` take what /pred-schedule
+  takes. Anything else is refused. Resolving and drawing move money (payouts, refunds), so run them only on a go
+  typed by Oggers himself. They do what /pred-admin does: the card is marked, and the 🏁 result goes as a reply
+  under the card when it's announced in the pred's own channel (the default), else as a post with a jump link in
+  announce_channel_id.
 - Each action runs as Oggers, posts what the slash command would (the Prediction Scheduled card in
   #community-management and so on) and is logged to #bot-usage-log. It's still a change: card first, then run it
   on the go. Requests over 2 minutes old are refused unrun, and at most 5 actions run a minute.

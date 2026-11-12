@@ -349,6 +349,112 @@ def test_pred_lock_and_unlock_flip_the_live_prediction(tmp_path):
     assert "No live prediction" in _result(q, "l4")["error"]
 
 
+def _staked_pred(channel_id=555):
+    pred = ps.Prediction(42, "Eng vs Cro", ["England", "Draw", "Croatia"], end_ts=0, channel_id=channel_id)
+    pred.locked = True
+    pred.bets = {1: {101: 100}, 2: {102: 50}, 3: {103: 50}}
+    return pred
+
+
+def _card(channel_id=555):
+    return SimpleNamespace(
+        channel=SimpleNamespace(id=channel_id), jump_url="https://discord.com/card",
+        reply=AsyncMock(return_value=SimpleNamespace(id=900, channel=SimpleNamespace(id=channel_id),
+                                                     jump_url="https://discord.com/result")))
+
+
+def _settle_patches(card):
+    # A stand-in for lib.bot.event_handlers: importing the real one needs API keys.
+    handlers = SimpleNamespace(award_badge_with_notify=AsyncMock(), award_badge_notify=MagicMock())
+    return (patch.object(ps, "_fetch_pred_message_in", AsyncMock(return_value=card)),
+            patch.object(ps, "_edit_prediction_message", AsyncMock()),
+            patch.object(ps, "_save"),
+            patch.object(ps, "add_bb"),
+            patch.object(ps, "track_prediction_streak", return_value=(0, 0)),
+            patch.dict(sys.modules, {"lib.bot.event_handlers": handlers}))
+
+
+def test_pred_resolve_pays_out_and_replies_under_the_card(tmp_path):
+    channel = SimpleNamespace(id=555, send=AsyncMock(), guild=None)
+    client = _client({555: channel})
+    pred = _staked_pred()
+    client.predictions = {42: pred}
+    q = _queue(tmp_path, client)
+    card = _card()
+    p = _settle_patches(card)
+    with p[0], p[1] as edit, p[2], p[3] as add_bb, p[4], p[5]:
+        _drop(q, "r0", "pred_resolve", {"message_id": 42, "winner": "nobody"})
+        asyncio.run(q.poll_once())
+        _drop(q, "r1", "pred_resolve", {"message_id": 42, "winner": "ENGLAND"})
+        asyncio.run(q.poll_once())
+        _drop(q, "r2", "pred_resolve", {"message_id": 42, "winner": 1})
+        asyncio.run(q.poll_once())
+    assert "isn't one of the options" in _result(q, "r0")["error"]
+    res = _result(q, "r1")
+    assert res["ok"] is True and res["result"]["winner"] == "England"
+    assert res["result"]["payouts"] == {"101": 200} and res["result"]["summary_message_id"] == 900
+    add_bb.assert_called_once()
+    card.reply.assert_awaited_once()
+    channel.send.assert_not_awaited()
+    assert edit.await_args.kwargs["result_url"] == "https://discord.com/result"
+    assert 42 not in client.predictions
+    assert "No live prediction" in _result(q, "r2")["error"]
+
+
+def test_pred_resolve_can_announce_in_another_channel(tmp_path):
+    general = SimpleNamespace(id=777, send=AsyncMock(return_value=SimpleNamespace(
+        id=901, channel=SimpleNamespace(id=777), jump_url="https://discord.com/r")), guild=None)
+    client = _client({555: SimpleNamespace(id=555, send=AsyncMock()), 777: general})
+    client.predictions = {42: _staked_pred()}
+    q = _queue(tmp_path, client)
+    card = _card()
+    p = _settle_patches(card)
+    with p[0], p[1], p[2], p[3], p[4], p[5]:
+        _drop(q, "r1", "pred_resolve", {"message_id": 42, "winner": "3", "announce_channel_id": 777})
+        asyncio.run(q.poll_once())
+    res = _result(q, "r1")
+    assert res["ok"] is True and res["result"]["winner"] == "Croatia"
+    card.reply.assert_not_awaited()
+    embed = general.send.await_args.kwargs["embed"]
+    assert "Croatia" in embed.title and "https://discord.com/card" in embed.fields[0].value
+
+
+def test_pred_draw_refunds_everyone(tmp_path):
+    client = _client()
+    pred = _staked_pred()
+    client.predictions = {42: pred}
+    q = _queue(tmp_path, client)
+    p = _settle_patches(_card())
+    with p[0], p[1], p[2], p[3] as add_bb, p[4], p[5]:
+        _drop(q, "d1", "pred_draw", {"message_id": 42})
+        asyncio.run(q.poll_once())
+    assert _result(q, "d1")["ok"] is True and pred.drawn and 42 not in client.predictions
+    assert sorted(c.args[:2] for c in add_bb.call_args_list) == [(101, 100), (102, 50), (103, 50)]
+
+
+def test_pred_admin_resolve_still_settles_from_the_panel():
+    channel = SimpleNamespace(id=555, guild=None, send=AsyncMock())
+    client = _client({555: channel})
+    pred = _staked_pred()
+    client.predictions = {42: pred}
+    card = _card()
+    inter = SimpleNamespace(channel=channel, guild=None,
+                            response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+                            followup=SimpleNamespace(send=AsyncMock(), edit_message=AsyncMock()))
+    p = _settle_patches(card)
+
+    async def go():
+        view = ps.PredAdminView(pred, client)
+        await view._resolve(inter, 2, already_deferred=True)
+        await view._resolve(inter, 2, already_deferred=True)
+    with p[0], p[1], p[2], p[3] as add_bb, p[4], p[5]:
+        asyncio.run(go())
+    add_bb.assert_called_once()   # Draw backer 102 wins the whole pool, once
+    card.reply.assert_awaited_once()
+    assert "Winner: **Draw**" in inter.followup.edit_message.await_args.kwargs["content"]
+    assert "already been resolved" in inter.followup.send.await_args.args[0]
+
+
 # ------------------------------------------------------------------ slash commands unchanged
 
 def _interaction(client):

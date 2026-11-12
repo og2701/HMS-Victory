@@ -242,6 +242,47 @@ async def _pred_unlock(client, args):
     return _pred_summary(pred)
 
 
+def _winner_side(pred, winner: str) -> int:
+    """The 1-based side for ``winner``: an option's text (case-insensitive) or its 1-based number."""
+    text = winner.strip()
+    by_name = [i + 1 for i, opt in enumerate(pred.options) if opt.strip().casefold() == text.casefold()]
+    if len(by_name) == 1:
+        return by_name[0]
+    if text.isdigit() and 1 <= int(text) <= len(pred.options):
+        return int(text)
+    raise ActionError(
+        f"`winner` {winner!r} isn't one of the options: "
+        + ", ".join(f"{i + 1}. {opt}" for i, opt in enumerate(pred.options)) + ".")
+
+
+async def _pred_resolve(client, args):
+    from lib.economy.prediction_system import resolve_prediction
+    pred = _live_pred(client, args["message_id"])
+    side = _winner_side(pred, args["winner"])
+    if "announce_channel_id" in args:
+        announce = await _resolve_channel(client, args["announce_channel_id"])
+    else:
+        announce = await _resolve_channel(client, pred.channel_id) if pred.channel_id else None
+        if announce is None:
+            raise ActionError("This prediction has no recorded channel; give `announce_channel_id`.")
+    result = await resolve_prediction(client, pred, side, announce)
+    if result is None:
+        raise ActionError("This prediction has already been resolved.")
+    summary = _pred_summary(pred)
+    summary.update(result)
+    return summary
+
+
+async def _pred_draw(client, args):
+    from lib.economy.prediction_system import draw_prediction
+    pred = _live_pred(client, args["message_id"])
+    if not await draw_prediction(client, pred):
+        raise ActionError("This prediction has already been resolved.")
+    summary = _pred_summary(pred)
+    summary["drawn"] = True
+    return summary
+
+
 # name -> (arg spec {arg: (type, required)}, handler(client, args))
 ACTIONS = {
     "pred_list": ({}, _pred_list),
@@ -257,6 +298,11 @@ ACTIONS = {
     "pred_cancel_scheduled": ({"sched_id": ("int", True)}, _pred_cancel_scheduled),
     "pred_lock": ({"message_id": ("int", True)}, _pred_lock),
     "pred_unlock": ({"message_id": ("int", True)}, _pred_unlock),
+    # Money moves: only on a go typed by Oggers.
+    "pred_resolve": ({
+        "message_id": ("int", True), "winner": ("str_or_int", True), "announce_channel_id": ("int", False),
+    }, _pred_resolve),
+    "pred_draw": ({"message_id": ("int", True)}, _pred_draw),
 }
 
 

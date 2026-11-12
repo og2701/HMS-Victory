@@ -18,12 +18,16 @@ Actions (the bot refuses anything else, and any arg not listed):
   pred_create    channel_id title options duration
   pred_cancel_scheduled  sched_id
   pred_lock / pred_unlock  message_id
+  pred_resolve   message_id winner [announce_channel_id]
+                 winner: an option's text (any case) or its 1-based number; pays out and posts the result
+                 (in the pred's own channel unless announce_channel_id is given). Only on a go typed by Oggers.
+  pred_draw      message_id   refunds every bet. Only on a go typed by Oggers.
 
 Everything runs as Oggers and is logged to #bot-usage-log."""
 import base64, json, sys, uuid
 
 ACTIONS = {"pred_list", "pred_list_scheduled", "pred_schedule", "pred_create", "pred_cancel_scheduled",
-           "pred_lock", "pred_unlock"}
+           "pred_lock", "pred_unlock", "pred_resolve", "pred_draw"}
 WAIT_SECONDS = 60
 
 
