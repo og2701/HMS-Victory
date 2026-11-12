@@ -490,6 +490,41 @@ async def _bond_maturity_tick(client):
         logger.error("Bond maturity tick failed", exc_info=True)
 
 
+async def _reserve_throttle_alert_tick(client):
+    """Ping Oggers when the reserve throttle switches on/off or changes tier (once per change).
+
+    The last announced level lives in a JSON file, so a restart doesn't re-announce, and it is
+    only saved after the post succeeds, so a failed post is retried on the next tick."""
+    try:
+        from lib.economy import reserve_policy as R
+        from lib.core.file_operations import load_json_file, save_json_file
+        if not getattr(config, "RESERVE_ALERT_ENABLED", True):
+            return
+        balance, bonded = R.bank_balance(), R.locked_bond_principal()
+        reserves = max(0, balance - bonded)
+        path = config.RESERVE_ALERT_STATE_FILE
+        try:
+            state = load_json_file(path)
+        except Exception:
+            logger.error("Reserve alert state unreadable; reseeding", exc_info=True)
+            state = {}
+        new_state, msg = R.check_throttle_alert(state, reserves, balance, bonded)
+        if msg is None:
+            if new_state != state:
+                save_json_file(path, new_state)      # first run: seed silently
+            return
+        channel = client.get_channel(config.RESERVE_ALERT_CHANNEL_ID)
+        if channel is None:
+            channel = await client.fetch_channel(config.RESERVE_ALERT_CHANNEL_ID)
+        uid = config.RESERVE_ALERT_USER_ID
+        await channel.send(
+            f"<@{uid}> {msg}",
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=[discord.Object(id=uid)]))
+        save_json_file(path, new_state)
+    except Exception:
+        logger.error("Reserve throttle alert tick failed", exc_info=True)
+
+
 async def _purge_message_archive(client):
     """Trim the rolling message archive (bulk-delete logging) past its retention window."""
     try:
@@ -546,6 +581,7 @@ def _register_client_jobs(client, scheduler):
                      next_run_time=discord.utils.utcnow() + timedelta(seconds=15))
 
     _add_process_job(scheduler, _bond_maturity_tick, IntervalTrigger(minutes=2), args=[client], id="bond_maturity_job", name="Pay matured bonds")
+    _add_process_job(scheduler, _reserve_throttle_alert_tick, IntervalTrigger(minutes=2), args=[client], id="reserve_throttle_alert_job", name="Announce reserve throttle changes")
     _add_process_job(scheduler, _purge_message_archive, CronTrigger(hour=4, minute=30, timezone="Europe/London"), args=[client], id="purge_message_archive_job", name="Purge old message archive rows")
     _add_process_job(scheduler, _snapshot_xp, CronTrigger(minute=0, timezone="Europe/London"), args=[client], id="snapshot_xp_job", name="Snapshot XP history")
     _add_process_job(scheduler, award_booster_bonus, CronTrigger(hour=0, minute=0, timezone="Europe/London"), args=[client], id="award_booster_bonus_job", name="Award Daily Booster UKPence & Log SOD Circulation")

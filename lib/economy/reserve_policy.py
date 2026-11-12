@@ -132,6 +132,53 @@ def reserve_state() -> dict:
     }
 
 
+def _alert_level(reserves: int, previous) -> float:
+    """The throttle level the ALERT should report, with hysteresis on the way back up.
+
+    Tightening is immediate. Relaxing only counts once free reserves clear the tier's
+    ceiling by RESERVE_ALERT_HYSTERESIS (so 60,500 doesn't flip a 60,000 boundary back and
+    forth). The reward throttle itself is untouched by this."""
+    now = throttle_multiplier(reserves)
+    if previous is None or now <= previous:
+        return now
+    margin = int(_cfg("RESERVE_ALERT_HYSTERESIS", 2_000))
+    relaxed = throttle_multiplier(max(0, reserves - margin))
+    return relaxed if relaxed > previous else previous
+
+
+def _level_text(mult: float) -> str:
+    return "OFF (rewards paid in full)" if mult >= 1.0 else f"ON, rewards paying {mult:.0%}"
+
+
+def check_throttle_alert(state: dict, reserves: int, balance: int, bonded: int):
+    """Decide whether the throttle level changed since the last announcement.
+
+    `state` is the persisted dict ({"multiplier": float} or empty). Returns
+    (new_state, message_or_None). The first ever call only seeds the state (None message), so
+    shipping this never announces the current level as news. The caller persists new_state
+    only after the message is sent, so a failed post is retried on the next tick."""
+    if not _cfg("RESERVE_ALERT_ENABLED", True):
+        return state, None
+    previous = state.get("multiplier")
+    level = _alert_level(reserves, previous)
+    new_state = {"multiplier": level}
+    if previous is None:
+        return new_state, None
+    if abs(level - previous) < 1e-9:
+        return state, None
+    if previous >= 1.0:
+        kind = "Reserve throttle ENABLED"
+    elif level >= 1.0:
+        kind = "Reserve throttle DISABLED"
+    else:
+        kind = "Reserve throttle tier changed (" + ("tightened" if level < previous else "relaxed") + ")"
+    msg = (f"{kind}\n"
+           f"Was: {_level_text(previous)}\n"
+           f"Now: {_level_text(level)}\n"
+           f"Free reserves: {reserves:,} UKP (bank {balance:,} minus {bonded:,} bond principal)")
+    return new_state, msg
+
+
 def max_casino_net_payout(static_max_net: int = 250_000) -> int:
     """Calculate maximum net profit allowed on a single outcome (e.g. 80% of Bank balance)."""
     if not _cfg("DYNAMIC_MAX_BET_ENABLED", True):

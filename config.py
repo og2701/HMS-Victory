@@ -334,7 +334,14 @@ RESERVE_POLICY_ENABLED = True
 # just been bailed out.
 RESERVE_FLOOR = 5_000
 # (free_reserves_at_or_below, multiplier applied to discretionary rewards). First match wins.
-RESERVE_THROTTLE_TIERS = ((5_000, 0.25), (45_000, 0.50), (85_000, 0.75))
+RESERVE_THROTTLE_TIERS = ((5_000, 0.25), (60_000, 0.50), (110_000, 0.75))
+# Throttle alerts: when the throttle switches on, off, or moves tier, the bot posts once to
+# RESERVE_ALERT_CHANNEL_ID and pings RESERVE_ALERT_USER_ID (see reserve_policy.check_throttle_alert).
+# The alert only RELAXES once free reserves clear the tier ceiling by RESERVE_ALERT_HYSTERESIS,
+# so reserves hovering on a threshold can't flap the channel. Tightening is announced at once.
+# This margin affects the alert only; the reward throttle itself still follows the tiers exactly.
+RESERVE_ALERT_ENABLED = True
+RESERVE_ALERT_HYSTERESIS = 2_000
 # Hard ceiling on total UKP in existence. The emergency mint (casino insolvency) may only
 # ever raise supply to this; past it a win cannot be honoured and is logged CRITICAL rather
 # than silently inflating the currency. 800k baseline -> at most 25% expansion, ever.
@@ -814,6 +821,10 @@ class USERS:
     KAIZO = 1283837687551361117
 
 BOT_ID = USERS.HMS_VICTORY
+
+RESERVE_ALERT_CHANNEL_ID = 1570063729947844714   # where throttle on/off/tier-change alerts post
+RESERVE_ALERT_USER_ID = USERS.OGGERS               # the only user those alerts ping
+RESERVE_ALERT_STATE_FILE = os.path.join(JSON_DATA_DIR, "reserve_throttle_alert.json")  # last announced throttle level, so a restart never re-announces
 
 DIRECT_MENTION_ALLOWED_USERS = [USERS.OGGERS, USERS.ROSHY, USERS.HADIDAS, USERS.JOHNNY]
 

@@ -57,14 +57,15 @@ def test_throttle_tiers_scale_only_when_reserves_fall():
     assert R.throttle_multiplier() == 1.0
     assert R.scale_reward(100) == 100
     # Each tier bites at its ceiling. First match wins, so check the boundaries.
-    for reserves, expected in ((85_000, 0.75), (45_000, 0.50), (5_000, 0.25),
+    for reserves, expected in ((110_000, 0.75), (60_000, 0.50), (45_000, 0.50), (5_001, 0.50), (5_000, 0.25),
                                (4_999, 0.25), (1, 0.25)):
         _set_bank(reserves)
         assert R.throttle_multiplier() == expected, reserves
-    assert R.throttle_multiplier(85_001) == 1.0
-    _set_bank(45_000)
+    assert R.throttle_multiplier(110_001) == 1.0
+    assert R.throttle_multiplier(60_001) == 0.75
+    _set_bank(60_000)
     assert R.scale_reward(100) == 50
-    _set_bank(85_000)
+    _set_bank(110_000)
     assert R.scale_reward(100) == 75
 
 
@@ -178,7 +179,7 @@ def test_reserve_state_reports_the_floor_and_headroom():
     st = R.reserve_state()
     assert st["above_floor"] == -20_000             # below the floor reads negative
     assert st["throttled"] is True
-    assert st["multiplier"] == 0.75                 # 60k free sits in the 85k tier
+    assert st["multiplier"] == 0.50                 # 60k free sits in the 60k tier
     config.RESERVE_FLOOR = old_floor
 
 
@@ -226,6 +227,55 @@ def test_casino_limits_read_whole_balance_unless_told_to_exclude_bonds():
         assert R.max_casino_bet(2.0, 250_000) == int(100_000 * config.MAX_EXPOSURE_PCT / 2.0)
     finally:
         config.CASINO_EXPOSURE_EXCLUDES_BONDS = old
+
+
+def test_throttle_tiers_are_the_agreed_values():
+    assert tuple(config.RESERVE_THROTTLE_TIERS) == ((5_000, 0.25), (60_000, 0.50), (110_000, 0.75))
+
+
+def test_alert_seeds_silently_then_fires_once_per_change():
+    from lib.economy import reserve_policy as R
+    config.RESERVE_ALERT_ENABLED = True
+    config.RESERVE_ALERT_HYSTERESIS = 2_000
+    st, msg = R.check_throttle_alert({}, 200_000, 250_000, 50_000)
+    assert msg is None and st == {"multiplier": 1.0}      # first run: seed only
+    st2, msg = R.check_throttle_alert(st, 190_000, 0, 0)  # still off: nothing
+    assert msg is None and st2 == st
+    st, msg = R.check_throttle_alert(st, 100_000, 150_000, 50_000)
+    assert "ENABLED" in msg and "100,000" in msg and "150,000" in msg and "50,000" in msg
+    assert st == {"multiplier": 0.75}
+    st2, msg = R.check_throttle_alert(st, 99_000, 99_000, 0)   # same tier: silent
+    assert msg is None
+    st, msg = R.check_throttle_alert(st, 50_000, 50_000, 0)
+    assert "tier changed" in msg and "tightened" in msg and st["multiplier"] == 0.50
+    st, msg = R.check_throttle_alert(st, 130_000, 130_000, 0)
+    assert "DISABLED" in msg and st["multiplier"] == 1.0
+
+
+def test_alert_hysteresis_stops_flapping_at_a_threshold():
+    from lib.economy import reserve_policy as R
+    config.RESERVE_ALERT_ENABLED = True
+    config.RESERVE_ALERT_HYSTERESIS = 2_000
+    st = {"multiplier": 0.75}
+    # hover around 110k: throttle (real) flips, alert does not relax until 112,001+
+    for r in (110_001, 111_000, 112_000, 110_500):
+        st, msg = R.check_throttle_alert(st, r, r, 0)
+        assert msg is None and st["multiplier"] == 0.75, r
+    st, msg = R.check_throttle_alert(st, 112_001, 112_001, 0)
+    assert msg and "DISABLED" in msg
+    # tightening is immediate, and dipping back by less than the margin does not re-announce
+    st, msg = R.check_throttle_alert(st, 110_000, 110_000, 0)
+    assert msg and "ENABLED" in msg
+    st, msg = R.check_throttle_alert(st, 111_500, 111_500, 0)
+    assert msg is None
+
+
+def test_alert_disabled_flag_is_silent():
+    from lib.economy import reserve_policy as R
+    config.RESERVE_ALERT_ENABLED = False
+    st, msg = R.check_throttle_alert({"multiplier": 1.0}, 1_000, 1_000, 0)
+    assert msg is None
+    config.RESERVE_ALERT_ENABLED = True
 
 
 def _run_all():
