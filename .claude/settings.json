@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./run.sh:*)"
+      "Bash(./run.sh:*)",
+      "Bash(./run.sh deploy.py)"
     ]
   }
 }
