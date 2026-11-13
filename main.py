@@ -846,6 +846,10 @@ class AClient(discord.Client):
     async def on_stage_instance_delete(self, stage_instance):
         await on_stage_instance_delete(stage_instance)
 
+    async def on_raw_thread_update(self, payload):
+        from lib.features.persona_control import on_controller_thread_update
+        await on_controller_thread_update(self, payload)
+
     async def on_guild_channel_create(self, channel):
         await add_extra_ticket_roles(channel)
 

@@ -945,6 +945,44 @@ async def _poll_loop() -> None:
             pass
 
 
+CONTROLLER_ARCHIVE_MINUTES = 10080  # a week, the longest Discord allows
+
+
+async def keep_controller_open(thread) -> bool:
+    """Keep the chatbot controller thread out of the archive, so it stays in people's sidebars.
+
+    Discord archives a thread after a stretch with no new messages, and editing the cards in
+    it doesn't count. Returns True when it had to change something."""
+    try:
+        if not getattr(thread, "archived", False) and \
+                getattr(thread, "auto_archive_duration", None) == CONTROLLER_ARCHIVE_MINUTES:
+            return False
+        await thread.edit(archived=False, auto_archive_duration=CONTROLLER_ARCHIVE_MINUTES,
+                          reason="Keep the chatbot controller thread open")
+        logger.info("Chatbot controller thread kept open")
+        return True
+    except discord.HTTPException as e:
+        logger.warning("Could not keep the chatbot controller thread open: %s", e)
+        return False
+
+
+async def on_controller_thread_update(client: discord.Client, payload) -> None:
+    """Unarchive the controller thread the moment Discord archives it."""
+    thread_id = getattr(CHANNELS, "CHATBOT_CONTROLLER_THREAD", 1547254995320184833)
+    if payload.thread_id != thread_id:
+        return
+    meta = (payload.data or {}).get("thread_metadata") or {}
+    if not meta.get("archived"):
+        return
+    thread = payload.thread or client.get_channel(thread_id)
+    if thread is None:
+        try:
+            thread = await client.fetch_channel(thread_id)
+        except discord.HTTPException:
+            return
+    await keep_controller_open(thread)
+
+
 async def ensure_persona_card(client: discord.Client) -> None:
     """Post or re-attach the card in the chatbot controller thread and start watching the service."""
     global _client, _card_message, _poll_task
@@ -955,6 +993,7 @@ async def ensure_persona_card(client: discord.Client) -> None:
     try:
         await refresh_state()
         thread = client.get_channel(thread_id) or await client.fetch_channel(thread_id)
+        await keep_controller_open(thread)
         message = None
         saved = load_json_file(CARD_STATE_FILE).get("message_id")
         if saved:

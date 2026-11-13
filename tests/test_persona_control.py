@@ -413,3 +413,29 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ControllerThreadKeptOpenTests(unittest.IsolatedAsyncioTestCase):
+    async def test_an_archived_controller_thread_is_reopened_for_a_week(self):
+        thread = types.SimpleNamespace(archived=True, auto_archive_duration=4320, edit=AsyncMock())
+        payload = types.SimpleNamespace(thread_id=1547254995320184833, thread=thread,
+                                        data={"thread_metadata": {"archived": True}})
+        await pc.on_controller_thread_update(MagicMock(), payload)
+        thread.edit.assert_awaited_once()
+        kwargs = thread.edit.await_args.kwargs
+        self.assertFalse(kwargs["archived"])
+        self.assertEqual(kwargs["auto_archive_duration"], 10080)
+
+    async def test_other_threads_and_open_updates_are_left_alone(self):
+        thread = types.SimpleNamespace(archived=True, auto_archive_duration=4320, edit=AsyncMock())
+        other = types.SimpleNamespace(thread_id=123, thread=thread, data={"thread_metadata": {"archived": True}})
+        await pc.on_controller_thread_update(MagicMock(), other)
+        still_open = types.SimpleNamespace(thread_id=1547254995320184833, thread=thread,
+                                           data={"thread_metadata": {"archived": False}})
+        await pc.on_controller_thread_update(MagicMock(), still_open)
+        thread.edit.assert_not_awaited()
+
+    async def test_an_open_week_long_thread_needs_no_edit(self):
+        thread = types.SimpleNamespace(archived=False, auto_archive_duration=10080, edit=AsyncMock())
+        self.assertFalse(await pc.keep_controller_open(thread))
+        thread.edit.assert_not_awaited()
