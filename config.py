@@ -367,6 +367,11 @@ DEMURRAGE_DIVIDEND_PCT = 0.50     # share of each demurrage run diverted into th
 # frequency scales down linearly below it. Roughly one week of chat-reward spend.
 DEMURRAGE_DIVIDEND_FULL_POT = 2_500
 DEMURRAGE_DIVIDEND_MIN_RATE = 0.25   # floor on the scaling while the pot still has anything
+# While the reserve throttle is on, the part of a discretionary reward it holds back is paid
+# from the pot instead, so the player gets 100% (partial cover if the pot is short). Top-ups
+# never draw the pot below THROTTLE_POT_TOPUP_FLOOR, which is kept for chat rewards.
+THROTTLE_POT_TOPUP_ENABLED = True
+THROTTLE_POT_TOPUP_FLOOR = 2_500
 
 
 HOF_REWARD = 100                  # UKP DM'd to a message's author on Hall of Fame entry

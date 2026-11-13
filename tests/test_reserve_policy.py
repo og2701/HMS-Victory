@@ -278,6 +278,175 @@ def test_alert_disabled_flag_is_silent():
     config.RESERVE_ALERT_ENABLED = True
 
 
+# ---------------------------------------------------------------------------
+# Pot top-up: the dividend pot covers what the throttle holds back
+# ---------------------------------------------------------------------------
+def _topup_setup(bank=60_000, pot=0, floor=2_500, enabled=True):
+    """Bank at the 0.50 tier by default, with the pot set directly."""
+    _fresh_db()
+    config.DEMURRAGE_DIVIDEND_ENABLED = True
+    config.THROTTLE_POT_TOPUP_ENABLED = enabled
+    config.THROTTLE_POT_TOPUP_FLOOR = floor
+    _set_bank(bank)
+    DatabaseManager.execute("UPDATE bank SET chat_reward_pot = ? WHERE id = 1", (pot,))
+
+
+def test_pot_tops_up_a_throttled_reward_in_full():
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    _topup_setup(pot=10_000)
+    before = _supply()
+    assert R.scale_reward(100) == 50
+    assert add_bb(5001, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+    assert get_bb(5001) == 100                     # player gets 100%
+    assert R.dividend_pot() == 9_950               # pot covered the 50 the throttle held back
+    assert _supply() == before                     # the pot is an earmark: no UKP created
+    config.THROTTLE_POT_TOPUP_ENABLED = True
+
+
+def test_pot_tops_up_partially_and_never_below_the_floor():
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    _topup_setup(pot=2_520)                        # only 20 spare above the 2,500 floor
+    assert R.estimate_reward_with_pot(100) == 70
+    assert add_bb(5002, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+    assert get_bb(5002) == 70                      # 50 throttled + 20 from the pot
+    assert R.dividend_pot() == 2_500               # stopped exactly at the floor
+
+
+def test_pot_at_or_below_floor_pays_the_plain_throttle():
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    for pot in (2_500, 1_000, 0):
+        _topup_setup(pot=pot)
+        assert R.scale_reward_with_pot(100) == (50, 0)
+        assert add_bb(5003, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+        assert get_bb(5003) == 50, pot
+        assert R.dividend_pot() == pot, pot        # untouched
+
+
+def test_pot_topup_flag_off_is_todays_throttle():
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    _topup_setup(pot=10_000, enabled=False)
+    assert R.estimate_reward_with_pot(100) == 50
+    assert add_bb(5004, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+    assert get_bb(5004) == 50
+    assert R.dividend_pot() == 10_000
+    config.THROTTLE_POT_TOPUP_ENABLED = True
+
+
+def test_pot_topup_does_nothing_while_the_throttle_is_off():
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    _topup_setup(bank=400_000, pot=10_000)
+    assert R.throttle_multiplier() == 1.0
+    assert R.scale_reward_with_pot(100) == (100, 0)
+    assert add_bb(5005, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+    assert get_bb(5005) == 100
+    assert R.dividend_pot() == 10_000
+    # obligations never touch the pot either, throttle or not
+    _topup_setup(pot=10_000)
+    add_bb(5006, 100, reason="Casino payout", taxable=False)
+    assert get_bb(5006) == 100
+    assert R.dividend_pot() == 10_000
+
+
+def test_pot_debit_failure_falls_back_to_the_throttle():
+    """A lost race (conditional UPDATE matches nothing) or a DB error pays exactly what the
+    throttle alone would have, and never crashes the payout."""
+    from lib.economy import reserve_policy as R
+    from lib.economy.economy_manager import add_bb, get_bb
+    real_execute = DatabaseManager.execute
+
+    def lost_race(query, params=()):
+        if "chat_reward_pot - ?" in query and ">= ?" in query and len(params) == 3:
+            return 0
+        return real_execute(query, params)
+
+    def broken(query, params=()):
+        if "chat_reward_pot - ?" in query and len(params) == 3:
+            raise RuntimeError("database is locked")
+        return real_execute(query, params)
+
+    for fake, uid in ((lost_race, 5007), (broken, 5008)):
+        _topup_setup(pot=10_000)
+        DatabaseManager.execute = staticmethod(fake)
+        try:
+            assert R.scale_reward_with_pot(100) == (50, 0)
+            assert add_bb(uid, 100, reason="Tree watering reward", taxable=False, discretionary=True)
+        finally:
+            DatabaseManager.execute = staticmethod(real_execute)
+        assert get_bb(uid) == 50
+        assert R.dividend_pot() == 10_000
+
+
+def test_failed_payout_refunds_the_pot_cover():
+    from lib.economy import reserve_policy as R
+    from lib.economy.bank_manager import BankManager
+    from lib.economy.economy_manager import add_bb
+    _topup_setup(pot=10_000)
+    real = BankManager.transfer_to_user
+    BankManager.transfer_to_user = staticmethod(lambda *a, **k: False)
+    try:
+        assert add_bb(5009, 100, reason="Tree watering reward", discretionary=True) is False
+    finally:
+        BankManager.transfer_to_user = real
+    assert R.dividend_pot() == 10_000
+
+
+def test_display_estimate_never_debits_the_pot():
+    from lib.economy import reserve_policy as R
+    _topup_setup(pot=10_000)
+    for _ in range(5):
+        assert R.estimate_reward_with_pot(100) == 100
+        assert R.scale_reward(100) == 50           # still pure
+    assert R.dividend_pot() == 10_000
+
+
+def test_puzzle_payouts_debit_the_pot_once_and_show_what_landed():
+    """Wordle and crossword compute a display figure AND pay through add_bb; only the
+    payout may touch the pot, and the figure shown must match what the player received."""
+    from lib.economy import reserve_policy as R
+    from lib.economy import activity_badges
+    from lib.economy.economy_manager import get_bb
+    from lib.features import crossword, wordle
+    import datetime
+
+    saved = []
+    patches = [
+        (crossword, "reward_for", lambda p, d: 100),
+        (crossword, "_run_solve_checks", lambda *a, **k: None),
+        (crossword, "_save_player", lambda *a, **k: None),
+        (wordle, "_run_solve_checks", lambda *a, **k: None),
+        (wordle, "_record_solve_guesses", lambda *a, **k: None),
+        (wordle, "_get_consecutive_first_try", lambda uid: 0),
+        (wordle, "_mark_rewarded", lambda *a, **k: None),
+        (activity_badges, "crossword_finished", lambda *a, **k: None),
+        (activity_badges, "wordle_solved", lambda *a, **k: None),
+    ]
+    for mod, name, fn in patches:
+        saved.append((mod, name, getattr(mod, name)))
+        setattr(mod, name, fn)
+    old_rewards = config.WORDLE_REWARDS
+    config.WORDLE_REWARDS = [100] * 6
+    try:
+        today = datetime.date(2026, 1, 1)
+        _topup_setup(pot=10_000)
+        shown = crossword._pay_finish(None, 5010, today, {"done": True}, None)
+        assert shown == 100 and get_bb(5010) == 100
+        assert R.dividend_pot() == 9_950           # debited once, by the payout
+
+        _topup_setup(pot=2_520)
+        shown = wordle._pay_solve(None, 5011, today, {"solved": True, "guesses": ["a"] * 3})
+        assert shown == 70 and get_bb(5011) == 70
+        assert R.dividend_pot() == 2_500
+    finally:
+        config.WORDLE_REWARDS = old_rewards
+        for mod, name, fn in saved:
+            setattr(mod, name, fn)
+
+
 def _run_all():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     passed = 0

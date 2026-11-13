@@ -408,8 +408,9 @@ def _pay_solve(client, uid: int, date, p) -> int | None:
     # discretionary: a puzzle prize is a reward the server chooses to give, so it scales
     # with bank reserves like every other one (see reserve_policy.py). Scaled here too only
     # so the board can show what actually landed; add_bb does the real scaling.
-    from lib.economy.reserve_policy import scale_reward
-    shown = scale_reward(reward) if reward else 0
+    # The estimate includes any dividend-pot top-up but never debits the pot; add_bb does.
+    from lib.economy.reserve_policy import estimate_reward_with_pot
+    shown = estimate_reward_with_pot(reward) if reward else 0
     if add_bb(uid, reward, reason="HMS Wordle solve", taxable=False, discretionary=True):
         _mark_rewarded(uid, date.isoformat(), paid=shown)
         return shown

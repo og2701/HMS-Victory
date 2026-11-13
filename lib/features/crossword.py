@@ -287,8 +287,9 @@ def _pay_finish(client, uid: int, date, p, puzzle) -> int | None:
     activity_badges.crossword_finished(uid, p, date.isoformat())
     # discretionary: this is a reward the server chooses to give, so it scales down when
     # bank reserves are low. Scaled here too only so the board can show what landed.
-    from lib.economy.reserve_policy import scale_reward
-    shown = scale_reward(reward) if reward else 0
+    # The estimate includes any dividend-pot top-up but never debits the pot; add_bb does.
+    from lib.economy.reserve_policy import estimate_reward_with_pot
+    shown = estimate_reward_with_pot(reward) if reward else 0
     if add_bb(uid, reward, reason="HMS Crossword solve", taxable=False, discretionary=True):
         p["rewarded"] = True
         p["paid"] = int(shown)

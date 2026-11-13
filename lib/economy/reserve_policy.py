@@ -19,6 +19,13 @@ as before; this only records how much of that balance is spoken for by chat rewa
 created or destroyed by the pot, so the fixed-supply invariant cannot drift no matter what the
 counter says. Empty pot means chat rewards stop until the next demurrage run refills it.
 
+**Pot top-up of throttled rewards.** While the throttle is on, the part of a discretionary
+reward it holds back is covered from the pot instead (``scale_reward_with_pot``), so the
+player still gets 100% - or as much as the pot can spare above THROTTLE_POT_TOPUP_FLOOR,
+which is kept back so chat rewards don't stop. The bank still pays the whole amount; the pot
+counter just drops by the covered part. ``scale_reward`` stays pure (display-safe);
+``estimate_reward_with_pot`` previews a top-up without debiting anything.
+
 Everything here is read-mostly and fails OPEN (no throttling, rewards paid in full) if the
 database misbehaves: a broken reserve read must never silently stop paying the server.
 """
@@ -303,3 +310,83 @@ def spend_dividend(amount: int) -> bool:
     except Exception:
         logger.error("dividend pot debit failed", exc_info=True)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Pot top-up: the dividend pot covers what the throttle holds back
+# ---------------------------------------------------------------------------
+def _topup_enabled() -> bool:
+    return bool(_cfg("THROTTLE_POT_TOPUP_ENABLED", False)) and \
+        bool(_cfg("DEMURRAGE_DIVIDEND_ENABLED", True))
+
+
+def _topup_floor() -> int:
+    return max(0, int(_cfg("THROTTLE_POT_TOPUP_FLOOR", 2_500)))
+
+
+def _planned_cover(amount: int, throttled: int) -> int:
+    """How much of the throttle's cut the pot could cover right now (reads only)."""
+    shortfall = amount - throttled
+    if shortfall <= 0:
+        return 0
+    return max(0, min(shortfall, dividend_pot() - _topup_floor()))
+
+
+def estimate_reward_with_pot(amount: int, reserves: int = None) -> int:
+    """What ``scale_reward_with_pot`` would pay right now, WITHOUT touching the pot.
+
+    For display only. Never less than ``scale_reward``; any error falls back to it."""
+    throttled = scale_reward(amount, reserves)
+    if amount <= 0 or throttled >= amount or not _topup_enabled():
+        return throttled
+    try:
+        return throttled + _planned_cover(amount, throttled)
+    except Exception:
+        logger.error("pot top-up estimate failed; showing throttled amount", exc_info=True)
+        return throttled
+
+
+def scale_reward_with_pot(amount: int, reserves: int = None) -> tuple:
+    """The real-payout version of ``scale_reward``: throttle, then let the pot cover the cut.
+
+    Returns ``(pay, cover)``: ``pay`` is what to give the player, ``cover`` is what was
+    debited from the pot (0 if none). The debit is conditional in SQL so concurrent rewards
+    can't take the pot below the floor; a lost race or any error falls back to the plain
+    throttled amount, so this never pays less than ``scale_reward`` would. Call it exactly
+    once per real payout, and ``refund_pot_cover(cover)`` if that payout then fails.
+    """
+    throttled = scale_reward(amount, reserves)
+    if amount <= 0 or throttled >= amount or not _topup_enabled():
+        return throttled, 0
+    try:
+        cover = _planned_cover(amount, throttled)
+        if cover <= 0:
+            return throttled, 0
+        floor = _topup_floor()
+        from database import DatabaseManager
+        changed = DatabaseManager.execute(
+            "UPDATE bank SET chat_reward_pot = chat_reward_pot - ? "
+            "WHERE id = 1 AND chat_reward_pot - ? >= ?", (cover, cover, floor))
+        if not changed:
+            logger.info("[ECONOMY] Pot top-up lost a race (%s wanted); paying throttled %s of %s.",
+                        cover, throttled, amount)
+            return throttled, 0
+        logger.info("[ECONOMY] Pot covered %s of a throttled reward: paying %s of %s "
+                    "(throttle alone %s).", cover, throttled + cover, amount, throttled)
+        return throttled + cover, cover
+    except Exception:
+        logger.error("pot top-up failed; paying throttled amount", exc_info=True)
+        return throttled, 0
+
+
+def refund_pot_cover(cover: int) -> None:
+    """Put a top-up back in the pot when the payout it was meant for didn't happen."""
+    if cover <= 0:
+        return
+    from database import DatabaseManager
+    try:
+        DatabaseManager.execute(
+            "UPDATE bank SET chat_reward_pot = COALESCE(chat_reward_pot, 0) + ? WHERE id = 1",
+            (cover,))
+    except Exception:
+        logger.error("pot top-up refund of %s failed", cover, exc_info=True)

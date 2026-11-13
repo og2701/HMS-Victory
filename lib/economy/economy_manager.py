@@ -641,13 +641,26 @@ def add_bb(user_id: int, amount: int, reason: str = "Unspecified",
     Returns True if successful, False if the bank couldn't cover it.
     """
     if from_bank:
+        cover = 0
         if discretionary:
-            from lib.economy.reserve_policy import scale_reward
-            amount = scale_reward(amount)
+            # The throttle's cut is topped up from the dividend pot where it can be; this is
+            # the one place a real reward debits the pot (display paths use the estimate).
+            from lib.economy.reserve_policy import scale_reward_with_pot
+            amount, cover = scale_reward_with_pot(amount)
         from lib.economy.bank_manager import BankManager
-        return BankManager.transfer_to_user(
-            user_id, amount, description=reason, taxable=taxable,
-        )
+        try:
+            paid = BankManager.transfer_to_user(
+                user_id, amount, description=reason, taxable=taxable,
+            )
+        except BaseException:
+            if cover:
+                from lib.economy.reserve_policy import refund_pot_cover
+                refund_pot_cover(cover)
+            raise
+        if not paid and cover:
+            from lib.economy.reserve_policy import refund_pot_cover
+            refund_pot_cover(cover)
+        return paid
 
     UKPenceManager.add_amount(user_id, amount, reason=reason)
     return True
