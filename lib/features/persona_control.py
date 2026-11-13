@@ -424,6 +424,10 @@ async def _record_first_message(pid: str, message_id: int, url: str) -> bool:
     _swept.discard(pid)
     logger.info("Persona pass %s: Vic's first message is %s", pid, message_id)
     await _close_pass_message(p, _used_note(p))
+    try:
+        await refresh_and_update(force=True)  # the card's pass list links it too
+    except Exception:
+        logger.debug("persona card refresh after first message failed", exc_info=True)
     return True
 
 
@@ -872,6 +876,7 @@ class PersonaCardView(discord.ui.LayoutView):
                 for _, p in open_passes
             ] + [
                 f"- ✅ <@{p['user_id']}> used one in <#{p['channel_id']}> <t:{int(p['closed_at'])}:R>"
+                + (f" · [first message](<{p['first_msg_url']}>)" if p.get("first_msg_url") else "")
                 for p in used
             ]
             card.add_item(discord.ui.Separator(visible=True))
