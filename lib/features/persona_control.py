@@ -11,13 +11,16 @@ tag never gets two answers from two different Vics.
 
 Passes let someone else switch it on once: the card sends them a DM button that
 turns Vic on in a chosen channel for a chosen time, through the same sleep timer.
+Once used, the pass message links to the first thing Vic says in that session.
 """
 
 import asyncio
+import datetime
 import logging
 import os
 import secrets
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, Set, Tuple
 
@@ -47,6 +50,14 @@ SLEEP_CHOICES = ((5, "5 min"), (10, "10 min"), (15, "15 min"), (30, "30 min"),
 PASSES_FILE = os.path.join(config.JSON_DATA_DIR, "persona_passes.json")
 PASS_TTL_SECS = 24 * 3600  # an unused pass runs out after this
 PASS_KEEP_SECS = 7 * 24 * 3600  # used, taken back and run-out passes are forgotten after this
+# The first-message link on a used pass. The persona bot posts as this same account, so
+# its replies reach on_message here; what this process posted itself is told apart by
+# the message ids send_message hands back (see looks_like_persona_reply).
+OWN_SEND_GRACE_SECS = 3.0  # the gateway can beat the HTTP response for our own sends
+FIRST_MSG_SETTLE_SECS = 30.0  # after the session, before "Vic didn't say anything" is final
+FIRST_MSG_GIVE_UP_SECS = 3600.0  # stop trying once history can't be read for this long after
+FIRST_MSG_HISTORY_LIMIT = 500
+OWN_SENT_LIMIT = 500
 CLOSED_PASS_REPLIES = {
     "used": "You've already used this pass.",
     "revoked": "This pass was taken back.",
@@ -85,6 +96,9 @@ _wake = asyncio.Event()
 _settle_until = 0.0  # poll fast and ride over the stop half of a restart until then
 _last_live: frozenset = frozenset()
 _pass_lock = asyncio.Lock()
+_own_sent: "OrderedDict[int, None]" = OrderedDict()  # ids of messages this process sent
+_watches: Dict[int, list] = {}  # channel id -> [(pass id, after snowflake, before snowflake)]
+_swept: Set[str] = set()  # passes whose channel history was read since this process started
 
 
 def parse_systemctl_show(text: str) -> Tuple[str, int]:
@@ -302,6 +316,201 @@ async def _close_pass_message(p: dict, note: str) -> None:
         logger.debug("Could not update persona pass message: %s", e)
 
 
+def _used_note(p: dict) -> str:
+    """The line under a used pass: when, where, until when, and what Vic said first."""
+    note = (f"✅ Used <t:{int(float(p['closed_at']))}:R>. Vic is on in <#{p['channel_id']}> "
+            f"until <t:{int(float(p['session_until']))}:t>.")
+    if p.get("first_msg_url"):
+        note += f" · [first message](<{p['first_msg_url']}>)"
+    elif p.get("first_msg_done"):
+        note += " Vic didn't say anything this session."
+    return note
+
+
+# ---------- Vic's first message in a pass session ----------
+
+def _snowflake(ts: float, high: bool = False) -> int:
+    return discord.utils.time_snowflake(datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc), high=high)
+
+
+def _watching(p: dict) -> bool:
+    """A used pass still waiting to learn what Vic said first. Passes from before this
+    feature have no first_msg_id key, so they're never watched."""
+    return (p.get("status") == "used" and "first_msg_id" in p and not p.get("first_msg_id")
+            and not p.get("first_msg_done") and p.get("session_until") is not None)
+
+
+def _load_watches(passes: Optional[Dict[str, dict]] = None) -> None:
+    global _watches
+    watches: Dict[int, list] = {}
+    for pid, p in (load_passes() if passes is None else passes).items():
+        if _watching(p):
+            watches.setdefault(int(p["channel_id"]), []).append(
+                (pid, _snowflake(float(p["closed_at"])), _snowflake(float(p["session_until"]), high=True)))
+    _watches = watches
+
+
+def _remember_own_send(message_id) -> None:
+    try:
+        _own_sent[int(message_id)] = None
+    except (TypeError, ValueError):
+        return
+    while len(_own_sent) > OWN_SENT_LIMIT:
+        _own_sent.popitem(last=False)
+
+
+def _track_own_sends(client: discord.Client) -> None:
+    """Note the id of every message this process posts, so the persona bot's are the rest.
+
+    Every channel.send and message.reply goes through HTTPClient.send_message.
+    """
+    http = getattr(client, "http", None)
+    original = getattr(http, "send_message", None)
+    if not callable(original) or getattr(original, "_persona_tracked", False) is True:
+        return
+
+    async def send_message(*args, **kwargs):
+        data = await original(*args, **kwargs)
+        if isinstance(data, dict):
+            _remember_own_send(data.get("id"))
+        return data
+
+    send_message._persona_tracked = True
+    http.send_message = send_message
+
+
+def looks_like_persona_reply(message: discord.Message) -> bool:
+    """Plain chat from this account that this process didn't post: what the persona bot sends.
+
+    This bot's own posts are slash-command responses, embeds, Components V2 cards, files
+    and buttons, and the plain-text ones it sends are in ``_own_sent``. The persona bot
+    only ever sends text, an emoji or a sticker, as a plain message or a reply.
+    """
+    user = getattr(_client, "user", None)
+    if user is None or getattr(message.author, "id", None) != user.id:
+        return False
+    if message.id in _own_sent:
+        return False
+    if getattr(message, "type", None) not in (discord.MessageType.default, discord.MessageType.reply):
+        return False
+    if getattr(message, "interaction_metadata", None) is not None or getattr(message, "webhook_id", None) is not None:
+        return False
+    if getattr(getattr(message, "flags", None), "components_v2", False) is True:
+        return False
+    if message.components or message.attachments:
+        return False
+    if any(getattr(e, "type", "rich") == "rich" for e in message.embeds or ()):
+        return False  # link previews are fine, embeds this bot builds are not
+    return bool((message.content or "").strip() or getattr(message, "stickers", None))
+
+
+def _jump_url(message: discord.Message, channel_id: int) -> str:
+    url = getattr(message, "jump_url", None)
+    if isinstance(url, str) and url:
+        return url
+    return f"https://discord.com/channels/{_channel_guild_id(channel_id) or '@me'}/{channel_id}/{message.id}"
+
+
+async def _record_first_message(pid: str, message_id: int, url: str) -> bool:
+    """Link the pass to this message and stop watching."""
+    async with _pass_lock:
+        passes = load_passes()
+        p = passes.get(pid)
+        if p is None or not _watching(p):
+            return False
+        p.update(first_msg_id=str(message_id), first_msg_url=url)
+        _save_passes(passes)
+        _load_watches(passes)
+    _swept.discard(pid)
+    logger.info("Persona pass %s: Vic's first message is %s", pid, message_id)
+    await _close_pass_message(p, _used_note(p))
+    return True
+
+
+async def _consider_live(message: discord.Message, pids: list) -> None:
+    await asyncio.sleep(OWN_SEND_GRACE_SECS)
+    if message.id in _own_sent:
+        return
+    for pid in pids:
+        await _record_first_message(pid, message.id, _jump_url(message, message.channel.id))
+
+
+def note_own_message(message: discord.Message) -> None:
+    """Called for every message this account posts; catches Vic's first word after a pass.
+
+    Only passes whose channel history this process has already read (or that were used
+    in this process) take a live message, so after a restart the sweep can still find an
+    earlier one first.
+    """
+    try:
+        watches = _watches.get(message.channel.id)
+        if not watches or not looks_like_persona_reply(message):
+            return
+        pids = [pid for pid, after, before in watches if pid in _swept and after < message.id <= before]
+        if pids:
+            asyncio.create_task(_consider_live(message, pids))
+    except Exception:
+        logger.debug("persona first-message check failed", exc_info=True)
+
+
+async def _first_in_history(channel_id: int, after: int, before: int) -> Optional[discord.Message]:
+    channel = _client.get_channel(channel_id) or await _client.fetch_channel(channel_id)
+    async for m in channel.history(after=discord.Object(id=after), before=discord.Object(id=before + 1),
+                                   limit=FIRST_MSG_HISTORY_LIMIT, oldest_first=True):
+        if looks_like_persona_reply(m):
+            return m
+    return None
+
+
+async def _finish_watch(pid: str, say_so: bool) -> None:
+    """Vic said nothing this session: say so on the pass, or just stop watching."""
+    async with _pass_lock:
+        passes = load_passes()
+        p = passes.get(pid)
+        if p is None or not _watching(p):
+            return
+        p["first_msg_done"] = True
+        _save_passes(passes)
+        _load_watches(passes)
+    _swept.discard(pid)
+    if say_so:
+        logger.info("Persona pass %s: Vic didn't say anything", pid)
+        await _close_pass_message(p, _used_note(p))
+
+
+async def sweep_first_messages(now: Optional[float] = None) -> None:
+    """Fill in from channel history what live events missed, and close finished sessions.
+
+    A pending pass is read once after a restart, and once more when its session is over.
+    """
+    if _client is None:
+        return
+    now = now or time.time()
+    passes = load_passes()
+    _load_watches(passes)
+    for pid, p in passes.items():
+        if not _watching(p):
+            continue
+        until = float(p["session_until"])
+        over = now >= until + FIRST_MSG_SETTLE_SECS
+        if pid in _swept and not over:
+            continue
+        channel_id = int(p["channel_id"])
+        try:
+            found = await _first_in_history(channel_id, _snowflake(float(p["closed_at"])), _snowflake(until, high=True))
+        except (discord.HTTPException, ValueError) as e:
+            logger.debug("Could not read %s for persona pass %s: %s", channel_id, pid, e)
+            _swept.add(pid)  # live messages count meanwhile; retry once the session is over
+            if now >= until + FIRST_MSG_GIVE_UP_SECS:
+                await _finish_watch(pid, say_so=False)
+            continue
+        _swept.add(pid)
+        if found is not None:
+            await _record_first_message(pid, found.id, _jump_url(found, channel_id))
+        elif over:
+            await _finish_watch(pid, say_so=True)
+
+
 async def _ensure_running(timeout: float = 60.0) -> Optional[PersonaState]:
     """Start the persona bot if it's stopped and wait until it's logged in; None if it doesn't come up."""
     state = await refresh_state()
@@ -346,11 +555,14 @@ async def use_pass(pid: str, user_id: int) -> Tuple[bool, str]:
         if result is None:
             return False, "Couldn't reach Vic just now, so your pass is still here. Try again in a minute."
         now = time.time()
-        p.update(status="used", closed_at=now)
+        until = int(float(result.get("expires_at") or now + int(p["minutes"]) * 60))
+        # first_msg_id stays None until Vic says something there (note_own_message, sweep_first_messages).
+        p.update(status="used", closed_at=now, session_until=until, first_msg_id=None)
         _save_passes(passes)
-    until = int(float(result.get("expires_at") or now + int(p["minutes"]) * 60))
+        _load_watches(passes)
+        _swept.add(pid)  # nothing in history yet to miss
     logger.info("Persona pass %s used by %s: Vic on in %s until %s", pid, user_id, channel_id, until)
-    await _close_pass_message(p, f"✅ Used <t:{int(now)}:R>. Vic is on in <#{channel_id}> until <t:{until}:t>.")
+    await _close_pass_message(p, _used_note(p))
     await refresh_and_update(force=True)  # Direct Replies stand down straight away
     return True, f"🫥 Vic is on in <#{channel_id}> until <t:{until}:t>."
 
@@ -715,6 +927,7 @@ async def _poll_loop() -> None:
     while True:
         try:
             await refresh_and_update(force=await expire_passes())
+            await sweep_first_messages()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -731,6 +944,8 @@ async def ensure_persona_card(client: discord.Client) -> None:
     """Post or re-attach the card in the chatbot controller thread and start watching the service."""
     global _client, _card_message, _poll_task
     _client = client
+    _track_own_sends(client)
+    _load_watches()  # pending first-message watches from before a restart
     thread_id = getattr(CHANNELS, "CHATBOT_CONTROLLER_THREAD", 1547254995320184833)
     try:
         await refresh_state()

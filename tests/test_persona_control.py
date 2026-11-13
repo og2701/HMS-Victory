@@ -218,6 +218,176 @@ class PersonaControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("persona_ctl:pass", [getattr(i, "custom_id", None) for i in view.walk_children()])
         self.assertLessEqual(view.total_children_count, 40)
 
+    # ---------- Vic's first message after a pass ----------
+
+    def _first_msg_setup(self):
+        saved = (pc._watches, pc._swept, pc._own_sent)
+        pc._watches, pc._swept, pc._own_sent = {}, set(), pc.OrderedDict()
+        self.addCleanup(lambda: setattr(pc, "_watches", saved[0]) or setattr(pc, "_swept", saved[1])
+                        or setattr(pc, "_own_sent", saved[2]))
+        pc._client.user.id = 999
+        self.edit = AsyncMock()
+        pc._client.get_partial_messageable.return_value.get_partial_message.return_value.edit = self.edit
+        grace = patch.object(pc, "OWN_SEND_GRACE_SECS", 0)
+        grace.start()
+        self.addCleanup(grace.stop)
+
+    def _msg(self, at, content="ahoy", channel=GENERAL, author=999, **kw):
+        mid = pc._snowflake(at) + 1
+        fields = dict(id=mid, author=types.SimpleNamespace(id=author), content=content,
+                      channel=types.SimpleNamespace(id=channel), type=discord.MessageType.default,
+                      interaction_metadata=None, webhook_id=None, flags=types.SimpleNamespace(components_v2=False),
+                      components=[], attachments=[], embeds=[], stickers=[],
+                      jump_url=f"https://discord.com/channels/{MAIN_GUILD}/{channel}/{mid}")
+        fields.update(kw)
+        return types.SimpleNamespace(**fields)
+
+    async def _use(self, minutes_left=10):
+        pid, _, _, _ = await self._give()
+        until = pc.time.time() + minutes_left * 60
+
+        async def api(method, path, payload=None):
+            return {"ready": True} if path == "/api/status" else {"ok": True, "expires_at": until}
+
+        ready = pc.PersonaState(service="active", api_up=True, channels={GENERAL: "off"})
+        with patch.object(pc, "_api", api), patch.object(pc, "refresh_and_update", AsyncMock()), \
+                patch.object(pc, "refresh_state", AsyncMock(return_value=ready)):
+            ok, _ = await pc.use_pass(pid, 42)
+        self.assertTrue(ok)
+        return pid, pc.load_passes()[pid]
+
+    async def _settle(self):
+        for _ in range(20):
+            await pc.asyncio.sleep(0)
+
+    def _history(self, messages):
+        calls = []
+
+        def history(**kwargs):
+            calls.append(kwargs)
+
+            async def gen():
+                for m in messages:
+                    if kwargs["after"].id < m.id < kwargs["before"].id:
+                        yield m
+            return gen()
+
+        channel = MagicMock()
+        channel.history.side_effect = history
+        pc._client.get_channel.side_effect = lambda cid: channel
+        return calls
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_used_pass_links_to_vics_first_message_only(self):
+        self._first_msg_setup()
+        pid, p = await self._use()
+        self.assertIsNone(p["first_msg_id"])
+        self.assertEqual(p["session_until"], int(p["session_until"]))
+        used_note = self.edit.await_args.kwargs["content"].split("\n")[-1]
+        self.assertEqual(used_note, f"✅ Used <t:{int(p['closed_at'])}:R>. Vic is on in <#{GENERAL}> "
+                                    f"until <t:{int(p['session_until'])}:t>.")
+        now = pc.time.time()
+        # This bot's own posts in the channel are skipped.
+        sent = AsyncMock(return_value={"id": str(self._msg(now + 1).id)})
+        # Like discord.py's HTTPClient.send_message: a plain method handing back an awaitable.
+        http = types.SimpleNamespace(send_message=lambda channel_id, *, params: sent(channel_id, params=params))
+        pc._track_own_sends(types.SimpleNamespace(http=http))
+        pc._track_own_sends(types.SimpleNamespace(http=http))  # wrapped once only
+        await http.send_message(GENERAL, params=None)
+        own = [
+            self._msg(now + 1, content="🎉 Kaizo levelled up"),  # sent by this process
+            self._msg(now + 2, embeds=[types.SimpleNamespace(type="rich")]),
+            self._msg(now + 3, content="", flags=types.SimpleNamespace(components_v2=True)),
+            self._msg(now + 4, interaction_metadata=object()),
+            self._msg(now + 5, attachments=[object()]),
+            self._msg(now + 6, author=42),  # not this account
+            self._msg(now + 7, channel=LOUNGE),  # another channel
+        ]
+        for m in own:
+            pc.note_own_message(m)
+        await self._settle()
+        self.assertIsNone(pc.load_passes()[pid]["first_msg_id"])
+        self.edit.reset_mock()
+
+        first = self._msg(now + 8, content="right, who's buying",
+                          embeds=[types.SimpleNamespace(type="link")])  # a link preview is still chat
+        pc.note_own_message(first)
+        await self._settle()
+        p = pc.load_passes()[pid]
+        self.assertEqual(p["first_msg_id"], str(first.id))
+        self.assertEqual(self.edit.await_args.kwargs["content"].split("\n")[-1],
+                         used_note + f" · [first message](<{first.jump_url}>)")
+
+        pc.note_own_message(self._msg(now + 9, content="and another thing"))
+        await self._settle()
+        self.assertEqual(self.edit.await_count, 1)
+        self.assertEqual(pc.load_passes()[pid]["first_msg_id"], str(first.id))
+        self.assertEqual(pc._watches, {})
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_pass_says_so_when_vic_said_nothing(self):
+        self._first_msg_setup()
+        pid, p = await self._use()
+        until = p["session_until"]
+        calls = self._history([self._msg(p["closed_at"] + 5, embeds=[types.SimpleNamespace(type="rich")])])
+        self.edit.reset_mock()
+        await pc.sweep_first_messages(now=until - 60)  # still on, already watched live: no read
+        self.assertEqual(calls, [])
+        await pc.sweep_first_messages(now=until + 5)  # just over: wait for stragglers
+        self.assertEqual(calls, [])
+        await pc.sweep_first_messages(now=until + pc.FIRST_MSG_SETTLE_SECS + 1)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(self.edit.await_args.kwargs["content"].endswith(
+            f"until <t:{int(until)}:t>. Vic didn't say anything this session."))
+        p = pc.load_passes()[pid]
+        self.assertTrue(p["first_msg_done"])
+        self.assertIsNone(p["first_msg_id"])
+        # Finished: no more reads, and a late message doesn't change it.
+        await pc.sweep_first_messages(now=until + 120)
+        pc.note_own_message(self._msg(until - 1))
+        await self._settle()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.edit.await_count, 1)
+
+    @unittest.skipUnless(hasattr(pc.discord, "SelectOption"), "needs the real discord.py")
+    async def test_restart_fills_in_the_first_message_from_history(self):
+        self._first_msg_setup()
+        pid, p = await self._use()
+        # Restart: the watch comes back from the file, the in-memory bits are gone.
+        pc._watches, pc._swept, pc._own_sent = {}, set(), pc.OrderedDict()
+        pc._load_watches()
+        self.assertEqual([w[0] for w in pc._watches[GENERAL]], [pid])
+        start = p["closed_at"]
+        missed = self._msg(start + 30, content="morning all")
+        later = self._msg(start + 60, content="anyway")
+        before = self._msg(start - 30, content="from an older session")
+        calls = self._history([before, self._msg(start + 10, components=[object()]), missed, later])
+        # A live message before the catch-up read waits for it, so the earlier one wins.
+        pc.note_own_message(later)
+        await self._settle()
+        self.assertIsNone(pc.load_passes()[pid]["first_msg_id"])
+        await pc.sweep_first_messages()
+        self.assertEqual(calls[0]["after"].id, pc._snowflake(start))
+        self.assertTrue(calls[0]["oldest_first"])
+        self.assertEqual(pc.load_passes()[pid]["first_msg_id"], str(missed.id))
+        self.assertIn(f" · [first message](<{missed.jump_url}>)", self.edit.await_args.kwargs["content"])
+        await pc.sweep_first_messages(now=p["session_until"] + 3600)
+        self.assertEqual(len(calls), 1)
+
+    async def test_first_message_watch_never_keeps_an_old_pass(self):
+        self._first_msg_setup()
+        old = pc.time.time() - pc.PASS_KEEP_SECS - 60
+        pc._save_passes({
+            "aaaaaaaa": {"user_id": "42", "channel_id": str(GENERAL), "minutes": 10, "status": "used",
+                         "created_at": old, "expires_at": old, "closed_at": old,
+                         "session_until": old + 600, "first_msg_id": None},
+            "bbbbbbbb": {"user_id": "42", "channel_id": str(GENERAL), "minutes": 10, "status": "used",
+                         "created_at": pc.time.time(), "expires_at": pc.time.time(), "closed_at": pc.time.time()},
+        })
+        self.assertEqual(list(pc.load_passes()), ["bbbbbbbb"])
+        pc._load_watches()
+        self.assertEqual(pc._watches, {})  # a pass used before this feature isn't watched
+
     @patch("lib.features.chat_responder.handle_one_off_owner_mention")
     async def test_direct_tags_stand_down_while_the_persona_bot_is_on(self, one_off):
         one_off.return_value = True

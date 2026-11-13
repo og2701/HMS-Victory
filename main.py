@@ -414,6 +414,9 @@ class AClient(discord.Client):
         if self.user and message.author.id == self.user.id:
             from lib.features.chat_responder import note_own_message
             note_own_message(message)
+            # The persona bot shares this account, so its replies show up here too.
+            from lib.features import persona_control
+            persona_control.note_own_message(message)
 
         if message.author.id == USERS.COUNTRYBALL_BOT:
             # Gather all text from content, embeds, and component labels
