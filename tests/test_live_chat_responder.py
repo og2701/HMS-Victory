@@ -53,7 +53,12 @@ if "discord" not in sys.modules:
             self.fp = fp
             self.filename = filename
 
+    class MockObject:
+        def __init__(self, id):
+            self.id = id
+
     discord.File = MockFile
+    discord.Object = MockObject
     discord.AllowedMentions = MockAllowedMentions
 
     ui = types.ModuleType("discord.ui")
@@ -1417,6 +1422,67 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_synth.call_args[1]["target_name"], "the ukplace regulars")
         mock_gen_img.assert_called_once()
         self.assertEqual(mock_gen_img.call_args[0][0], "Johnny and oggers at a pub quiz")
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.synthesize_contextual_image_prompt")
+    @patch("lib.features.chat_responder.build_group_roster_context", new_callable=AsyncMock)
+    @patch("lib.features.chat_responder.fetch_user_bot_interactions_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_chat_sample_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.fetch_user_recent_chat_async", new_callable=AsyncMock, return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    @patch("lib.features.chat_responder.classify_mention_intent")
+    async def test_group_caption_cast_list_tags_without_pinging(
+        self, mock_classify, mock_find_img, mock_fetch_chat, _sample, _exchanges, mock_roster, mock_synth, mock_gen_img
+    ):
+        # The 6-7 party: nobody was @'d, the roster was filled from active members, and the Roles line tagged
+        # all of them. The tags stay as names, but only the asker gets notified.
+        mock_classify.return_value = {"intent": "generate", "subject": "group", "subject_name": None, "reason": "server members", "input_tokens": 0, "output_tokens": 0}
+        mock_roster.return_value = (
+            "SERVER MEMBER ROSTER FOR ukplace (these 3 people are the ONLY people who may appear):\n\n"
+            "MEMBER: Johnny (<@1>)\n  - up the pompey\nMEMBER: Kim (<@2>)\n  - yap\nMEMBER: Ade (<@3>)\n  - crochet"
+        )
+        caption = "Behold the party.\nRoles: <@1> the aviator, <@2> the analyst, <@3> the crochet enthusiast."
+        mock_synth.return_value = ("three people waving at a party", caption, 10, 5)
+        mock_gen_img.return_value = (b"img", 20, 200)
+
+        client = MagicMock()
+        client.user.id = 999999999
+        message = self._leader_message(client, f"<@{client.user.id}> generate an image of a 67 party, all of the members waving", author_id=USERS.HADIDAS)
+        message.guild = MagicMock(); message.guild.name = "ukplace"
+
+        with patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 3)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+
+        self.assertTrue(res)
+        sent = message.reply.call_args
+        self.assertIn("file", sent[1])
+        for uid in (1, 2, 3):
+            self.assertIn(f"<@{uid}>", sent[0][0])
+        allowed = sent[1]["allowed_mentions"]
+        self.assertEqual({u.id for u in allowed.users}, {USERS.HADIDAS})
+        self.assertFalse(allowed.everyone)
+        self.assertFalse(allowed.roles)
+
+    def test_ping_only_lists_only_given_users(self):
+        from lib.features.chat_responder import ping_only
+        allowed = ping_only(5, None, 5, 7, "8", True)
+        self.assertEqual([u.id for u in allowed.users], [5, 7])
+        self.assertFalse(allowed.everyone)
+        self.assertFalse(allowed.roles)
+        self.assertTrue(allowed.replied_user)
+        self.assertEqual(ping_only().users, [])
+
+    def test_reply_ping_ids_author_mentions_and_replied_to(self):
+        from lib.features.chat_responder import reply_ping_ids
+        message = MagicMock()
+        message.author.id = 10
+        message.mentions = [_member(11, "Kim")]
+        message.reference.resolved.author.id = 12
+        self.assertEqual(reply_ping_ids(message), [10, 11, 12])
+        message.reference = None
+        self.assertEqual(reply_ping_ids(message), [10, 11])
 
     @patch("lib.features.chat_responder.fetch_most_active_users")
     async def test_build_server_overview_context(self, mock_active):
@@ -3638,7 +3704,7 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_identify.call_args[0][1], {"Lanca": 1, "Clown": 9})
         self.assertEqual(mock_identify.call_args[1]["previous_answer"], "Top 10 by times shut ...")
         self.assertEqual(message.reply.call_args[0][0], "Clown is <@9>: 34 times shut, 5th.")
-        self.assertTrue(message.reply.call_args[1]["allowed_mentions"].users)
+        self.assertFalse(message.reply.call_args[1]["allowed_mentions"].users)   # shown as a name tag, not pinged
 
     @patch("lib.features.chat_responder.plan_mention", return_value=None)
     @patch("lib.features.chat_responder.generate_one_off_reply", return_value=("Kim, obviously. Nobody else yaps like that.", 100, 20))
@@ -4220,7 +4286,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(allowed)
         self.assertFalse(allowed.everyone)
         self.assertFalse(allowed.roles)
-        self.assertTrue(allowed.users)
+        # only the asker may be pinged; <@12345> stays a name tag since nobody @'d them
+        self.assertEqual([u.id for u in allowed.users], [USERS.OGGERS])
 
     @patch("lib.features.chat_responder.generate_ai_reply")
     async def test_handle_chat_message_troll_mode_targets_bot(self, mock_generate_ai):

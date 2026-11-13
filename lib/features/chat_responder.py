@@ -285,6 +285,30 @@ def sanitize_ai_mentions(text: str, guild: Optional[discord.Guild] = None) -> st
 
     return text
 
+def ping_only(*ids: Any) -> discord.AllowedMentions:
+    """Allowed mentions that notify only these users (plus the replied-to author).
+
+    Any other <@id> in the text still renders as a name tag but pings nobody, so a caption's
+    'Roles:' cast list can tag twelve people without notifying twelve people.
+    """
+    users = []
+    seen: set = set()
+    for uid in ids:
+        if isinstance(uid, int) and not isinstance(uid, bool) and uid not in seen:
+            seen.add(uid)
+            users.append(discord.Object(id=uid))
+    return discord.AllowedMentions(everyone=False, roles=False, users=users, replied_user=True)
+
+
+def reply_ping_ids(message: Any) -> List[int]:
+    """Who a reply to this message may ping: its author, the people it @'s, and the author of what it replies to."""
+    ids = [getattr(getattr(message, "author", None), "id", None)]
+    ids += [getattr(u, "id", None) for u in (getattr(message, "mentions", None) or [])]
+    resolved = getattr(getattr(message, "reference", None), "resolved", None)
+    ids.append(getattr(getattr(resolved, "author", None), "id", None))
+    return [i for i in ids if isinstance(i, int)]
+
+
 def build_system_prompt(topic: Optional[str] = None, is_defence: bool = False) -> str:
     prompt = DEFENCE_SYSTEM_PROMPT if is_defence else BASE_SYSTEM_PROMPT
     now_uk = datetime.now(timezone.utc)
@@ -3233,7 +3257,7 @@ class LiveChatManager:
                 if len(clean_reply) > 1990:
                     clean_reply = clean_reply[:1985] + "..."
 
-                mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
+                mentions = ping_only(*reply_ping_ids(message))
                 try:
                     await message.reply(clean_reply, mention_author=True, allowed_mentions=mentions)
                 except (discord.NotFound, discord.HTTPException):
@@ -5110,7 +5134,7 @@ async def identify_records_entry(message: Any, prev: Any, clean_prompt: str, cal
     reply = f"{label} is <@{uid}>" + (f": {figure}." if figure else ".")
     logger.info("Identified %r for %s as %s", label, caller_name, uid)
     await message.reply(reply, mention_author=True,
-                        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
+                        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False, replied_user=True))
     live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": clean_prompt})
     live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply})
     return True
@@ -5676,6 +5700,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             u for u in getattr(message, "mentions", [])
             if u.id not in (bot_id, getattr(getattr(client, "user", None), "id", None))
         ]
+        # Who the asker @'d in this message. other_mentions later grows to the reply chain's mentions, which can
+        # include a whole earlier caption's cast list; only these, never those, may be pinged by a caption.
+        own_mentions = list(other_mentions)
+        extra_pings: List[int] = []
         ref = getattr(message, "reference", None)
         has_reply_ref = bool(ref and getattr(ref, "message_id", None))
 
@@ -6256,7 +6284,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             )
             caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
             caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
-            await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
+            await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
 
             live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
             live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Edited Image: {edit_prompt}]"})
@@ -6454,6 +6482,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             for pid in ping_ids:
                 if pid != caller_id and f"<@{pid}>" not in caption:
                     caption = f"<@{pid}> {caption}"
+            extra_pings = list(ping_ids)
 
             logger.info("Direct mention image generation request from %s (%s): %r (image prompt: %r)", caller_name, caller_id, clean_prompt, image_prompt)
 
@@ -6479,7 +6508,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 )
                 caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
                 caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
-                await message.reply(caption, file=file, mention_author=True, allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True))
+                await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
 
                 live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
                 live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Generated Image: {image_prompt}]"})
@@ -6596,7 +6625,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         if len(reply_text) > 1990:
             reply_text = reply_text[:1985] + "..."
 
-        mentions = discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=True)
+        mentions = ping_only(*reply_ping_ids(message))
 
         # Send reply (with fallback to channel.send if referenced message was deleted)
         try:
