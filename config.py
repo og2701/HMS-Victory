@@ -899,7 +899,7 @@ SECRET_SANTA_FILE = os.path.join(JSON_DATA_DIR, "secret_santa.json")  # gitignor
 # against observed false positives.
 # ---------------------------------------------------------------------------
 DETECTION_ENABLED = True
-DETECTION_ALERT_CHANNEL = CHANNELS.BOT_WORKSHOP
+DETECTION_ALERT_CHANNEL = RESERVE_ALERT_CHANNEL_ID   # anti-cheat alerts go to the same channel as the throttle alerts (Oggers, 15 Nov 2026)
 DETECTION_ALERT_PING = USERS.OGGERS
 DETECTION_ALERT_COOLDOWN = 6 * 3600                # per user per kind, in seconds
 
