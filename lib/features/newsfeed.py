@@ -182,9 +182,22 @@ def _child_text(el, name: str) -> str:
     return ""
 
 
+def _feed_image(el) -> str:
+    """The item's picture, from media:thumbnail, media:content or an image enclosure (Sky sends all three). '' if none."""
+    for child in el:
+        name = _local(child.tag)
+        url = (child.get("url") or "").strip()
+        if not url.startswith("https://"):
+            continue
+        if name == "thumbnail" or (name in ("content", "enclosure")
+                                   and (child.get("type") or "image/").startswith("image/")):
+            return url
+    return ""
+
+
 def parse_feed(data) -> List[Dict[str, Any]]:
-    """Items from an RSS 2.0 or Atom feed: [{title, summary, link, url, guid, published}]. Bad XML gives []. A gzipped
-    body (the Independent gzips even when not asked to) is unpacked first."""
+    """Items from an RSS 2.0 or Atom feed: [{title, summary, link, url, guid, published, image}]. Bad XML gives [].
+    A gzipped body (the Independent gzips even when not asked to) is unpacked first."""
     if isinstance(data, str):
         data = data.encode("utf-8")
     if data and data[:2] == b"\x1f\x8b":
@@ -229,6 +242,7 @@ def parse_feed(data) -> List[Dict[str, Any]]:
             "url": normalise_url(link),
             "guid": normalise_url(guid) if guid.startswith("http") else guid,
             "published": published,
+            "image": _feed_image(el),
         })
     return items
 
@@ -464,6 +478,8 @@ def observe(state: Dict[str, Any], results: Dict[str, List[Dict[str, Any]]], fee
                           "guid": item.get("guid") or "", "last_seen": now})
             if item.get("published"):
                 entry["published"] = item["published"]
+            if item.get("image"):
+                entry["image"] = item["image"]
             if name not in entry["feeds"]:
                 entry["feeds"].append(name)
             if kind == "top":
@@ -1350,9 +1366,40 @@ def story_view(state: Dict[str, Any], cid: str) -> Optional[Dict[str, Any]]:
     return {
         "cid": cid, "entries": entries, "main": main, "url": main["url"], "link": main.get("link") or main["url"],
         "title": main.get("title", ""), "summary": main.get("summary", ""), "guid": main.get("guid", ""),
-        "outlet": main["outlet"], "also": also_covered(entries, main),
+        "outlet": main["outlet"], "image": main.get("image", ""), "also": also_covered(entries, main),
         "covered_by": [outlet_label(e["outlet"]) for e in entries],
     }
+
+
+MAX_PICTURE_BYTES = 8 * 1024 * 1024
+
+
+def picture_url(url: str) -> str:
+    """Sky's feed pictures are 1920x1080; its CDN serves the same picture at 768x432, plenty for a forum thumbnail."""
+    return url.replace("/1920x1080/", "/768x432/") if "365dm.com/" in url else url
+
+
+async def _fetch_picture(url: str):
+    """The story's picture as a discord.File to attach to the post, or None if it can't be had. Only for outlets whose
+    links Discord can't preview (Sky), so the forum still shows a thumbnail. Never stops the post going out."""
+    import aiohttp
+    import discord
+    import io
+    try:
+        timeout = aiohttp.ClientTimeout(total=FETCH_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout, headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(picture_url(url)) as resp:
+                kind = resp.headers.get("Content-Type", "")
+                if resp.status != 200 or not kind.startswith("image/"):
+                    return None
+                data = await _read_body(resp, MAX_PICTURE_BYTES)
+        if not data or len(data) > MAX_PICTURE_BYTES:
+            return None
+        ext = {"image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(kind.split(";")[0].strip(), "jpg")
+        return discord.File(io.BytesIO(data), filename=f"story.{ext}")
+    except Exception:
+        logger.warning("[NEWSFEED] could not fetch the story picture %s", url, exc_info=True)
+        return None
 
 
 async def _create_post(client, forum, state, view, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
@@ -1371,7 +1418,13 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
         rec = {"id": f"dry-{int(now)}-{len(state['threads'])}", "dry": True}
     else:
         tags = _forum_tags(forum, tag_names)
-        created = await forum.create_thread(name=title, content=body, applied_tags=tags, reason="News auto-poster")
+        extra = {}
+        if view["outlet"] in config.NEWSFEED_ATTACH_IMAGE_OUTLETS and view.get("image"):
+            picture = await _fetch_picture(view["image"])
+            if picture:
+                extra["file"] = picture
+        created = await forum.create_thread(name=title, content=body, applied_tags=tags, reason="News auto-poster",
+                                            **extra)
         thread = created.thread
         rec = {"id": str(thread.id)}
         if live and config.NEWSFEED_PIN_MEGATHREADS:

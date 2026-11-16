@@ -90,6 +90,23 @@ def test_atom_feeds_parse_too():
     assert item["published"] == N.parse_date("2026-11-07T12:30:00Z")
 
 
+SKY_ITEM = b"""<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item>
+<title>Snow warning for large part of the UK</title>
+<link>https://news.sky.com/story/yellow-snow-warning-13612698</link>
+<description>A yellow warning for snow.</description>
+<enclosure url="https://e3.365dm.com/26/11/1920x1080/snow_1.jpg?1" length="0" type="image/jpeg"/>
+<media:thumbnail url="https://e3.365dm.com/26/11/1920x1080/snow_1.jpg?1" width="1920" height="1080"/>
+</item><item><title>No picture</title><link>https://news.sky.com/story/no-picture-1</link></item></channel></rss>"""
+
+
+def test_feed_pictures_are_kept_and_shrunk_for_sky():
+    with_pic, without = N.parse_feed(SKY_ITEM)
+    assert with_pic["image"] == "https://e3.365dm.com/26/11/1920x1080/snow_1.jpg?1"
+    assert without["image"] == ""
+    assert N.picture_url(with_pic["image"]) == "https://e3.365dm.com/26/11/768x432/snow_1.jpg?1"
+    assert N.picture_url("https://ichef.bbci.co.uk/x/1920x1080/a.jpg") == "https://ichef.bbci.co.uk/x/1920x1080/a.jpg"
+
+
 def test_bad_xml_gives_nothing_rather_than_raising():
     assert N.parse_feed(b"<rss><channel><item>") == []
     assert N.parse_feed(b"") == []

@@ -1078,6 +1078,9 @@ NEWSFEED_OUTLETS = {
 # The Mail and the Express (added 9 Nov 2026 at Oggers' ask for right-leaning coverage) come after the other free
 # outlets: they count towards coverage and show in "Also covered by", and are the main link only when nobody else has it.
 NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "mail", "express", "telegraph")
+# Outlets whose links Discord can't preview, so their posts had no thumbnail. Vic attaches the feed's picture instead
+# (Oggers, 16 Nov 2026).
+NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
 # Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
 NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
 # name: (url, outlet, kind). kind "top" is a curated front page (being there, and for how long, counts), "section" any
