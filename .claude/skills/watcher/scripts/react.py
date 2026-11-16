@@ -45,6 +45,34 @@ if method == "PUT" and emoji != ACK and "keep" not in flags:
         urllib.request.urlopen(reaction("DELETE", ACK), timeout=20)
     except urllib.error.HTTPError:
         pass
+def _sweep_earlier(target):
+    """Also end the loops of the same asker's earlier requests in the same channel: answering their latest message
+    answers the thread, so a loop on an earlier one (say the first of a follow-up) would otherwise be orphaned."""
+    import glob, os, signal
+    try:
+        mine = open(f"/tmp/vic_typing/{target}.meta").read()
+    except OSError:
+        return
+    for m in glob.glob("/tmp/vic_typing/*.meta"):
+        rid = os.path.basename(m)[:-5]
+        try:
+            if not rid.isdigit() or int(rid) > int(target) or open(m).read() != mine:
+                continue
+            loop = rid
+            try:
+                loop = open(f"/tmp/vic_typing/{rid}.alias").read().strip() or rid
+                os.remove(f"/tmp/vic_typing/{rid}.alias")
+            except OSError:
+                pass
+            os.remove(m)
+            os.kill(int(open(f"/tmp/vic_typing/{loop}.pid").read()), signal.SIGTERM)
+            os.remove(f"/tmp/vic_typing/{loop}.pid")
+        except (OSError, ValueError):
+            pass
+
+
+if "keep" not in flags:
+    _sweep_earlier(message_id)
 if "keep" not in flags:  # only this message's typing loop (shared with its batch's other hits); parallel jobs keep theirs
     import glob
     try:

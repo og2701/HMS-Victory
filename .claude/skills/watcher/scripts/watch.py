@@ -208,8 +208,11 @@ def start_typing(h):
     ends the loop. Discord shows one "Vic is typing" per channel anyway, and a hit left unanswered in a burst can't
     orphan a loop. Separate batches (parallel jobs) still keep separate loops."""
     cid = channel_id(h["channel"])
+    os.makedirs("/tmp/vic_typing", exist_ok=True)
+    # <id>.meta: channel and asker, so answering someone's later message also ends the loops of their earlier,
+    # unanswered ones in that channel (card.py / react.py); a follow-up answered on its own can't orphan the first.
+    open(f"/tmp/vic_typing/{h['id']}.meta", "w").write(f"{cid}\t{h.get('author', '')}")
     if cid in BATCH_LOOPS and BATCH_LOOPS[cid] != h["id"]:
-        os.makedirs("/tmp/vic_typing", exist_ok=True)
         open(f"/tmp/vic_typing/{h['id']}.alias", "w").write(BATCH_LOOPS[cid])
         return
     BATCH_LOOPS[cid] = h["id"]
