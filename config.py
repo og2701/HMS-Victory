@@ -1081,6 +1081,9 @@ NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "mai
 # Outlets whose links Discord can't preview, so their posts had no thumbnail. Vic attaches the feed's picture instead
 # (Oggers, 16 Nov 2026).
 NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
+# Forum tags come from Jev (one yes/no question per tag, lib/features/news_tags_jev.py), falling back to the OpenAI
+# judgement's tags when Jev has no verdict. Off goes back to the OpenAI tags only (Oggers, 16 Nov 2026).
+NEWSFEED_JEV_TAGS = True
 # Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
 NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
 # name: (url, outlet, kind). kind "top" is a curated front page (being there, and for how long, counts), "section" any

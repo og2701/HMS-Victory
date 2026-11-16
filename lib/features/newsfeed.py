@@ -1402,17 +1402,34 @@ async def _fetch_picture(url: str):
         return None
 
 
+async def _jev_tags_or(fallback: List[str], forum, view: Dict[str, Any]) -> Tuple[List[str], str]:
+    """Jev's tags for the post, or the OpenAI ones when Jev has no verdict. Also a note for the log line."""
+    from lib.features.news_tags_jev import jev_tags
+    names = [t.name for t in getattr(forum, "available_tags", []) if t.name != MEGATHREAD_TAG]
+    try:
+        tags, _ = await jev_tags(view.get("title", ""), view.get("summary", ""), outlet_label(view["outlet"]), names)
+    except Exception:
+        logger.warning("[NEWSFEED] Jev tags failed", exc_info=True)
+        tags = None
+    if not tags:
+        return fallback, " (Jev: no verdict, AI tags)"
+    return tags, f" (Jev tags; AI said {', '.join(fallback) or 'none'})" if tags != fallback else " (Jev tags)"
+
+
 async def _create_post(client, forum, state, view, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
     live = is_megathread_url(view["link"])
     title = trim_title(view["title"])
     source = outlet_label(view["outlet"])
     body = build_post_body(view["link"], verdict.get("why", ""), source=source, also=view["also"])
     chosen = post_tags(verdict)
+    jev_note = ""
+    if config.NEWSFEED_JEV_TAGS:
+        chosen, jev_note = await _jev_tags_or(chosen, forum, view)
     tag_names = chosen + ([MEGATHREAD_TAG] if live else [])
     also = ", ".join(name for name, _ in view["also"])
     detail = (f"\"{title}\" <{view['link']}> via {outlet_short(view['outlet'])}{f' (also {also})' if also else ''} "
               f"(signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
-              f"{', '.join(chosen) or 'no tag'}{', megathread' if live else ''})")
+              f"{', '.join(chosen) or 'no tag'}{jev_note}{', megathread' if live else ''})")
     if dry:
         await _log(client, f"[dry run] would post {detail}")
         rec = {"id": f"dry-{int(now)}-{len(state['threads'])}", "dry": True}
@@ -1437,13 +1454,13 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
         await _log(client, f"posted <#{thread.id}> {detail}")
         engagement = load_engagement()
         engagement[rec["id"]] = {"title": title, "url": view["url"], "outlet": view["outlet"],
-                                 "outlets": sorted({e["outlet"] for e in view["entries"]}), "tag": verdict.get("tag"),
+                                 "outlets": sorted({e["outlet"] for e in view["entries"]}), "tag": chosen[0] if chosen else verdict.get("tag"),
                                  "tags": chosen, "live": live, "created": now, "signal": signal,
                                  "importance": verdict.get("importance")}
         atomic_write_json(config.NEWSFEED_ENGAGEMENT_FILE, engagement, indent=1)
     urls = [e["url"] for e in view["entries"]]
     rec.update({"title": title, "summary": view.get("summary", ""), "url": view["url"], "urls": urls,
-                "outlet": view["outlet"], "tag": verdict.get("tag"), "tags": chosen, "created": now, "live": live,
+                "outlet": view["outlet"], "tag": chosen[0] if chosen else verdict.get("tag"), "tags": chosen, "created": now, "live": live,
                 "last_update": None, "updates": 0})
     state["threads"].append(rec)
     mark_story_posted(state, view["entries"], now, rec["id"], "dry" if dry else "new", view["cid"])
