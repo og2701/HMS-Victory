@@ -59,9 +59,22 @@ def _refusal() -> str:
     return f"This is still being tested and only opens in {channels} for now."
 
 
+def _not_open_to(uid: int, game: str) -> str | None:
+    """Why this person can't open this game yet, for one that's still with its testers."""
+    if game == "heist" or game.startswith("heist:"):
+        from lib.activities import heist
+        if not heist.allowed(uid):
+            return "Bank Job isn't open yet. It's still being tested; it'll open to everyone soon."
+    return None
+
+
 async def _launch(interaction: discord.Interaction, game: str) -> None:
     if not _allowed(interaction.channel_id):
         await interaction.response.send_message(_refusal(), ephemeral=True)
+        return
+    refusal = _not_open_to(interaction.user.id, game)
+    if refusal:
+        await interaction.response.send_message(refusal, ephemeral=True)
         return
     want(interaction.user.id, game)
     await interaction.response.launch_activity()

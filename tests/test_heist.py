@@ -297,10 +297,15 @@ def test_each_target_needs_its_crew_and_a_stake_needs_two(em):
 
 
 def test_buy_ins_are_capped_by_target_and_by_the_banks_spare_reserves(em, monkeypatch):
+    import config
     import lib.economy.reserve_policy as rp
-    monkeypatch.setattr(rp, "bank_reserves", lambda: 1_000_000)
+    floor = config.RESERVE_FLOOR                                # what's spare is what's above the reserve floor
+    monkeypatch.setattr(rp, "bank_reserves", lambda: floor + 1_000_000)
     assert H.max_stake("post") == 1000 and H.max_stake("vault") == 500
-    monkeypatch.setattr(rp, "bank_reserves", lambda: 160_000)    # 80k spare: 12k of exposure
+    monkeypatch.setattr(rp, "bank_reserves", lambda: floor + 80_000)    # 80k spare: 12k of exposure
+    assert H.max_stake("vault") == 100 and H.max_stake("post") == 500
+    monkeypatch.setattr(config, "RESERVE_FLOOR", 80_000)                # the floor moves, the limits move with it
+    monkeypatch.setattr(rp, "bank_reserves", lambda: 160_000)
     assert H.max_stake("vault") == 100 and H.max_stake("post") == 500
     monkeypatch.setattr(rp, "bank_reserves", lambda: 80_000)
     assert H.max_stake("post") == 0
@@ -480,3 +485,145 @@ def test_the_money_is_booked_as_the_bank_jobs():
         assert _categorize(reason)[0] == "Casino", reason
         amounts = BankManager._game_amounts(100, reason)
         assert amounts[-1] == 100 and sum(amounts) == 100, reason
+
+
+# ---- practice -----------------------------------------------------------------------------------
+
+@pytest.fixture
+def testers(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "HEIST_TESTERS", [A])
+    monkeypatch.setattr(config, "HEIST_LIVE", False)
+
+
+def practice_to_vault(em, rid, police_take=None):
+    """A practice job from the plan to the open vault: you vote and do your bit, the bots do theirs."""
+    r = H._rooms[rid]
+    H.vote(A, rid, "quiet")
+    assert r["state"] == "job"
+    solve(rid, A)
+    assert r["state"] == "job"                        # the bots aren't done yet...
+    tick(em, H.BOT_DONE[1] + 0.1)
+    H.sweep()
+    assert r["state"] == "report"                     # ...and then they are
+    v = r["vault"]
+    v["police"] = None if police_take is None else v["secs"] * H.math.log(police_take) / H.math.log(r["cap"])
+    tick(em, H.REPORT_SECONDS)
+    H.sweep()
+    assert r["state"] == "vault"
+    return r
+
+
+def test_a_tester_on_their_own_gets_a_crew_of_bots_for_practice(em, testers):
+    rid = H.open_room(A, 500, "vault", role="safecracker", practice=True)["id"]
+    H.start(A, rid)                                   # the Vault needs three, and 500 would need two to stake it
+    r = H._rooms[rid]
+    bots = [u for u in r["players"] if u != A]
+    assert len(r["players"]) == H.SEATS and all(u < 0 for u in bots)
+    assert sorted(r["roles"].values()) == sorted(H.ROLES) and r["roles"][str(A)] == "safecracker"
+    assert all(str(u) in r["votes"] for u in bots)   # the bots have voted already
+    v = H.view(r, A, name_of)
+    assert v["practice"] and v["crew"][0]["name"] == "Anne" and not v["crew"][0].get("bot")
+    assert all(m["bot"] and m["name"] in H.BOT_NAMES for m in v["crew"][1:])
+    practice_to_vault(em, rid)
+    rep = H.view(r, A, name_of)["report"]
+    assert not any(x["dave"] for x in rep["roles"])   # no Dodgy Dave: every job's taken
+    for u in bots:
+        assert r["job"][r["roles"][str(u)]]["score"] == r["bots"][str(u)]["score"]
+
+
+def test_bot_crewmates_leg_it_from_the_vault_on_their_own(em, testers):
+    rid = H.open_room(A, 100, "post", practice=True)["id"]
+    H.start(A, rid)
+    r = H._rooms[rid]
+    for b, f in zip(r["bots"].values(), [0.2, 0.5, 0.8, 1.0, 0.95]):
+        b["leave"] = f
+    practice_to_vault(em, rid, police_take=None)
+    v = r["vault"]
+    tick(em, 0.6 * v["secs"])
+    H.sweep()
+    out = v["out"]
+    assert {u for u, b in r["bots"].items() if b["leave"] <= 0.5} == set(out)
+    for u in out:
+        assert out[u][0] == pytest.approx(r["bots"][u]["leave"] * v["secs"], abs=0.01)
+    H.leg_it(A, rid)
+    tick(em, v["secs"])
+    H.sweep()
+    assert r["over"]
+    stayed = [u for u, b in r["bots"].items() if b["leave"] >= 1.0]
+    assert stayed and all(r["results"][u]["how"] == "cleared" for u in stayed)
+    assert all(r["results"][u]["how"] == "escaped" for u in r["bots"] if u not in stayed)
+
+
+def test_a_bot_that_waits_too_long_is_nicked(em, testers):
+    rid = H.open_room(A, 0, "post", practice=True)["id"]
+    H.start(A, rid)
+    r = H._rooms[rid]
+    for b, f in zip(r["bots"].values(), [0.1, 0.9, 0.9, 0.9, 0.9]):
+        b["leave"] = f
+    practice_to_vault(em, rid, police_take=1.5)
+    tick(em, r["vault"]["secs"])
+    H.sweep()
+    assert r["over"]
+    res = [r["results"][u]["how"] for u in r["bots"]]
+    assert res.count("escaped") == 1 and res.count("nicked") == 4
+    assert r["results"][str(A)]["how"] == "nicked"
+
+
+def test_practice_moves_no_money_and_is_posted_and_kept_nowhere(em, testers, monkeypatch):
+    from lib.activities import archive
+    from lib.economy import activity_badges, casino_stats
+    seen = []
+    monkeypatch.setattr(archive, "keep", lambda *a, **k: seen.append("archive"))
+    monkeypatch.setattr(casino_stats, "record_result", lambda *a, **k: seen.append("stats"))
+    monkeypatch.setattr(activity_badges, "heist_over", lambda room: seen.append("badges"))
+    monkeypatch.setattr(H, "listeners", [lambda event, room: seen.append(event)])
+    assert em.remove_bb(A, 10_000, reason="spent")    # skint: play money doesn't care
+    before, total = em.get_bb(A), supply()
+    rid = H.open_room(A, 1000, "post", practice=True)["id"]
+    H.start(A, rid)
+    r = H._rooms[rid]
+    for b in r["bots"].values():
+        b["leave"] = 0.5
+    practice_to_vault(em, rid, police_take=None)
+    tick(em, 0.6 * r["vault"]["secs"])
+    H.leg_it(A, rid)
+    assert r["over"] and r["how"] == "clean"
+    assert r["results"][str(A)]["payout"] > 1000      # what it would have been, in play money
+    assert em.get_bb(A) == before and supply() == total
+    assert r["bonus"] == {} and H.heat() == 0.0 and seen == []
+    assert H.active() == 0                            # a practice job doesn't hold up a restart
+
+
+def test_practice_crews_are_hidden_and_closed_to_others(em, testers):
+    rid = H.open_room(A, 100, "society", practice=True)["id"]
+    assert H.lobby(B, name_of, 10_000)["open"] == []
+    with pytest.raises(H.Refuse, match="practice"):
+        H.join(B, rid)
+    assert H.lobby(A, name_of, 0)["room"]["practice"]
+    assert H._rooms[rid]["ch"] is None
+
+
+def test_only_testers_can_practise(em, testers):
+    assert H.lobby(A, name_of, 0)["practice"] and not H.lobby(B, name_of, 0)["practice"]
+    with pytest.raises(H.Refuse, match="testers"):
+        H.open_room(B, 0, "post", practice=True)
+    assert H._rooms == {}
+
+
+def test_heist_opens_only_for_testers_until_its_live(testers, monkeypatch):
+    import config
+    from lib.activities import launcher
+    assert launcher._not_open_to(A, "heist") is None
+    assert "isn't open yet" in launcher._not_open_to(B, "heist")
+    assert "isn't open yet" in launcher._not_open_to(B, "heist:abcd1234")
+    assert launcher._not_open_to(B, "kart") is None
+    monkeypatch.setattr(config, "HEIST_LIVE", True)
+    assert launcher._not_open_to(B, "heist") is None
+    assert not H.can_practise(B)                      # practice stays with the testers when it's live
+
+
+def test_heist_has_its_command_and_its_testers():
+    import config
+    assert config.ACTIVITIES_LAUNCH_COMMANDS["heist"][0] == "heist"
+    assert {404634271861571584, 1453319508587450514} <= set(config.HEIST_TESTERS)

@@ -2,7 +2,7 @@
 
 A heist for a crew of up to six, under **Together** in the activity next to UKP Kart, Broadside and Countdown.
 Bot side: `lib/activities/heist.py` (the game and the money), `heist_posts.py` and `heist_card.py` (the post and its
-picture), routes in `lib/activities/server.py`, a Join/Play button in `launcher.py`. Page side: `src/heist/` in
+picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button in `launcher.py`. Page side: `src/heist/` in
 `ukplace-activities`. Tests: `tests/test_heist.py`.
 
 ## How a job goes
@@ -71,15 +71,16 @@ fills can lift J), a bigger crew does better.
 
 The whole crew shares one police arrival, so a vault cleared at the cap pays everyone at once. The worst case is
 `6 x buy-in x cap x 1.25` (the tip). `max_stake()` caps every buy-in so that this worst case is at most
-`HEIST_EXPOSURE_PCT` (15%) of what the bank holds **above its reserve floor** (`RESERVE_FLOOR`, 80k):
+`HEIST_EXPOSURE_PCT` (15%) of what the bank holds **above its reserve floor** (`RESERVE_FLOOR`, 5k). The reserves
+are `reserve_policy.bank_reserves()`: free reserves, the bank's balance less the principal locked in bonds.
 
-| Bank reserves | Spare above floor | Post Office max | Building Society max | Vault max |
+| Free reserves | Spare above floor | Post Office max | Building Society max | Vault max |
 |---|---|---|---|---|
-| 1,000,000 | 920k | 1,000 | 1,000 | 500 |
-| 400,000 | 320k | 1,000 | 1,000 | 500 |
-| 250,000 | 170k | 1,000 | 500 | 250 |
-| 160,000 | 80k | 500 | 250 | 100 |
-| 80,000 (the floor) | 0 | free only | free only | free only |
+| 1,005,000 | 1,000k | 1,000 | 1,000 | 500 |
+| 325,000 | 320k | 1,000 | 1,000 | 500 |
+| 175,000 | 170k | 1,000 | 500 | 250 |
+| 85,000 | 80k | 500 | 250 | 100 |
+| 5,000 (the floor) | 0 | free only | free only | free only |
 
 So a single job can never take more than 15% of the spare reserves. The chance of that worst case is about
 `(1 - e) / cap`: under 8% at the Vault, and only if all six hold their nerve to the very end. As the bank nears its
@@ -152,10 +153,30 @@ API's `_gate` enforces it.
 - **Leaving** before the job starts just walks you off. After it starts your buy-in stays in: you're still in the
   vault until the police come or it's cleared.
 
+## Practice (testers only)
+
+A tester can tick **Practice** on the target picker to open a practice job. It's the real game (the same puzzles,
+alarm, vault and police) with play money:
+
+- **Bot crewmates.** When the host sends it in, every empty seat gets a bot crewmate in a job nobody took, so a
+  practice crew is always six and Dodgy Dave never turns up. Each bot rolls a skill level (30-95%), votes quiet or
+  loud at random, finishes its bit 6-30s into the job with a score near its skill, and legs it from the vault at a
+  moment it picked (some bottle it early, some hold to the cap). A bot still inside when the police come is nicked
+  like anyone else. Bots have negative ids in the room and are marked `bot` in what the page sees.
+- **Play money.** The buy-in can be anything up to the target's own limit whatever the reserves, and needs nothing
+  in your wallet. Nothing moves: no buy-in taken, no take paid, no clean job bonus, no heat, no badges, no
+  `casino_results` or `game_records` row (so not on Most Wanted), and it doesn't hold up a restart.
+- **Private.** It's never posted (no listener sees it), it doesn't show in anyone else's list of crews, and nobody
+  can join it.
+- **Testers only**, whether Bank Job is live or not (`heist.can_practise`).
+
 ## Rolling out
 
-`HEIST_LIVE = False` means only `HEIST_TESTERS` see the tile or can get in. There's no `/heist`, and the activity
-posts nothing anywhere else. Set it to `True` to add `/heist` and the Together tile for everyone.
+`HEIST_LIVE = False`: `/heist` is registered and opens the activity straight on Bank Job, but only for
+`HEIST_TESTERS`; anyone else gets an ephemeral "isn't open yet" (`launcher._not_open_to`), and the activity's API
+turns them away too. There's no tile in the `/games` hub. A real (non-practice) crew opened by a tester is still
+posted in the channel and listed for anyone the game's open to. Set it to `True` to open `/heist` to everyone and
+add the Together tile. Practice stays with the testers either way.
 
 Every number above is in `config.py` (`HEIST_*`) or at the top of `heist.py`: the edge range, the targets, the
 clocks, the heat and the bonus.

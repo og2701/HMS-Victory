@@ -27,6 +27,11 @@ whole UKPence, which only ever adds to it. A clean job (a crew of three or more,
 them out with at least CLEAN_TAKE) adds a small, once-a-day, reserve-scaled bonus, the one part of
 the game that can run in the players' favour, and only by a little: see docs/heist.md for the sums.
 
+Practice (HEIST_TESTERS only) is a job for play money. Every seat nobody's in gets a bot crewmate who
+plays its role at a skill level rolled for it, votes, and legs it from the vault when it fancies. Nothing
+moves: no UKPence in or out, no clean job bonus, no heat, no badges, no records, no post anywhere, and
+nobody else sees the crew in their list. The puzzles, the alarm and the police are the real thing.
+
 Like Countdown, every read moves a crew on to the present and a sweeper does the same for crews
 nobody's watching, so a job always finishes. It's all saved after every change, and the clocks
 pause while the bot is down: on the next boot every live job's clocks move on by the time it was
@@ -68,6 +73,11 @@ HEAT_SCALE = 20_000          # ...and a profit this big on top of the buy-ins se
 HEAT_CAP_CUT = 0.4           # at full heat the vaults hold 40% less
 TIP_BOOST = 1.25             # the fence's tip of the day holds this much more
 CLEAN_TAKE = 1.5             # a clean job's crew all got out with at least this much
+
+BOT_NAMES = ["Nervous Nigel", "Big Barry", "Two-Coats Trevor", "Mad Mandy", "Light-Fingered Linda", "Clive the Drill",
+             "Posh Pauline", "Keith the Kettle", "Sharon Two-Phones", "Del Boy Derek", "Tracey Tealeaf", "Colin the Cat"]
+BOT_SKILL = (0.3, 0.95)       # a bot crewmate's skill is rolled from this range, and its job lands near it
+BOT_DONE = (6.0, 30.0)        # how far into the job a bot crewmate has done its bit
 
 TARGETS = {
     "post": {"name": "Nether Wallop Post Office", "short": "Post Office", "cap": 3.0, "min_crew": 1, "max_stake": 1000,
@@ -126,6 +136,20 @@ def _rng() -> random.Random:
     return random.Random(secrets.randbits(64))
 
 
+def tester(uid) -> bool:
+    return int(uid or 0) in _cfg("HEIST_TESTERS", [])
+
+
+def allowed(uid) -> bool:
+    """Everyone once Bank Job's live (HEIST_LIVE), until then only its testers."""
+    return bool(_cfg("HEIST_LIVE", False)) or tester(uid)
+
+
+def can_practise(uid) -> bool:
+    """Practice jobs (bot crewmates, play money) are for the testers only, live or not."""
+    return tester(uid)
+
+
 # ---- keeping it ------------------------------------------------------------------------------
 
 def _load() -> None:
@@ -163,6 +187,9 @@ def _shift(room: dict, by: float) -> None:
     v = room.get("vault")
     if v:
         v["start"] += by
+    for b in (room.get("bots") or {}).values():
+        if b.get("done_at"):
+            b["done_at"] += by
     room["paused"] = round(room.get("paused", 0.0) + by, 1)
 
 
@@ -175,6 +202,8 @@ def _save() -> None:
 
 
 def _emit(event: str, room: dict) -> None:
+    if room.get("practice"):        # a practice job is posted nowhere
+        return
     for fn in listeners:
         try:
             fn(event, copy.deepcopy(room))
@@ -206,7 +235,7 @@ def room_info(rid: str) -> dict | None:
 def active() -> int:
     """Jobs under way (for a restart to wait on)."""
     _load()
-    return sum(1 for r in _rooms.values() if not r.get("over") and r["state"] != "lobby")
+    return sum(1 for r in _rooms.values() if not r.get("over") and r["state"] != "lobby" and not r.get("practice"))
 
 
 # ---- the police, the tip and the vault -------------------------------------------------------
@@ -251,7 +280,7 @@ def max_stake(target: str) -> int:
     top = min(t["max_stake"], int(_cfg("HEIST_MAX_STAKE", 1000)))
     try:
         from lib.economy.reserve_policy import bank_reserves
-        spare = max(0, bank_reserves() - int(_cfg("RESERVE_FLOOR", 80_000)))
+        spare = max(0, bank_reserves() - int(_cfg("RESERVE_FLOOR", 5_000)))
         afford = spare * float(_cfg("HEIST_EXPOSURE_PCT", 0.15)) / (SEATS * t["cap"] * TIP_BOOST)
         top = min(top, int(afford))
     except Exception:
@@ -558,6 +587,50 @@ def _seated(uid: int) -> dict | None:
     return next((r for r in _rooms.values() if not r.get("over") and uid in _present(r)), None)
 
 
+def _bot(room: dict, uid) -> dict | None:
+    return (room.get("bots") or {}).get(str(uid))
+
+
+def _member_done(room: dict, uid: int, now: float) -> bool:
+    """Whether one of the crew has done their bit of the job (a bot crewmate, once its moment's come)."""
+    b = _bot(room, uid)
+    if b is not None:
+        return now >= b["done_at"]
+    role = room["roles"][str(uid)]
+    return _done(role, room["job"][role])
+
+
+def _fill_with_bots(room: dict, now: float) -> None:
+    """A practice job: every empty seat gets a bot crewmate in a job nobody took, with a skill
+    level, a vote, a moment it finishes its bit and a moment in the vault it'll leg it."""
+    rng = _rng()
+    names = rng.sample(BOT_NAMES, SEATS)
+    bots = {}
+    for i, role in enumerate([r for r in ROLES if r not in room["roles"].values()]):
+        uid = -(i + 1)
+        skill = rng.uniform(*BOT_SKILL)
+        # how far through the vault's climb it legs it: some bottle it early, some wait for the cap
+        leave = rng.choice([rng.uniform(0.05, 0.3), rng.uniform(0.25, 0.6), rng.uniform(0.5, 0.95), 1.0])
+        bots[str(uid)] = {"name": names[i], "skill": round(skill, 2),
+                          "score": round(max(0.0, min(1.0, skill + rng.gauss(0, 0.08))), 4),
+                          "done": round(rng.uniform(*BOT_DONE), 1), "leave": round(leave, 3)}
+        room["players"].append(uid)
+        room["roles"][str(uid)] = role
+        room["votes"][str(uid)] = rng.choice(["quiet", "loud"])
+    room["bots"] = bots
+
+
+def _bots_leg(room: dict, now: float) -> None:
+    """Bot crewmates in the vault get out at their moment, if the police haven't come first."""
+    v = room["vault"]
+    gone = now - v["start"]
+    for uid, b in (room.get("bots") or {}).items():
+        t = b["leave"] * v["secs"]
+        if uid in v["out"] or b["leave"] >= 1.0 or t > gone or (v["police"] is not None and t >= v["police"]):
+            continue
+        v["out"][uid] = [round(t, 3), _floor2(take_at(t, room["cap"], v["secs"]))]
+
+
 def _free_role(room: dict) -> str | None:
     taken = set(room["roles"].values())
     return next((r for r in ROLES if r not in taken), None)
@@ -595,6 +668,8 @@ def _start_job(room: dict, now: float) -> None:
         room["approach"] = "quiet" if quiet > loud else "loud"
     rng = _rng()
     room["job"] = {role: MAKERS[role](rng) for role in set(room["roles"].values())}
+    for b in (room.get("bots") or {}).values():
+        b["done_at"] = now + b["done"]
     room.update(state="job", deadline=now + JOB_SECONDS)
 
 
@@ -602,6 +677,8 @@ def _end_job(room: dict, now: float) -> None:
     """Time's up on the job: score it, and roll when the police come."""
     for role, p in room["job"].items():
         p["score"] = round(_score(role, p), 4)
+    for uid, b in (room.get("bots") or {}).items():
+        room["job"][room["roles"][uid]]["score"] = b["score"]
     score = job_score(room)
     e = edge(score)
     u = (secrets.randbelow(2 ** 52) + 1) / 2 ** 52
@@ -631,7 +708,7 @@ def _advance(room: dict, now: float) -> bool:
             _start_job(room, min(now, room["deadline"]))
             _emit("job", room)
         elif s == "job":
-            done = all(_done(room["roles"][str(u)], room["job"][room["roles"][str(u)]]) for u in _present(room))
+            done = all(_member_done(room, u, now) for u in _present(room))
             if now < room["deadline"] and not done:
                 break
             _end_job(room, min(now, room["deadline"]))
@@ -644,6 +721,7 @@ def _advance(room: dict, now: float) -> bool:
         else:
             v = room["vault"]
             end = v["start"] + (v["secs"] if v["police"] is None else min(v["police"], v["secs"]))
+            _bots_leg(room, min(now, end))
             everyone_out = all(str(u) in v["out"] for u in room["players"])
             if now < end and not everyone_out:
                 break
@@ -680,6 +758,7 @@ def _finish(room: dict, now: float) -> None:
     if room.get("over"):
         return
     results = outcome(room)
+    practice = bool(room.get("practice"))
     stake = room["stake"]
     v = room["vault"]
     nicked = [u for u, r in results.items() if r["how"] == "nicked"]
@@ -688,6 +767,13 @@ def _finish(room: dict, now: float) -> None:
              and all(r["take"] >= CLEAN_TAKE for r in results.values()))
     if v["police"] is not None and v["police"] < v["secs"]:
         v["police_take"] = _floor2(take_at(v["police"], room["cap"], v["secs"]))
+    if practice:
+        # play money: nothing paid, no bonus, no heat, no records, no badges, no post
+        room.update(over=True, ended=now, how="clean" if clean else "nicked" if nicked else "done", results=results,
+                    bonus={}, paid=True)
+        room["heat"] = round(heat(now), 3)
+        _save()
+        return
     bonus = {}
     if clean:
         day = _uk_day(now)
@@ -784,10 +870,24 @@ def _person(uid: int, name_of) -> dict:
     return {"uid": str(uid), "name": name_of(uid) or "Someone"}
 
 
+def _crewmate(room: dict, uid: int, name_of) -> dict:
+    b = _bot(room, uid)
+    if b is not None:
+        return {"uid": str(uid), "name": b["name"], "bot": True, "skill": b["skill"]}
+    return _person(uid, name_of)
+
+
+def _practice_stake(target: str) -> int:
+    """The biggest play-money buy-in a practice job can have (the bank's reserves don't come into it)."""
+    top = min(TARGETS[target]["max_stake"], int(_cfg("HEIST_MAX_STAKE", 1000)))
+    return max((s for s in STAKES if s <= top), default=0)
+
+
 def _target_view(key: str, now: float) -> dict:
     t = TARGETS[key]
     return {"key": key, "name": t["name"], "short": t["short"], "blurb": t["blurb"], "minCrew": t["min_crew"],
-            "cap": cap_for(key, now), "baseCap": t["cap"], "tip": tip(now) == key, "maxStake": max_stake(key)}
+            "cap": cap_for(key, now), "baseCap": t["cap"], "tip": tip(now) == key, "maxStake": max_stake(key),
+            "practiceStake": _practice_stake(key)}
 
 
 def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
@@ -799,9 +899,10 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         "id": room["id"], "host": str(room["host"]), "stake": room["stake"], "seats": SEATS, "phase": phase,
         "how": room.get("how"), "target": _target_view(room["target"], now) if s == "lobby" else
         {**_target_view(room["target"], now), "cap": room["cap"]},
-        "crew": [{**_person(u, name_of), "role": room["roles"].get(str(u)), "left": u in room["left"],
+        "practice": bool(room.get("practice")),
+        "crew": [{**_crewmate(room, u, name_of), "role": room["roles"].get(str(u)), "left": u in room["left"],
                   "voted": str(u) in room.get("votes", {}),
-                  "done": bool(s == "job" and _done(room["roles"][str(u)], room["job"][room["roles"][str(u)]]))}
+                  "done": bool(s == "job" and not room.get("over") and _member_done(room, u, now))}
                  for u in room["players"]],
         "expiresIn": max(0, round(room["expires"] - now)) if s == "lobby" else None,
         "deadlineIn": round(max(0.0, room.get("deadline", now) - now), 2) if s in ("plan", "job", "report") else None,
@@ -868,7 +969,7 @@ def lobby(uid: int, name_of, balance: int) -> dict:
     mine = _seated(uid)
     h = heat(now)
     return {
-        "you": _person(uid, name_of), "balance": balance, "stakes": STAKES,
+        "you": _person(uid, name_of), "balance": balance, "stakes": STAKES, "practice": can_practise(uid),
         "targets": [_target_view(k, now) for k in TARGETS], "roles": [{"key": r, "name": ROLE_INFO[r][0],
                                                                        "job": ROLE_INFO[r][1]} for r in ROLES],
         "heat": {"level": round(h, 3), "label": heat_label(h)}, "tip": tip(now),
@@ -876,7 +977,8 @@ def lobby(uid: int, name_of, balance: int) -> dict:
         "open": [{"id": r["id"], "host": _person(r["host"], name_of), "players": len(_present(r)), "seats": SEATS,
                   "stake": r["stake"], "target": TARGETS[r["target"]]["short"], "expiresIn": max(0, round(r["expires"] - now)),
                   "roles": sorted(r["roles"].values(), key=ROLES.index)}
-                 for r in _rooms.values() if r["state"] == "lobby" and not r.get("over") and uid not in r["players"]],
+                 for r in _rooms.values() if r["state"] == "lobby" and not r.get("over") and uid not in r["players"]
+                 and not r.get("practice")],
         "board": most_wanted(name_of, now),
     }
 
@@ -913,13 +1015,18 @@ def _lobby_room(rid: str) -> dict:
     return r
 
 
-def _stake_for(target: str, stake) -> int:
+def _stake_for(target: str, stake, practice: bool = False) -> int:
     try:
         stake = int(stake)
     except (TypeError, ValueError):
         raise Refuse("Pick a buy-in.")
     if target not in TARGETS:
         raise Refuse("Pick a target.")
+    if practice:
+        top = _practice_stake(target)
+        if stake < 0 or stake > top or stake not in STAKES:
+            raise Refuse(f"The {TARGETS[target]['short']} takes buy-ins up to {top:,}.")
+        return stake
     top = max_stake(target)
     if stake < 0 or stake > top or stake not in STAKES:
         raise Refuse(f"The {TARGETS[target]['short']} takes buy-ins up to {top:,} UKPence." if top
@@ -927,18 +1034,24 @@ def _stake_for(target: str, stake) -> int:
     return stake
 
 
-def open_room(uid: int, stake, target="post", channel: int | None = None, role: str | None = None) -> dict:
-    """Get a crew together; ``channel`` is where the game was opened, where its post goes."""
+def open_room(uid: int, stake, target="post", channel: int | None = None, role: str | None = None,
+              practice: bool = False) -> dict:
+    """Get a crew together; ``channel`` is where the game was opened, where its post goes. A practice
+    crew (testers only) is play money, filled with bot crewmates when it goes in, and seen by nobody else."""
     _load()
+    practice = bool(practice)
+    if practice and not can_practise(uid):
+        raise Refuse("Practice jobs are for the testers.")
     target = target if target in TARGETS else "post"
-    stake = _stake_for(target, stake)
+    stake = _stake_for(target, stake, practice)
     _busy(uid)
-    _check_stake(uid, stake)
+    if not practice:
+        _check_stake(uid, stake)
     now = time.time()
     role = role if role in ROLES else "hacker"
     r = {"id": secrets.token_hex(4), "host": uid, "players": [uid], "left": [], "stake": stake, "target": target,
          "state": "lobby", "created": now, "expires": now + LOBBY_SECONDS, "roles": {str(uid): role}, "votes": {},
-         "over": False, "ch": int(channel) if channel else None}
+         "over": False, "ch": None if practice else int(channel) if channel else None, "practice": practice}
     _rooms[r["id"]] = r
     _save()
     _emit("open", r)
@@ -950,6 +1063,8 @@ def join(uid: int, rid: str, role: str | None = None) -> dict:
     r = _lobby_room(rid)
     if uid in r["players"]:
         return r
+    if r.get("practice"):
+        raise Refuse("That's someone's practice job.")
     if len(r["players"]) >= SEATS:
         raise Refuse("That crew's full.")
     _busy(uid)
@@ -988,8 +1103,8 @@ def pick_target(uid: int, rid: str, target: str, stake=None) -> dict:
         raise Refuse("Only the host picks the target.")
     if target not in TARGETS:
         raise Refuse("Pick a target.")
-    new = _stake_for(target, r["stake"] if stake is None else stake)
-    if new > 0:
+    new = _stake_for(target, r["stake"] if stake is None else stake, r.get("practice", False))
+    if new > 0 and not r.get("practice"):
         for u in r["players"]:
             _check_stake(u, new, "You" if u == uid else "Someone in the crew")
     r.update(target=target, stake=new)
@@ -1025,6 +1140,14 @@ def start(uid: int, rid: str) -> dict:
     r = _lobby_room(rid)
     if uid != r["host"]:
         raise Refuse("Only the host can send the crew in.")
+    if r.get("practice"):
+        # play money, nothing to take in; the bot crewmates make up the crew
+        now = time.time()
+        _fill_with_bots(r, now)
+        r.update(state="plan", started=now, deadline=now + PLAN_SECONDS, cap=cap_for(r["target"], now),
+                 twist=_rng().choice(TWISTS))
+        _save()
+        return r
     t = TARGETS[r["target"]]
     need = max(t["min_crew"], 2 if r["stake"] > 0 else 1)
     if len(r["players"]) < need:

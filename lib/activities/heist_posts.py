@@ -47,7 +47,7 @@ _no_files_until: dict[int, float] = {}     # channel -> when to try pictures the
 def on_event(event: str, room: dict) -> None:
     """A step in a crew's job (heist.listeners)."""
     rid = room.get("id")
-    if not rid:
+    if not rid or room.get("practice"):       # practice jobs are never posted
         return
     post = _posts.get(rid)
     if post is None:
@@ -92,7 +92,7 @@ async def _faces(uids) -> dict:
 def headline(room: dict, event: str) -> str:
     """The line above the picture."""
     stake = int(room.get("stake") or 0)
-    for_what = f" · **{stake:,} UKP** buy-in" if stake else " · a practice job"
+    for_what = f" · **{stake:,} UKP** buy-in" if stake else " · a free job"
     host = room["host"]
     t = heist.TARGETS.get(room.get("target"), heist.TARGETS["post"])
     if event in ("open", "seats"):

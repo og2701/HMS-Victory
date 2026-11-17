@@ -564,10 +564,11 @@ KART_TESTERS = [404634271861571584]  # oggers
 KART_MAX_STAKE = 5000
 # Bank Job (lib/activities/heist.py, docs/heist.md): a heist for up to six in the activity's Together games. Each
 # of the crew plays a role's puzzle, then legs it from the vault before the police come. False while it's being
-# tried out: only HEIST_TESTERS see its tile on the home screen or can get into it, there's no /heist and crews
-# aren't posted anywhere; True gives it /heist and a tile under Together for everyone.
+# tried out: /heist opens it, but only for HEIST_TESTERS (anyone else is told it isn't open yet), and it has no
+# tile in the /games hub; True opens /heist to everyone and gives it a tile under Together. Practice jobs (bot
+# crewmates, play money, no UKPence moves and nothing posted) stay with HEIST_TESTERS either way.
 HEIST_LIVE = False
-HEIST_TESTERS = [404634271861571584]  # oggers
+HEIST_TESTERS = [404634271861571584, 1453319508587450514]  # oggers, mahdi
 HEIST_MAX_STAKE = 1000           # the most any buy-in can be (each target has its own limit under this)
 HEIST_EXPOSURE_PCT = 0.15        # a full crew clearing a tipped vault can take at most this share of what the
                                  # bank holds above RESERVE_FLOOR; buy-in limits shrink to fit (free only at the floor)

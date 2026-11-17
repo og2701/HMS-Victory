@@ -28,7 +28,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /countdown/open {stake}, /countdown/join|leave|start {id}
     GET  /countdown/room/<id>, POST /countdown/room/<id>/call {kind}, /countdown/room/<id>/declare {word}
     GET  /heist               Bank Job: your crew, the crews you could join, the targets, the heat and the board
-    POST /heist/open {stake, target, role}, /heist/join {id, role?}, /heist/role {id, role},
+    POST /heist/open {stake, target, role, practice?},/heist/join {id, role?}, /heist/role {id, role},
          /heist/target {id, target, stake?}, /heist/leave|start {id}
     GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach}, /heist/room/<id>/play {...the puzzle's move},
          /heist/room/<id>/leg, /heist/room/<id>/leave
@@ -260,7 +260,8 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
 def _home(client, uid: int, channel) -> dict:
     from lib.activities import home
     return {**home.state(client, uid), "casinoOpen": _casino_open(channel), "skyrim": _skyrim_card(uid, channel),
-            "kart": _kart_allowed(uid), "heist": _heist_allowed(uid)}
+            # Bank Job's tile only once it's live: until then its testers get in with /heist, not from the hub
+            "kart": _kart_allowed(uid), "heist": bool(getattr(config, "HEIST_LIVE", False))}
 
 
 def _skyrim_card(uid: int, channel) -> dict | None:
@@ -941,7 +942,7 @@ async def kart_ws(request):
 
 def _heist_allowed(uid) -> bool:
     """Everyone once Bank Job's live (config.HEIST_LIVE), until then only its testers."""
-    return bool(getattr(config, "HEIST_LIVE", False)) or int(uid or 0) in getattr(config, "HEIST_TESTERS", [])
+    return heist.allowed(uid)
 
 
 def _heist_request(request):
@@ -974,7 +975,7 @@ async def heist_action(request):
     try:
         if action == "open":
             heist.open_room(uid, body.get("stake"), str(body.get("target") or "post"), channel=who["ch"],
-                            role=body.get("role"))
+                            role=body.get("role"), practice=body.get("practice") is True)
         elif action == "join":
             heist.join(uid, rid, body.get("role"))
         elif action == "role":
