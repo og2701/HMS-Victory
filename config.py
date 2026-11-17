@@ -568,7 +568,7 @@ KART_MAX_STAKE = 5000
 # tile in the /games hub; True opens /heist to everyone and gives it a tile under Together. Practice jobs (bot
 # crewmates, play money, no UKPence moves and nothing posted) stay with HEIST_TESTERS either way.
 HEIST_LIVE = False
-HEIST_TESTERS = [404634271861571584, 1453319508587450514]  # oggers, mahdi
+HEIST_TESTERS = [404634271861571584, 1453319508587450514, 198144909583056898]  # oggers, mahdi, hadidas
 HEIST_MAX_STAKE = 1000           # the most any buy-in can be (each target has its own limit under this)
 HEIST_EXPOSURE_PCT = 0.15        # a full crew clearing a tipped vault can take at most this share of what the
                                  # bank holds above RESERVE_FLOOR; buy-in limits shrink to fit (free only at the floor)
