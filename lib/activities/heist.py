@@ -9,7 +9,8 @@ can take a seat and a role. Once it starts, every buy-in goes into the bank and 
             (rain, a shift change, a chatty guard) leans on one role or another
     job     a room at a time through the building (heist_rooms.py says what's where). Each room has
             a few things in the way, each a job for one role: a keypad, a lock, a patrol, a route,
-            someone to blag past, loot to load. Whoever holds the role does it quietly (its puzzle)
+            someone to blag past, loot to load. Whoever holds the role does it quietly (its puzzle,
+            after a run-down of how it's played that its clock waits for: heist_briefs.py)
             or loudly (straight through, but the alarm jumps); a role nobody holds is winged by
             Two-Pint Terry unless someone free steps in. One alarm builds over the whole job, and
             loot jobs make the vault hold more; an alarm past ALARM_BLOWN sends them running for it.
@@ -53,6 +54,7 @@ import time
 from datetime import datetime
 
 import config
+from lib.activities import heist_briefs as briefs
 from lib.activities import heist_games
 from lib.activities import heist_rooms as rooms_of
 from lib.core.file_operations import atomic_write_json
@@ -77,6 +79,8 @@ HEAT_CAP_CUT = 0.4           # at full heat the vaults hold 40% less
 TIP_BOOST = 1.25             # the fence's tip of the day holds this much more
 VAULT_EASE = 2.0             # the take's climb: cap ** (t / secs) ** this, slow to start and fast to finish
 CLEAN_TAKE = 1.5             # a clean job's crew all got out with at least this much
+BRIEF_FULL, BRIEF_SHORT = 12.0, 4.0     # the run-down before a puzzle: the first time you meet its game, and after
+BRIEF_FORGET = 30 * 86400    # a game someone hasn't met in a month gets the full run-down again
 
 BOT_NAMES = ["Nervous Nigel", "Big Barry", "Two-Coats Trevor", "Mad Mandy", "Light-Fingered Linda", "Clive the Drill",
              "Posh Pauline", "Keith the Kettle", "Sharon Two-Phones", "Del Boy Derek", "Tracey Tealeaf", "Colin the Cat"]
@@ -121,6 +125,7 @@ _rooms: dict[str, dict] = {}
 _posts: dict[str, list] = {}       # room id -> [channel, message] of its post
 _heat = {"v": 0.0, "at": 0.0}      # the police's mood, and when it was last set
 _bonus: dict[str, str] = {}        # uid -> the UK day they last had a clean job bonus
+_met: dict[str, dict[str, float]] = {}   # uid -> {"role:game": when they last had its run-down}
 _loaded = False
 _board_cache: tuple[float, list] = (0.0, [])
 CLIENT = None
@@ -174,6 +179,7 @@ def _load() -> None:
     _posts.update(raw.get("posts", {}))
     _heat.update(raw.get("heat", {}))
     _bonus.update(raw.get("bonus", {}))
+    _met.update(raw.get("met", {}))
     for r in _rooms.values():
         # a job the old one-puzzle Bank Job was in the middle of (only ever a practice one: a real one holds up the
         # restart) has no rooms to carry on through, so it's called off
@@ -195,8 +201,9 @@ def _shift(room: dict, by: float) -> None:
         room["arrive"] += by
     for rm in room.get("rooms", []):
         for th in rm["things"]:
-            if th.get("at"):
-                th["at"] += by
+            for k in ("at", "go"):
+                if th.get(k):
+                    th[k] += by
     v = room.get("vault")
     if v:
         v["start"] += by
@@ -205,7 +212,7 @@ def _shift(room: dict, by: float) -> None:
 
 def _save() -> None:
     try:
-        atomic_write_json(_FILE, {"rooms": _rooms, "posts": _posts, "heat": _heat, "bonus": _bonus,
+        atomic_write_json(_FILE, {"rooms": _rooms, "posts": _posts, "heat": _heat, "bonus": _bonus, "met": _met,
                                   "saved": time.time()})
     except Exception:
         log.error("couldn't save the bank jobs to %s", _FILE, exc_info=True)
@@ -341,6 +348,7 @@ ROADBLOCKS = 11
 TRAFFIC = (1, 1, 1, 2, 3, 5, 6)          # mostly clear roads, and jams worth going round
 BAGS = 8
 FACE_QUESTIONS = 4
+FACE_WAIT = 9.0              # how long the guard waits on each answer about the cover story (the page times it)
 # a thing in a room, by its size: what each role's puzzle looks like
 SIZES = {
     "hacker": {"s": {"n": 3, "symbols": 5, "tries": 5}, "m": {"n": 4, "symbols": 6, "tries": 6},
@@ -564,7 +572,8 @@ def _first_public(role: str, p: dict) -> dict:
     if role == "wheelman":
         return {"grid": len(p["costs"]), "costs": p["costs"], **({"path": p["path"], "cost": p.get("cost")} if "path" in p else {})}
     if role == "face":
-        out = {"ready": p["ready"], "count": len(p["questions"]), "answers": p["answers"]}
+        # the page shows the story a line at a time and the guard won't wait long, so a screenshot's no crib sheet
+        out = {"ready": p["ready"], "count": len(p["questions"]), "answers": p["answers"], "patience": FACE_WAIT}
         if not p["ready"]:
             out["story"] = p["story"]
         else:
@@ -676,6 +685,9 @@ def _move(role: str, p: dict, body: dict) -> None:
                 p["ready"] = True
                 return
             raise Refuse("Learn your story first.")
+        if body.get("slow") is True:
+            p["answers"].append(-1)             # he got tired of waiting: wrong
+            return
         try:
             a = int(body.get("answer"))
         except (TypeError, ValueError):
@@ -850,16 +862,41 @@ def _start_job(room: dict, now: float) -> None:
 
 
 def _room_secs(rm: dict) -> float:
-    return rooms_of.room_seconds([(t["role"], t["name"], t["size"]) for t in rm["things"] if not t.get("spare")])
+    """The room's clock: what its own things take to play, and the longest run-down in it on top (rm["brief"]), so
+    reading how a puzzle's played never eats into playing it."""
+    return rooms_of.room_seconds([(t["role"], t["name"], t["size"]) for t in rm["things"] if not t.get("spare")]) \
+        + rm.get("brief", 0.0)
+
+
+def _game_key(th: dict) -> str:
+    """Which run-down a thing gets: its game's, "role:game"."""
+    return f"{th['role']}:{th['p'].get('game') or heist_games.FIRST[th['role']]}"
+
+
+def _brief_secs(uid: int, th: dict, now: float) -> float:
+    """How long the run-down before a thing would be for this player: the full one the first time they meet its game
+    (or the first in a month), a quick one with a one-line reminder after."""
+    seen = _met.get(str(uid), {}).get(_game_key(th))
+    return BRIEF_FULL if seen is None or now - float(seen) > BRIEF_FORGET else BRIEF_SHORT
+
+
+def _start_quiet(th: dict, uid: int, now: float) -> None:
+    """Someone starts a puzzle: the run-down first, then its clock (it takes no moves till then, or till GOT IT)."""
+    secs = _brief_secs(uid, th, now)
+    _met.setdefault(str(uid), {})[_game_key(th)] = round(now)
+    th.update(state="active", mode="quiet", go=round(now + secs, 2), brief="full" if secs == BRIEF_FULL else "short")
 
 
 def _enter(room: dict, i: int, now: float) -> None:
     """Walk into room i: everything in it goes to whoever holds its role, or to Terry."""
     rm = room["rooms"][i]
     there = now + MOVE_SECONDS
-    room.update(at=i, arrive=there, deadline=there + _room_secs(rm))
     rng = _rng()
     secs = _room_secs(rm)
+    # the room's clock grows by the longest run-down any player will get in it
+    rm["brief"] = max((_brief_secs(_holder(room, th["role"]), th, there) for th in rm["things"]
+                       if _holder(room, th["role"]) is not None and not _bot(room, _holder(room, th["role"]))), default=0.0)
+    room.update(at=i, arrive=there, deadline=there + _room_secs(rm))
     for th in rm["things"]:
         who = _holder(room, th["role"])
         b = _bot(room, who) if who is not None else None
@@ -1200,7 +1237,7 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         rm = room["rooms"][room["at"]]
         out["job"] = {"at": room["at"], "count": len(room["rooms"]), "key": rm["key"], "name": rooms_of.ROOMS[rm["key"]][0],
                       "walk": round(max(0.0, room["arrive"] - now), 2), "alarm": room["alarm"], "loot": room["loot"],
-                      "secs": _room_secs(rm),
+                      "secs": _room_secs(rm), "brief": rm.get("brief", 0.0),
                       "cap": round(room["cap"] * (1 + room["loot"]), 2), "route": room.get("approach"),
                       "rooms": [{"key": x["key"], "name": rooms_of.ROOMS[x["key"]][0], "pin": pins.get(x["key"]),
                                  "done": j < room["at"]} for j, x in enumerate(room["rooms"])],
@@ -1213,8 +1250,18 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
                                                            if th["state"] == "done"))}
         mine = next((th for th in rm["things"] if th["who"] == uid and th["state"] == "active"), None)
         if mine:
+            pub = _public(mine["role"], mine["p"])
             out["puzzle"] = {"role": mine["role"], "ob": mine["id"], "name": mine["name"], "stepped": bool(mine.get("stepped")),
-                             "done": False, **_public(mine["role"], mine["p"])}
+                             "done": False}
+            if now < mine.get("go", 0):
+                # the run-down: what it is and how to play it, and nothing of the puzzle itself till its clock starts
+                how, line = briefs.brief(_game_key(mine))
+                full = mine.get("brief") == "full"
+                out["puzzle"].update(game=pub["game"], title=pub["title"], briefing={
+                    "full": full, "how": how, "line": line, "left": round(mine["go"] - now, 2),
+                    "secs": BRIEF_FULL if full else BRIEF_SHORT})
+            else:
+                out["puzzle"].update(pub)
     if room.get("score") is not None:
         # the edge itself, so the page can show the police's odds; "waiting" when they're already at the door
         out["report"] = {"score": room["score"], "alarm": round((room["edge"] - EDGE_BEST) / (EDGE_WORST - EDGE_BEST), 3),
@@ -1508,8 +1555,8 @@ def vote(uid: int, rid: str, approach: str) -> dict:
 
 def play(uid: int, rid: str, body: dict) -> dict:
     """A move in the room the crew's in, at one thing in it (body["ob"]): start one that's yours, quietly or loudly
-    ({"take": "quiet" | "loud"}); step in for Terry on one nobody's got ({"step": true}); or a move at the puzzle
-    you're on."""
+    ({"take": "quiet" | "loud"}); step in for Terry on one nobody's got ({"step": true}); cut a puzzle's run-down
+    short ({"go": true}); or a move at the puzzle you're on (refused till its run-down's over)."""
     r, now = _live(uid, rid)
     if r.get("over") or r["state"] != "job":
         raise Refuse("The job isn't on.")
@@ -1534,10 +1581,17 @@ def play(uid: int, rid: str, body: dict) -> dict:
             th["mode"] = "loud"
             _settle(r, th, LOUD_SCORE * (STEP_IN if th.get("stepped") else 1.0))
         else:
-            th.update(state="active", mode="quiet")
+            _start_quiet(th, uid, now)
+    elif body.get("go") is True:
+        # GOT IT: cut the run-down short and start the clock now
+        if th["who"] != uid or th["state"] != "active":
+            raise Refuse("You're not on that one.")
+        th["go"] = min(th.get("go", now), now)
     else:
         if th["who"] != uid or th["state"] != "active":
             raise Refuse("You're not on that one.")
+        if now < th.get("go", 0):
+            raise Refuse("Read the run-down first, or tap GOT IT.")
         _move(th["role"], th["p"], body)
         if _done(th["role"], th["p"]):
             _settle(r, th, _played(th))

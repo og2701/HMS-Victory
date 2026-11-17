@@ -37,8 +37,30 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    at the vault door) or **loud** (done at once, scored 35%). A thing whose job nobody holds goes to Terry, unless
    someone free taps **Step in** first and does it themselves at 80% of their score. The room ends when everything
    in it is done or its clock runs out (20s plus enough for its biggest thing and 6s for each other); anything
-   unfinished is scored as it stands, and a thing nobody started scores 0. The bot makes each puzzle, keeps its
-   answer and judges the result, so the page never sees an answer:
+   unfinished is scored as it stands, and a thing nobody started scores 0.
+
+   **The run-down.** Going quiet doesn't throw you straight onto the clock. First comes a run-down of the puzzle:
+   what it is and how to play it (`lib/activities/heist_briefs.py`, a few lines for each of the 42 games). The
+   first time someone meets a game it's the full one, 12 seconds; after that it's a 4-second "ready" with a
+   one-line reminder; a game they haven't met in a month gets the full one again. The bot remembers who's met
+   what (`met` in the saved file), because a job never deals anyone the same game twice, so "the first time in
+   this job" would mean the full run-down in every room. The clock is the bot's, not the page's: the puzzle takes
+   no moves and its board isn't even sent until the run-down's over, and **GOT IT** starts it early. Each room's
+   clock grows by the longest run-down any player in it will get, so reading it never costs anyone time.
+
+   **Screenshots.** A memory puzzle can't be a lookup from a screenshot of what you were shown:
+   - the Face's cover story is shown a line at a time (tap a line to read it, and the last one hides), and the
+     staff board (STAFF NAMES) a card at a time (tap a card to turn it, the rest stay face down), so one
+     screenshot holds one line or one card;
+   - then the guard only waits so long on each answer (9 seconds on the story, 7 on a name, timed on the page
+     like the small talk's, and too slow counts as wrong), so flicking through a phone's photos runs him out;
+   - the Wheelman's ROUTE MEMORY shows the way out as the van drives it, with only the turn it's at lit, never
+     the whole route at once;
+   - the Lookout's patrol was already one window at a time.
+   The other quick-look games (SPOT THE GUARD, WHO MOVED, the number plate) flash for a moment and stay as they
+   are, and the easy ones stay easy.
+
+   The bot makes each puzzle, keeps its answer and judges the result, so the page never sees an answer:
    - **Hacker:** crack a 3- or 4-digit keypad code, Mastermind-style.
    - **Safecracker:** one to three tumblers. Each listen says cold, warm, hot or click, and which way to turn.
    - **Lookout:** watch a guard's torch go from window to window, then tap the windows in that order.

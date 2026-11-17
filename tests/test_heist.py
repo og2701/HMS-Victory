@@ -1,5 +1,5 @@
-"""Bank Job: the crew and its roles, the targets' limits, every role's puzzle and how it's judged, the
-vault's maths (the bank keeps its edge however anyone plays), settling buy-ins and takes, the clean
+"""Bank Job: the crew and its roles, the targets' limits, every role's puzzle and how it's judged, the run-down
+before each, the vault's maths (the bank keeps its edge however anyone plays), settling buy-ins and takes, the clean
 job bonus, and the clocks pausing over a restart."""
 
 import json
@@ -36,6 +36,7 @@ def em(tmp_path, monkeypatch):
     H._rooms.clear()
     H._posts.clear()
     H._bonus.clear()
+    H._met.clear()
     H._heat.update(v=0.0, at=0.0)
     monkeypatch.setattr(H, "_loaded", True)
     monkeypatch.setattr(H, "_board_cache", (0.0, []))
@@ -98,6 +99,7 @@ def clear_room(em, rid, how="quiet"):
         if th["state"] == "ready":
             H.play(th["who"], rid, {"ob": th["id"], "take": how})
             if how == "quiet":
+                H.play(th["who"], rid, {"ob": th["id"], "go": True})       # GOT IT, past the run-down
                 for mv in moves(th["role"], th["p"]):
                     H.play(th["who"], rid, {"ob": th["id"], **mv})
     if r["state"] == "job" and r["at"] == r.get("at") and any(th["state"] == "terry" for th in here(rid)):
@@ -239,6 +241,12 @@ def test_the_page_never_sees_an_answer(em):
     for th in here(rid):
         if th["state"] == "ready":
             H.play(th["who"], rid, {"ob": th["id"], "take": "quiet"})
+    for u in r["players"]:                    # in the run-down: not even the puzzle's public part yet
+        p = H.view(r, u, name_of)["puzzle"]
+        assert p["briefing"]["how"] and "g" not in p and "story" not in p and "len" not in p
+    for th in here(rid):
+        if th["state"] == "active":
+            H.play(th["who"], rid, {"ob": th["id"], "go": True})
     for u in r["players"]:
         text = json.dumps(H.view(r, u, name_of))
         assert '"secret"' not in text and '"best"' not in text and '"police"' not in text and '"answer"' not in text
@@ -324,6 +332,7 @@ def test_a_room_goes_to_whoever_has_the_job_and_terry_does_the_rest(em):
         H.play(A, rid, {"ob": things[2]["id"], "step": True})
     th = things[1]
     H.play(A, rid, {"ob": th["id"], "take": "quiet"})
+    H.play(A, rid, {"ob": th["id"], "go": True})
     for mv in moves("face", th["p"]):
         H.play(A, rid, {"ob": th["id"], **mv})
     assert th["state"] == "done" and th["score"] == pytest.approx(H.STEP_IN)    # not her job: a bit worse
@@ -350,7 +359,7 @@ def test_everyone_in_the_crew_has_something_to_do_in_every_room(em):
     assert sum(th["w"] for _, th in H._things(r) if th["spare"]) > 0
     # the spares don't make a room's clock any longer
     office = r["rooms"][1]
-    assert H._room_secs(office) == H.rooms_of.room_seconds([t for t in H.rooms_of.ROOMS[office["key"]][1]])
+    assert H._room_secs(office) == H.rooms_of.room_seconds([t for t in H.rooms_of.ROOMS[office["key"]][1]]) + office.get("brief", 0)
 
 
 def test_going_in_loud_is_quick_but_the_alarm_jumps(em):
@@ -365,6 +374,57 @@ def test_going_in_loud_is_quick_but_the_alarm_jumps(em):
     office = r["rooms"][1]["things"]
     mine = [th for th in office if th.get("mode") == "loud"]
     assert mine and loud > 0 and all(th["score"] == H.LOUD_SCORE for th in mine)
+
+
+def test_every_game_has_its_run_down():
+    for role in H.ROLES:
+        for key in H.heist_games.keys(role):
+            how, line = H.briefs.BRIEFS[f"{role}:{key}"]
+            assert how and line, (role, key)
+
+
+def test_a_puzzles_clock_waits_for_its_run_down(em):
+    rid = crew(em, players=(A, B), stake=0, target="post")
+    r = H._rooms[rid]
+    for u in (A, B):
+        H.vote(u, rid, "front")
+    rm = r["rooms"][0]
+    mine = next(th for th in rm["things"] if th["who"] == A)
+    # nobody's met a game yet: the full run-down, and the room's clock grows to fit it
+    assert rm["brief"] == H.BRIEF_FULL
+    assert r["deadline"] - r["arrive"] == pytest.approx(H.rooms_of.room_seconds(
+        [(t["role"], t["name"], t["size"]) for t in rm["things"] if not t["spare"]]) + H.BRIEF_FULL)
+    tick(em, H.MOVE_SECONDS + 0.5)
+    H.play(A, rid, {"ob": mine["id"], "take": "quiet"})
+    assert mine["state"] == "active" and mine["brief"] == "full" and mine["go"] == pytest.approx(H.time.time() + H.BRIEF_FULL)
+    with pytest.raises(H.Refuse, match="run-down"):
+        H.play(A, rid, {"ob": mine["id"], **moves(mine["role"], mine["p"])[0]})
+    tick(em, 3)
+    b = H.view(r, A, name_of)["puzzle"]["briefing"]
+    assert b["full"] and b["how"] and b["line"] and b["left"] == pytest.approx(H.BRIEF_FULL - 3)
+    H.play(A, rid, {"ob": mine["id"], "go": True})                  # GOT IT: the clock starts now
+    assert "briefing" not in H.view(r, A, name_of)["puzzle"]
+    for mv in moves(mine["role"], mine["p"]):
+        H.play(A, rid, {"ob": mine["id"], **mv})
+    assert mine["state"] == "done" and mine["score"] == pytest.approx(1.0)
+    # the next time Anne meets that game it's the quick one; a month on, the full one again
+    th = {"role": mine["role"], "p": mine["p"]}
+    assert H._brief_secs(A, th, H.time.time()) == H.BRIEF_SHORT
+    assert H._brief_secs(A, th, H.time.time() + H.BRIEF_FORGET + 1) == H.BRIEF_FULL
+    assert H._brief_secs(B, th, H.time.time()) == H.BRIEF_FULL     # Ben's not met it
+
+
+def test_the_guard_wont_wait_on_the_cover_story_or_the_staff_names():
+    p = H._face(random.Random(2))
+    H._move("face", p, {"ready": True})
+    H._move("face", p, {"slow": True})                              # too slow: wrong
+    assert p["answers"] == [-1] and H._public("face", p)["patience"] == H.FACE_WAIT
+    g = H.heist_games.get("face", "names")
+    q = g.make(random.Random(3), "m", {})
+    g.move(q, {"ready": True})
+    assert g.public(q)["patience"] > 0
+    g.move(q, {"slow": True, "round": 0})
+    assert q["picks"] == [None] and g.score(q) == 0.0
 
 
 def test_a_blown_alarm_sends_them_straight_to_the_vault(em):
@@ -714,7 +774,7 @@ def test_a_bot_finishes_its_things_in_a_room_at_a_moment_of_its_own(em, testers)
     H.vote(A, rid, next(iter(H.rooms_of.routes("post"))))
     rm = r["rooms"][0]
     theirs = [th for th in rm["things"] if th["who"] is not None and th["who"] < 0]
-    secs = H._room_secs(rm)
+    secs = H._room_secs(rm) - rm["brief"]
     assert theirs and all(th["state"] == "active" for th in theirs)
     assert all(r["arrive"] + H.BOT_PACE[0] * secs <= th["at"] <= r["arrive"] + H.BOT_PACE[1] * secs + 0.01 for th in theirs)
     first = min(theirs, key=lambda th: th["at"])

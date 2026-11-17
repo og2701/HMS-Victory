@@ -608,11 +608,17 @@ class Names(_Quiz):
     patterns shared about, so nobody's known by one thing alone. It comes down, and the guard asks after one of
     them by what pins them down (usually two things, neither enough on its own): pick their name, from people who
     share some of it. The board shows until you're ready (the page takes it down when the time's up); after that
-    the page sees only the question."""
+    the page sees only the question.
+
+    So a screenshot of the board isn't a crib sheet, the page shows it a card at a time (the rest stay face down
+    until one's tapped, and only one's ever face up), and the guard only waits so long for each name (WAIT, timed
+    on the page like the small talk's): flicking through a phone's photos for the answer runs him out."""
     key, role, title = "names", "face", "STAFF NAMES"
+    patience = True
+    WAIT = 7.0
     # staff on the board, questions, seconds to study, what each has, how many of each go round, names to pick from
-    SIZES = {"s": (4, 2, 10, ("lanyard", "mug"), 3, 3), "m": (5, 4, 12, ("lanyard", "mug"), 3, 3),
-             "big": (6, 5, 14, ("lanyard", "mug", "job"), 3, 4)}
+    SIZES = {"s": (4, 2, 12, ("lanyard", "mug"), 3, 3), "m": (5, 4, 14, ("lanyard", "mug"), 3, 3),
+             "big": (6, 5, 16, ("lanyard", "mug", "job"), 3, 4)}       # (a card at a time on the page, so a little longer)
     FACES = "WMWMMMWW"                                             # who's in each cell of g-face-staff.webp
     WOMEN = ["SUE", "PAT", "BEV", "TINA", "JAN", "VAL", "DOT", "MAGS", "JUNE", "RITA"]
     MEN = ["KEV", "DAVE", "RAJ", "GARY", "PHIL", "MO", "STEVE", "LEN", "TONY", "DES"]
@@ -666,7 +672,7 @@ class Names(_Quiz):
     def public(self, p):
         if not p["ready"]:
             return {"ready": False, "study": p["study"], "count": len(p["qs"]), "staff": p["staff"]}
-        out = {"ready": True, **self._shown(p)}
+        out = {"ready": True, **self._shown(p), "patience": self.WAIT}
         if out["at"] < len(p["qs"]):
             out["cue"] = p["qs"][out["at"]]["cue"]
         return out

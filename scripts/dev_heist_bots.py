@@ -1,7 +1,7 @@
 """A stand-in crew for testing Bank Job on this machine, run only by scripts/dev_activity_api.py (the live bot
 never imports it). A few pretend players join any crew a tester opens, take a free job, vote on the way in,
 then go through the rooms doing what's theirs (mostly quietly, now and then loud, sometimes stepping in for
-Terry), play each puzzle about as well as a middling person would, and leg it from the vault at a take they
+Terry), read (or skip) each puzzle's run-down, play each puzzle about as well as a middling person would, and leg it from the vault at a take they
 picked going in.
 
 They go through heist's own functions, the same ones the page's moves reach, so everything they do is a real
@@ -173,6 +173,10 @@ def tick(heist, humans: set[int], minds: dict, joins: dict, rng: random.Random, 
                     elif mine["state"] == "ready":
                         heist.play(uid, r["id"], {"ob": mine["id"], "take": "loud" if rng.random() < 0.12 else "quiet"})
                         m.wait(now, 1, 2.5)
+                    elif now < mine.get("go", 0):
+                        if rng.random() < 0.5:                   # reads the run-down, or knows the drill already
+                            heist.play(uid, r["id"], {"ob": mine["id"], "go": True})
+                        m.wait(now, 1, 3)
                     else:
                         heist.play(uid, r["id"], {"ob": mine["id"], **_move(heist, mine["role"], mine["p"], m)})
                         g = heist.heist_games.get(mine["role"], mine["p"].get("game"))
