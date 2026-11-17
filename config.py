@@ -776,7 +776,8 @@ class CHANNELS:
     GAMING = 1139977009389387959
     CASINO = 1512095841517699213          # casino games live here
     VIP_LOUNGE = 1333482774157590609      # vip lounge channel; casino commands allowed here
-    BOT_WORKSHOP = 1141037835445616640    # casino commands allowed here too
+    BOT_WORKSHOP = 1141037835445616640    # #vic-root now (admin only); casino commands allowed here too
+    WORKSHOP = 1570063729947844714        # testers' #workshop (Boatswain role); also where reserve alerts post
     POLITICS = 1141097424849481799
     LOGS = 959723562892144690
     BOT_DELETE_LOGS = 1569847481758646364  # thread in #bot-workshop: Vic's own posts deleted by someone else

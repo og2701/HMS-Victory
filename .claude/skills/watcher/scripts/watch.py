@@ -33,7 +33,8 @@ import atexit, fcntl, json, os, re, signal, subprocess, sys, time, urllib.error,
 from dotenv import load_dotenv
 
 load_dotenv(".env")
-CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002"}  # dm: Vic and Oggers
+CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002",
+            "testers": "1570063729947844714"}  # workshop = #vic-root (admin only); testers = the new #workshop; dm: Vic and Oggers
 NAMES = {cid: name for name, cid in CHANNELS.items()}
 VIC = "1171842947440967770"
 ACK = "hmmnote:1179638366275383297"  # "looking into it", added the moment a request is seen
@@ -50,8 +51,8 @@ EDITS_FILE = "/tmp/vic_watch_edits.json"  # channel id -> {message id: its edite
 EDIT_WINDOW = 25
 start = sys.argv[1]
 mode = sys.argv[2] if len(sys.argv) > 2 else ""
-# #bot-workshop always; Oggers' DM and #cabinet only when asked for: watch.py <id> [pending...] [dm] [cabinet]
-WATCHED = {k: v for k, v in CHANNELS.items() if k == "workshop" or k in sys.argv[2:]}
+# #vic-root ("workshop") and the testers' #workshop ("testers") always; Oggers' DM and #cabinet only when asked for
+WATCHED = {k: v for k, v in CHANNELS.items() if k in ("workshop", "testers") or k in sys.argv[2:]}
 if mode in ("dm", "cabinet"):
     mode = ""
 pending = ({CHANNELS[n] for n in (mode.split(":", 1)[1].split(",") if ":" in mode else ["workshop"])}
@@ -239,10 +240,17 @@ def text_of(m):
     return "\n".join(parts)
 
 
+FULL_ACCESS = {"404634271861571584", "198144909583056898"}  # Oggers, Hadidas
+
+
 def brief(m):
-    return {"id": m["id"], "author": m["author"].get("global_name") or m["author"]["username"], "bot": bool(m["author"].get("bot")),
-            "content": text_of(m), "attachments": [x["url"] for x in m["attachments"]],
-            "reply_to": (m.get("referenced_message") or {}).get("id")}
+    b = {"id": m["id"], "author": m["author"].get("global_name") or m["author"]["username"], "bot": bool(m["author"].get("bot")),
+         "content": text_of(m), "attachments": [x["url"] for x in m["attachments"]],
+         "reply_to": (m.get("referenced_message") or {}).get("id")}
+    if m.get("channel_id") == CHANNELS["testers"]:  # #workshop: testers get the limited tier (SKILL.md, "#workshop")
+        b["author_id"] = m["author"]["id"]
+        b["tier"] = "full" if m["author"]["id"] in FULL_ACCESS else "tester"
+    return b
 
 
 def poll(cid):

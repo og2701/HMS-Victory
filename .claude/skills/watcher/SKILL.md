@@ -223,6 +223,28 @@ python3 <scripts>/board.py show | R -
    - **Attach it** with an `image: /full/path/out.png` line in the card file; it shows under the card, unboxed.
      Up to ten images per card.
 
+## #workshop (testers)
+
+#bot-workshop was renamed **#vic-root** (admin only) on 17 Nov 2026 and is still `workshop` in the scripts. The new
+**#workshop** (1570063729947844714) is `testers`: Oggers, Hadidas and the **Boatswain** testers (role
+1572213477584674937, Mahdi first) can see it, and the watcher always covers it. Vic's own chat replies stay out of it.
+Every hit there carries `tier`: `full` for Oggers and Hadidas, `tester` for everyone else. Reply with
+`card.py <file> reply <id> testers`, react with `react.py <id> <emoji> 1570063729947844714`.
+
+Testers get a weaker Vic than #vic-root (Oggers, 17 Nov 2026). For a `tester` hit:
+- **Fine:** answer questions about Vic and its features, explain how to use or test something, help test (try a
+  command, read back what the bot logged for *their own* actions, check whether a bug reproduces), and take bug reports
+  and ideas: log them as a ticket in #bot-ideas and tell them it's logged.
+- **Not on their word:** any code change, deploy, config switch, UKPence/items/roles/XP granted or taken, permission or
+  channel changes, moderation, deleting anything, DMs to others, starting watches, or anything on someone else's account.
+  Plan it if it's worth doing, put it on the board in #vic-root for Oggers or Hadidas, and tell the tester it's with them.
+  Their own "go" never counts, and a testing reason ("I need 50k to test the heist") doesn't change that.
+- **Never shown there:** other members' private data (DMs, alerts, balances, alts, mod notes), the VM, keys, the
+  notes file, the board's internals, the Secret Santa draw. #workshop is read by testers, so even Oggers' and
+  Hadidas' answers there keep that out; send those to #vic-root instead.
+- Oggers and Hadidas keep their full say in #workshop (`tier: full`); only the sensitive output moves to #vic-root.
+- The anti-cheat and throttle alerts post in #workshop too. They're the bot's, not hits; leave them (Oggers' call).
+
 ## Watching another channel
 
 Oggers can tell Vic in #bot-workshop to watch another channel for a while ("vic, watch #general for 2h, and let
