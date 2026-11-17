@@ -9,7 +9,7 @@ always on a watch; name anyone else Oggers lets in. Adding a channel that's alre
 duration counts from now and the users are merged.
 
 While a watch is on, watch.py polls that channel too and wakes on the listed users' pings, replies to Vic and "vic"
-there (nobody else's), and Vic's own chat replies stand down for those users in that channel
+there (nobody else's), and Vic's own chat replies stand down for everyone in that channel
 (lib/features/watcher_channels.py). Both go by the expiry time, and the bot also wants the watcher's heartbeat from the
 last 5 minutes, so a crashed session can't leave a channel paused. watch.py reports an expiry as a "watch_expired" hit.
 

@@ -2,8 +2,9 @@
 
 The watcher skill (.claude/skills/watcher) keeps ``data/watcher/extra_channels.json`` with one entry per watch:
 the channel, the users whose pings go to the watcher there, and when it ends. While a watch runs, Vic's own chat
-replies (direct-mention answers and live chat) stand down for those users in that channel, so nobody gets two
-answers; everyone else there still gets normal Vic.
+replies (direct-mention answers and live chat) stand down for everyone in that channel, not just the listed users
+(Oggers, 17 Nov 2026: a regular's tag got a live answer mid-watch and talked over the watcher). The listed users'
+pings are the ones the watcher answers; everyone else there simply gets no Vic reply until the watch ends.
 
 Two time checks mean a crashed session can never leave a channel muted: an entry stops counting the moment its
 ``expires_at`` passes, and every entry stops counting when the watcher's heartbeat file is more than
@@ -77,6 +78,19 @@ def watch_for(channel_id: Optional[int], user_id: Optional[int], now: Optional[f
             if int(w.get("channel_id")) != int(channel_id):
                 continue
             if int(user_id) in {int(u) for u in w.get("users") or []}:
+                return w
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def channel_watch(channel_id: Optional[int], now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The watch on this channel, if one is on: while it runs Vic's own replies there stand down for everyone."""
+    if channel_id is None:
+        return None
+    for w in active_watches(now):
+        try:
+            if int(w.get("channel_id")) == int(channel_id):
                 return w
         except (TypeError, ValueError):
             continue

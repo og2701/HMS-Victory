@@ -6676,10 +6676,10 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
     if getattr(message.author, "bot", False):
         return False
 
-    # While the hand-run watcher covers this channel for this user (Oggers asked for it in #bot-workshop), their
-    # pings go to the watcher, so Vic's own replies (direct mentions and live chat) stand down until it ends.
-    from lib.features.watcher_channels import watch_for
-    watch = watch_for(getattr(message.channel, "id", None), message.author.id)
+    # While the hand-run watcher covers this channel (Oggers asked for it in #bot-workshop), Vic's own replies
+    # (direct mentions and live chat) stand down there for everyone until it ends, so nothing talks over it.
+    from lib.features.watcher_channels import channel_watch
+    watch = channel_watch(getattr(message.channel, "id", None))
     if watch:
         if is_bot_explicitly_mentioned(client, message) or live_chat_manager.active:
             logger.info("Message from %s (%s) in #%s left to the watcher (watch %s, until %s).", message.author,

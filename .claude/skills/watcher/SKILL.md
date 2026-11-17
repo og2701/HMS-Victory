@@ -252,7 +252,9 @@ Testers get a weaker Vic than #vic-root (Oggers, 17 Nov 2026). For a `tester` hi
 Oggers can tell Vic in #bot-workshop to watch another channel for a while ("vic, watch #general for 2h, and let
 @x in"). The watcher then covers that channel too, but only for the watch's users: Oggers, Hadidas and anyone he
 names. Their pings, replies to Vic and "vic" there come to you, and Vic's own replies to them there (tags and live
-chat) stand down so nobody gets two answers. Everyone else in that channel still gets normal Vic.
+chat) stand down. **Vic's own replies stand down for everyone in a watched channel**, not just the listed users
+(Oggers, 17 Nov 2026), so nothing talks over the watcher: anyone else's tag there gets no Vic reply until the watch
+ends. The watch only lasts as long as you ask, so no need to touch the controller card's direct-reply pause.
 
 ```bash
 R watch_channel.py add <channel_id> [duration] [user_id ...] --request <request_id>

@@ -87,8 +87,17 @@ class ResponderStandsDownTest(unittest.IsolatedAsyncioTestCase):
         client = MagicMock()
         client.user.id = 999999999
         live_chat_manager.active = False
-        with patch("lib.features.watcher_channels.watch_for", return_value={"request_id": "1", "expires_at": time.time() + 60}):
+        with patch("lib.features.watcher_channels.channel_watch", return_value={"request_id": "1", "expires_at": time.time() + 60}):
             self.assertFalse(await handle_chat_message(client, self._message(client, USERS.OGGERS)))
+        one_off.assert_not_called()
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention", new_callable=AsyncMock)
+    async def test_anyone_in_a_watched_channel_is_left_alone(self, one_off):
+        client = MagicMock()
+        client.user.id = 999999999
+        live_chat_manager.active = False
+        with patch("lib.features.watcher_channels.channel_watch", return_value={"request_id": "1", "expires_at": time.time() + 60}):
+            self.assertFalse(await handle_chat_message(client, self._message(client, OTHER_USER)))
         one_off.assert_not_called()
 
     @patch("lib.features.chat_responder.handle_one_off_owner_mention", new_callable=AsyncMock)
@@ -97,10 +106,25 @@ class ResponderStandsDownTest(unittest.IsolatedAsyncioTestCase):
         client = MagicMock()
         client.user.id = 999999999
         live_chat_manager.active = False
-        with patch("lib.features.watcher_channels.watch_for", return_value=None), \
+        with patch("lib.features.watcher_channels.channel_watch", return_value=None), \
                 patch("lib.features.persona_control.persona_live", return_value=False):
             self.assertTrue(await handle_chat_message(client, self._message(client, USERS.OGGERS)))
         one_off.assert_called_once()
+
+
+class ChannelWatchTest(unittest.TestCase):
+    """While a channel is watched, Vic's own replies stand down there for everyone, not just the listed users."""
+
+    def test_channel_watch_covers_the_whole_channel(self):
+        now = time.time()
+        with patch.object(wc, "_read_watches", return_value=[
+                {"channel_id": str(GENERAL), "users": [str(USERS.OGGERS)], "expires_at": now + 600}]), \
+             patch.object(wc, "_heartbeat_fresh", return_value=True):
+            wc.clear_cache()
+            self.assertIsNotNone(wc.channel_watch(GENERAL, now))
+            self.assertIsNone(wc.channel_watch(GENERAL + 1, now))
+            self.assertIsNone(wc.watch_for(GENERAL, OTHER_USER, now))  # the watcher still only answers the listed users
+        wc.clear_cache()
 
 
 if __name__ == "__main__":
