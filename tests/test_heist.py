@@ -527,6 +527,17 @@ def test_the_safe_time_ends_at_exactly_one_and_leaving_there_is_breaking_even(em
     from lib.activities import heist_card
     html = heist_card.game_page(r, {A: "Ann", B: "Ben", D: "Dot"})
     assert "BROKE EVEN" in html and f"+{-cut}" not in html and "+-" not in html
+    assert f"NET -{cut}" in html and "CUT -" not in html
+    # out a little past 1.00x, with more than the stake in play back but less than the buy-in: the figure against
+    # the buy-in is the net, and the bank's cut is still the cut, each labelled as what it is
+    ip = H.in_play(100, v["base"])
+    assert cut >= 2 and ip == 100 - cut
+    vd = H.verdict(100, v["base"], {"how": "escaped", "take": (ip + 1) / 100, "payout": ip + 1, "shown": 1.01})
+    assert vd["kind"] == "even" and vd["net"] == 1 - cut
+    assert vd["text"] == f"Out at 1.01x: +1 on the stake, net {1 - cut} (the bank's cut was {cut})"
+    res.update(payout=ip + 1, take=(ip + 1) / 100, shown=1.01)
+    html = heist_card.game_page(r, {A: "Ann", B: "Ben", D: "Dot"})
+    assert f"BROKE EVEN · NET {1 - cut}" in html and f"CUT {1 - cut}" not in html and f"BANK'S CUT {cut} EACH" in html
 
 
 def test_the_take_climbs_from_one_to_the_cap():
