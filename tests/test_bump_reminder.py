@@ -59,3 +59,24 @@ def test_check_bump_reminder_pings_bumpity_bumps_in_bot_spam():
         content = call_kwargs.get("content") or (call_args[0] if call_args else "")
         assert str(config.ROLES.BUMPITY_BUMPS) in content
         assert "embed" in call_kwargs
+
+
+def test_handle_bump_reward_rereads_a_reply_whose_embed_arrives_late():
+    client = SimpleNamespace(get_channel=lambda cid: SimpleNamespace(send=AsyncMock()))
+    meta = SimpleNamespace(user=SimpleNamespace(id=12345, bot=False))
+    full = SimpleNamespace(
+        id=888888, author=SimpleNamespace(id=config.DISBOARD_BOT_ID), content="",
+        embeds=[SimpleNamespace(title="DISBOARD: The Public Server List", description="Bump done! 👍")],
+        interaction_metadata=meta, channel=None,
+    )
+    channel = SimpleNamespace(send=AsyncMock(), fetch_message=AsyncMock(return_value=full))
+    full.channel = channel
+    bare = SimpleNamespace(id=888888, author=full.author, content="", embeds=[],
+                           interaction_metadata=meta, channel=channel)
+    with patch("lib.features.ukp_rewards.load_json_file", return_value={}), \
+         patch("lib.features.ukp_rewards.save_json_file") as mock_save, \
+         patch("lib.features.ukp_rewards._pay", return_value=True), \
+         patch("lib.features.ukp_rewards.asyncio.sleep", new=AsyncMock()):
+        asyncio.run(ukp_rewards.handle_bump_reward(client, bare))
+    channel.fetch_message.assert_awaited_once_with(888888)
+    assert mock_save.call_args[0][1]["last_msg_id"] == 888888

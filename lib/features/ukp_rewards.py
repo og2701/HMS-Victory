@@ -10,6 +10,7 @@ Every payout goes through add_bb (bank -> player), so the 800k supply is conserv
 minting); add_bb returns False only if the bank is somehow insolvent.
 """
 
+import asyncio
 import logging
 import random
 import re
@@ -210,9 +211,22 @@ async def handle_bump_reward(client, message):
     if message.author.id != getattr(config, "DISBOARD_BOT_ID", 302050872383242240):
         return
     # Success only - DISBOARD says "Bump done!" on success (a "wait N minutes" embed on failure).
-    blob = (message.content or "") + " " + " ".join(
-        f"{e.title or ''} {e.description or ''}" for e in message.embeds)
-    if "bump done" not in blob.lower():
+    def _blob(m):
+        return ((m.content or "") + " " + " ".join(
+            f"{e.title or ''} {e.description or ''}" for e in m.embeds)).lower()
+    # The gateway can deliver DISBOARD's reply before its embed is attached (the embed then
+    # arrives as an edit), so an empty-looking reply is re-read a few times before giving up.
+    # Without this a real bump was silently skipped: no reward and no 2h reminder.
+    for _ in range(3):
+        if "bump done" in _blob(message) or not hasattr(message.channel, "fetch_message"):
+            break
+        await asyncio.sleep(2)
+        try:
+            message = await message.channel.fetch_message(message.id)
+        except Exception:
+            break
+    if "bump done" not in _blob(message):
+        log.info("[BUMP] DISBOARD reply %s isn't a 'Bump done'; no reward.", message.id)
         return
     # The bumper = whoever ran /bump (interaction_metadata on modern discord.py, else .interaction).
     meta = getattr(message, "interaction_metadata", None) or getattr(message, "interaction", None)
