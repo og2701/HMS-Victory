@@ -90,7 +90,7 @@ HEAT_CAP_CUT = 0.4           # at full heat the vaults hold 40% less
 TIP_BOOST = 1.25             # the fence's tip of the day holds this much more
 VAULT_EASE = 2.0             # the take's climb: cap ** (t / secs) ** this, slow to start and fast to finish
 CLEAN_TAKE = 1.5             # a clean job's crew all got out with at least this much
-BRIEF_FULL, BRIEF_SHORT = 12.0, 4.0     # the run-down before a puzzle: the first time you meet its game, and after
+BRIEF_FULL, BRIEF_SHORT = 15.0, 5.0     # the run-down before a puzzle: the first time you meet its game, and after
 BRIEF_FORGET = 30 * 86400    # a game someone hasn't met in a month gets the full run-down again
 
 BOT_NAMES = ["Nervous Nigel", "Big Barry", "Two-Coats Trevor", "Mad Mandy", "Light-Fingered Linda", "Clive the Drill",
@@ -803,6 +803,15 @@ CHAT_EVERY, CHAT_SHOW, CHAT_KEEP = 2.5, 4.0, 12
 # the vault's grab
 GRAB_WINDOW = 0.5            # a grab keeps your bag up with the piles for this long after it (two a second will do)
 GRAB_LAG = 2.0               # grabs sent in more than this late (a slow connection's) are dropped
+# gold bars: now and then, for anyone mashing GRAB faster than it can use, it locks and a bar turns up somewhere in
+# the vault to tap instead
+BAR_EVERY = (5.0, 9.0)       # seconds between them
+BAR_FAST = 4                 # grabs in the second before one, to be mashing faster than GRAB can use (it's 2 a second)
+BAR_DELAY = 0.4              # a bar shows this long after its moment, so grabs still on their way in count
+BAR_WINDOW = 1.5             # how long it's there to be caught
+BAR_GRACE = 0.3              # a grab this soon after it shows is forgiven; any later fumbles it
+BAR_TOPUP = 0.5              # catching one tops the bag up by this much of what it's short of the piles...
+BAR_HOLD = 4.0               # ...and keeps it up, hands free, for this long
 WALKOFF_GRAB = 0.5           # someone who walked off: the crew bag a bit for them, badly
 BOT_GRAB = (0.75, 1.0)       # how well a bot crewmate keeps its bag up, from its skill
 
@@ -1227,7 +1236,11 @@ def _end_job(room: dict, now: float) -> None:
     base, safe = 1.0 - e, round(safe, 2)
     room.update(state="report", deadline=now + REPORT_SECONDS, score=score, edge=round(e, 4), cap=cap,
                 vault={"start": now + REPORT_SECONDS, "secs": secs, "safe": safe, "base": base,
-                       "police": police_time(m, cap, secs, base, safe), "out": {}, "grab": {}})
+                       "police": police_time(m, cap, secs, base, safe), "out": {}, "grab": {}, "bar": {}})
+    rng = _rng()
+    room["vault"]["bars"] = _bar_plan(room["vault"], rng)
+    for b in (room.get("bots") or {}).values():           # a bot crewmate catches some, by its skill
+        b["bars"] = [rng.random() < b["skill"] for _ in room["vault"]["bars"]]
 
 
 def _advance(room: dict, now: float) -> bool:
@@ -1296,15 +1309,33 @@ def _vault_end(v: dict) -> float:
     return whole if v["police"] is None else min(v["police"], whole)
 
 
+def _bar_plan(v: dict, rng: random.Random) -> list[dict]:
+    """When the vault's gold bars turn up, and where (as percentages of the vault's floor): one every BAR_EVERY seconds
+    or so. Kept here; the page is only ever told about the one showing now."""
+    out, t, end = [], rng.uniform(2.5, 5.0), v["safe"] + v["secs"] - BAR_WINDOW - 1.0
+    while t < end:
+        out.append({"t": round(t, 2), "x": rng.randint(14, 86), "y": rng.randint(8, 92)})
+        t += rng.uniform(*BAR_EVERY)
+    return out
+
+
+def _bot_bars(room: dict, uid: int, t: float) -> int:
+    """How many gold bars a bot crewmate has caught by t (each was a toss of a coin weighted by its skill)."""
+    b, v = _bot(room, uid), room["vault"]
+    return sum(1 for k, bar in enumerate(v.get("bars", [])) if bar["t"] + BAR_WINDOW <= t and k < len(b.get("bars", [])) and b["bars"][k])
+
+
 def bag(room: dict, uid: int, t: float) -> float:
     """What uid's bag holds t seconds into the vault, as a multiple of the buy-in. A grab keeps it up with the piles for
-    GRAB_WINDOW, so it's what the piles gained over the time it was kept up: never more than the piles themselves. A
-    bot crewmate keeps up so well (its "grab"); someone who walked off has the crew bag a bit for them."""
+    GRAB_WINDOW, so it's what the piles gained over the time it was kept up (plus what a gold bar topped it back up
+    by, which is never past the piles): never more than the piles themselves. A bot crewmate keeps up so well (its
+    "grab", and each bar it catches closes half the gap); someone who walked off has the crew bag a bit for them."""
     v, cap = room["vault"], room["cap"]
     t = max(0.0, min(t, v["safe"] + v["secs"]))
     b = _bot(room, uid)
     if b is not None:
-        return b.get("grab", 1.0) * pile_at(v, cap, t)
+        short = (1.0 - b.get("grab", 1.0)) * (1.0 - BAR_TOPUP) ** _bot_bars(room, uid, t)
+        return (1.0 - short) * pile_at(v, cap, t)
     if uid in room["left"]:
         return WALKOFF_GRAB * pile_at(v, cap, t)
     g = v.get("grab", {}).get(str(uid))
@@ -1314,9 +1345,69 @@ def bag(room: dict, uid: int, t: float) -> float:
     return g["done"] + pile_at(v, cap, z) - pile_at(v, cap, a)
 
 
+def _cover(room: dict, g: dict, x: float, until: float) -> None:
+    """Keep a bag up with the piles from x until ``until`` (a grab's GRAB_WINDOW, or a gold bar's hold)."""
+    v = room["vault"]
+    if x <= g["b"]:
+        g["b"] = max(g["b"], until)
+    else:
+        g["done"] = round(g["done"] + pile_at(v, room["cap"], g["b"]) - pile_at(v, room["cap"], g["a"]), 6)
+        g.update(a=x, b=until)
+
+
+def _bars(room: dict, uid: int, t_now: float) -> None:
+    """Gold bars for uid, up to now. A bar is theirs to catch if they were mashing GRAB faster than it can use when it
+    turned up (BAR_FAST grabs or more in the second before it shows, which is BAR_DELAY after its moment so grabs
+    still on their way in count): it's something for the taps the cap was throwing away. While it's showing, GRAB is
+    locked and the bag's kept up for them, so going for the bar costs nothing. Someone grabbing at the cap's pace or
+    under never sees one, and loses nothing by it: a bar only ever helps a bag that's fallen behind the piles."""
+    v = room["vault"]
+    g = v.get("grab", {}).get(str(uid))
+    mine = v.setdefault("bar", {}).setdefault(str(uid), {})
+    for k, bar in enumerate(v.get("bars", [])):
+        show = bar["t"] + BAR_DELAY
+        if str(k) in mine or t_now < show or show >= _vault_end(v):
+            continue
+        if g and sum(1 for x in g.get("recent", []) if show - 1.0 <= x <= show) >= BAR_FAST:
+            mine[str(k)] = "live"
+            _cover(room, g, show, show + BAR_WINDOW)
+        else:
+            mine[str(k)] = "none"                    # not grabbing: no bar for them
+
+
+def _bar_now(room: dict, uid: int, t: float) -> tuple[int, dict, str] | None:
+    """The gold bar that's on for uid at t, if any: (which, the bar, live | caught | fumbled)."""
+    v = room["vault"]
+    mine = v.get("bar", {}).get(str(uid), {})
+    for k, bar in enumerate(v.get("bars", [])):
+        show = bar["t"] + BAR_DELAY
+        if show <= t < show + BAR_WINDOW and mine.get(str(k), "none") != "none":
+            return k, bar, mine[str(k)]
+    return None
+
+
+def _catch(room: dict, uid: int, k, x, t_now: float) -> None:
+    """A tap on gold bar k at x seconds: caught, if it's theirs, still showing and not fumbled. Catching it tops the
+    bag up by BAR_TOPUP of what it's short of the piles (so never past them) and keeps it up, hands free, for
+    BAR_HOLD. The bot decides all of it: a page can't grant itself a bar, or one that isn't showing."""
+    v = room["vault"]
+    g = v.get("grab", {}).get(str(uid))
+    if not g or isinstance(k, bool) or not isinstance(k, int) or not isinstance(x, (int, float)) or not math.isfinite(x):
+        return
+    x = min(float(x), t_now)
+    now = _bar_now(room, uid, x)
+    if now is None or now[0] != k or now[2] != "live" or x > _vault_end(v):
+        return
+    v["bar"][str(uid)][str(k)] = "caught"
+    g["done"] = round(g["done"] + BAR_TOPUP * max(0.0, pile_at(v, room["cap"], x) - bag(room, uid, x)), 6)
+    _cover(room, g, x, x + BAR_HOLD)
+    g["bars"] = g.get("bars", 0) + 1
+
+
 def _grab(room: dict, uid: int, taps, t_now: float) -> None:
     """Grabs from the page, each its time in seconds since the vault opened: in order, none from the future or more
-    than GRAB_LAG late, none after the police came. Each keeps the bag up for GRAB_WINDOW after it."""
+    than GRAB_LAG late, none after the police came. Each keeps the bag up for GRAB_WINDOW after it. A grab while a
+    gold bar's showing (GRAB is locked then) doesn't count, and past the first BAR_GRACE of it, fumbles the bar."""
     if not isinstance(taps, list):
         return
     v = room["vault"]
@@ -1330,12 +1421,20 @@ def _grab(room: dict, uid: int, taps, t_now: float) -> None:
         if x < lo or x > stop or (g and x < g["last"]):
             continue
         if g is None:
-            g = v["grab"][str(uid)] = {"done": 0.0, "a": x, "b": x + GRAB_WINDOW, "last": x}
-        elif x <= g["b"]:
-            g["b"], g["last"] = x + GRAB_WINDOW, x
-        else:
-            g["done"] = round(g["done"] + pile_at(v, room["cap"], g["b"]) - pile_at(v, room["cap"], g["a"]), 6)
-            g.update(a=x, b=x + GRAB_WINDOW, last=x)
+            g = v["grab"][str(uid)] = {"done": 0.0, "a": x, "b": x + GRAB_WINDOW, "last": x, "recent": [x]}
+            continue
+        _bars(room, uid, x)
+        on = _bar_now(room, uid, x)
+        if on is not None:
+            g["last"] = x
+            _cover(room, g, x, x + GRAB_WINDOW)
+            if on[2] == "live" and x >= on[1]["t"] + BAR_DELAY + BAR_GRACE:
+                v["bar"][str(uid)][str(on[0])] = "fumbled"
+            continue
+        _cover(room, g, x, x + GRAB_WINDOW)
+        g["last"] = x
+        g["recent"] = [*g.get("recent", [])[-7:], round(x, 3)]
+    _bars(room, uid, t_now)
 
 
 def _close(room: dict, how: str, now: float) -> None:
@@ -1618,7 +1717,7 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         # the edge itself, so the page can show the police's odds (they come at take m with chance 1 - (1 - edge) / m)
         out["report"] = {"score": room["score"], "alarm": round((room["edge"] - EDGE_BEST) / (EDGE_WORST - EDGE_BEST), 3),
                          "edge": room["edge"], "waiting": False, "loud": loud, "safe": room.get("vault", {}).get("safe"),
-                         "loose": room.get("loose", {}).get(me, 0),
+                         "loose": room.get("loose", {}).get(me, 0), "how": briefs.brief("vault")[0],
                          "loot": room.get("loot", 0.0), "blown": room.get("blown"), "roles": _role_scores(room)}
     if room.get("vault"):
         v = room["vault"]
@@ -1629,8 +1728,14 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         out["vault"] = {"at": round(t, 2), "secs": v["secs"], "safe": v["safe"], "base": round(v["base"], 4),
                         "cap": room["cap"], "window": GRAB_WINDOW, "out": {u: x[1] for u, x in v["out"].items()},
                         "bag": round(bag(room, uid, t), 4),
-                        "grab": {"done": g["done"], "a": g["a"], "b": g["b"]} if g else None,
+                        "grab": {"done": g["done"], "a": g["a"], "b": g["b"], "bars": g.get("bars", 0)} if g else None,
                         "risk": round(hazard(v, room["cap"], t), 4)}
+        on = _bar_now(room, uid, t) if not room.get("over") and me not in v["out"] else None
+        if on is not None:
+            # the gold bar showing for you now (and only now: when the next one's due is the bot's to know)
+            k, bar, state = on
+            out["vault"]["bar"] = {"k": k, "x": bar["x"], "y": bar["y"], "state": state,
+                                   "left": round(bar["t"] + BAR_DELAY + BAR_WINDOW - t, 2), "hold": BAR_HOLD}
         if room.get("over"):
             out["vault"]["police"] = v.get("police_take")
     if room.get("over") and room.get("results"):
@@ -1705,6 +1810,8 @@ def room(uid: int, rid: str, name_of) -> dict:
         _save()
     if uid not in r["players"]:
         raise Refuse("You aren't in that crew.")
+    if r["state"] == "vault" and not r.get("over") and uid not in r["left"] and str(uid) not in r["vault"]["out"]:
+        _bars(r, uid, time.time() - r["vault"]["start"])        # a gold bar that's just turned up for them
     return view(r, uid, name_of)
 
 
@@ -1982,8 +2089,9 @@ def say(uid: int, rid: str, key: str) -> dict:
     return r
 
 
-def grab(uid: int, rid: str, taps) -> dict:
-    """Grabs at the vault's piles ({"taps": [seconds since the vault opened, ...]}), sent a few at a time by the page."""
+def grab(uid: int, rid: str, taps, bar=None, at=None) -> dict:
+    """Grabs at the vault's piles ({"taps": [seconds since the vault opened, ...]}), sent a few at a time by the page,
+    and a tap on the gold bar that's showing ({"bar": which, "at": seconds})."""
     r, now = _live(uid, rid)
     v = r.get("vault")
     if r.get("over") or not v or r["state"] != "vault":
@@ -1993,6 +2101,8 @@ def grab(uid: int, rid: str, taps) -> dict:
     if uid in r["left"]:
         raise Refuse("You've walked off the job.")
     _grab(r, uid, taps, now - v["start"])
+    if bar is not None:
+        _catch(r, uid, bar, at, now - v["start"])
     _save()
     return r
 

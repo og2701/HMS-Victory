@@ -51,7 +51,7 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    a lock and the Wheelman rams a gate (tap while the swinging marker's in the zone), the Lookout smashes the cameras
    and leaves the pigeons and the Face floors whoever reaches for the alarm (tap the right ones as they pop up), the
    Muscle smashes and grabs (mash GRAB). The timer starts at 60s plus 15s a room on the way in (plus a run-down's
-   12s): 117s for the Village Branch, 147s for the High Street's front door, 177s for the Vault's roof. **Every task
+   15s): 120s for the Village Branch, 150s for the High Street's front door, 180s for the Vault's roof. **Every task
    done, by anyone, takes 5s off it and adds 1s of safe time in the vault**, each times how well it went; the safe
    time starts at 3s and stops at 15s. When the timer runs out (or nobody has anything left to do) the whole crew's
    in the vault, done or not, and a task never finished scores 0. A typical six-handed loud job is over in about a
@@ -66,9 +66,11 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
 
    A loud job's score J is the average of its tasks' scores, and its edge runs from 8% down to 4% (`loud_edge`).
 5. **The run-down.** No puzzle or task throws anyone straight onto the clock. First comes a run-down: what it is and
-   how to play it (`lib/activities/heist_briefs.py`, a few lines for each of the 42 games, the six loud tasks and the
-   three kinds of loose cash). The first time someone meets a game it's the full one, 12 seconds; after that it's a
-   4-second "ready" with a one-line reminder; a game they haven't met in a month gets the full one again. The bot
+   how to play it (`lib/activities/heist_briefs.py`: for each of the 42 games, the six loud tasks and the three kinds
+   of loose cash, the goal in plain words, then the one thing you do, naming what's on screen, then what scores best
+   or what to avoid), with a little looping demo of the game's control playing itself beside it (the page's
+   `src/heist/demo.ts`, one demo for each kind of control). The first time someone meets a game it's the full one, 15 seconds; after that it's a
+   5-second "ready" with a one-line reminder; a game they haven't met in a month gets the full one again. The bot
    remembers who's met what (`met` in the saved file): a job never deals anyone the same game twice, so "the first
    time in this job" would mean the full run-down in every room. The clock is the bot's, not the page's: the puzzle
    takes no moves and its board isn't even sent until the run-down's over, and **GOT IT** starts it early. Each quiet
@@ -109,6 +111,17 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    hazard, the same for any job with this edge, cap and pace, so it shows how dicey holding on is, never when these
    police will come. Each of the crew presses **Leg it** whenever they like and banks their buy-in times their bag.
    Anyone still inside when the police arrive is nicked and loses their buy-in (loose cash already paid stays paid).
+   **Gold bars.** Two taps a second is all GRAB can use (that cap is what stops an auto-clicker being worth
+   anything), so for anyone mashing faster than that (four or more grabs in a second), every 5-9 seconds GRAB greys
+   out and locks and a gold bar turns up somewhere on the vault's floor for a second and a half. Tap the bar and
+   it's caught: the bag is topped up by half of whatever it's fallen short of the piles, and kept up hands free for
+   4 seconds. Tap the locked GRAB instead (after the first 0.3s) and the bar's fumbled, so mindless hammering drops
+   every one. While a bar's showing the bag is kept up anyway, so going for it costs nothing, and someone tapping at
+   two a second never sees one and loses nothing: a bar only ever closes a gap, it never puts a bag past the piles.
+   The bot decides when bars come, whose they are and whether one was caught (the page is only told about the one
+   showing now), and bot crewmates catch some, by their skill. The report screen before the vault says all this
+   in three lines, with the demo. On the page every grab shows at once (the button punches, a note flies into the
+   bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up.
    If the police never come before the cap, everyone left inside walks out with their bag. Someone who walked off has
    the crew bag a bit for them (half of what the piles hold).
 
@@ -140,6 +153,10 @@ the police do is `(1 - e) / m`.
   it was kept up, so it's never worth more than the piles. A bag kept up a fraction q of the way returns q of the
   above (at most). Perfect grabbing (or a page doctored to grab perfectly) reaches 1 - e and no further. Grabs sent
   from the future, out of order or more than 2s late are dropped.
+- **Gold bars.** Catching one adds half of (piles - bag) to the bag and keeps it up for a few seconds, so the bag is
+  still never worth more than the piles: for a perfect grabber a bar is worth nothing but a rest, and for anyone
+  else it wins back part of what slow grabbing lost. Always catching them, never catching them or hammering through
+  them all leave the bag at or under the piles (`test_gold_bars_top_a_bag_up_but_never_past_the_piles`).
 - **Any strategy at all.** The only thing anyone can see during the vault is that the police haven't come yet, and
   the scanner, which is a fixed function of time (the same for every job with this edge, cap and pace). So any way of
   deciding when to go, off the scanner, a hunch or the crew, comes down to a moment chosen without knowing M, and

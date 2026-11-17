@@ -31,7 +31,7 @@ mapping's prefix isn't worth betting the launch on:
     POST /heist/open {stake, target, role, practice?},/heist/join {id, role?}, /heist/role {id, role},
          /heist/target {id, target, stake?}, /heist/leave|start {id}
     GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach?, style?}, /heist/room/<id>/play {...the puzzle's move},
-         /heist/room/<id>/grab {taps}, /heist/room/<id>/leg {taps?}, /heist/room/<id>/say {key}, /heist/room/<id>/leave
+         /heist/room/<id>/grab {taps, bar?, at?}, /heist/room/<id>/leg {taps?}, /heist/room/<id>/say {key}, /heist/room/<id>/leave
     GET  /kart                UKP Kart: your race room and the ones you could join
     POST /kart/open {stake, car, track?}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
@@ -1010,7 +1010,8 @@ async def heist_room(request):
         elif action == "say":
             heist.say(uid, rid, str((await _duel_body(request)).get("key") or ""))
         elif action == "grab":
-            heist.grab(uid, rid, (await _duel_body(request)).get("taps"))
+            body = await _duel_body(request)
+            heist.grab(uid, rid, body.get("taps"), body.get("bar"), body.get("at"))
         elif action == "play":
             heist.play(uid, rid, await _duel_body(request))
         elif action == "leg":

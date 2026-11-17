@@ -185,7 +185,11 @@ def tick(heist, humans: set[int], minds: dict, joins: dict, rng: random.Random, 
                     if str(uid) not in v["out"] and t >= 0:
                         # a grab or two since the last tick (every 0.4s), so the bag keeps up with the piles
                         taps = [t - 0.25, t] if rng.random() < 0.9 else []
-                        if t >= v["safe"] and heist.pile_at(v, r["cap"], t) >= m.goal:
+                        on = heist._bar_now(r, uid, t)
+                        if on is not None:                      # a gold bar: go for it (most of the time), hands off GRAB
+                            if on[2] == "live" and rng.random() < 0.5:
+                                heist.grab(uid, r["id"], [], on[0], t)
+                        elif t >= v["safe"] and heist.pile_at(v, r["cap"], t) >= m.goal:
                             heist.leg_it(uid, r["id"], taps)
                         elif taps:
                             heist.grab(uid, r["id"], taps)

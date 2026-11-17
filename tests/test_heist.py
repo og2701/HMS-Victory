@@ -384,6 +384,78 @@ def test_a_bag_is_never_worth_more_than_the_piles(em):
             assert H.bag(room, A, t) == pytest.approx(H.pile_at(v, cap, t), rel=0.02)
 
 
+def _bar_run(style, rate, seed, lazy=0.0):
+    """A vault played by one way of going at the gold bars: "catch" taps each bar that shows, "never" stops grabbing
+    for it but leaves it, "spam" just keeps hammering GRAB. ``rate`` grabs a second, skipping ``lazy`` of the time.
+    Returns the room, and the most the bag ever came to against the piles."""
+    rng = random.Random(seed)
+    v, cap = _vault(rng.uniform(H.EDGE_BEST, H.EDGE_WORST), rng.choice([3.0, 6.0, 12.0]), 28.0, rng.uniform(4, 15))
+    v.update(police=None, bar={})
+    v["bars"] = H._bar_plan(v, rng)
+    room = {"vault": v, "cap": cap, "left": [], "bots": {}}
+    t, worst = 0.0, -1.0
+    while t < v["safe"] + v["secs"]:
+        t += 1.0 / rate
+        H._bars(room, A, t)
+        on = H._bar_now(room, A, t)
+        if on is not None and style != "spam":
+            if style == "catch" and on[2] == "live" and t >= on[1]["t"] + H.BAR_DELAY + 0.5:
+                H._catch(room, A, on[0], t, t)
+        elif rng.random() >= lazy:
+            H._grab(room, A, [t], t)
+        worst = max(worst, H.bag(room, A, t) - H.pile_at(v, cap, t))
+    return room, worst
+
+
+def test_gold_bars_top_a_bag_up_but_never_past_the_piles():
+    """Gold bars are for anyone mashing GRAB faster than it can use: catch one and the bag is topped up towards the
+    piles and held there a few seconds; keep hammering GRAB and it's fumbled. However they're played, the bag is
+    never worth more than the piles, so nothing about them beats the edge."""
+    states = lambda room: list(room["vault"]["bar"][str(A)].values())
+    for seed in range(40):
+        got = {}
+        for style in ("catch", "never", "spam"):
+            room, worst = _bar_run(style, 6.0, seed, lazy=0.35)             # mashing, but with gaps: a bag that falls behind
+            assert worst <= 1e-6, (style, seed)
+            got[style] = (room, states(room))
+        assert got["catch"][1].count("caught") >= 1 and "fumbled" not in got["catch"][1]
+        assert "caught" not in got["never"][1] and "caught" not in got["spam"][1]
+        assert "fumbled" in got["spam"][1]                                  # mindless hammering drops them
+        end = lambda room: H.bag(room, A, 99)
+        assert end(got["catch"][0]) >= end(got["never"][0]) - 1e-9          # a caught bar only ever helps
+        # a steady two a second (all GRAB can use) never sees a bar, and keeps right up with the piles without one
+        room, worst = _bar_run("catch", 2.2, seed)
+        assert set(states(room)) <= {"none"} and worst <= 1e-6
+        v = room["vault"]
+        assert end(room) == pytest.approx(H.pile_at(v, room["cap"], 99), rel=0.03)
+    # a bar can't be caught unless it's showing, live and theirs: the page can't grant itself one
+    room, _ = _bar_run("never", 6.0, 1)
+    v = room["vault"]
+    before = H.bag(room, A, 20.0)
+    H._catch(room, A, 0, 20.0, 20.0)
+    H._catch(room, A, 99, 20.0, 20.0)
+    H._catch(room, A, True, 20.0, 20.0)
+    assert H.bag(room, A, 20.0) == before and "caught" not in states(room)
+
+
+def test_the_page_only_hears_of_a_gold_bar_while_its_showing(em):
+    rid = crew(em, stake=0)
+    to_vault(em, rid, police_take=None)
+    r = H._rooms[rid]
+    v = r["vault"]
+    assert v["bars"]
+    first = v["bars"][0]
+    grab_to(em, rid, first["t"] - 0.2, uids=(A,))
+    seen = H.room(A, rid, name_of)["vault"]
+    assert "bar" not in seen and "bars" not in seen                    # not yet, and never the plan
+    grab_to(em, rid, first["t"] + H.BAR_DELAY + 0.2, uids=(A,))        # Anne's mashing (eight a second): it's hers
+    bar = H.room(A, rid, name_of)["vault"]["bar"]
+    assert bar["k"] == 0 and bar["state"] in ("live", "fumbled") and 0 < bar["left"] <= H.BAR_WINDOW
+    assert "bar" not in H.room(B, rid, name_of)["vault"]               # Ben wasn't grabbing: none for him
+    text = json.dumps(H.room(A, rid, name_of))
+    assert '"bars": [' not in text and '"police"' not in text
+
+
 def test_the_scanner_is_the_honest_hazard():
     """What the scanner shows is the real chance the police come in the next second: no more, no less, and the same
     whatever this job's police draw is (it isn't in it)."""
@@ -581,6 +653,11 @@ def test_every_game_has_its_run_down():
         for key in H.heist_games.keys(role):
             how, line = H.briefs.BRIEFS[f"{role}:{key}"]
             assert how and line, (role, key)
+    for key, (how, line) in H.briefs.BRIEFS.items():
+        # the goal in a few plain words, then what you do, and maybe what scores best: two or three lines
+        assert 2 <= len(how) <= 3 and len(how[0]) <= 90 and len(line) <= 75, key
+        assert not any(w in " ".join(how).lower() for w in ("going loud", "revs", "the zone")), key
+    assert {f"loud:{r}" for r in H.ROLES} | {"loose:atm", "loose:till", "loose:box"} <= set(H.briefs.BRIEFS)
 
 
 def test_a_puzzles_clock_waits_for_its_run_down(em):
@@ -1033,8 +1110,10 @@ def test_bot_crewmates_leg_it_from_the_vault_on_their_own(em, testers):
     assert {u for u, b in r["bots"].items() if b["leave"] <= 0.5} == set(out)
     for u in out:
         assert out[u][0] == pytest.approx(v["safe"] + r["bots"][u]["leave"] * v["secs"], abs=0.01)
-        # a bot grabs as well as its skill: its bag is that share of the piles
-        assert out[u][1] == pytest.approx(H._floor2(r["bots"][u]["grab"] * H.pile_at(v, r["cap"], out[u][0])), abs=0.011)
+        # a bot grabs as well as its skill: its bag is that share of the piles, and a bit more for any gold bars it caught
+        piles = H.pile_at(v, r["cap"], out[u][0])
+        assert H._floor2(r["bots"][u]["grab"] * piles) - 0.011 <= out[u][1] <= piles + 0.011
+        assert out[u][1] == pytest.approx(H._floor2(H.bag(r, int(u), out[u][0])), abs=0.011)
     H.leg_it(A, rid)
     tick(em, whole)
     H.sweep()
