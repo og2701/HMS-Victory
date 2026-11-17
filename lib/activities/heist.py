@@ -1,16 +1,18 @@
 """Bank Job: a heist for up to six, in the activity's Together games.
 
-A crew is opened by its host, who picks the target (the Nether Wallop Post Office, the Little
-Puddleton Building Society or the vault of the Bank of HMS Victory itself) and a buy-in; anyone
+A crew is opened by its host, who picks the target (one of the Bank of HMS Victory's branches: the
+Nether Wallop village branch, the High Street branch or the Vault itself) and a buy-in; anyone
 can take a seat and a role. Once it starts, every buy-in goes into the bank and the job runs:
 
-    plan    the crew votes quiet or loud, which decides whose work matters most and how fast
-            the vault fills; a twist of the night (rain, a shift change, a chatty guard) leans
-            on one role or another
-    job     everyone plays their role's puzzle at once, against one clock: the Hacker cracks a
-            keypad, the Safecracker listens for tumblers, the Lookout learns the patrol, the
-            Wheelman plots the getaway, the Face blags past the guard on a cover story and the
-            Muscle loads the van. A role nobody took is winged by Dodgy Dave.
+    plan    the crew votes on the way in (the roof, the front door, the drains...), which sets the
+            rooms they'll go through; a twist of the night
+            (rain, a shift change, a chatty guard) leans on one role or another
+    job     a room at a time through the building (heist_rooms.py says what's where). Each room has
+            a few things in the way, each a job for one role: a keypad, a lock, a patrol, a route,
+            someone to blag past, loot to load. Whoever holds the role does it quietly (its puzzle)
+            or loudly (straight through, but the alarm jumps); a role nobody holds is winged by
+            Two-Pint Terry unless someone free steps in. One alarm builds over the whole job, and
+            loot jobs make the vault hold more; an alarm past ALARM_BLOWN sends them running for it.
     report  how well it went, as an alarm level
     vault   the take climbs from 1x towards the target's cap, and each of the crew legs it
             when they like, banking their buy-in times the take at that moment. The police
@@ -27,15 +29,16 @@ whole UKPence, which only ever adds to it. A clean job (a crew of three or more,
 them out with at least CLEAN_TAKE) adds a small, once-a-day, reserve-scaled bonus, the one part of
 the game that can run in the players' favour, and only by a little: see docs/heist.md for the sums.
 
-Practice (HEIST_TESTERS only) is a job for play money. Every seat nobody's in gets a bot crewmate who
-plays its role at a skill level rolled for it, votes, and legs it from the vault when it fancies. Nothing
-moves: no UKPence in or out, no clean job bonus, no heat, no badges, no records, no post anywhere, and
-nobody else sees the crew in their list. The puzzles, the alarm and the police are the real thing.
-
 Like Countdown, every read moves a crew on to the present and a sweeper does the same for crews
 nobody's watching, so a job always finishes. It's all saved after every change, and the clocks
 pause while the bot is down: on the next boot every live job's clocks move on by the time it was
 away, so nobody is nicked while they couldn't press anything.
+
+Practice (HEIST_TESTERS only) is a job for play money. Every role nobody took gets a bot crewmate who
+backs the crew's plan, does its things in each room at a skill level rolled for it, and legs it from the
+vault when it fancies. Nothing moves: no UKPence in or out, no clean job bonus, no heat, no badges, no
+records, no post anywhere, and nobody else sees the crew in their list. The rooms, the puzzles, the
+alarm and the police are the real thing.
 """
 
 import asyncio
@@ -50,6 +53,8 @@ import time
 from datetime import datetime
 
 import config
+from lib.activities import heist_games
+from lib.activities import heist_rooms as rooms_of
 from lib.core.file_operations import atomic_write_json
 
 log = logging.getLogger(__name__)
@@ -59,33 +64,36 @@ LABEL = "Bank Job"
 SEATS = 6
 STAKES = [0, 50, 100, 250, 500, 1000]
 LOBBY_SECONDS = 900          # a crew nobody starts breaks up after this
-PLAN_SECONDS = 15
-JOB_SECONDS = 50
+PLAN_SECONDS = 25            # picking the way in
 REPORT_SECONDS = 8
 KEEP_FINISHED = 1800
-VAULT_SECONDS = {"quiet": 30.0, "loud": 20.0}   # from 1x to the cap, before a twist
-EDGE_WORST, EDGE_BEST = 0.12, 0.02              # the bank's share for a botched job and a perfect one
-WINGING_IT = 0.3             # how Dodgy Dave does at a role nobody took
+EDGE_WORST, EDGE_BEST = 0.08, 0.01              # the bank's share for a botched job and a perfect one
+WINGING_IT = 0.3             # how Two-Pint Terry does at a role nobody took
 MIN_CAP = 1.5                # however hot it gets, the vault's worth this much
 HEAT_HALF_LIFE = 3 * 3600    # the police calm down by half every three hours
 HEAT_PER_JOB = 0.04          # a staked job warms them up a bit...
 HEAT_SCALE = 20_000          # ...and a profit this big on top of the buy-ins sets them to boiling
 HEAT_CAP_CUT = 0.4           # at full heat the vaults hold 40% less
 TIP_BOOST = 1.25             # the fence's tip of the day holds this much more
+VAULT_EASE = 2.0             # the take's climb: cap ** (t / secs) ** this, slow to start and fast to finish
 CLEAN_TAKE = 1.5             # a clean job's crew all got out with at least this much
 
 BOT_NAMES = ["Nervous Nigel", "Big Barry", "Two-Coats Trevor", "Mad Mandy", "Light-Fingered Linda", "Clive the Drill",
              "Posh Pauline", "Keith the Kettle", "Sharon Two-Phones", "Del Boy Derek", "Tracey Tealeaf", "Colin the Cat"]
-BOT_SKILL = (0.3, 0.95)       # a bot crewmate's skill is rolled from this range, and its job lands near it
-BOT_DONE = (6.0, 30.0)        # how far into the job a bot crewmate has done its bit
+BOT_SKILL = (0.35, 0.95)      # a bot crewmate's skill is rolled from this range, and each thing it does lands near it
+BOT_PACE = (0.3, 0.85)        # how far into a room's time a bot crewmate finishes each of its things there
 
+# every target is a branch of the Bank of HMS Victory, the server's own bank: whatever a crew gets away with
+# comes out of its reserves, and whatever the police take back goes into them
 TARGETS = {
-    "post": {"name": "Nether Wallop Post Office", "short": "Post Office", "cap": 3.0, "min_crew": 1, "max_stake": 1000,
-             "blurb": "Pensions day. A float, a bell on the door and Maureen behind the counter."},
-    "society": {"name": "Little Puddleton Building Society", "short": "Building Society", "cap": 6.0, "min_crew": 2,
+    "post": {"name": "The Bank of HMS Victory, Nether Wallop branch", "short": "Village Branch", "cap": 3.0, "min_crew": 1,
+             "max_stake": 1000, "blurb": "The bank's smallest branch, at the back of the post office. Pensions day, a bell "
+                                         "on the door and Maureen behind the counter."},
+    "society": {"name": "The Bank of HMS Victory, High Street branch", "short": "High Street Branch", "cap": 6.0, "min_crew": 2,
                 "max_stake": 1000, "blurb": "A proper safe and a security guard called Brian."},
-    "vault": {"name": "The Bank of HMS Victory", "short": "The Vault", "cap": 12.0, "min_crew": 3, "max_stake": 500,
-              "blurb": "The big one. The server's own vault, under the waterline."},
+    "vault": {"name": "The Bank of HMS Victory, the Vault", "short": "The Vault", "cap": 12.0, "min_crew": 3, "max_stake": 500,
+              "blurb": "The big one. The server's own vault, under the waterline, where every UKPence in the bank is "
+                       "kept."},
 }
 
 ROLES = ["hacker", "safecracker", "lookout", "wheelman", "face", "muscle"]
@@ -96,11 +104,6 @@ ROLE_INFO = {
     "wheelman": ("The Wheelman", "Plot the getaway"),
     "face": ("The Face", "Blag past the guard"),
     "muscle": ("The Muscle", "Load the van"),
-}
-# whose work counts for how much, by the crew's approach
-WEIGHTS = {
-    "quiet": {"hacker": 0.22, "safecracker": 0.22, "lookout": 0.20, "face": 0.20, "wheelman": 0.08, "muscle": 0.08},
-    "loud": {"hacker": 0.08, "safecracker": 0.17, "lookout": 0.10, "face": 0.05, "wheelman": 0.30, "muscle": 0.30},
 }
 TWISTS = [
     {"key": "shift", "name": "Shift change", "text": "The guards swap over at midnight. The Lookout counts double.", "role": "lookout"},
@@ -124,8 +127,7 @@ CLIENT = None
 listeners: list = []
 
 
-class Refuse(Exception):
-    """Something the rules don't allow; the message is for the player."""
+Refuse = heist_games.Refuse     # something the rules don't allow; the message is for the player
 
 
 def _cfg(name, default):
@@ -172,6 +174,11 @@ def _load() -> None:
     _posts.update(raw.get("posts", {}))
     _heat.update(raw.get("heat", {}))
     _bonus.update(raw.get("bonus", {}))
+    for r in _rooms.values():
+        # a job the old one-puzzle Bank Job was in the middle of (only ever a practice one: a real one holds up the
+        # restart) has no rooms to carry on through, so it's called off
+        if r["state"] == "job" and "rooms" not in r and not r.get("over"):
+            r.update(over=True, how="closed", ended=time.time())
     saved = float(raw.get("saved", 0) or 0)
     away = time.time() - saved if saved else 0.0
     if away > 1:
@@ -184,12 +191,15 @@ def _shift(room: dict, by: float) -> None:
     """Move a running job's clocks on by ``by`` seconds (the bot was away that long)."""
     if room.get("deadline"):
         room["deadline"] += by
+    if room.get("arrive"):
+        room["arrive"] += by
+    for rm in room.get("rooms", []):
+        for th in rm["things"]:
+            if th.get("at"):
+                th["at"] += by
     v = room.get("vault")
     if v:
         v["start"] += by
-    for b in (room.get("bots") or {}).values():
-        if b.get("done_at"):
-            b["done_at"] += by
     room["paused"] = round(room.get("paused", 0.0) + by, 1)
 
 
@@ -281,7 +291,7 @@ def max_stake(target: str) -> int:
     try:
         from lib.economy.reserve_policy import bank_reserves
         spare = max(0, bank_reserves() - int(_cfg("RESERVE_FLOOR", 5_000)))
-        afford = spare * float(_cfg("HEIST_EXPOSURE_PCT", 0.15)) / (SEATS * t["cap"] * TIP_BOOST)
+        afford = spare * float(_cfg("HEIST_EXPOSURE_PCT", 0.15)) / (SEATS * t["cap"] * TIP_BOOST * (1 + LOOT_MAX))
         top = min(top, int(afford))
     except Exception:
         log.warning("couldn't read the bank's reserves for the bank job's limit", exc_info=True)
@@ -299,10 +309,19 @@ def police_take(e: float, u: float) -> float:
 
 
 def take_at(t: float, cap: float, secs: float) -> float:
-    """The take t seconds into the vault (1x at the door, the cap at the end)."""
+    """The take t seconds into the vault (1x at the door, the cap at the end). It creeps at first and races at the
+    end (the time's squared), so the low takes, where the police most often come, get a few seconds each instead of
+    flashing past. Only when the police come is drawn (police_take); this just paces it, so it moves nobody's odds."""
     if t <= 0:
         return 1.0
-    return min(cap, cap ** (t / secs))
+    return min(cap, cap ** (min(1.0, t / secs) ** VAULT_EASE))
+
+
+def time_at(m: float, cap: float, secs: float) -> float:
+    """Seconds into the vault until the take reaches m: take_at turned round."""
+    if m <= 1.0:
+        return 0.0
+    return secs * min(1.0, math.log(m) / math.log(cap)) ** (1 / VAULT_EASE)
 
 
 def _floor2(x: float) -> float:
@@ -310,15 +329,29 @@ def _floor2(x: float) -> float:
 
 
 # ---- the puzzles -----------------------------------------------------------------------------
-# Each role's puzzle is made here and judged here; the page only ever sees its public part.
+# Each puzzle is made here and judged here; the page only ever sees its public part. A puzzle carries its own
+# size (a room's quick keypad has three digits, the vault's time lock four), so the same rules judge both.
 
 HACK_LEN, HACK_SYMBOLS, HACK_TRIES = 4, 6, 6
-HACK_SCORE = [1.0, 1.0, 1.0, 0.95, 0.85, 0.7]       # by the guess it was cracked on
+HACK_SCORE = [1.0, 1.0, 0.9, 0.8, 0.7, 0.6]         # by the guess it was cracked on
 TUMBLERS, DIALS = 3, 15
 LOOKOUT_STEPS = 7
-GRID = 6
+GRID = 7
+ROADBLOCKS = 11
+TRAFFIC = (1, 1, 1, 2, 3, 5, 6)          # mostly clear roads, and jams worth going round
 BAGS = 8
 FACE_QUESTIONS = 4
+# a thing in a room, by its size: what each role's puzzle looks like
+SIZES = {
+    "hacker": {"s": {"n": 3, "symbols": 5, "tries": 5}, "m": {"n": 4, "symbols": 6, "tries": 6},
+               "big": {"n": 4, "symbols": 7, "tries": 6}},
+    "safecracker": {"s": {"tumblers": 1, "listens": 7}, "m": {"tumblers": 2, "listens": 12},
+                    "big": {"tumblers": 3, "listens": 16}},
+    "lookout": {"s": {"steps": 5}, "m": {"steps": 7}, "big": {"steps": 9}},
+    "wheelman": {"s": {"grid": 6, "blocks": 8}, "m": {"grid": 7, "blocks": 11}, "big": {"grid": 7, "blocks": 14}},
+    "face": {"s": {"n": 2}, "m": {"n": 3}, "big": {"n": 4}},
+    "muscle": {"loot": {"bags": 7}, "s": {"bags": 6}, "m": {"bags": 7}, "big": {"bags": 8}},
+}
 
 FIRMS = [("Thames Water", "a leak"), ("British Gas", "a gas smell"), ("Openreach", "the broadband"),
          ("Rentokil", "a mouse problem"), ("the council", "a fire door inspection"), ("Otis Lifts", "the lift"),
@@ -326,13 +359,16 @@ FIRMS = [("Thames Water", "a leak"), ("British Gas", "a gas smell"), ("Openreach
 FIRST = ["Gary", "Brenda", "Keith", "Sharon", "Derek", "Linda", "Trevor", "Mandy", "Nigel", "Tracey", "Clive", "Denise",
          "Barry", "Julie", "Colin", "Pauline"]
 SURNAMES = ["Pratt", "Higgins", "Bloggs", "Parker", "Dobbs", "Wright", "Shaw", "Fletcher", "Clegg", "Platt"]
+# the Face is drawn as a woman, so her cover's a woman's name (and so are the guard's wrong guesses at it)
+HER = ["Brenda", "Sharon", "Linda", "Mandy", "Tracey", "Denise", "Julie", "Pauline", "Karen", "Sandra", "Debbie", "Lorraine"]
+FLOORS = ["the basement", "the ground floor", "the first floor", "the second floor", "the roof"]
 LOOT = ["Used fivers", "Gold bar", "Krugerrands", "Bearer bonds", "Grandad's medals", "Pound coins", "A Rolex or two",
         "Premium Bonds", "Diamonds", "A bag of 2p coins", "First-class stamps", "The Crown Jewels (replica)"]
 
 
-def _hacker(rng) -> dict:
-    code = "".join(str(rng.randint(1, HACK_SYMBOLS)) for _ in range(HACK_LEN))
-    return {"secret": code, "guesses": []}
+def _hacker(rng, n: int = HACK_LEN, symbols: int = HACK_SYMBOLS, tries: int = HACK_TRIES) -> dict:
+    code = "".join(str(rng.randint(1, symbols)) for _ in range(n))
+    return {"secret": code, "guesses": [], "len": n, "symbols": symbols, "tries": tries}
 
 
 def _feedback(code: str, guess: str) -> tuple[int, int]:
@@ -341,21 +377,23 @@ def _feedback(code: str, guess: str) -> tuple[int, int]:
     return exact, common - exact
 
 
-def _safecracker(rng) -> dict:
-    return {"secret": [rng.randint(0, 99) for _ in range(TUMBLERS)], "dials": [], "open": 0}
+def _safecracker(rng, tumblers: int = TUMBLERS, listens: int = DIALS) -> dict:
+    return {"secret": [rng.randint(0, 99) for _ in range(tumblers)], "dials": [], "open": 0, "listens": listens}
 
 
-def _lookout(rng) -> dict:
+def _lookout(rng, steps: int = LOOKOUT_STEPS) -> dict:
     seq = [rng.randrange(9)]
-    while len(seq) < LOOKOUT_STEPS:
+    while len(seq) < steps:
         n = rng.randrange(9)
         if n != seq[-1]:
             seq.append(n)
     return {"seq": seq}
 
 
-def _cheapest(costs: list[list[int | None]], start=(GRID - 1, 0), end=(0, GRID - 1)) -> int | None:
+def _cheapest(costs: list[list[int | None]], start=None, end=None) -> int | None:
     """The cheapest way across the town, Dijkstra; a cell's cost is paid on entering it."""
+    g = len(costs)
+    start, end = start or (g - 1, 0), end or (0, g - 1)
     best = {start: 0}
     todo = [(0, start)]
     while todo:
@@ -365,7 +403,7 @@ def _cheapest(costs: list[list[int | None]], start=(GRID - 1, 0), end=(0, GRID -
         if d > best.get((r, c), 1 << 30):
             continue
         for nr, nc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
-            if 0 <= nr < GRID and 0 <= nc < GRID and costs[nr][nc] is not None:
+            if 0 <= nr < g and 0 <= nc < g and costs[nr][nc] is not None:
                 nd = d + costs[nr][nc]
                 if nd < best.get((nr, nc), 1 << 30):
                     best[(nr, nc)] = nd
@@ -373,37 +411,74 @@ def _cheapest(costs: list[list[int | None]], start=(GRID - 1, 0), end=(0, GRID -
     return None
 
 
-def _wheelman(rng) -> dict:
-    while True:
-        costs = [[rng.choice((1, 1, 2, 2, 3, 4)) for _ in range(GRID)] for _ in range(GRID)]
-        for _ in range(7):                      # roadblocks
-            r, c = rng.randrange(GRID), rng.randrange(GRID)
-            if (r, c) not in ((GRID - 1, 0), (0, GRID - 1)):
+def _straight_on(costs: list[list[int | None]]) -> int | None:
+    """The cheapest route that only ever heads up or right: the obvious way, which a good town makes a trap."""
+    g = len(costs)
+    best = [[None] * g for _ in range(g)]
+    for r in range(g - 1, -1, -1):
+        for c in range(g):
+            if costs[r][c] is None:
+                continue
+            if (r, c) == (g - 1, 0):
+                best[r][c] = 0
+                continue
+            came = [x for x in ((best[r + 1][c] if r + 1 < g else None), (best[r][c - 1] if c else None)) if x is not None]
+            best[r][c] = min(came) + costs[r][c] if came else None
+    return best[0][g - 1]
+
+
+def _wheelman(rng, grid: int = GRID, blocks: int = ROADBLOCKS) -> dict:
+    """A town where the cheapest route has to double back somewhere: heading straight up and across costs at
+    least two minutes more (or is blocked). After a few hundred tries, any town with a way through does."""
+    fallback = None
+    for _ in range(400):
+        costs = [[rng.choice(TRAFFIC) for _ in range(grid)] for _ in range(grid)]
+        for _ in range(blocks):
+            r, c = rng.randrange(grid), rng.randrange(grid)
+            if (r, c) not in ((grid - 1, 0), (0, grid - 1)):
                 costs[r][c] = None
-        costs[GRID - 1][0] = costs[0][GRID - 1] = 1
+        costs[grid - 1][0] = costs[0][grid - 1] = 1
         best = _cheapest(costs)
-        if best is not None:
+        if best is None:
+            continue
+        fallback = fallback or {"costs": costs, "best": best}
+        straight = _straight_on(costs)
+        if straight is None or straight >= best + 2:
             return {"costs": costs, "best": best}
+    return fallback
 
 
-def _face(rng) -> dict:
+def _story(rng) -> dict:
+    """A cover story for the crew's Face: who they are and why they're in the building at this hour."""
     firm, why = rng.choice(FIRMS)
-    story = {"name": f"{rng.choice(FIRST)} {rng.choice(SURNAMES)}", "firm": firm, "why": why,
-             "floor": rng.choice(["the basement", "the ground floor", "the first floor", "the second floor", "the roof"]),
-             "ref": str(rng.randint(1000, 9999)), "boss": f"{rng.choice(FIRST)} in head office"}
-    asks = {"name": "Name?", "firm": "And who are you with?", "why": "What's it about, then?",
-            "floor": "Which floor's it on?", "ref": "Got a job reference?", "boss": "Who signed it off?"}
-    pools = {"name": [f"{f} {s}" for f in FIRST for s in SURNAMES], "firm": [f for f, _ in FIRMS],
-             "why": [w for _, w in FIRMS], "floor": ["the basement", "the ground floor", "the first floor", "the second floor", "the roof"],
+    return {"name": f"{rng.choice(HER)} {rng.choice(SURNAMES)}", "firm": firm, "why": why,
+            "floor": rng.choice(FLOORS), "ref": str(rng.randint(1000, 9999)), "boss": f"{rng.choice(FIRST)} in head office"}
+
+
+ASKS = {"name": "Name?", "firm": "And who are you with?", "why": "What's it about, then?",
+        "floor": "Which floor's it on?", "ref": "Got a job reference?", "boss": "Who signed it off?"}
+
+
+def _questions(rng, story: dict, n: int, keys: list[str] | None = None) -> list[dict]:
+    """Questions on the cover story, each with the right answer and two that sound right."""
+    pools = {"name": [f"{f} {s}" for f in HER for s in SURNAMES], "firm": [f for f, _ in FIRMS],
+             "why": [w for _, w in FIRMS], "floor": FLOORS,
              "ref": [str(rng.randint(1000, 9999)) for _ in range(6)] + [story["ref"][::-1], story["ref"][1:] + story["ref"][0]],
              "boss": [f"{f} in head office" for f in FIRST]}
-    questions = []
-    for key in rng.sample(list(asks), FACE_QUESTIONS):
+    out = []
+    for key in (keys or rng.sample(list(ASKS), n))[:n]:
         wrong = [x for x in dict.fromkeys(pools[key]) if x != story[key]]
         options = rng.sample(wrong, 2) + [story[key]]
         rng.shuffle(options)
-        questions.append({"key": key, "ask": asks[key], "options": options, "answer": options.index(story[key])})
-    return {"story": story, "questions": questions, "ready": False, "answers": []}
+        out.append({"key": key, "ask": ASKS[key], "options": options, "answer": options.index(story[key])})
+    return out
+
+
+def _face(rng, story: dict | None = None, n: int = FACE_QUESTIONS) -> dict:
+    """The Face's puzzle: learn the cover story (the crew's, in a room), then the guard asks about it with it hidden.
+    Every one starts with the story, so whoever steps in for Terry on a Face job gets to learn it too."""
+    story = story or _story(rng)
+    return {"questions": _questions(rng, story, n), "ready": False, "answers": [], "story": story}
 
 
 def _best_load(bags: list[dict], cap: int) -> int:
@@ -414,32 +489,80 @@ def _best_load(bags: list[dict], cap: int) -> int:
     return best[cap]
 
 
-def _muscle(rng) -> dict:
-    names = rng.sample(LOOT, BAGS)
-    bags = []
-    for n in names:
-        w = rng.randint(2, 9)
-        bags.append({"name": n, "w": w, "v": max(5, int(w * rng.uniform(3, 9)) + rng.randint(-6, 12))})
-    cap = max(10, int(sum(b["w"] for b in bags) * 0.45))
-    return {"bags": bags, "cap": cap, "best": _best_load(bags, cap)}
+def _greedy_load(bags: list[dict], cap: int) -> int:
+    """What the obvious way loads: the best value for weight first, while it fits."""
+    v = w = 0
+    for b in sorted(bags, key=lambda b: -b["v"] / b["w"]):
+        if w + b["w"] <= cap:
+            v, w = v + b["v"], w + b["w"]
+    return v
+
+
+def _muscle(rng, bags: int = BAGS) -> dict:
+    """Bags of loot and a van that can't take them all. Dealt until the obvious load (the best value for weight
+    first) falls short of the best, so it takes working out rather than a glance."""
+    deal = None
+    for _ in range(60):
+        out = []
+        for n in rng.sample(LOOT, bags):
+            w = rng.randint(2, 9)
+            out.append({"name": n, "w": w, "v": max(5, int(w * rng.uniform(3, 9)) + rng.randint(-6, 12))})
+        cap = max(10, int(sum(b["w"] for b in out) * 0.45))
+        best = _best_load(out, cap)
+        deal = {"bags": out, "cap": cap, "best": best}
+        if _greedy_load(out, cap) <= best * 0.93:
+            break
+    return deal
 
 
 MAKERS = {"hacker": _hacker, "safecracker": _safecracker, "lookout": _lookout, "wheelman": _wheelman, "face": _face,
           "muscle": _muscle}
 
 
+# what a thing's size plays as: a small thing (most of the rooms' and every spare) gets a game's middle size, since
+# its smallest was over before it had started; the vault's big things stay the hardest
+PLAYS = {"s": "m"}
+
+
+def _make(role: str, size: str, rng, story: dict, game: str | None = None) -> dict:
+    """A thing in a room's puzzle, at its size: the role's first game (below), or another from heist_games."""
+    size = PLAYS.get(size, size)
+    g = heist_games.get(role, game)
+    if g:
+        return {**g.make(rng, size, story), "game": g.key}
+    k = SIZES[role].get(size) or SIZES[role]["s"]
+    if role == "hacker":
+        return _hacker(rng, k["n"], k["symbols"], k["tries"])
+    if role == "safecracker":
+        return _safecracker(rng, k["tumblers"], k["listens"])
+    if role == "lookout":
+        return _lookout(rng, k["steps"])
+    if role == "wheelman":
+        return _wheelman(rng, k["grid"], k["blocks"])
+    if role == "face":
+        return _face(rng, story, k["n"])
+    return _muscle(rng, k["bags"])
+
+
 def _public(role: str, p: dict) -> dict:
     """What the player sees of their puzzle."""
+    g = heist_games.get(role, p.get("game"))
+    if g:
+        return {"game": g.key, "title": g.title, "g": g.public(p)}
+    return {"game": heist_games.FIRST[role], "title": heist_games.FIRST_TITLES[heist_games.FIRST[role]], **_first_public(role, p)}
+
+
+def _first_public(role: str, p: dict) -> dict:
     if role == "hacker":
-        return {"len": HACK_LEN, "symbols": HACK_SYMBOLS, "tries": HACK_TRIES,
+        return {"len": p.get("len", HACK_LEN), "symbols": p.get("symbols", HACK_SYMBOLS), "tries": p.get("tries", HACK_TRIES),
                 "guesses": [{"code": g["code"], "exact": g["exact"], "near": g["near"]} for g in p["guesses"]]}
     if role == "safecracker":
-        return {"tumblers": TUMBLERS, "open": p["open"], "dials": DIALS,
+        return {"tumblers": len(p["secret"]), "open": p["open"], "dials": p.get("listens", DIALS),
                 "log": [{"n": d["n"], "t": d["t"], "said": d["said"], "way": d["way"]} for d in p["dials"]]}
     if role == "lookout":
-        return {"seq": p["seq"], "steps": LOOKOUT_STEPS, **({"answer": p["answer"]} if "answer" in p else {})}
+        return {"seq": p["seq"], "steps": len(p["seq"]), **({"answer": p["answer"]} if "answer" in p else {})}
     if role == "wheelman":
-        return {"grid": GRID, "costs": p["costs"], **({"path": p["path"], "cost": p.get("cost")} if "path" in p else {})}
+        return {"grid": len(p["costs"]), "costs": p["costs"], **({"path": p["path"], "cost": p.get("cost")} if "path" in p else {})}
     if role == "face":
         out = {"ready": p["ready"], "count": len(p["questions"]), "answers": p["answers"]}
         if not p["ready"]:
@@ -456,27 +579,32 @@ def _public(role: str, p: dict) -> dict:
 
 
 def _score(role: str, p: dict) -> float:
-    """How the role went, 0 to 1."""
+    """How a puzzle went, 0 to 1."""
+    g = heist_games.get(role, p.get("game"))
+    if g:
+        return max(0.0, min(1.0, float(g.score(p))))
     if role == "hacker":
+        n = p.get("len", HACK_LEN)
         for i, g in enumerate(p["guesses"]):
-            if g["exact"] == HACK_LEN:
-                return HACK_SCORE[i]
+            if g["exact"] == n:
+                return HACK_SCORE[min(i, len(HACK_SCORE) - 1)]
         return 0.1 * max((g["exact"] for g in p["guesses"]), default=0)
     if role == "safecracker":
-        n = len(p["dials"])
-        return (p["open"] / TUMBLERS) * max(0.6, min(1.0, 1 - 0.04 * max(0, n - 10)))
+        n, listens = len(p["dials"]), p.get("listens", DIALS)
+        spare = max(1, listens - 5 * len(p["secret"]))          # listens over a good pace cost a little
+        return (p["open"] / len(p["secret"])) * max(0.6, min(1.0, 1 - 0.2 * max(0, n - (listens - spare)) / spare))
     if role == "lookout":
         got = 0
         for a, b in zip(p.get("answer", []), p["seq"]):
             if a != b:
                 break
             got += 1
-        return got / LOOKOUT_STEPS
+        return got / len(p["seq"])
     if role == "wheelman":
         cost = p.get("cost")
-        return p["best"] / cost if cost else 0.0
+        return (p["best"] / cost) ** 2 if cost else 0.0          # a fifth over the best route scores about 0.7
     if role == "face":
-        return sum(p["questions"][i]["answer"] == a for i, a in enumerate(p["answers"])) / FACE_QUESTIONS
+        return sum(p["questions"][i]["answer"] == a for i, a in enumerate(p["answers"])) / len(p["questions"])
     if role == "muscle":
         if "load" not in p:
             return 0.0
@@ -487,10 +615,13 @@ def _score(role: str, p: dict) -> float:
 
 
 def _done(role: str, p: dict) -> bool:
+    g = heist_games.get(role, p.get("game"))
+    if g:
+        return bool(g.done(p))
     if role == "hacker":
-        return len(p["guesses"]) >= HACK_TRIES or any(g["exact"] == HACK_LEN for g in p["guesses"])
+        return len(p["guesses"]) >= p.get("tries", HACK_TRIES) or any(g["exact"] == p.get("len", HACK_LEN) for g in p["guesses"])
     if role == "safecracker":
-        return p["open"] >= TUMBLERS or len(p["dials"]) >= DIALS
+        return p["open"] >= len(p["secret"]) or len(p["dials"]) >= p.get("listens", DIALS)
     if role == "lookout":
         return "answer" in p
     if role == "wheelman":
@@ -506,10 +637,13 @@ def _move(role: str, p: dict, body: dict) -> None:
     """A move at the puzzle; raises Refuse if it isn't one."""
     if _done(role, p):
         raise Refuse("You've done your bit. Sit tight.")
-    if role == "hacker":
-        code = str(body.get("code") or "")
-        if len(code) != HACK_LEN or any(ch not in "123456" for ch in code):
-            raise Refuse(f"Four digits, each 1 to {HACK_SYMBOLS}.")
+    g = heist_games.get(role, p.get("game"))
+    if g:
+        g.move(p, body if isinstance(body, dict) else {})
+    elif role == "hacker":
+        code, n, symbols = str(body.get("code") or ""), p.get("len", HACK_LEN), p.get("symbols", HACK_SYMBOLS)
+        if len(code) != n or any(ch not in "123456789"[:symbols] for ch in code):
+            raise Refuse(f"{n} digits, each 1 to {symbols}.")
         exact, near = _feedback(p["secret"], code)
         p["guesses"].append({"code": code, "exact": exact, "near": near})
     elif role == "safecracker":
@@ -521,13 +655,13 @@ def _move(role: str, p: dict, body: dict) -> None:
             raise Refuse("The dial goes 0 to 99.")
         s = p["secret"][p["open"]]
         gap = abs(n - s)
-        said = "click" if gap <= 2 else "hot" if gap <= 8 else "warm" if gap <= 20 else "cold"
+        said = "click" if gap <= 1 else "hot" if gap <= 6 else "warm" if gap <= 15 else "cold"
         p["dials"].append({"n": n, "t": p["open"], "said": said, "way": 0 if said == "click" else (1 if s > n else -1)})
         if said == "click":
             p["open"] += 1
     elif role == "lookout":
         seq = body.get("seq")
-        if not isinstance(seq, list) or len(seq) > LOOKOUT_STEPS or not all(isinstance(x, int) and 0 <= x < 9 for x in seq):
+        if not isinstance(seq, list) or len(seq) > len(p["seq"]) or not all(isinstance(x, int) and 0 <= x < 9 for x in seq):
             raise Refuse("Tap the windows in the order the torch went.")
         p["answer"] = seq
     elif role == "wheelman":
@@ -560,24 +694,40 @@ def _move(role: str, p: dict, body: dict) -> None:
 
 def _route_cost(costs, path) -> int | None:
     """What a route costs, or None if it isn't one from the bank (bottom left) to the lock-up (top right)."""
-    if not isinstance(path, list) or not path or len(path) > GRID * GRID:
+    g = len(costs)
+    if not isinstance(path, list) or not path or len(path) > g * g:
         return None
     cells = []
     for c in path:
         if not isinstance(c, list) or len(c) != 2 or not all(isinstance(x, int) for x in c):
             return None
         cells.append((c[0], c[1]))
-    if cells[0] != (GRID - 1, 0) or cells[-1] != (0, GRID - 1) or len(set(cells)) != len(cells):
+    if cells[0] != (g - 1, 0) or cells[-1] != (0, g - 1) or len(set(cells)) != len(cells):
         return None
     total = 0
     for (r0, c0), (r1, c1) in zip(cells, cells[1:]):
-        if abs(r0 - r1) + abs(c0 - c1) != 1 or not (0 <= r1 < GRID and 0 <= c1 < GRID) or costs[r1][c1] is None:
+        if abs(r0 - r1) + abs(c0 - c1) != 1 or not (0 <= r1 < g and 0 <= c1 < g) or costs[r1][c1] is None:
             return None
         total += costs[r1][c1]
     return total
 
 
 # ---- the job ---------------------------------------------------------------------------------
+# The crew picks a way in and goes through the building a room at a time. Every room has a few things in the way,
+# each a job for one role: whoever holds the role does it, quietly (the puzzle) or loudly (straight through, but
+# the alarm jumps); a role nobody holds is left to Two-Pint Terry, unless someone free steps in to do it themselves
+# (a little worse, not being the expert). Everything that goes less than perfectly adds to one alarm for the whole
+# job, by its weight; loot jobs swell the vault. The alarm is the job score's other side, J = 1 - alarm, so the
+# vault's maths (and the bank's edge) are exactly as they were.
+
+MOVE_SECONDS = 6.0           # walking from one room to the next (the page shows how the last one went)
+LOUD_SCORE = 0.35            # going in loud: straight through, scored like a so-so job
+STEP_IN = 0.8                # someone doing a job that isn't theirs does it this well
+TERRY_AFTER = (8.0, 16.0)    # how long Terry fiddles before he's done (or not)
+ALARM_BLOWN = 0.85           # an alarm this loud and the police are on their way: straight to the vault
+LOOT_STEP = 0.12             # a perfect loot job makes the vault hold this much more (of its cap)
+LOOT_MAX = 0.36              # and three of them at most, which the stake limits allow for
+
 
 def _present(room: dict) -> list[int]:
     return [u for u in room["players"] if u not in room["left"]]
@@ -591,32 +741,18 @@ def _bot(room: dict, uid) -> dict | None:
     return (room.get("bots") or {}).get(str(uid))
 
 
-def _member_done(room: dict, uid: int, now: float) -> bool:
-    """Whether one of the crew has done their bit of the job (a bot crewmate, once its moment's come)."""
-    b = _bot(room, uid)
-    if b is not None:
-        return now >= b["done_at"]
-    role = room["roles"][str(uid)]
-    return _done(role, room["job"][role])
-
-
-def _fill_with_bots(room: dict, now: float) -> None:
-    """A practice job: every empty seat gets a bot crewmate in a job nobody took, with a skill
-    level, a vote, a moment it finishes its bit and a moment in the vault it'll leg it."""
-    rng = _rng()
+def _fill_with_bots(room: dict, rng: random.Random) -> None:
+    """A practice job: every role nobody took gets a bot crewmate, with a skill level and the moment
+    in the vault (as a share of its climb) it'll leg it at. They back whatever plan the crew picks."""
     names = rng.sample(BOT_NAMES, SEATS)
     bots = {}
     for i, role in enumerate([r for r in ROLES if r not in room["roles"].values()]):
         uid = -(i + 1)
-        skill = rng.uniform(*BOT_SKILL)
-        # how far through the vault's climb it legs it: some bottle it early, some wait for the cap
+        # some bottle it early, some wait for the cap
         leave = rng.choice([rng.uniform(0.05, 0.3), rng.uniform(0.25, 0.6), rng.uniform(0.5, 0.95), 1.0])
-        bots[str(uid)] = {"name": names[i], "skill": round(skill, 2),
-                          "score": round(max(0.0, min(1.0, skill + rng.gauss(0, 0.08))), 4),
-                          "done": round(rng.uniform(*BOT_DONE), 1), "leave": round(leave, 3)}
+        bots[str(uid)] = {"name": names[i], "skill": round(rng.uniform(*BOT_SKILL), 2), "leave": round(leave, 3)}
         room["players"].append(uid)
         room["roles"][str(uid)] = role
-        room["votes"][str(uid)] = rng.choice(["quiet", "loud"])
     room["bots"] = bots
 
 
@@ -636,57 +772,159 @@ def _free_role(room: dict) -> str | None:
     return next((r for r in ROLES if r not in taken), None)
 
 
+def _route_of(room: dict) -> dict:
+    return rooms_of.routes(room["target"])[room.get("approach") or next(iter(rooms_of.routes(room["target"])))]
+
+
+def _things(room: dict):
+    for i, rm in enumerate(room.get("rooms", [])):
+        for th in rm["things"]:
+            yield i, th
+
+
 def _weights(room: dict) -> dict:
-    w = dict(WEIGHTS[room.get("approach") or "quiet"])
-    role = (room.get("twist") or {}).get("role")
-    if role:
-        w[role] *= 2
-    total = sum(w.values())
+    """How much each role's work counts in the job, from the route's rooms (and the twist)."""
+    w: dict[str, float] = {r: 0.0 for r in ROLES}
+    if room.get("rooms"):
+        for _, th in _things(room):
+            w[th["role"]] += th["w"]
+    else:
+        twist = (room.get("twist") or {}).get("role")
+        for key in _route_of(room)["rooms"]:
+            for role, _, size in rooms_of.ROOMS[key][1]:
+                w[role] += rooms_of.WEIGHT[size] * (2 if role == twist else 1)
+    total = sum(w.values()) or 1.0
     return {k: v / total for k, v in w.items()}
 
 
 def job_score(room: dict) -> float:
-    """The crew's job, 0 to 1: every role's result by its weight, Dodgy Dave's for one nobody took."""
-    w = _weights(room)
-    played = {role: uid for uid, role in room["roles"].items()}
-    total = 0.0
-    for role in ROLES:
-        if role in played:
-            total += w[role] * room["job"][role].get("score", 0.0)
-        else:
-            total += w[role] * WINGING_IT
-    return round(total, 4)
+    """The crew's job, 0 to 1: the alarm's other side."""
+    return round(max(0.0, min(1.0, 1.0 - room.get("alarm", 1.0))), 4)
+
+
+def _holder(room: dict, role: str) -> int | None:
+    return next((int(u) for u, r in room["roles"].items() if r == role and int(u) not in room["left"]), None)
+
+
+def _on_something(room: dict, uid: int) -> bool:
+    """On something in this room already (it's theirs and not done)."""
+    at = room.get("at", 0)
+    return any(th["who"] == uid and th["state"] in ("ready", "active")
+               for i, th in _things(room) if i == at)
 
 
 def _start_job(room: dict, now: float) -> None:
-    """The plan's agreed: count the votes, set up the puzzles, start the job's clock."""
-    votes = list(room["votes"].values())
-    quiet, loud = votes.count("quiet"), votes.count("loud")
-    if quiet == loud:
-        room["approach"] = room["votes"].get(str(room["host"]), "quiet")
+    """The plan's agreed: take the way in most of the crew voted for, lay out its rooms, and walk into the first."""
+    ways = rooms_of.routes(room["target"])
+    votes = [v for v in room["votes"].values() if v in ways]             # the bot crewmates back whatever's picked
+    if votes:
+        top = max(votes.count(k) for k in ways)
+        best = [k for k in ways if votes.count(k) == top]
+        mine = room["votes"].get(str(room["host"]))
+        room["approach"] = mine if mine in best else best[0]
     else:
-        room["approach"] = "quiet" if quiet > loud else "loud"
+        room["approach"] = next(iter(ways))
     rng = _rng()
-    room["job"] = {role: MAKERS[role](rng) for role in set(room["roles"].values())}
-    for b in (room.get("bots") or {}).values():
-        b["done_at"] = now + b["done"]
-    room.update(state="job", deadline=now + JOB_SECONDS)
+    room["story"] = room.get("story") or _story(rng)
+    twist = (room.get("twist") or {}).get("role")
+    held = {r for u, r in room["roles"].items() if int(u) not in room["left"]}
+    plan = [(i, key, rooms_of.things(key, i, held)) for i, key in enumerate(_route_of(room)["rooms"])]
+    # a different game for each of a role's things, so nobody plays the same one twice in a heist
+    games = iter(heist_games.deal(rng, [role for _, _, here in plan for role, _, _, _ in here]))
+    layout = []
+    for i, key, here in plan:
+        things = []
+        for j, (role, name, size, spare) in enumerate(here):
+            things.append({"id": f"{i}-{j}", "role": role, "name": name, "size": size, "spare": spare,
+                           "w": rooms_of.WEIGHT[size] * (2 if role == twist else 1), "state": "waiting", "who": None,
+                           "p": _make(role, size, rng, room["story"], next(games)), "terry": round(rng.uniform(0.0, 0.6), 3)})
+        layout.append({"key": key, "things": things})
+    # the alarm's weighed over the building's own things, so the roles nobody took (Terry's) cost the crew as much
+    # however many spares the players have; a spare done badly only adds to it
+    total = sum(th["w"] for rm in layout for th in rm["things"] if not th["spare"]) or 1.0
+    for rm in layout:
+        for th in rm["things"]:
+            th["w"] = round(th["w"] / total, 5)
+    room.update(state="job", rooms=layout, alarm=0.0, loot=0.0)
+    _enter(room, 0, now)
+
+
+def _room_secs(rm: dict) -> float:
+    return rooms_of.room_seconds([(t["role"], t["name"], t["size"]) for t in rm["things"] if not t.get("spare")])
+
+
+def _enter(room: dict, i: int, now: float) -> None:
+    """Walk into room i: everything in it goes to whoever holds its role, or to Terry."""
+    rm = room["rooms"][i]
+    there = now + MOVE_SECONDS
+    room.update(at=i, arrive=there, deadline=there + _room_secs(rm))
+    rng = _rng()
+    secs = _room_secs(rm)
+    for th in rm["things"]:
+        who = _holder(room, th["role"])
+        b = _bot(room, who) if who is not None else None
+        if b is not None:
+            # a bot crewmate gets straight on with it, done at a moment of its own with a score near its skill
+            th.update(state="active", who=who, mode="quiet", at=round(there + rng.uniform(*BOT_PACE) * secs, 2),
+                      bot=round(max(0.0, min(1.0, rng.gauss(b["skill"], 0.12))), 4))
+        elif who is not None:
+            th.update(state="ready", who=who)
+        else:
+            th.update(state="terry", who=None, at=round(there + rng.uniform(*TERRY_AFTER), 2))
+
+
+def _settle(room: dict, th: dict, score: float) -> None:
+    """A thing done, however it went: into the alarm by its weight, and into the loot if it's loot."""
+    score = max(0.0, min(1.0, score))
+    th.update(state="done", score=round(score, 4))
+    room["alarm"] = round(min(1.0, room["alarm"] + th["w"] * (1 - score)), 5)
+    if th["size"] == "loot":
+        room["loot"] = round(min(LOOT_MAX, room["loot"] + LOOT_STEP * score), 4)
+
+
+def _played(th: dict) -> float:
+    """How a puzzle someone was doing went, as it stands (a step-in does it a bit worse; a bot crewmate's is rolled)."""
+    if th.get("bot") is not None:
+        return th["bot"]
+    return _score(th["role"], th["p"]) * (STEP_IN if th.get("stepped") else 1.0)
+
+
+def _end_room(room: dict, now: float) -> None:
+    """The room's done or out of time: anything unfinished is scored as it stands."""
+    for i, th in _things(room):
+        if i != room["at"] or th["state"] == "done":
+            continue
+        if th["state"] == "active":
+            _settle(room, th, _played(th))
+        elif th["state"] == "terry":
+            _settle(room, th, th["terry"])
+        else:
+            _settle(room, th, 0.0)
+    last = room["at"] >= len(room["rooms"]) - 1
+    if last or room["alarm"] >= ALARM_BLOWN:
+        if not last:
+            room["blown"] = room["at"]            # the alarm went: they ran for the vault from here
+            for i, th in _things(room):
+                if th["state"] != "done":
+                    _settle(room, th, 0.0)
+        _end_job(room, now)
+    else:
+        _enter(room, room["at"] + 1, now)
 
 
 def _end_job(room: dict, now: float) -> None:
-    """Time's up on the job: score it, and roll when the police come."""
-    for role, p in room["job"].items():
-        p["score"] = round(_score(role, p), 4)
-    for uid, b in (room.get("bots") or {}).items():
-        room["job"][room["roles"][uid]]["score"] = b["score"]
+    """Out of the building and at the vault: score the job, swell the vault by the loot, and roll when the police come."""
+    for i, th in _things(room):
+        if th["state"] != "done":
+            _settle(room, th, 0.0)
     score = job_score(room)
     e = edge(score)
     u = (secrets.randbelow(2 ** 52) + 1) / 2 ** 52
     m = police_take(e, u)
-    cap = room["cap"]
-    secs = VAULT_SECONDS[room["approach"]] * (room.get("twist") or {}).get("pace", 1.0)
-    police = None if m >= cap else 0.0 if m <= 1.0 else secs * math.log(m) / math.log(cap)
-    room.update(state="report", deadline=now + REPORT_SECONDS, score=score, edge=round(e, 4),
+    cap = round(room["cap"] * (1 + room.get("loot", 0.0)), 2)
+    secs = _route_of(room)["secs"] * (room.get("twist") or {}).get("pace", 1.0)
+    police = None if m >= cap else time_at(m, cap, secs)
+    room.update(state="report", deadline=now + REPORT_SECONDS, score=score, edge=round(e, 4), cap=cap,
                 vault={"start": now + REPORT_SECONDS, "secs": round(secs, 2), "police": police, "out": {}})
 
 
@@ -702,17 +940,27 @@ def _advance(room: dict, now: float) -> bool:
     while not room.get("over"):
         s = room["state"]
         if s == "plan":
-            everyone = all(str(u) in room["votes"] for u in _present(room))
+            everyone = all(str(u) in room["votes"] for u in _present(room) if not _bot(room, u))
             if now < room["deadline"] and not everyone:
                 break
             _start_job(room, min(now, room["deadline"]))
             _emit("job", room)
         elif s == "job":
-            done = all(_member_done(room, u, now) for u in _present(room))
-            if now < room["deadline"] and not done:
+            here = [th for i, th in _things(room) if i == room["at"]]
+            for th in here:
+                if th["state"] == "terry" and now >= th["at"]:
+                    _settle(room, th, th["terry"])
+                    changed = True
+                elif th["state"] == "active" and th.get("bot") is not None and now >= th["at"]:
+                    _settle(room, th, th["bot"])
+                    changed = True
+                elif th["state"] in ("ready", "active") and th["who"] in room["left"]:
+                    th.update(state="terry", who=None, at=now)           # walked off: Terry picks it up
+                    changed = True
+            if now < room["deadline"] and not all(th["state"] == "done" for th in here):
                 break
-            _end_job(room, min(now, room["deadline"]))
-            _emit("report", room)
+            _end_room(room, min(now, room["deadline"]) if now >= room["deadline"] else now)
+            _emit("room" if room["state"] == "job" else "report", room)
         elif s == "report":
             if now < room["deadline"]:
                 break
@@ -758,7 +1006,6 @@ def _finish(room: dict, now: float) -> None:
     if room.get("over"):
         return
     results = outcome(room)
-    practice = bool(room.get("practice"))
     stake = room["stake"]
     v = room["vault"]
     nicked = [u for u, r in results.items() if r["how"] == "nicked"]
@@ -767,7 +1014,7 @@ def _finish(room: dict, now: float) -> None:
              and all(r["take"] >= CLEAN_TAKE for r in results.values()))
     if v["police"] is not None and v["police"] < v["secs"]:
         v["police_take"] = _floor2(take_at(v["police"], room["cap"], v["secs"]))
-    if practice:
+    if room.get("practice"):
         # play money: nothing paid, no bonus, no heat, no records, no badges, no post
         room.update(over=True, ended=now, how="clean" if clean else "nicked" if nicked else "done", results=results,
                     bonus={}, paid=True)
@@ -890,39 +1137,89 @@ def _target_view(key: str, now: float) -> dict:
             "practiceStake": _practice_stake(key)}
 
 
+def _thing_view(th: dict, now: float) -> dict:
+    out = {"id": th["id"], "role": th["role"], "name": th["name"], "size": th["size"], "state": th["state"],
+           "who": str(th["who"]) if th["who"] is not None else None, "mode": th.get("mode"), "stepped": bool(th.get("stepped")),
+           "loud": round(th["w"] * (1 - LOUD_SCORE) * 100)}            # what going in loud adds to the alarm, in points
+    if th["state"] == "done":
+        out["score"] = th["score"]
+    if th["state"] == "terry":
+        out["terryIn"] = round(max(0.0, th["at"] - now), 1)
+    return out
+
+
+def _ways(room: dict) -> list[dict]:
+    """The ways into the target, for the plan: each one's rooms, where they are, and who it leans on."""
+    b = rooms_of.BUILDINGS[room["target"]]
+    return [{"key": k, "name": w["name"], "loud": bool(w.get("loud")), "leans": rooms_of.leans(room["target"], k),
+             "rooms": [{"key": x, "name": rooms_of.ROOMS[x][0], "pin": b["pins"].get(x)} for x in w["rooms"]]}
+            for k, w in b["routes"].items()]
+
+
+def _role_scores(room: dict) -> list[dict]:
+    """How each role did over the job (Terry's when nobody held it), weighted like the alarm."""
+    out = []
+    for role in ROLES:
+        mine = [th for _, th in _things(room) if th["role"] == role]
+        if not mine:
+            continue
+        w = sum(th["w"] for th in mine) or 1.0
+        holder = _holder(room, role)
+        out.append({"role": role, "uid": str(holder) if holder is not None else None,
+                    "score": round(sum(th["w"] * th.get("score", 0.0) for th in mine) / w, 3), "dave": holder is None})
+    return out
+
+
 def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     s = room["state"]
     phase = "over" if room.get("over") else s
     me = str(uid)
+    here = [th for i, th in _things(room) if i == room.get("at")] if s == "job" else []
     out = {
         "id": room["id"], "host": str(room["host"]), "stake": room["stake"], "seats": SEATS, "phase": phase,
         "how": room.get("how"), "target": _target_view(room["target"], now) if s == "lobby" else
         {**_target_view(room["target"], now), "cap": room["cap"]},
         "practice": bool(room.get("practice")),
         "crew": [{**_crewmate(room, u, name_of), "role": room["roles"].get(str(u)), "left": u in room["left"],
-                  "voted": str(u) in room.get("votes", {}),
-                  "done": bool(s == "job" and not room.get("over") and _member_done(room, u, now))}
+                  "voted": str(u) in room.get("votes", {}) or _bot(room, u) is not None,
+                  # in a room: they've nothing left on (whatever was theirs here is done, or never was)
+                  "done": bool(s == "job" and not any(th["who"] == u and th["state"] in ("ready", "active") for th in here))}
                  for u in room["players"]],
         "expiresIn": max(0, round(room["expires"] - now)) if s == "lobby" else None,
         "deadlineIn": round(max(0.0, room.get("deadline", now) - now), 2) if s in ("plan", "job", "report") else None,
-        "twist": room.get("twist"), "approach": room.get("approach"),
-        "weights": _weights(room) if s != "lobby" else WEIGHTS["quiet"],
+        "twist": room.get("twist"), "approach": room.get("approach"), "weights": _weights(room),
     }
     if s == "plan":
-        out["votes"] = {"quiet": list(room["votes"].values()).count("quiet"),
-                        "loud": list(room["votes"].values()).count("loud")}
+        ways = rooms_of.routes(room["target"])
+        out["votes"] = {k: list(room["votes"].values()).count(k) for k in ways}
         out["myVote"] = room["votes"].get(me)
+        out["ways"] = _ways(room)
     if s == "job" and not room.get("over"):
-        role = room["roles"].get(me)
-        if role and role in room["job"]:
-            p = room["job"][role]
-            out["puzzle"] = {"role": role, "done": _done(role, p), **_public(role, p)}
+        pins = rooms_of.BUILDINGS[room["target"]]["pins"]
+        rm = room["rooms"][room["at"]]
+        out["job"] = {"at": room["at"], "count": len(room["rooms"]), "key": rm["key"], "name": rooms_of.ROOMS[rm["key"]][0],
+                      "walk": round(max(0.0, room["arrive"] - now), 2), "alarm": room["alarm"], "loot": room["loot"],
+                      "secs": _room_secs(rm),
+                      "cap": round(room["cap"] * (1 + room["loot"]), 2), "route": room.get("approach"),
+                      "rooms": [{"key": x["key"], "name": rooms_of.ROOMS[x["key"]][0], "pin": pins.get(x["key"]),
+                                 "done": j < room["at"]} for j, x in enumerate(room["rooms"])],
+                      "things": [_thing_view(th, now) for th in rm["things"]]}
+        if room["at"] > 0:
+            # how the room just left went, for the walk to the next: every thing in it, and what it put on the alarm
+            prev = room["rooms"][room["at"] - 1]
+            out["job"]["last"] = {"name": rooms_of.ROOMS[prev["key"]][0], "things": [_thing_view(th, now) for th in prev["things"]],
+                                  "alarm": round(100 * sum(th["w"] * (1 - th.get("score", 0.0)) for th in prev["things"]
+                                                           if th["state"] == "done"))}
+        mine = next((th for th in rm["things"] if th["who"] == uid and th["state"] == "active"), None)
+        if mine:
+            out["puzzle"] = {"role": mine["role"], "ob": mine["id"], "name": mine["name"], "stepped": bool(mine.get("stepped")),
+                             "done": False, **_public(mine["role"], mine["p"])}
     if room.get("score") is not None:
-        played = {r: u for u, r in room["roles"].items()}
+        # the edge itself, so the page can show the police's odds; "waiting" when they're already at the door
         out["report"] = {"score": room["score"], "alarm": round((room["edge"] - EDGE_BEST) / (EDGE_WORST - EDGE_BEST), 3),
-                         "roles": [{"role": r, "uid": played.get(r), "score": room["job"][r]["score"] if r in played else WINGING_IT,
-                                    "dave": r not in played} for r in ROLES]}
+                         "edge": room["edge"], "waiting": room.get("vault", {}).get("police") == 0.0,
+                         "loot": room.get("loot", 0.0), "blown": room.get("blown"), "roles": _role_scores(room)}
     if room.get("vault"):
         v = room["vault"]
         out["vault"] = {"at": round(now - v["start"], 2), "secs": v["secs"], "cap": room["cap"],
@@ -979,8 +1276,17 @@ def lobby(uid: int, name_of, balance: int) -> dict:
                   "roles": sorted(r["roles"].values(), key=ROLES.index)}
                  for r in _rooms.values() if r["state"] == "lobby" and not r.get("over") and uid not in r["players"]
                  and not r.get("practice")],
-        "board": most_wanted(name_of, now),
+        "board": most_wanted(name_of, now), "bank": _reserves(),
     }
+
+
+def _reserves() -> int | None:
+    """What the Bank of HMS Victory holds, for the lobby to show what's there to steal (None if unreadable)."""
+    try:
+        from lib.economy.reserve_policy import bank_reserves
+        return int(bank_reserves())
+    except Exception:
+        return None
 
 
 def room(uid: int, rid: str, name_of) -> dict:
@@ -1141,11 +1447,12 @@ def start(uid: int, rid: str) -> dict:
     if uid != r["host"]:
         raise Refuse("Only the host can send the crew in.")
     if r.get("practice"):
-        # play money, nothing to take in; the bot crewmates make up the crew
+        # play money, nothing to take in; bot crewmates make up the crew
         now = time.time()
-        _fill_with_bots(r, now)
+        rng = _rng()
+        _fill_with_bots(r, rng)
         r.update(state="plan", started=now, deadline=now + PLAN_SECONDS, cap=cap_for(r["target"], now),
-                 twist=_rng().choice(TWISTS))
+                 twist=rng.choice(TWISTS), story=_story(rng))
         _save()
         return r
     t = TARGETS[r["target"]]
@@ -1169,8 +1476,9 @@ def start(uid: int, rid: str) -> dict:
                 raise Refuse("Someone in the crew can't cover the buy-in any more.")
             taken.append(u)
     now = time.time()
+    rng = _rng()
     r.update(state="plan", started=now, deadline=now + PLAN_SECONDS, cap=cap_for(r["target"], now),
-             twist=_rng().choice(TWISTS))
+             twist=rng.choice(TWISTS), story=_story(rng))
     _save()
     _emit("start", r)
     return r
@@ -1190,8 +1498,8 @@ def vote(uid: int, rid: str, approach: str) -> dict:
     r, now = _live(uid, rid)
     if r.get("over") or r["state"] != "plan":
         raise Refuse("The plan's already made.")
-    if approach not in WEIGHTS:
-        raise Refuse("Quiet or loud?")
+    if approach not in rooms_of.routes(r["target"]):
+        raise Refuse("Pick a way in.")
     r["votes"][str(uid)] = approach
     _advance(r, now)
     _save()
@@ -1199,14 +1507,40 @@ def vote(uid: int, rid: str, approach: str) -> dict:
 
 
 def play(uid: int, rid: str, body: dict) -> dict:
-    """A move at your role's puzzle."""
+    """A move in the room the crew's in, at one thing in it (body["ob"]): start one that's yours, quietly or loudly
+    ({"take": "quiet" | "loud"}); step in for Terry on one nobody's got ({"step": true}); or a move at the puzzle
+    you're on."""
     r, now = _live(uid, rid)
     if r.get("over") or r["state"] != "job":
         raise Refuse("The job isn't on.")
     if uid in r["left"]:
         raise Refuse("You've walked off the job.")
-    role = r["roles"][str(uid)]
-    _move(role, r["job"][role], body if isinstance(body, dict) else {})
+    body = body if isinstance(body, dict) else {}
+    th = next((t for i, t in _things(r) if i == r["at"] and t["id"] == str(body.get("ob"))), None)
+    if th is None:
+        raise Refuse("That's not in this room.")
+    if now < r["arrive"]:
+        raise Refuse("Hang on, you're not in the room yet.")
+    if body.get("step"):
+        if th["state"] != "terry":
+            raise Refuse("Someone's already on that.")
+        if _on_something(r, uid):
+            raise Refuse("Finish what you're on first.")
+        th.update(state="ready", who=uid, stepped=True)
+    elif body.get("take") in ("quiet", "loud"):
+        if th["who"] != uid or th["state"] != "ready":
+            raise Refuse("That one's not yours to start.")
+        if body["take"] == "loud":
+            th["mode"] = "loud"
+            _settle(r, th, LOUD_SCORE * (STEP_IN if th.get("stepped") else 1.0))
+        else:
+            th.update(state="active", mode="quiet")
+    else:
+        if th["who"] != uid or th["state"] != "active":
+            raise Refuse("You're not on that one.")
+        _move(th["role"], th["p"], body)
+        if _done(th["role"], th["p"]):
+            _settle(r, th, _played(th))
     _advance(r, now)
     _save()
     return r

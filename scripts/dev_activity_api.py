@@ -63,6 +63,74 @@ def _post_to_folder(launcher, folder: str) -> None:
     launcher.post_view, launcher.edit_view = post_view, edit_view
 
 
+def _sandbox(app, heist) -> None:
+    """Bank Job's puzzle sandbox, this script only: one mini-game at a time, at any size, with no crew or job
+    around it (the page's ?local=<token>&sandbox=role:game:size). It plays the game through heist.py exactly as a
+    job would, and says what it scored when it's done."""
+    import importlib
+    import random
+    import traceback
+    from aiohttp import web
+    from lib.activities import heist_games
+    puzzles: dict[str, tuple[str, str, dict]] = {}
+
+    def reload(role):
+        """Pick up a role's games as they're edited, with no restart (a broken file keeps the last good ones)."""
+        try:
+            mod = importlib.reload(importlib.import_module(f"lib.activities.heist_games.{role}"))
+            heist_games.GAMES[role] = dict(mod.GAMES)
+        except Exception:
+            traceback.print_exc()
+    story = heist._story(random.Random())
+
+    def view(sid):
+        role, size, p = puzzles[sid]
+        done = heist._done(role, p)
+        return {"sid": sid, "size": size, "puzzle": {"role": role, "ob": sid, "name": "SANDBOX", "stepped": False, "done": done,
+                                                    **heist._public(role, p)},
+                "score": round(heist._score(role, p), 3) if done else None, "story": story}
+
+    async def games(request):
+        for role in heist_games.ROLES:
+            reload(role)
+        return web.json_response({role: [{"key": k, "title": (heist_games.FIRST_TITLES.get(k) or heist_games.GAMES[role][k].title)}
+                                         for k in heist_games.keys(role)] for role in heist_games.ROLES})
+
+    async def make(request):
+        body = await request.json()
+        role, game, size = body.get("role"), body.get("game"), body.get("size") or "s"
+        if role in heist_games.ROLES:
+            reload(role)
+        if role not in heist_games.ROLES or game not in heist_games.keys(role):
+            return web.json_response({"error": "No such game."}, status=400)
+        sid = f"sb{len(puzzles) + 1}"
+        try:
+            puzzles[sid] = (role, size, heist._make(role, size, random.Random(), story, game))
+        except Exception as e:
+            traceback.print_exc()
+            return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
+        return web.json_response(view(sid))
+
+    async def move(request):
+        body = await request.json()
+        sid = body.get("sid")
+        if sid not in puzzles:
+            return web.json_response({"error": "That puzzle's gone."}, status=400)
+        role, _, p = puzzles[sid]
+        try:
+            heist._move(role, p, body.get("body") or {})
+        except heist.Refuse as e:
+            return web.json_response({"error": str(e)}, status=400)
+        except Exception as e:                                   # a game being built: say what broke
+            traceback.print_exc()
+            return web.json_response({"error": f"{type(e).__name__}: {e}"}, status=500)
+        return web.json_response(view(sid))
+
+    app.router.add_get("/api/heist/sandbox/games", games)
+    app.router.add_post("/api/heist/sandbox/make", make)
+    app.router.add_post("/api/heist/sandbox/move", move)
+
+
 def main(port: int) -> None:
     # DEV_ACTIVITY_DATA reuses an earlier run's folder, so a restart keeps the test saves
     tmp = os.environ.get("DEV_ACTIVITY_DATA") or tempfile.mkdtemp(prefix="hms-activity-dev-")
@@ -90,6 +158,9 @@ def main(port: int) -> None:
     em.add_bb(PLAYER, 50_000, reason="dev seed", taxable=False)
     em.add_bb(RIVAL, 50_000, reason="dev seed", taxable=False)
     em.add_bb(THIRD, 50_000, reason="dev seed", taxable=False)
+    import dev_heist_bots                                   # Bank Job's stand-in crew, this script only
+    for uid in dev_heist_bots.BOTS:
+        em.add_bb(uid, 50_000, reason="dev seed", taxable=False)
 
     from lib.activities import auth, server
     from lib.activities.casino import base
@@ -125,6 +196,7 @@ def main(port: int) -> None:
                RIVAL: SimpleNamespace(id=RIVAL, display_name="Rival", bot=False,
                                       display_avatar=Picture(os.path.join(art, "fireship.webp"))),
                THIRD: SimpleNamespace(id=THIRD, display_name="Pooja", bot=False)}
+    members.update({uid: SimpleNamespace(id=uid, display_name=name, bot=False) for uid, name in dev_heist_bots.BOTS.items()})
     guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)
     base.CLIENT = client
@@ -132,7 +204,9 @@ def main(port: int) -> None:
 
     async def run():
         from aiohttp import web
-        runner = web.AppRunner(server.build_app(client))
+        app = server.build_app(client)
+        _sandbox(app, heist)
+        runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, "127.0.0.1", port).start()
         print(f"activity API on http://127.0.0.1:{port} (data in {tmp})")
@@ -152,6 +226,11 @@ def main(port: int) -> None:
             print(f"bank job ({who}): http://localhost:5174/?local={auth.make_session(uid, WORKSHOP)}&game=heist", flush=True)
         asyncio.get_running_loop().create_task(kart.run_sweeper())
         asyncio.get_running_loop().create_task(heist.run_sweeper())
+        print(f"bank job sandbox (one mini-game on its own): http://localhost:5174/?local={auth.make_session(PLAYER, WORKSHOP)}"
+              "&sandbox=hacker:keypad:s", flush=True)
+        if dev_heist_bots.FILL > 1:
+            print(f"bank job: bots join any crew you open, up to {dev_heist_bots.FILL} strong (DEV_HEIST_BOTS=0 for none)", flush=True)
+            asyncio.get_running_loop().create_task(dev_heist_bots.run(heist, {PLAYER, RIVAL, THIRD}))
         await asyncio.Event().wait()
 
     asyncio.run(run())

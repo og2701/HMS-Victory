@@ -106,6 +106,10 @@ def headline(room: dict, event: str) -> str:
         many = len(room["players"]) > 1
         what = {"start": "making the plan", "job": "on the job", "report": "setting off the alarm",
                 "vault": "in the vault", "out": "in the vault"}.get(event, "on the job")
+        if event in ("job", "room") and room.get("rooms") and room.get("state") == "job":
+            from lib.activities import heist_rooms
+            where = heist_rooms.ROOMS[room["rooms"][room["at"]]["key"]][0].lower()
+            what = f"on the job, in {where if where.startswith('the ') else 'the ' + where}"
         return f"{_and(room['players'])} {'are' if many else 'is'} {what} at the **{t['name']}**"
     results = room.get("results") or {}
     out = [int(u) for u, r in results.items() if r["how"] != "nicked"]

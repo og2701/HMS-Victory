@@ -80,6 +80,13 @@ _CSS = """*{margin:0;box-sizing:border-box} html,body{background:transparent} bo
 """
 
 
+def _way(room: dict) -> str:
+    """The way the crew went in ("VIA THE ROOF"), or the plan while they're still making it."""
+    from lib.activities import heist_rooms
+    way = heist_rooms.routes(room["target"]).get(room.get("approach") or "", {}).get("name") if room.get("target") else None
+    return f"VIA THE {way}" if way else "THE PLAN"
+
+
 def _f(path: Path) -> str:
     return f"file://{path}"
 
@@ -153,7 +160,7 @@ def room_page(room: dict, names: dict, event: str, faces: dict | None = None) ->
             seats.append(f'<div class="seat">{_av(room, uid, names, faces)}<span class="tape">{_e(names.get(uid, "Someone").upper())}</span>'
                          f'<i class="role">{_e(_role(room, uid))}</i></div>')
         else:
-            seats.append('<div class="seat"><span class="av q">?</span><i class="role dave">DODGY DAVE</i></div>')
+            seats.append('<div class="seat"><span class="av q">?</span><i class="role dave">TWO-PINT TERRY</i></div>')
     t = _target(room)
     return _page(f"""<div class="card{' dim' if gone else ''}">{door_svg()}
       <div class="lab"><i>BANK JOB · {'CREW WANTED' if not gone else 'CREW'}</i><b>{_e(t['short'].upper())}</b></div>
@@ -226,7 +233,7 @@ def game_page(room: dict, names: dict, faces: dict | None = None) -> str:
     twist = room.get("twist") or {}
     sub = f'<p class="sub">{_e(twist.get("name", ""))}. {_e(twist.get("text", ""))}</p>' if twist else ""
     return _page(f"""<div class="card">{door_svg(0.5 if state == 'vault' else 0.0)}
-      <div class="lab"><i>BANK JOB · {_e(t['short'].upper())} · {tag}</i><b>{_e((room.get('approach') or 'the plan').upper())}</b></div>
+      <div class="lab"><i>BANK JOB · {_e(t['short'].upper())} · {tag}</i><b>{_e(_way(room))}</b></div>
       {sub}{meter}{_rows(room, names, faces)}<div class="chips">{_money(room)}</div></div>""")
 
 
