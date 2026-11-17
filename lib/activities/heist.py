@@ -407,7 +407,7 @@ def verdict(stake: int, base: float, r: dict) -> dict:
         return {"x": x, "net": net, "kind": "even",
                 "text": f"Out at {x:.2f}x: broke even" if not net
                 else f"Out at {x:.2f}x: stake back, broke even less the bank's cut ({net:,})" if up <= 0
-                else f"Out at {x:.2f}x: +{up:,} on the stake, less the bank's cut ({net:,})"}
+                else f"Out at {x:.2f}x: +{up:,} on the stake, net {net:,} (the bank's cut was {cut:,})"}
     if net > 0:
         return {"x": x, "net": net, "kind": "profit", "text": f"Out at {x:.2f}x: +{net:,}"}
     return {"x": x, "net": net, "kind": "short",

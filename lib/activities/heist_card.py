@@ -189,10 +189,12 @@ def _rows(room: dict, names: dict, faces: dict | None = None) -> str:
         elif r["how"] == "nicked":
             cls, big, small = "nicked", "NICKED", (f"-{stake:,}" if stake else "")
         else:
-            # against the buy-in, the bank's cut included: stake back reads as breaking even, not a loss
+            # against the buy-in, the bank's cut included: stake back reads as breaking even, not a loss. The figure
+            # is the net against the buy-in, not the cut (that's the BANK'S CUT chip): once you're past the stake in
+            # play the two differ, so it's labelled NET
             vd = heist.verdict(stake, base, r)
             cls, big = "out", f"{vd['x']:.2f}x"
-            small = (("BROKE EVEN" if not vd["net"] else f"BROKE EVEN · CUT {vd['net']:,}") if vd["kind"] == "even"
+            small = (("BROKE EVEN" if not vd["net"] else f"BROKE EVEN · NET {vd['net']:,}") if vd["kind"] == "even"
                      else f"{vd['net']:+,}" if stake else ("CLEARED IT" if r["how"] == "cleared" else "GOT OUT"))
             if stake and vd["kind"] in ("short", "even"):
                 cls = f"out {vd['kind']}"
