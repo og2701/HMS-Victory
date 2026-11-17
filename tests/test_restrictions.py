@@ -89,6 +89,7 @@ def test_every_blocked_name_is_a_real_command():
     src = Path(__file__).resolve().parent.parent / "lib" / "bot" / "setup_commands.py"
     registered = set(re.findall(r'@command\("([a-z0-9-]+)"', src.read_text()))
     assert registered, "could not read the command list - has the decorator changed?"
+    registered |= R.ACTIVITY_GAMES     # gated by the activity's API under the same name
     for tier in R.TIERS:
         unknown = R.blocks(tier) - registered
         assert not unknown, f"{tier} blocks commands that do not exist: {sorted(unknown)}"

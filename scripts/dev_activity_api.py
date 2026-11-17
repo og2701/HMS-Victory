@@ -76,6 +76,7 @@ def main(port: int) -> None:
     config.KART_TESTERS = [*getattr(config, "KART_TESTERS", []), PLAYER, RIVAL, THIRD]
     config.GUESSR_TESTERS = [*getattr(config, "GUESSR_TESTERS", []), PLAYER, RIVAL, THIRD]
     config.GUESSR_TEST_SPOTS = True         # UKGuessr: three known spots with test panoramas, without a Mapillary token
+    config.HEIST_TESTERS = [*getattr(config, "HEIST_TESTERS", []), PLAYER, RIVAL, THIRD]
     # Skyrim's saves too, so playing it here never touches this checkout's data/json
     for name in ("PROFILES", "DAILY", "GRAVEYARD", "WORLDBOSS"):
         setattr(config, f"SKYRIM_{name}_FILE", os.path.join(tmp, f"skyrim_{name.lower()}.json"))
@@ -93,14 +94,16 @@ def main(port: int) -> None:
     from lib.activities import auth, server
     from lib.activities.casino import base
     base._FILE = os.path.join(tmp, "activity_casino.json")
-    from lib.activities import countdown, countdown_posts, duel, duel_posts, kart, kart_posts, launcher
+    from lib.activities import countdown, countdown_posts, duel, duel_posts, heist, heist_posts, kart, kart_posts, launcher
     duel._FILE = os.path.join(tmp, "activity_duels.json")
     countdown._FILE = os.path.join(tmp, "activity_countdown.json")
     kart._FILE = os.path.join(tmp, "activity_kart.json")
+    heist._FILE = os.path.join(tmp, "activity_heist.json")
     _post_to_folder(launcher, os.path.join(tmp, "posts"))
     duel.listeners.append(duel_posts.on_event)
     countdown.listeners.append(countdown_posts.on_event)
     kart.listeners.append(kart_posts.on_event)
+    heist.listeners.append(heist_posts.on_event)
     from lib.core import restrictions
     restrictions.is_blocked = lambda uid, cmd: None
 
@@ -125,6 +128,7 @@ def main(port: int) -> None:
     guild = SimpleNamespace(get_member=lambda uid: members.get(int(uid)), members=list(members.values()))
     client = SimpleNamespace(maintenance_mode=False, session=None, get_guild=lambda gid: guild)
     base.CLIENT = client
+    heist.CLIENT = client
 
     async def run():
         from aiohttp import web
@@ -144,7 +148,10 @@ def main(port: int) -> None:
             print(f"kart ({who}): http://localhost:5174/?local={auth.make_session(uid, WORKSHOP)}&game=kart", flush=True)
         asyncio.get_running_loop().create_task(duel.run_sweeper())
         asyncio.get_running_loop().create_task(countdown.run_sweeper())
+        for who, uid in (("tester", PLAYER), ("rival", RIVAL), ("pooja", THIRD)):
+            print(f"bank job ({who}): http://localhost:5174/?local={auth.make_session(uid, WORKSHOP)}&game=heist", flush=True)
         asyncio.get_running_loop().create_task(kart.run_sweeper())
+        asyncio.get_running_loop().create_task(heist.run_sweeper())
         await asyncio.Event().wait()
 
     asyncio.run(run())

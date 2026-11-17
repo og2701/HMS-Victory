@@ -293,7 +293,7 @@ def test_penny_falls_counts_in_the_banks_figures(em, pf):
     play("pennyfalls", "cashout", {"dropped": 5, "won": 4})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["pennyfalls_in"], ledger["pennyfalls_out"], ledger["pennyfalls_net"]) == (200, 190, 10)
-    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-3] == 100
+    assert BankManager._game_amounts(100, "Davy Jones' Locker coins")[-4] == 100
 
 
 def test_the_bank_backfills_penny_falls_from_the_ledger_once(em):
@@ -473,7 +473,7 @@ def test_plinko_counts_in_the_banks_figures(em, monkeypatch):
     play("plinko", "deal", {"bet": 10, "risk": "low"})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["plinko_in"], ledger["plinko_out"], ledger["plinko_net"]) == (10, 80, -70)
-    assert BankManager._game_amounts(100, "Plinko bet")[-2] == 100
+    assert BankManager._game_amounts(100, "Plinko bet")[-3] == 100
     assert sum(BankManager._game_amounts(100, "Plinko win")) == 100
 
 
@@ -577,7 +577,7 @@ def test_baccarat_refuses_no_side_and_counts_in_the_banks_figures(em, monkeypatc
     play("baccarat", "deal", {"bet": 100, "side": "banker"})
     ledger = BankManager.get_ledger_stats()
     assert (ledger["baccarat_in"], ledger["baccarat_out"], ledger["baccarat_net"]) == (100, 0, 100)
-    assert BankManager._game_amounts(100, "Baccarat bet")[-1] == 100
+    assert BankManager._game_amounts(100, "Baccarat bet")[-2] == 100
 
 
 def test_every_game_has_rules_and_a_label(em):

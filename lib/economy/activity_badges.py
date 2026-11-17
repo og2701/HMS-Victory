@@ -1,4 +1,4 @@
-"""Badges for the activity's games: UKP Kart, Paperboy, Countdown, HMS Wordle and the crossword, the penalty
+"""Badges for the activity's games: UKP Kart, Paperboy, Countdown, Bank Job, HMS Wordle and the crossword, the penalty
 shootout, and the daily games together.
 
 Like game_badges, every check is best-effort: a failure here must never touch a race, a run or a payout, so each
@@ -134,6 +134,39 @@ def countdown_round(results: dict) -> None:
                 _award(uid, "countdown_nine")
     except Exception:
         logger.error("countdown badges failed", exc_info=True)
+
+
+# ---- Bank Job -----------------------------------------------------------------------------------------
+def heist_over(room: dict) -> None:
+    """A staked job, settled (and kept, so Banged Up's count includes it): who got out with something,
+    a clean vault job, a crew that did its job properly, anyone greedy enough, and anyone nicked once too often.
+    Free jobs earn nothing here, so a badge's reward can't be farmed without a buy-in at stake."""
+    try:
+        if not room.get("stake") or not room.get("results"):
+            return
+        results = room["results"]
+        for uid, r in results.items():
+            if r["how"] != "nicked" and r["payout"] > 0:
+                _award(uid, "heist_first")
+            if r["how"] != "nicked" and r["take"] >= 8:
+                _award(uid, "heist_greedy")
+        if room.get("target") == "vault" and room.get("how") == "clean":
+            for uid in results:
+                _award(uid, "heist_clean")
+        if len(results) >= 4 and (room.get("score") or 0) >= 0.9:
+            for uid in results:
+                _award(uid, "heist_mastermind")
+        nicked = [uid for uid, r in results.items() if r["how"] == "nicked"]
+        if nicked:
+            from database import DatabaseManager
+            for uid in nicked:
+                row = DatabaseManager.fetch_one(
+                    "SELECT COUNT(*) FROM game_record_players p JOIN game_records r ON r.game = p.game AND r.id = p.id "
+                    "WHERE p.game = 'heist' AND p.user_id = ? AND p.result = 'nicked' AND r.stake > 0", (str(uid),))
+                if row and int(row[0]) >= 5:
+                    _award(uid, "heist_banged_up")
+    except Exception:
+        logger.error("bank job badges failed for %s", room.get("id"), exc_info=True)
 
 
 # ---- the penalty shootout ----------------------------------------------------------------------------
