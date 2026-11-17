@@ -21,37 +21,63 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    The fence's **tip of the day** is the same target for everyone (seeded by the UK date) and holds 25% more. The
    **Old Bill** warm up with every staked job and halve every three hours. When they're hot, every vault holds up to
    40% less, so a run of big wins makes the next jobs smaller.
-2. **The way in (25s, or until everyone's voted).** The crew votes on a route into the branch, drawn on its cutaway:
-   the Village Branch has the front door or the back yard (3 rooms), the High Street the roof or front door (5) or
-   the drains (2, loud), the Vault the roof (7), front door (6) or drains (3, loud). A tie goes to the host. A random
-   **twist** for the night (rain, a shift change, Brian on the door, a 1962 Chubb) doubles one job's weight, or
-   makes the vault fill faster or slower. `lib/activities/heist_rooms.py` says which rooms each route goes through
-   and what's in them.
-3. **The rooms.** The crew walks the route a room at a time (6s between rooms, with how the last room went: every job in it, who did it and how). Each room has two to four
-   things in the way, each one job's: a keypad, a lock, a patrol, a route, someone to blag past, loot to load. Any
-   player whose job a room hasn't got gets a quick spare thing there instead (a padlock, the way out, a cash box), so
-   nobody stands about. Terry never gets these, they don't make the room's clock any longer, and they don't soften
-   a short crew: the alarm is weighed over the building's own things, so Terry's jobs cost what they always did, and
-   a spare done badly only adds to it. Its
-   holder picks **quiet** (play the puzzle, sized to the thing: a 3-digit code for a small keypad, the full puzzle
-   at the vault door) or **loud** (done at once, scored 35%). A thing whose job nobody holds goes to Terry, unless
+2. **The plan (25s, or until everyone's voted on both).** The crew votes on a route into the branch, drawn on its
+   cutaway (the Village Branch has the front door or the back yard, 3 rooms; the High Street the roof or front door,
+   5, or the drains, 2; the Vault the roof, 7, front door, 6, or drains, 3), and on going in **quiet** or **loud**.
+   A tie on either goes to the host. The drains are just the short way in now, for either: the old "loud" tag on
+   them meant nothing once the whole job is quiet or loud. A random **twist** for the night (rain, a shift change,
+   Brian on the door, a 1962 Chubb) doubles one job's weight, or makes the vault fill faster or slower.
+   `lib/activities/heist_rooms.py` says which rooms each route goes through and what's in them.
+3. **A quiet job: the rooms.** The crew walks the route a room at a time (6s between rooms, with how the last room
+   went: every job in it, who did it and how). Each room has two to four things in the way, each one job's: a keypad,
+   a lock, a patrol, a route, someone to blag past, loot to load. Any player whose job a room hasn't got gets a quick
+   spare thing there instead (a padlock, the way out, a cash box), so nobody stands about. Terry never gets these,
+   they don't make the room's clock any longer, and they don't soften a short crew: the alarm is weighed over the
+   building's own things, so Terry's jobs cost what they always did, and a spare done badly only adds to it. Each
+   player gets straight on with their thing as they walk in: its puzzle, sized to the thing (a 3-digit code for a
+   small keypad, the full puzzle at the vault door). There's no skipping it any more (the old "loud" on a thing, done
+   at once at 35%, is gone: the choice is the whole job's now). A thing whose job nobody holds goes to Terry, unless
    someone free taps **Step in** first and does it themselves at 80% of their score. The room ends when everything
-   in it is done or its clock runs out (20s plus enough for its biggest thing and 6s for each other); anything
-   unfinished is scored as it stands, and a thing nobody started scores 0.
+   in it is done or its clock runs out (20s plus enough for its biggest thing and 6s for each other, plus the
+   run-down below), so whoever finishes first waits for the rest; anything unfinished is scored as it stands.
 
-   **The run-down.** Going quiet doesn't throw you straight onto the clock. First comes a run-down of the puzzle:
-   what it is and how to play it (`lib/activities/heist_briefs.py`, a few lines for each of the 42 games). The
-   first time someone meets a game it's the full one, 12 seconds; after that it's a 4-second "ready" with a
-   one-line reminder; a game they haven't met in a month gets the full one again. The bot remembers who's met
-   what (`met` in the saved file), because a job never deals anyone the same game twice, so "the first time in
-   this job" would mean the full run-down in every room. The clock is the bot's, not the page's: the puzzle takes
-   no moves and its board isn't even sent until the run-down's over, and **GOT IT** starts it early. Each room's
-   clock grows by the longest run-down any player in it will get, so reading it never costs anyone time.
+   One **alarm** covers the whole job: every thing adds its weight (by size, doubled by the twist) times what it
+   missed by. If the alarm passes 85% the crew runs straight for the vault from wherever they are, and every thing
+   left scores 0. The job score J is 1 minus the alarm.
+4. **A loud job: the breach.** Real time, one timer for the whole crew. Each player gets up to three tasks, their own
+   things on the way in (the building's first, the most important first, then spares) and nothing for Terry, and
+   does them one after another at their own pace, moving on the moment they're done. Every task is a quick bit of
+   action (`heist_games/loud.py`), easier and quicker than a puzzle: the Hacker fries a panel, the Safecracker drills
+   a lock and the Wheelman rams a gate (tap while the swinging marker's in the zone), the Lookout smashes the cameras
+   and leaves the pigeons and the Face floors whoever reaches for the alarm (tap the right ones as they pop up), the
+   Muscle smashes and grabs (mash GRAB). The timer starts at 60s plus 15s a room on the way in (plus a run-down's
+   12s): 117s for the Village Branch, 147s for the High Street's front door, 177s for the Vault's roof. **Every task
+   done, by anyone, takes 5s off it and adds 1s of safe time in the vault**, each times how well it went; the safe
+   time starts at 3s and stops at 15s. When the timer runs out (or nobody has anything left to do) the whole crew's
+   in the vault, done or not, and a task never finished scores 0. A typical six-handed loud job is over in about a
+   minute; a quiet one takes one and a half to six and a half.
+
+   **Loose cash.** Anyone whose tasks are done picks up bonus tasks (an ATM, a till, a cash box) until the timer runs
+   out. Each pays a few UKPence straight to that player there and then (Bank Job loose cash), theirs whatever happens
+   in the vault: 3 UKPence at the smallest buy-in up to 15 at 1,000, the luck of the draw over the 4 below that (never
+   under 3) times how well it went, at most four of them and never past **3% of the buy-in a job**. None on a free
+   job; play money in practice. The main tasks help the whole crew (the timer and the safe time); loose cash is the
+   player's own.
+
+   A loud job's score J is the average of its tasks' scores, and its edge runs from 8% down to 4% (`loud_edge`).
+5. **The run-down.** No puzzle or task throws anyone straight onto the clock. First comes a run-down: what it is and
+   how to play it (`lib/activities/heist_briefs.py`, a few lines for each of the 42 games, the six loud tasks and the
+   three kinds of loose cash). The first time someone meets a game it's the full one, 12 seconds; after that it's a
+   4-second "ready" with a one-line reminder; a game they haven't met in a month gets the full one again. The bot
+   remembers who's met what (`met` in the saved file): a job never deals anyone the same game twice, so "the first
+   time in this job" would mean the full run-down in every room. The clock is the bot's, not the page's: the puzzle
+   takes no moves and its board isn't even sent until the run-down's over, and **GOT IT** starts it early. Each quiet
+   room's clock grows by the longest run-down any player in it will get, so reading it never costs anyone time.
 
    **Screenshots.** A memory puzzle can't be a lookup from a screenshot of what you were shown:
    - the Face's cover story is shown a line at a time (tap a line to read it, and the last one hides), and the
-     staff board (STAFF NAMES) a card at a time (tap a card to turn it, the rest stay face down), so one
-     screenshot holds one line or one card;
+     staff board (STAFF NAMES) a card at a time (tap a card to turn it, the rest stay face down; the board's up 2s
+     longer to make up), so one screenshot holds one line or one card;
    - then the guard only waits so long on each answer (9 seconds on the story, 7 on a name, timed on the page
      like the small talk's, and too slow counts as wrong), so flicking through a phone's photos runs him out;
    - the Wheelman's ROUTE MEMORY shows the way out as the van drives it, with only the turn it's at lit, never
@@ -69,43 +95,82 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
      (Dijkstra), squared, so a route a fifth too dear scores about 70%.
    - **Face:** learn the crew's cover story, then answer the guard's questions once it's hidden.
    - **Muscle:** load the most valuable bags that fit. Scored against the true best load (a knapsack). Muscle things
-     are **loot**: each one makes the vault hold up to 12% more, 36% at most.
+     are **loot**: each one makes the vault hold up to 12% more (18% done loud), 36% at most.
+6. **The report (8s).** How it went: the alarm (quiet) or the tasks done (loud), the safe time, the loot, any loose
+   cash, and the police's odds of arriving by 1.5x, 2x and 3x.
+7. **The vault: grab the cash.** Everyone **grabs**: each tap of GRAB keeps their bag up with the piles for half a
+   second (two taps a second will do; mashing doesn't add more), so a bag is what the piles gained while they kept
+   grabbing. First comes the **safe time**: a quiet job's is 4s for a botched job up to 12s for a clean one (4 + 8J);
+   a loud job's is what the crew earned in the breach (3-15s). The police can't come in it, but the piles only fill
+   from nothing to **break-even less the edge** (1 - e of the buy-in), so the safe time is comfort, not profit. Then
+   the piles climb on from there to the cap (with the loot added), slowly at first and faster at the end, and the
+   police can come at any moment. The **police scanner** is the tell: it shows the real chance the police turn up in
+   the next second, given they haven't yet (and the siren in the distance gets louder with it). It's the honest
+   hazard, the same for any job with this edge, cap and pace, so it shows how dicey holding on is, never when these
+   police will come. Each of the crew presses **Leg it** whenever they like and banks their buy-in times their bag.
+   Anyone still inside when the police arrive is nicked and loses their buy-in (loose cash already paid stays paid).
+   If the police never come before the cap, everyone left inside walks out with their bag. Someone who walked off has
+   the crew bag a bit for them (half of what the piles hold).
 
-   One **alarm** covers the whole job: every thing adds its weight (by size, doubled by the twist) times what it
-   missed by. If the alarm passes 85% the crew runs straight for the vault from wherever they are, and every thing
-   left scores 0.
-4. **The alarm (8s).** The job score J is 1 minus the alarm. The screen shows the police's odds of arriving by 1.5x,
-   2x and 3x, and says so if they're already at the door.
-5. **The vault.** The take climbs from 1x to the cap (with the loot added), slowly at first and faster at the end
-   (`cap ** (t / secs) ** 2`), so the low takes, where the police most often come, get a few seconds each. That only
-   paces it: when the police come is drawn as a take, so it changes nobody's odds. Each of the crew presses **Leg it**
-   whenever they like and banks their buy-in times the take at that moment. Anyone still inside when the police
-   arrive is nicked and loses their buy-in. If the police never come before the cap, everyone left inside clears the
-   vault at the cap.
+A Village Branch job takes about a minute and a half in the rooms quiet, the High Street about five and the Vault
+about six and a half; a loud one, about a minute.
 
-A Village Branch job takes about a minute and a half in the rooms, the High Street about five and the Vault about
-six and a half, so a crew that took a while to get together gets a proper game out of it.
+**Quick chat.** On every screen of a crew (the lobby, the plan, the rooms, the vault) a chat button opens a dozen
+set lines ("Hurry up!", "Nice one!", "Well done!", "Help!", "Leg it!", "Oops", "Where's Terry?", "Put the kettle on",
+"It's Brian!", "Shh!", "Hold your nerve!", "Grab it all!"); the line pops up for the whole crew for a few seconds as a
+bubble with the sender's face. No free text: the bot only takes a line from its list (`heist.CHAT`), and one every
+2.5 seconds per player. Bot crewmates in practice pipe up now and then (a "Nice one!" or an "Oops" as they finish
+something, a "Leg it!" as they get out).
 
 ## The money
 
 ### What the bank keeps
 
-The police arrive at take `M = (1 - e) / U`, where U is uniform on (0, 1]. The chance the take reaches m before
-they do is `(1 - e) / m`, so leaving at m returns `m * (1 - e) / m = 1 - e` of the buy-in. That is the same at
-every m, so **no strategy beats the house edge e**: not legging it early, not holding to the cap, not anything in
-between. The edge depends only on how well the crew did its job:
+The vault has two parts. In the **safe time** (S seconds) the piles fill from 0 to `b = 1 - e`, and the police can't
+come. After it they climb from b to the cap, and the police arrive at take `M = (1 - e) / U`, where U is uniform on
+(0, 1], so M is never below b and they never come in the safe time. The chance the piles reach m (at least b) before
+the police do is `(1 - e) / m`.
 
-`e = 0.08 - 0.07 * J`, so 8% for a botched job and 1% for a perfect one.
+- **Leaving after the safe time, bag kept up.** A bag kept up with the piles is worth m, so leaving at m returns
+  `m * (1 - e) / m = 1 - e`. That is the same at every m, so no moment beats any other: not as the safe time ends,
+  not at the cap, not anywhere in between.
+- **Leaving in the safe time.** Sure money, but the piles are below b: leaving at t returns `b * t / S < 1 - e`.
+  That's what pays for the safe time: however long it is (4s or 15s), nothing in it is worth more than 1 - e.
+- **Grabbing.** A grab keeps the bag up for half a second, and the bag only gains what the piles gained over the time
+  it was kept up, so it's never worth more than the piles. A bag kept up a fraction q of the way returns q of the
+  above (at most). Perfect grabbing (or a page doctored to grab perfectly) reaches 1 - e and no further. Grabs sent
+  from the future, out of order or more than 2s late are dropped.
+- **Any strategy at all.** The only thing anyone can see during the vault is that the police haven't come yet, and
+  the scanner, which is a fixed function of time (the same for every job with this edge, cap and pace). So any way of
+  deciding when to go, off the scanner, a hunch or the crew, comes down to a moment chosen without knowing M, and
+  every moment returns at most 1 - e. **No strategy beats the house edge e.**
 
-Simulated return to players (400k jobs per row; `test_the_bank_keeps_its_edge_however_long_anyone_waits`
-checks the same thing on every test run):
+The edge depends on the job:
 
-| Job score J | Edge | Return if everyone legs it at 1.2x | Return if everyone holds to the cap |
-|---|---|---|---|
-| 0.0 (all Terry) | 8% | 0.920 | 0.91-0.93 |
-| 0.5 | 4.5% | 0.955 | 0.95-0.96 |
-| 0.75 | 2.75% | 0.973 | 0.97-0.98 |
-| 1.0 (perfect) | 1% | 0.990 | 0.98-1.00 |
+- **Quiet:** `e = 0.08 - 0.07 * J`, so 8% for a botched job and 1% for a perfect one.
+- **Loud:** `e = 0.08 - 0.04 * J`, so 8% for a botched breach and 4% for a perfect one. On top of it a player can pick
+  up loose cash, at most 3% of the buy-in a job. The best a loud job can ever return, all its loose cash included, is
+  `1 - 0.04 + 0.03 = 0.99`: the same as a perfect quiet job, never better. A loud job is quicker and easier; a quiet
+  one is where the best odds are.
+
+Simulated return to players (400k vaults per row, cap 6x, a 28s climb; `test_the_vault_with_its_grab_safe_time_and_
+scanner_never_beats_the_edge` and `test_a_loud_job_with_all_its_loose_cash_never_beats_a_perfect_quiet_one` check the
+same on every test run, over the grab, both lengths of safe time, random moments and the scanner):
+
+| Job | Edge | Safe time | Out just before safe ends | Out as it ends | Out at 1.5x | Hold to the cap | 1.5x, slow grabber (80%) | Out when the scanner says 5%/s |
+|---|---|---|---|---|---|---|---|---|
+| Quiet, J = 0.0 | 8.0% | 4s | 0.805 | 0.920 | 0.922 | 0.922 | 0.737 | 0.922 |
+| Quiet, J = 0.5 | 4.5% | 8s | 0.895 | 0.955 | 0.956 | 0.960 | 0.765 | 0.955 |
+| Quiet, J = 0.75 | 2.7% | 10s | 0.924 | 0.973 | 0.972 | 0.968 | 0.777 | 0.972 |
+| Quiet, J = 1.0 | 1.0% | 12s | 0.949 | 0.990 | 0.991 | 0.992 | 0.793 | 0.990 |
+| Loud, J = 0.0, max loose cash | 8.0% | 9s | 0.899 | 0.950 | 0.950 | 0.954 | 0.766 | 0.950 |
+| Loud, J = 0.5, max loose cash | 6.0% | 9s | 0.918 | 0.970 | 0.970 | 0.975 | 0.782 | 0.971 |
+| Loud, J = 1.0, max loose cash | 4.0% | 9s | 0.937 | 0.990 | 0.990 | 0.990 | 0.798 | 0.990 |
+
+"Out when the scanner says 5%/s" is going the first moment the scanner shows a 5% chance of the police in the next
+second; any other level gives the same, as it's just another moment. The loud rows count the most loose cash on top.
+"Hold to the cap" wobbles by about half a point either way between runs: it rests on the few vaults the police never
+reach, each paying the whole cap.
 
 The other house games sit at 2-7% (Mines and Penalty 2%, Plinko and Blockade 3%, Glass Bridge 4%, Chest 5%,
 Darts 7%). A typical crew of real people, with a mix of good and bad rounds and a role or two left to Terry, should
@@ -131,7 +196,9 @@ are `reserve_policy.bank_reserves()`: free reserves, the bank's balance less the
 | 85,000 | 80k | 250 | 100 | 50 |
 | 5,000 (the floor) | 0 | free only | free only | free only |
 
-So a single job can never take more than 15% of the spare reserves. The chance of that worst case is about
+A bag is never worth more than the piles, so grabbing can't add to this; a loud job's loose cash adds at most 3% of
+the buy-in each, under 0.2% of the worst case. So a single job can never take more than about 15% of the spare
+reserves. The chance of that worst case is about
 `(1 - e) / cap`: under 8% at the Vault, and only if all six hold their nerve to the very end. As the bank nears its
 floor, the game shrinks to free jobs on its own. The heat then cuts caps after any run of luck.
 
@@ -211,8 +278,10 @@ alarm, vault and police) with play money:
   always six and Two-Pint Terry never turns up (unless someone walks off). The bots back whatever way in the crew
   votes for, so the plan waits only on the people. Each bot rolls a skill level (35-95%); in every room it gets
   straight on with its things and finishes each 30-85% of the way into the room's time, with a score near its
-  skill. It legs it from the vault at a moment it picked (some bottle it early, some hold to the cap), and one
-  still inside when the police come is nicked like anyone else. Bots have negative ids in the room and are
+  skill; in a loud job it does its tasks one after another, each 6-14s, and its scores cut the timer like anyone's
+  (bots don't go after loose cash). In the vault it grabs about as well as its skill (75-100% of the piles) and legs
+  it at a moment it picked (some bottle it early, some hold to the cap), and one still inside when the police come is
+  nicked like anyone else. Your own loose cash in practice is play money. Bots have negative ids in the room and are
   marked `bot` in what the page sees.
 - **Play money.** The buy-in can be anything up to the target's own limit whatever the reserves, and needs nothing
   in your wallet. Nothing moves: no buy-in taken, no take paid, no clean job bonus, no heat, no badges, no

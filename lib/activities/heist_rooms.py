@@ -31,7 +31,7 @@ ROOMS = {
                                      ("muscle", "LOAD THE VAN", "loot"), ("wheelman", "THE GETAWAY", "big")]),
 }
 
-# each branch: its ways in (name, rooms in order, seconds for the vault to fill, whether it's the loud way) and
+# each branch: its ways in (name, rooms in order, seconds for the vault to fill; any of them quiet or loud) and
 # where its rooms sit on its cutaway
 BUILDINGS = {
     "post": {
@@ -45,7 +45,7 @@ BUILDINGS = {
         "routes": {
             "roof": {"name": "ROOF", "rooms": ["roof", "office", "security", "stairs", "vaultdoor"], "secs": 30.0},
             "front": {"name": "FRONT DOOR", "rooms": ["street", "hall", "security", "stairs", "vaultdoor"], "secs": 28.0},
-            "drains": {"name": "DRAINS", "rooms": ["drains", "vaultdoor"], "secs": 20.0, "loud": True},
+            "drains": {"name": "DRAINS", "rooms": ["drains", "vaultdoor"], "secs": 20.0},
         },
         "pins": {"roof": (42, 11), "office": (30, 25), "security": (75, 27), "street": (15, 44), "hall": (50, 44),
                  "stairs": (86, 45), "vaultdoor": (50, 64), "drains": (50, 90)},
@@ -56,7 +56,7 @@ BUILDINGS = {
                      "secs": 32.0},
             "front": {"name": "FRONT DOOR", "rooms": ["street", "hall", "security", "lasers", "lift", "vaultdoor"],
                       "secs": 30.0},
-            "drains": {"name": "DRAINS", "rooms": ["drains", "lift", "vaultdoor"], "secs": 22.0, "loud": True},
+            "drains": {"name": "DRAINS", "rooms": ["drains", "lift", "vaultdoor"], "secs": 22.0},
         },
         "pins": {"roof": (50, 9), "office": (40, 21), "security": (65, 31), "hall": (50, 45), "street": (15, 45),
                  "lasers": (60, 55), "lift": (16, 67), "vaultdoor": (60, 70), "drains": (50, 87)},

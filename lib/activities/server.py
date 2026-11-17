@@ -30,8 +30,8 @@ mapping's prefix isn't worth betting the launch on:
     GET  /heist               Bank Job: your crew, the crews you could join, the targets, the heat and the board
     POST /heist/open {stake, target, role, practice?},/heist/join {id, role?}, /heist/role {id, role},
          /heist/target {id, target, stake?}, /heist/leave|start {id}
-    GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach}, /heist/room/<id>/play {...the puzzle's move},
-         /heist/room/<id>/leg, /heist/room/<id>/leave
+    GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach?, style?}, /heist/room/<id>/play {...the puzzle's move},
+         /heist/room/<id>/grab {taps}, /heist/room/<id>/leg {taps?}, /heist/room/<id>/say {key}, /heist/room/<id>/leave
     GET  /kart                UKP Kart: your race room and the ones you could join
     POST /kart/open {stake, car, track?}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
@@ -1004,11 +1004,17 @@ async def heist_room(request):
     rid, action, uid = request.match_info["id"], request.match_info.get("action"), who["uid"]
     try:
         if action == "vote":
-            heist.vote(uid, rid, str((await _duel_body(request)).get("approach") or ""))
+            body = await _duel_body(request)
+            heist.vote(uid, rid, str(body["approach"]) if body.get("approach") else None,
+                       str(body["style"]) if body.get("style") else None)
+        elif action == "say":
+            heist.say(uid, rid, str((await _duel_body(request)).get("key") or ""))
+        elif action == "grab":
+            heist.grab(uid, rid, (await _duel_body(request)).get("taps"))
         elif action == "play":
             heist.play(uid, rid, await _duel_body(request))
         elif action == "leg":
-            heist.leg_it(uid, rid)
+            heist.leg_it(uid, rid, (await _duel_body(request)).get("taps"))
         elif action == "leave":
             heist.leave(uid, rid)
         elif action is not None:

@@ -1,8 +1,8 @@
 """A stand-in crew for testing Bank Job on this machine, run only by scripts/dev_activity_api.py (the live bot
 never imports it). A few pretend players join any crew a tester opens, take a free job, vote on the way in,
-then go through the rooms doing what's theirs (mostly quietly, now and then loud, sometimes stepping in for
-Terry), read (or skip) each puzzle's run-down, play each puzzle about as well as a middling person would, and leg it from the vault at a take they
-picked going in.
+and quiet or loud (mostly quiet), then go through the job doing what's theirs (sometimes stepping in for Terry in
+a quiet one), read (or skip) each run-down, play each puzzle or loud task about as well as a middling person
+would, grab at the vault's piles a few times a second and leg it at a take they picked going in.
 
 They go through heist's own functions, the same ones the page's moves reach, so everything they do is a real
 move in a real job. DEV_HEIST_BOTS sets how big they fill a crew to (4 by default, 0 for none)."""
@@ -159,20 +159,18 @@ def tick(heist, humans: set[int], minds: dict, joins: dict, rng: random.Random, 
             try:
                 if r["state"] == "plan" and str(uid) not in r["votes"] and now >= m.next:
                     ways = list(heist.rooms_of.routes(r["target"]))
-                    heist.vote(uid, r["id"], ways[0] if rng.random() < 0.5 else rng.choice(ways))
+                    heist.vote(uid, r["id"], ways[0] if rng.random() < 0.5 else rng.choice(ways),
+                               "loud" if rng.random() < 0.25 else "quiet")
                     m.wait(now, 2, 4)
                 elif r["state"] == "job" and now >= r["arrive"] and now >= m.next:
-                    here = [th for i, th in heist._things(r) if i == r["at"]]
-                    mine = next((th for th in here if th["who"] == uid and th["state"] in ("ready", "active")), None)
+                    mine = heist._current(r, uid)
                     if mine is None:
-                        # nothing of theirs left in this room: now and then, help Terry out
+                        # nothing of theirs on: now and then, help Terry out (a quiet job)
+                        here = [th for i, th in heist._things(r) if i == r["at"]]
                         lonely = [th for th in here if th["state"] == "terry"]
                         if lonely and rng.random() < 0.25:
                             heist.play(uid, r["id"], {"ob": rng.choice(lonely)["id"], "step": True})
                         m.wait(now, 2, 4)
-                    elif mine["state"] == "ready":
-                        heist.play(uid, r["id"], {"ob": mine["id"], "take": "loud" if rng.random() < 0.12 else "quiet"})
-                        m.wait(now, 1, 2.5)
                     elif now < mine.get("go", 0):
                         if rng.random() < 0.5:                   # reads the run-down, or knows the drill already
                             heist.play(uid, r["id"], {"ob": mine["id"], "go": True})
@@ -184,8 +182,13 @@ def tick(heist, humans: set[int], minds: dict, joins: dict, rng: random.Random, 
                 elif r["state"] == "vault":
                     v = r["vault"]
                     t = now - v["start"]
-                    if str(uid) not in v["out"] and t >= 0 and heist.take_at(t, r["cap"], v["secs"]) >= m.goal:
-                        heist.leg_it(uid, r["id"])
+                    if str(uid) not in v["out"] and t >= 0:
+                        # a grab or two since the last tick (every 0.4s), so the bag keeps up with the piles
+                        taps = [t - 0.25, t] if rng.random() < 0.9 else []
+                        if t >= v["safe"] and heist.pile_at(v, r["cap"], t) >= m.goal:
+                            heist.leg_it(uid, r["id"], taps)
+                        elif taps:
+                            heist.grab(uid, r["id"], taps)
             except heist.Refuse:
                 m.wait(now, 1, 2)
     for key in [k for k in minds if k[0] not in heist._rooms or heist._rooms[k[0]].get("over")]:

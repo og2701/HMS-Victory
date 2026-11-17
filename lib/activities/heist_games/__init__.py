@@ -70,12 +70,15 @@ FIRST_TITLES = {"keypad": "CRACK THE KEYPAD", "dial": "FEEL FOR THE TUMBLERS", "
 GAMES: dict[str, dict[str, Game]] = {}
 for _role in ROLES:
     try:
-        GAMES[_role] = dict(importlib.import_module(f"{__name__}.{_role}").GAMES)
+        GAMES[_role] = dict(importlib.import_module(f"{__name__}.{_role}").GAMES)   # (loud.py's are got by get())
     except ImportError:
         GAMES[_role] = {}
 
 
 def get(role: str, key: str | None) -> Game | None:
+    if key == "loud" or (key or "").startswith("loose-"):
+        from lib.activities.heist_games.loud import LOOSE, LOUD
+        return LOUD.get(role) if key == "loud" else LOOSE.get(key[6:])
     return GAMES.get(role, {}).get(key) if key else None
 
 

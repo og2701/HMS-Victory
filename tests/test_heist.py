@@ -1,5 +1,5 @@
 """Bank Job: the crew and its roles, the targets' limits, every role's puzzle and how it's judged, the run-down
-before each, the vault's maths (the bank keeps its edge however anyone plays), settling buy-ins and takes, the clean
+before each, quiet jobs and loud ones (the breach, loose cash), the vault's grab, safe time and scanner, its maths (the bank keeps its edge however anyone plays), settling buy-ins and takes, the clean
 job bonus, and the clocks pausing over a restart."""
 
 import json
@@ -91,17 +91,15 @@ def here(rid):
     return [th for i, th in H._things(r) if i == r["at"]]
 
 
-def clear_room(em, rid, how="quiet"):
-    """Walk into the room the crew's at and do everything that's someone's, perfectly (or loudly)."""
+def clear_room(em, rid):
+    """Walk into the room the crew's at and do everything that's a player's, perfectly (cutting the run-down short)."""
     r = H._rooms[rid]
     tick(em, H.MOVE_SECONDS + 0.01)
     for th in here(rid):
-        if th["state"] == "ready":
-            H.play(th["who"], rid, {"ob": th["id"], "take": how})
-            if how == "quiet":
-                H.play(th["who"], rid, {"ob": th["id"], "go": True})       # GOT IT, past the run-down
-                for mv in moves(th["role"], th["p"]):
-                    H.play(th["who"], rid, {"ob": th["id"], **mv})
+        if th["state"] == "active" and th.get("bot") is None:
+            H.play(th["who"], rid, {"ob": th["id"], "go": True})       # GOT IT, past the run-down
+            for mv in moves(th["role"], th["p"]):
+                H.play(th["who"], rid, {"ob": th["id"], **mv})
     if r["state"] == "job" and r["at"] == r.get("at") and any(th["state"] == "terry" for th in here(rid)):
         tick(em, H.TERRY_AFTER[1] + 0.1)                # Terry's things: wait for him
         H.room(r["host"], rid, name_of)
@@ -142,26 +140,68 @@ def best_load(bags, cap):
     return pick
 
 
-def to_vault(em, rid, police_take=None, way=None):
+def to_vault(em, rid, police_take=None, way=None, style="quiet"):
     """Vote on the way in, go through every room doing what's yours perfectly, and open the vault with the police
     coming at ``police_take`` (None: never)."""
     r = H._rooms[rid]
     present = [u for u in r["players"] if u not in r["left"]]
     for u in present:
-        H.vote(u, rid, way or next(iter(H.rooms_of.routes(r["target"]))))
+        H.vote(u, rid, way or next(iter(H.rooms_of.routes(r["target"]))), style)
     assert r["state"] == "job"
+    if style == "loud":
+        loud_through(em, rid)
     while r["state"] == "job":
         clear_room(em, rid)
     assert r["state"] == "report"
     v = r["vault"]
-    v["police"] = None if police_take is None else H.time_at(police_take, r["cap"], v["secs"])
+    v["police"] = None if police_take is None else H.police_time(police_take, r["cap"], v["secs"], v["base"], v["safe"])
     tick(em, H.REPORT_SECONDS)
     H.room(r["host"], rid, name_of)
     assert r["state"] == "vault"
 
 
+def loud_through(em, rid, loose=True):
+    """A loud job's breach: everyone does every task they get, perfectly (loose cash too, if ``loose``), then waits."""
+    r = H._rooms[rid]
+    tick(em, H.MOVE_SECONDS + 0.01)
+    for _ in range(200):
+        if r["state"] != "job":
+            return
+        busy = False
+        for u in [u for u in r["players"] if u not in r["left"] and u > 0]:
+            th = H._current(r, u)
+            if th is None or (th["mode"] == "loose" and not loose):
+                continue
+            busy = True
+            H.play(u, rid, {"ob": th["id"], "go": True})
+            for mv in moves(th["role"], th["p"]):
+                if r["state"] == "job":
+                    H.play(u, rid, {"ob": th["id"], **mv})
+        if not busy:
+            break
+    tick(em, max(0.0, r.get("deadline", 0) - H.time.time()) + 0.01)
+    H.room(r["host"], rid, name_of)
+
+
 def secs_to(r, take):
-    return H.time_at(take, r["cap"], r["vault"]["secs"])
+    """Seconds into the vault until the piles reach ``take`` (past the safe time)."""
+    v = r["vault"]
+    return v["safe"] + H.time_at(take, r["cap"], v["secs"], v["base"])
+
+
+def grab_to(em, rid, t, uids=(A, B, D), every=0.25):
+    """Move on to ``t`` seconds into the vault, everyone in ``uids`` grabbing every ``every`` seconds."""
+    r = H._rooms[rid]
+    v = r["vault"]
+    while em.clock[0] - v["start"] < t - 1e-9 and not r.get("over"):
+        tick(em, min(every, t - (em.clock[0] - v["start"])))
+        at = em.clock[0] - v["start"]
+        for u in uids:
+            if str(u) not in v["out"] and not r.get("over"):
+                try:
+                    H.grab(u, rid, [at])
+                except H.Refuse:
+                    pass
 
 
 # ---- the puzzles ------------------------------------------------------------------------------
@@ -236,11 +276,8 @@ def test_the_page_never_sees_an_answer(em):
     rid = crew(em, stake=0)
     r = H._rooms[rid]
     for u in r["players"]:
-        H.vote(u, rid, "front")
+        H.vote(u, rid, "front", "quiet")
     tick(em, H.MOVE_SECONDS + 0.01)
-    for th in here(rid):
-        if th["state"] == "ready":
-            H.play(th["who"], rid, {"ob": th["id"], "take": "quiet"})
     for u in r["players"]:                    # in the run-down: not even the puzzle's public part yet
         p = H.view(r, u, name_of)["puzzle"]
         assert p["briefing"]["how"] and "g" not in p and "story" not in p and "len" not in p
@@ -267,6 +304,100 @@ def test_the_bank_keeps_its_edge_however_long_anyone_waits():
     assert H.edge(1.0) == pytest.approx(H.EDGE_BEST) and H.edge(0.0) == pytest.approx(H.EDGE_WORST)
 
 
+def _vault(e, cap=6.0, secs=28.0, safe=8.0):
+    return {"start": 0.0, "secs": secs, "safe": safe, "base": 1 - e, "out": {}, "grab": {}}, cap
+
+
+def _returns(e, cap, secs, safe, n, rng):
+    """The police's moment for n jobs, and a function giving the mean payout of a strategy over them: leave at
+    leave(i) seconds with the bag kept up ``keep`` of the way, plus ``loose`` of the buy-in paid on the way in."""
+    v, cap = _vault(e, cap, secs, safe)
+    end = v["safe"] + v["secs"]
+    police = [H.police_time(H.police_take(e, rng.random() or 1e-12), cap, secs, v["base"], v["safe"]) for _ in range(n)]
+
+    def rtp(leave, keep=1.0, loose=0.0):
+        total = 0.0
+        for i, p in enumerate(police):
+            t = min(leave(i), end)
+            if p is None or t < p:
+                total += keep * H.pile_at(v, cap, t)
+        return total / n + loose
+    return v, cap, end, police, rtp
+
+
+def test_the_vault_with_its_grab_safe_time_and_scanner_never_beats_the_edge():
+    """The whole vault as it's played, simulated: the safe time (short or long), the climb, a bag grabbed well or
+    badly, and every way of picking a moment to go (in the safe time, after it, at the cap, at random, or off the
+    scanner). Nothing returns more than 1 - edge of the buy-in; a perfect grabber who goes after the safe time gets
+    exactly that, and a slow one less."""
+    rng = random.Random(11)
+    n = 120_000
+    for score, cap, secs, safe in ((0.0, 3.0, 26.0, H.SAFE_QUIET[0]), (0.6, 6.0, 28.0, 8.8),
+                                   (1.0, 12.0 * 1.25 * 1.36, 32.0, H.SAFE_QUIET[1]), (1.0, 6.0, 28.0, H.LOUD_SAFE[2])):
+        e = H.edge(score)
+        best = 1 - e
+        v, cap, end, police, rtp = _returns(e, cap, secs, safe, n, rng)
+        assert all(p is None or p >= v["safe"] for p in police)          # never in the safe time
+        for t in (1.0, v["safe"] / 2, v["safe"] - 0.01):                 # going in the safe time: sure, but below 1 - e
+            got = rtp(lambda i, t=t: t)
+            assert got == pytest.approx(best * t / v["safe"], abs=1e-9) and got < best
+        for t in (v["safe"], v["safe"] + 0.3 * secs, v["safe"] + 0.7 * secs, end):      # after it: 1 - e, at most
+            assert rtp(lambda i, t=t: t) == pytest.approx(best, abs=0.012), (score, t)
+        for keep in (0.9, 0.6):                                           # a slow grabber: less
+            assert rtp(lambda i: v["safe"] + 0.5 * secs, keep) == pytest.approx(keep * best, abs=0.012)
+        jitter = [rng.uniform(0, end) for _ in range(n)]                # going at a random moment
+        assert rtp(lambda i: jitter[i]) <= best + 0.01
+        for h in (0.02, 0.05, 0.1, 0.2):                                 # off the scanner: go when the risk gets to h
+            t = next((x / 20 for x in range(int(end * 20) + 1) if H.hazard(v, cap, x / 20) >= h), end)
+            assert rtp(lambda i, t=t: t) <= best + 0.012, (score, h)
+
+
+def test_a_loud_job_with_all_its_loose_cash_never_beats_a_perfect_quiet_one():
+    """Loud: the vault at the loud edge, plus the most loose cash anyone can pick up, however they play the vault.
+    The best of it is a perfect quiet job's 1 - EDGE_BEST, and nothing beats 1 - loud edge + LOOSE_MAX."""
+    rng = random.Random(12)
+    for score in (0.0, 0.5, 1.0):
+        e = H.loud_edge(score)
+        v, cap, end, police, rtp = _returns(e, 6.0, 28.0, H.LOUD_SAFE[2], 100_000, rng)
+        for t in (v["safe"], v["safe"] + 10, end):
+            got = rtp(lambda i, t=t: t, loose=H.LOOSE_MAX)
+            assert got <= 1 - e + H.LOOSE_MAX + 0.012 and got <= 1 - H.EDGE_BEST + 0.012, (score, t)
+
+
+def test_a_bag_is_never_worth_more_than_the_piles(em):
+    """However the grabs come in (all of them, a few, late, out of order, from the future), the bag never passes what
+    the piles hold, and grabbing every GRAB_WINDOW or quicker keeps it right up with them."""
+    rng = random.Random(5)
+    for trial in range(60):
+        e = rng.uniform(H.EDGE_BEST, H.EDGE_WORST)
+        v, cap = _vault(e, rng.choice([3.0, 6.0, 12.0]), 28.0, rng.uniform(4, 15))
+        v["police"] = None
+        room = {"vault": v, "cap": cap, "left": [], "bots": {}}
+        every = rng.choice([0.1, 0.25, 0.3, 0.45, 1.0, 2.5])
+        t = 0.0
+        while t < v["safe"] + v["secs"]:
+            t += every
+            taps = [t] if rng.random() < 0.9 else [t + 5, t - 3, t - 0.1, t]      # some junk among them
+            H._grab(room, A, taps, t)
+            assert H.bag(room, A, t) <= H.pile_at(v, cap, t) + 1e-9
+        if every <= H.GRAB_WINDOW:
+            assert H.bag(room, A, t) == pytest.approx(H.pile_at(v, cap, t), rel=0.02)
+
+
+def test_the_scanner_is_the_honest_hazard():
+    """What the scanner shows is the real chance the police come in the next second: no more, no less, and the same
+    whatever this job's police draw is (it isn't in it)."""
+    rng = random.Random(3)
+    e = H.edge(0.5)
+    v, cap = _vault(e, 6.0, 28.0)
+    police = [H.police_time(H.police_take(e, rng.random() or 1e-12), cap, 28.0, v["base"], v["safe"]) for _ in range(200_000)]
+    assert H.hazard(v, cap, 2.0) == 0.0                                   # the safe time
+    for t in (v["safe"], 14.0, 22.0, 30.0):
+        alive = [p for p in police if p is None or p > t]
+        came = sum(1 for p in alive if p is not None and p <= t + 1.0)
+        assert came / len(alive) == pytest.approx(H.hazard(v, cap, t), abs=0.01), t
+
+
 def test_the_take_climbs_from_one_to_the_cap():
     assert H.take_at(0, 6.0, 30) == 1.0
     assert H.take_at(15, 16.0, 30) == pytest.approx(2.0)                   # halfway in time, a quarter of the way in powers
@@ -282,7 +413,7 @@ def test_no_role_plays_the_same_game_twice_in_a_heist(em):
     rid = crew(em, players=(A, B, D), stake=0, target="vault")
     r = H._rooms[rid]
     for u in (A, B, D):
-        H.vote(u, rid, "roof")
+        H.vote(u, rid, "roof", "quiet")
     played: dict[str, list[str]] = {}
     for _, th in H._things(r):
         played.setdefault(th["role"], []).append(th["p"].get("game") or H.heist_games.FIRST[th["role"]])
@@ -299,15 +430,15 @@ def test_the_way_in_is_the_crews_vote_and_the_host_breaks_a_tie(em):
     r = H._rooms[rid]
     with pytest.raises(H.Refuse, match="way in"):
         H.vote(A, rid, "quiet")
-    H.vote(A, rid, "roof")
-    H.vote(B, rid, "drains")
-    H.vote(D, rid, "drains")
+    H.vote(A, rid, "roof", "quiet")
+    H.vote(B, rid, "drains", "quiet")
+    H.vote(D, rid, "drains", "quiet")
     assert r["state"] == "job" and r["approach"] == "drains"
     assert [x["key"] for x in r["rooms"]] == H.rooms_of.routes("society")["drains"]["rooms"]
     r["over"] = True
     rid = crew(em, players=(A, B), stake=0, target="society")
-    H.vote(A, rid, "roof")
-    H.vote(B, rid, "front")
+    H.vote(A, rid, "roof", "quiet")
+    H.vote(B, rid, "front", "quiet")
     assert H._rooms[rid]["approach"] == "roof"                    # a tie: the host's way
 
 
@@ -315,29 +446,33 @@ def test_a_room_goes_to_whoever_has_the_job_and_terry_does_the_rest(em):
     rid = crew(em, players=(A, B), stake=0, target="post")       # Anne the Hacker, Ben the Safecracker
     r = H._rooms[rid]
     for u in (A, B):
-        H.vote(u, rid, "front")
+        H.vote(u, rid, "front", "quiet")
     things = here(rid)                                            # the shop: the bell, Maureen, the till
     assert {th["role"]: th["state"] for th in things if not th["spare"]} == {"lookout": "terry", "face": "terry", "muscle": "terry"}
-    # and a spare job each for Anne and Ben, whose roles the shop hasn't got
-    assert {th["role"]: (th["state"], th["who"]) for th in things if th["spare"]} == {"hacker": ("ready", A), "safecracker": ("ready", B)}
+    # and a spare job each for Anne and Ben, whose roles the shop hasn't got: they're on them as they walk in
+    assert {th["role"]: (th["state"], th["who"]) for th in things if th["spare"]} == {"hacker": ("active", A), "safecracker": ("active", B)}
     with pytest.raises(H.Refuse, match="not in the room"):
         H.play(A, rid, {"ob": things[0]["id"], "step": True})
     tick(em, H.MOVE_SECONDS + 0.01)
     mine = next(th for th in things if th["spare"] and th["who"] == A)
     with pytest.raises(H.Refuse, match="Finish"):
         H.play(A, rid, {"ob": things[1]["id"], "step": True})   # her own spare first
-    H.play(A, rid, {"ob": mine["id"], "take": "loud"})
+    H.play(A, rid, {"ob": mine["id"], "go": True})
+    for mv in moves(mine["role"], mine["p"]):
+        H.play(A, rid, {"ob": mine["id"], **mv})
     H.play(A, rid, {"ob": things[1]["id"], "step": True})       # then Anne steps in for Maureen
     with pytest.raises(H.Refuse, match="Finish"):
         H.play(A, rid, {"ob": things[2]["id"], "step": True})
     th = things[1]
-    H.play(A, rid, {"ob": th["id"], "take": "quiet"})
+    assert th["state"] == "active" and th["go"] > H.time.time()   # a run-down for that one too
     H.play(A, rid, {"ob": th["id"], "go": True})
     for mv in moves("face", th["p"]):
         H.play(A, rid, {"ob": th["id"], **mv})
     assert th["state"] == "done" and th["score"] == pytest.approx(H.STEP_IN)    # not her job: a bit worse
     ben = next(th for th in things if th["spare"] and th["who"] == B)
-    H.play(B, rid, {"ob": ben["id"], "take": "loud"})
+    H.play(B, rid, {"ob": ben["id"], "go": True})
+    for mv in moves(ben["role"], ben["p"]):
+        H.play(B, rid, {"ob": ben["id"], **mv})
     tick(em, H.TERRY_AFTER[1] + 0.1)
     H.room(A, rid, name_of)
     assert r["at"] == 1                                           # Terry's done his bits: on to the office
@@ -349,7 +484,7 @@ def test_everyone_in_the_crew_has_something_to_do_in_every_room(em):
     rid = crew(em, players=(A, B, D), stake=0, target="vault")   # a Hacker, a Safecracker and a Lookout
     r = H._rooms[rid]
     for u in (A, B, D):
-        H.vote(u, rid, "roof")
+        H.vote(u, rid, "roof", "quiet")
     held = set(r["roles"].values())
     for rm in r["rooms"]:
         assert held <= {th["role"] for th in rm["things"]}
@@ -362,18 +497,83 @@ def test_everyone_in_the_crew_has_something_to_do_in_every_room(em):
     assert H._room_secs(office) == H.rooms_of.room_seconds([t for t in H.rooms_of.ROOMS[office["key"]][1]]) + office.get("brief", 0)
 
 
-def test_going_in_loud_is_quick_but_the_alarm_jumps(em):
+def test_quiet_or_loud_is_the_crews_call_and_the_host_breaks_a_tie(em):
+    rid = crew(em, players=(A, B), stake=0, target="post")
+    r = H._rooms[rid]
+    H.vote(A, rid, "front", "quiet")
+    H.vote(B, rid, "front")
+    assert r["state"] == "plan"                                  # Ben's not said quiet or loud yet
+    with pytest.raises(H.Refuse, match="loud"):
+        H.vote(B, rid, style="sneaky")
+    H.vote(B, rid, style="loud")
+    assert r["state"] == "job" and r["style"] == "quiet"         # one each: the host's call
+    assert all(th["mode"] == "quiet" and th["p"].get("game") != "loud" for _, th in H._things(r))
+    assert all(th["state"] in ("active", "terry") for th in here(rid))   # no quiet-or-loud choice per thing
+
+
+def test_a_loud_job_is_a_breach_against_one_timer(em):
+    rid = crew(em, players=(A, B, D), stake=100, target="society")
+    r = H._rooms[rid]
+    for u in (A, B, D):
+        H.vote(u, rid, "roof", "loud")
+    assert r["style"] == "loud"
+    # a few tasks each, every one a quick bit of action, and nothing for Terry
+    for u in (A, B, D):
+        mine = H._tasks(r, u)
+        assert 1 <= len(mine) <= H.LOUD_TASKS and all(th["p"]["game"] == "loud" and th["state"] in ("active", "waiting") for th in mine)
+        assert [th["state"] for th in mine].count("active") == 1                  # one at a time
+    assert all(th["who"] in (A, B, D) for _, th in H._things(r))
+    b = r["breach"]
+    t0 = r["deadline"] - r["arrive"]
+    assert t0 == pytest.approx(b["t0"]) and b["safe"] == H.LOUD_SAFE[0]
+    tick(em, H.MOVE_SECONDS + 0.01)
+    # Anne does her first task: the timer comes down, the safe time goes up, and she's straight on to her next
+    first = H._current(r, A)
+    H.play(A, rid, {"ob": first["id"], "go": True})
+    for mv in moves(first["role"], first["p"]):
+        H.play(A, rid, {"ob": first["id"], **mv})
+    assert first["state"] == "done" and first["score"] == pytest.approx(1.0)
+    assert r["deadline"] - r["arrive"] == pytest.approx(t0 - H.LOUD_CUT)
+    assert b["safe"] == pytest.approx(H.LOUD_SAFE[0] + H.LOUD_SAFE[1]) and b["done"] == 1
+    nxt = H._current(r, A)
+    assert nxt is not None and nxt is not first and nxt["brief"] == "short"   # she's met the game: the quick run-down
+    # the timer runs out with Ben and Dot still on their first: everyone's in the vault, done or not
+    tick(em, r["deadline"] - H.time.time() + 0.01)
+    H.room(A, rid, name_of)
+    assert r["state"] == "report"
+    tasks = [th for _, th in H._things(r)]
+    assert r["score"] == pytest.approx(sum(th["score"] for th in tasks) / len(tasks), abs=1e-4)
+    assert r["edge"] == pytest.approx(H.loud_edge(r["score"]), abs=1e-4)
+    assert r["vault"]["safe"] == pytest.approx(b["safe"])
+
+
+def test_loose_cash_pays_whoever_picks_it_up_straight_away(em):
+    rid = crew(em, players=(A, B, D), stake=500, target="post")
+    r = H._rooms[rid]
+    for u in (A, B, D):
+        H.vote(u, rid, "front", "loud")
+    before = em.get_bb(A)
+    loud_through(em, rid)
+    assert r["state"] in ("report", "vault")
+    got = r["loose"][str(A)]
+    assert 0 < got <= int(500 * H.LOOSE_MAX)                                    # a few UKPence, never past the cap
+    assert em.get_bb(A) == before + got                                         # paid there and then
+    extra = [th for th in r["extra"] if th["who"] == A]
+    assert extra and all(th["mode"] == "loose" for th in extra) and len(extra) <= H.LOOSE_TASKS
+    assert all(th["p"]["game"].startswith("loose-") for th in extra)
+    assert 3 <= H._loose_each(r) <= 15 and H._loose_each({"stake": 1000}) == 15 and H._loose_each({"stake": 50}) < 4
+    # nothing for loose cash on a free job, and none of it in practice is real money (below)
+    r["over"] = True
     rid = crew(em, players=(A, B, D), stake=0, target="post")
     for u in (A, B, D):
-        H.vote(u, rid, "yard")
-    r = H._rooms[rid]
-    clear_room(em, rid, how="quiet")
-    quiet = r["alarm"]
-    clear_room(em, rid, how="loud")
-    loud = r["alarm"] - quiet
-    office = r["rooms"][1]["things"]
-    mine = [th for th in office if th.get("mode") == "loud"]
-    assert mine and loud > 0 and all(th["score"] == H.LOUD_SCORE for th in mine)
+        H.vote(u, rid, "front", "loud")
+    loud_through(em, rid)
+    assert not H._rooms[rid].get("extra") and not H._rooms[rid]["loose"]
+
+
+def test_a_loud_jobs_best_with_all_its_loose_cash_is_no_better_than_a_quiet_ones():
+    assert H.loud_edge(1.0) - H.LOOSE_MAX == pytest.approx(H.EDGE_BEST)
+    assert H.loud_edge(0.0) == pytest.approx(H.EDGE_WORST) and H.loud_edge(1.0) > H.edge(1.0)
 
 
 def test_every_game_has_its_run_down():
@@ -387,21 +587,20 @@ def test_a_puzzles_clock_waits_for_its_run_down(em):
     rid = crew(em, players=(A, B), stake=0, target="post")
     r = H._rooms[rid]
     for u in (A, B):
-        H.vote(u, rid, "front")
+        H.vote(u, rid, "front", "quiet")
     rm = r["rooms"][0]
     mine = next(th for th in rm["things"] if th["who"] == A)
     # nobody's met a game yet: the full run-down, and the room's clock grows to fit it
     assert rm["brief"] == H.BRIEF_FULL
     assert r["deadline"] - r["arrive"] == pytest.approx(H.rooms_of.room_seconds(
         [(t["role"], t["name"], t["size"]) for t in rm["things"] if not t["spare"]]) + H.BRIEF_FULL)
+    assert mine["state"] == "active" and mine["brief"] == "full" and mine["go"] == pytest.approx(r["arrive"] + H.BRIEF_FULL)
     tick(em, H.MOVE_SECONDS + 0.5)
-    H.play(A, rid, {"ob": mine["id"], "take": "quiet"})
-    assert mine["state"] == "active" and mine["brief"] == "full" and mine["go"] == pytest.approx(H.time.time() + H.BRIEF_FULL)
     with pytest.raises(H.Refuse, match="run-down"):
         H.play(A, rid, {"ob": mine["id"], **moves(mine["role"], mine["p"])[0]})
     tick(em, 3)
     b = H.view(r, A, name_of)["puzzle"]["briefing"]
-    assert b["full"] and b["how"] and b["line"] and b["left"] == pytest.approx(H.BRIEF_FULL - 3)
+    assert b["full"] and b["how"] and b["line"] and b["left"] == pytest.approx(H.BRIEF_FULL - 3.5)
     H.play(A, rid, {"ob": mine["id"], "go": True})                  # GOT IT: the clock starts now
     assert "briefing" not in H.view(r, A, name_of)["puzzle"]
     for mv in moves(mine["role"], mine["p"]):
@@ -429,7 +628,7 @@ def test_the_guard_wont_wait_on_the_cover_story_or_the_staff_names():
 
 def test_a_blown_alarm_sends_them_straight_to_the_vault(em):
     rid = crew(em, players=(A,), stake=0, target="post")
-    H.vote(A, rid, "front")
+    H.vote(A, rid, "front", "quiet")
     r = H._rooms[rid]
     r["alarm"] = H.ALARM_BLOWN - 0.01
     tick(em, 200)                                                 # nobody does anything
@@ -521,11 +720,12 @@ def test_buy_ins_go_in_at_the_start_and_takes_come_out_at_the_end(em):
     assert em.get_bb(A) == em.get_bb(B) == em.get_bb(D) == 9_900
     to_vault(em, rid, police_take=2.0)
     r = H._rooms[rid]
-    tick(em, secs_to(r, 1.6))
+    grab_to(em, rid, secs_to(r, 1.6))
     H.leg_it(A, rid)
+    assert r["vault"]["out"][str(A)][1] == pytest.approx(1.6, abs=0.05)    # kept up with the piles (bar the first quarter-second)
     with pytest.raises(H.Refuse, match="already out"):
         H.leg_it(A, rid)
-    tick(em, secs_to(r, 2.0) - secs_to(r, 1.6) + 0.01)
+    grab_to(em, rid, secs_to(r, 2.0) + 0.01, uids=(B, D))
     H.sweep()
     assert r["over"] and r["how"] == "nicked"
     assert r["results"][str(A)]["how"] == "escaped" and r["results"][str(B)]["how"] == "nicked"
@@ -540,26 +740,59 @@ def test_buy_ins_go_in_at_the_start_and_takes_come_out_at_the_end(em):
     assert supply() == before
 
 
-def test_nobody_gets_out_when_the_police_are_waiting(em):
-    rid = crew(em, stake=50)
-    to_vault(em, rid, police_take=0.95)
-    with pytest.raises(H.Refuse):
-        H.leg_it(A, rid)
-    H.sweep()
+def test_the_safe_time_is_safe_but_pays_less_than_the_buy_in(em):
+    rid = crew(em, stake=100)
+    to_vault(em, rid, police_take=None)
     r = H._rooms[rid]
-    assert r["over"] and all(x["how"] == "nicked" for x in r["results"].values())
+    v = r["vault"]
+    v["police"] = H.police_time(v["base"], r["cap"], v["secs"], v["base"], v["safe"])   # as early as they can come
+    assert v["safe"] == pytest.approx(H.SAFE_QUIET[0] + (H.SAFE_QUIET[1] - H.SAFE_QUIET[0]) * r["score"], abs=0.01)
+    assert v["police"] == pytest.approx(v["safe"])                  # and they can't come till it's over
+    grab_to(em, rid, v["safe"] - 0.5)
+    H.leg_it(A, rid)
+    took = v["out"][str(A)][1]
+    assert 0.8 < took < 1 - r["edge"]                              # out safe, with a bit less than the buy-in
+    H.leg_it(B, rid)
+    tick(em, 1.0)
+    H.sweep()
+    assert r["over"] and r["results"][str(D)]["how"] == "nicked" and r["results"][str(A)]["payout"] == int(100 * took)
+
+
+def test_a_cleaner_quiet_job_gets_a_longer_safe_time(em):
+    rid = crew(em, stake=0)
+    r = H._rooms[rid]
+    for u in (A, B, D):
+        H.vote(u, rid, "front", "quiet")
+    tick(em, 600)                                                    # nobody does a thing
+    H.room(A, rid, name_of)
+    assert r["vault"]["safe"] == pytest.approx(H.SAFE_QUIET[0] + (H.SAFE_QUIET[1] - H.SAFE_QUIET[0]) * r["score"], abs=0.01)
+    assert r["vault"]["safe"] < H.SAFE_QUIET[0] + 3
+
+
+def test_no_grabbing_no_cash(em):
+    rid = crew(em, stake=100)
+    to_vault(em, rid, police_take=None)
+    r = H._rooms[rid]
+    grab_to(em, rid, r["vault"]["safe"] + 5, uids=(A,))
+    H.leg_it(A, rid)
+    H.leg_it(B, rid)                                              # Ben never grabbed a thing
+    assert r["vault"]["out"][str(B)][1] == 0.0 and r["vault"]["out"][str(A)][1] > 0.9
+    v = H.view(r, D, name_of)["vault"]
+    assert v["bag"] == 0.0 and v["base"] == pytest.approx(1 - r["edge"]) and v["risk"] > 0
+    assert "police" not in v
 
 
 def test_holding_your_nerve_to_the_cap_clears_the_vault(em):
     rid = crew(em, stake=100, target="society")
     to_vault(em, rid, police_take=None)
     r = H._rooms[rid]
-    tick(em, r["vault"]["secs"] + 1)
+    grab_to(em, rid, r["vault"]["safe"] + r["vault"]["secs"] + 1)
     H.sweep()
     assert r["over"] and all(x["how"] == "cleared" for x in r["results"].values())
-    assert r["results"][str(A)]["payout"] == int(100 * r["cap"])
+    pay = r["results"][str(A)]["payout"]
+    assert int(100 * r["cap"]) - 3 <= pay <= int(100 * r["cap"])
     # and the clean job bonus on top (taxed like any reward, once a balance is over 10k)
-    assert 0 < em.get_bb(A) - (9_900 + int(100 * r["cap"])) <= r["bonus"][str(A)]
+    assert 0 < em.get_bb(A) - (9_900 + pay) <= r["bonus"][str(A)]
 
 
 def test_a_clean_job_pays_its_bonus_once_a_day(em):
@@ -567,7 +800,7 @@ def test_a_clean_job_pays_its_bonus_once_a_day(em):
         rid = crew(em, stake=500)
         to_vault(em, rid, police_take=None)
         r = H._rooms[rid]
-        tick(em, secs_to(r, 1.7))
+        grab_to(em, rid, secs_to(r, 1.7))
         for u in (A, B, D):
             H.leg_it(u, rid)
         return r
@@ -585,7 +818,7 @@ def test_getting_out_too_early_isnt_a_clean_job(em):
     rid = crew(em, stake=100)
     to_vault(em, rid, police_take=None)
     r = H._rooms[rid]
-    tick(em, secs_to(r, 1.2))
+    grab_to(em, rid, secs_to(r, 1.2))
     for u in (A, B, D):
         H.leg_it(u, rid)
     assert r["over"] and r["how"] == "done" and not r["bonus"]
@@ -605,7 +838,8 @@ def test_someone_who_walks_off_stays_in_the_vault(em):
     r = H._rooms[rid]
     H.leave(D, rid)
     to_vault(em, rid, police_take=2.5)
-    tick(em, secs_to(r, 1.5))
+    grab_to(em, rid, secs_to(r, 1.5), uids=(A, B))
+    assert H.bag(r, D, secs_to(r, 1.5)) == pytest.approx(H.WALKOFF_GRAB * 1.5, abs=0.01)    # the crew bag a bit for her
     H.leg_it(A, rid)
     H.leg_it(B, rid)
     assert not r["over"]                              # Dot's still inside
@@ -628,7 +862,7 @@ def test_a_crew_that_cant_pay_doesnt_go_in(em):
 def test_a_rooms_clocks_pause_while_the_bot_is_away(em):
     rid = crew(em, players=(A, B), stake=0, target="society")
     for u in (A, B):
-        H.vote(u, rid, "roof")
+        H.vote(u, rid, "roof", "quiet")
     r = H._rooms[rid]
     tick(em, 3)
     H.sweep()
@@ -645,9 +879,10 @@ def test_the_clocks_pause_while_the_bot_is_away(em):
     rid = crew(em, stake=100)
     to_vault(em, rid, police_take=4.0)
     r = H._rooms[rid]
-    tick(em, 2)
-    H.sweep()                                         # saved two seconds into the vault
+    grab_to(em, rid, r["vault"]["safe"] + 2)
+    H.sweep()                                         # saved two seconds into the climb
     at = H.time.time() - r["vault"]["start"]
+    held = H.bag(r, A, at)
     tick(em, 600)                                     # the bot's away for ten minutes
     H._rooms.clear()
     H._loaded = False
@@ -655,7 +890,7 @@ def test_the_clocks_pause_while_the_bot_is_away(em):
     r = H._rooms[rid]
     assert not r["over"] and H.time.time() - r["vault"]["start"] == pytest.approx(at, abs=0.01)
     H.leg_it(A, rid)
-    assert r["vault"]["out"][str(A)][1] == pytest.approx(H._floor2(H.take_at(at, r["cap"], r["vault"]["secs"])), abs=0.01)
+    assert r["vault"]["out"][str(A)][1] == pytest.approx(H._floor2(held), abs=0.01)
 
 
 # ---- the lobby ----------------------------------------------------------------------------------
@@ -724,11 +959,13 @@ def practice(em, stake=100, target="post", role="hacker", skill=None):
     return rid, r
 
 
-def practice_to_vault(em, rid, police_take=None, way=None):
+def practice_to_vault(em, rid, police_take=None, way=None, style="quiet"):
     """Your vote makes the plan; then every room, you do your things and the bots do theirs; then the vault opens."""
     r = H._rooms[rid]
-    H.vote(A, rid, way or next(iter(H.rooms_of.routes(r["target"]))))
+    H.vote(A, rid, way or next(iter(H.rooms_of.routes(r["target"]))), style)
     assert r["state"] == "job"                        # the bots back the plan, so it's made once you've voted
+    if style == "loud":
+        loud_through(em, rid)
     while r["state"] == "job":
         at = r["at"]
         clear_room(em, rid)
@@ -737,10 +974,10 @@ def practice_to_vault(em, rid, police_take=None, way=None):
             assert any(th.get("bot") is not None and th["state"] == "active" for th in here(rid))
             tick(em, H._room_secs(r["rooms"][at]))
             H.room(A, rid, name_of)
-    assert r["state"] == "report"
+    assert r["state"] in ("report", "vault")          # (a loud crew that cut the timer hard can be in already)
     v = r["vault"]
-    v["police"] = None if police_take is None else H.time_at(police_take, r["cap"], v["secs"])
-    tick(em, H.REPORT_SECONDS)
+    v["police"] = None if police_take is None else H.police_time(police_take, r["cap"], v["secs"], v["base"], v["safe"])
+    tick(em, max(0.0, v["start"] - H.time.time()))
     H.room(A, rid, name_of)
     assert r["state"] == "vault"
     return r
@@ -765,13 +1002,13 @@ def test_the_bots_back_the_way_in_you_pick(em, testers):
     rid, r = practice(em, 0, "society")
     way = list(H.rooms_of.routes("society"))[-1]
     assert r["state"] == "plan" and H.view(r, A, name_of)["votes"][way] == 0
-    H.vote(A, rid, way)
-    assert r["state"] == "job" and r["approach"] == way
+    H.vote(A, rid, way, "loud")
+    assert r["state"] == "job" and r["approach"] == way and r["style"] == "loud"
 
 
 def test_a_bot_finishes_its_things_in_a_room_at_a_moment_of_its_own(em, testers):
     rid, r = practice(em, 0, "post", skill=0.6)
-    H.vote(A, rid, next(iter(H.rooms_of.routes("post"))))
+    H.vote(A, rid, next(iter(H.rooms_of.routes("post"))), "quiet")
     rm = r["rooms"][0]
     theirs = [th for th in rm["things"] if th["who"] is not None and th["who"] < 0]
     secs = H._room_secs(rm) - rm["brief"]
@@ -789,14 +1026,17 @@ def test_bot_crewmates_leg_it_from_the_vault_on_their_own(em, testers):
         b["leave"] = f
     practice_to_vault(em, rid)
     v = r["vault"]
-    tick(em, 0.6 * v["secs"])
+    whole = v["safe"] + v["secs"]
+    tick(em, v["safe"] + 0.6 * v["secs"])
     H.sweep()
     out = v["out"]
     assert {u for u, b in r["bots"].items() if b["leave"] <= 0.5} == set(out)
     for u in out:
-        assert out[u][0] == pytest.approx(r["bots"][u]["leave"] * v["secs"], abs=0.01)
+        assert out[u][0] == pytest.approx(v["safe"] + r["bots"][u]["leave"] * v["secs"], abs=0.01)
+        # a bot grabs as well as its skill: its bag is that share of the piles
+        assert out[u][1] == pytest.approx(H._floor2(r["bots"][u]["grab"] * H.pile_at(v, r["cap"], out[u][0])), abs=0.011)
     H.leg_it(A, rid)
-    tick(em, v["secs"])
+    tick(em, whole)
     H.sweep()
     assert r["over"]
     stayed = [u for u, b in r["bots"].items() if b["leave"] >= 1.0]
@@ -809,7 +1049,7 @@ def test_a_bot_that_waits_too_long_is_nicked(em, testers):
     for b, f in zip(r["bots"].values(), [0.05, 0.9, 0.9, 0.9, 0.9]):
         b["leave"] = f
     practice_to_vault(em, rid, police_take=1.5)
-    tick(em, r["vault"]["secs"])
+    tick(em, r["vault"]["safe"] + r["vault"]["secs"])
     H.sweep()
     assert r["over"]
     res = [r["results"][u]["how"] for u in r["bots"]]
@@ -831,13 +1071,46 @@ def test_practice_moves_no_money_and_is_posted_and_kept_nowhere(em, testers, mon
     for b in r["bots"].values():
         b["leave"] = 0.8
     practice_to_vault(em, rid)
-    tick(em, 0.85 * r["vault"]["secs"])
+    grab_to(em, rid, r["vault"]["safe"] + 0.85 * r["vault"]["secs"], uids=(A,))
     H.leg_it(A, rid)
     assert r["over"] and r["how"] == "clean"
     assert r["results"][str(A)]["payout"] > 1000      # what it would have been, in play money
     assert em.get_bb(A) == before and supply() == total
     assert r["bonus"] == {} and H.heat() == 0.0 and seen == []
     assert H.active() == 0                            # a practice job doesn't hold up a restart
+
+
+def test_the_bots_do_a_loud_job_and_your_loose_cash_is_play_money(em, testers, monkeypatch):
+    rid, r = practice(em, 1000, "post", skill=0.8)
+    before = em.get_bb(A)
+    for b in r["bots"].values():
+        b["leave"] = 0.9
+    practice_to_vault(em, rid, style="loud")
+    bots = [th for _, th in H._things(r) if th["who"] < 0]
+    assert bots and all(th["state"] == "done" for th in bots)          # every bot task done (or out of time)
+    assert r["loose"].get(str(A), 0) > 0 and em.get_bb(A) == before   # loose cash in play money: nothing moved
+    assert all(str(u) not in r["loose"] for u in r["bots"])             # bots don't go after loose cash
+    grab_to(em, rid, max(H.time.time() - r["vault"]["start"], r["vault"]["safe"]) + 6, uids=(A,))
+    H.leg_it(A, rid)
+    assert r["vault"]["out"][str(A)][1] > 0                           # (only what she grabbed: she came in late)
+
+
+def test_quick_chat_is_a_few_set_lines_and_not_too_often(em):
+    rid = crew(em, players=(A, B), stake=0)
+    H.say(A, rid, "hurry")
+    with pytest.raises(H.Refuse, match="second"):
+        H.say(A, rid, "nice")                                     # too soon
+    with pytest.raises(H.Refuse, match="say"):
+        H.say(B, rid, "<b>anything I like</b>")                  # only the set lines
+    H.say(B, rid, "oops")
+    chat = H.view(H._rooms[rid], B, name_of)["chat"]
+    assert [(c["uid"], c["text"]) for c in chat] == [(str(A), "Hurry up!"), (str(B), "Oops")]
+    tick(em, H.CHAT_EVERY)
+    H.say(A, rid, "nice")
+    tick(em, H.CHAT_SHOW)
+    assert H.view(H._rooms[rid], B, name_of)["chat"] == []      # gone after a few seconds
+    with pytest.raises(H.Refuse):
+        H.say(D, rid, "hurry")                                    # not in the crew
 
 
 def test_practice_crews_are_hidden_and_closed_to_others(em, testers):

@@ -96,6 +96,26 @@ BRIEFS: dict[str, tuple[list[str], str]] = {
     "muscle:mash": (["Carry the sacks up the stairs: mash HEAVE as fast as you can."], "Mash HEAVE."),
     "muscle:stack": (["A gold bar slides back and forth. Tap to drop it on the stack.",
                       "Whatever hangs over is chopped off. They speed up."], "Drop each bar dead on the one below."),
+    # a loud job: a quick bit of action for each role's tasks
+    "loud:hacker": (["Going loud: fry the panel.",
+                     "A spark swings along the bar. Tap when it's in the zone. Dead centre scores most."], "Tap when the spark's in the zone."),
+    "loud:safecracker": (["Going loud: drill the lock.",
+                          "The bit swings along the bar. Tap when it's in the zone. Dead centre scores most."], "Tap when the bit's in the zone."),
+    "loud:wheelman": (["Going loud: ram it.",
+                       "The revs swing along the bar. Tap when they're in the zone. Dead centre scores most."], "Tap when the revs are in the zone."),
+    "loud:lookout": (["Going loud: smash the cameras.",
+                      "Cameras pop up round the room. Tap each before it ducks away. Leave the pigeons."], "Smash the cameras, not the pigeons."),
+    "loud:face": (["Going loud: everyone on the floor!",
+                   "Staff pop up. Tap the ones reaching for the alarm. Leave the ones with their hands up."], "Tap the ones reaching for the alarm."),
+    "loud:muscle": (["Going loud: smash and grab.",
+                     "Mash GRAB as fast as you can till the time's up."], "Mash GRAB."),
+    # loose cash, once your own tasks are done: each pays you a little, straight away
+    "loose:atm": (["Loose cash: crack an ATM. It pays you, straight away.",
+                   "Tap when the drill's in the zone."], "Tap when the drill's in the zone."),
+    "loose:till": (["Loose cash: empty a till. It pays you, straight away.",
+                    "Mash GRAB till the time's up."], "Mash GRAB."),
+    "loose:box": (["Loose cash: snatch the cash. It pays you, straight away.",
+                   "Tap the bundles as they pop up. Leave the dye packs."], "Bundles, not dye packs."),
 }
 
 
