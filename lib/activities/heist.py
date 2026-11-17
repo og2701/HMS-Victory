@@ -21,10 +21,12 @@ can take a seat and a role. Once it starts, every buy-in goes into the bank and 
     report  how well it went
     vault   everyone grabs the cash: tapping GRAB keeps their bag up with the piles. For the safe
             time (longer for a cleaner quiet job, or as the loud crew earned it) the police can't
-            come, but the piles only fill to 1 - edge of the buy-in; after that they climb on to
-            the target's cap, and the police can turn up at any moment (the scanner shows the honest
-            odds of it, second by second). Each of the crew legs it when they like with their bag;
-            whoever's still inside when the police come is nicked and loses their buy-in.
+            come, and the piles fill to 1 - edge of the buy-in: the stake in play, once the bank's
+            cut (the edge) is taken, which the page shows as 1.00x, "your stake back" (see shown());
+            after that they climb on to the target's cap, all of it profit, and the police can turn
+            up at any moment (the scanner shows the honest odds of it, second by second). Each of the
+            crew legs it when they like with their bag; whoever's still inside when the police come
+            is nicked and loses their buy-in.
 
 The money. The piles reach 1 - edge as the safe time ends, then the police arrive at take
 M = (1 - edge) / U for U uniform on (0, 1], so the chance the piles reach m before they do is
@@ -372,6 +374,44 @@ def hazard(v: dict, cap: float, t: float, dt: float = 1.0) -> float:
 
 def _floor2(x: float) -> float:
     return math.floor(x * 100 + 1e-9) / 100
+
+
+# What the player sees. The money is all worked in multiples of the buy-in (m above), but the page shows the bank's
+# cut taken up front and the vault's figures as multiples of the stake left in play, m' = m / base: the safe time
+# fills the piles to 1.00x (your stake back), and everything past it is profit. Only the labels change: leaving at
+# m' pays m' * stake * base = m * stake, the same UKPence as ever, and the police still come at m' = 1 / U.
+
+def shown(m: float, base: float) -> float:
+    """A take (a multiple of the buy-in) as the vault shows it: a multiple of the stake in play, floored to 0.01."""
+    return _floor2(m / base) if base > 0 else 0.0
+
+
+def in_play(stake: int, base: float) -> int:
+    """The stake in play, in UKPence: what getting out at exactly 1.00x pays (the buy-in less the bank's cut)."""
+    return int(stake * _floor2(base))
+
+
+def verdict(stake: int, base: float, r: dict) -> dict:
+    """One player's result in words the end screen and the #casino card both use: the take as the vault showed it,
+    what it came to against the buy-in (the bank's cut included), and a line saying so."""
+    cut = stake - in_play(stake, base)
+    x = r.get("shown", shown(r.get("take", 0.0), base))
+    if r["how"] == "nicked":
+        return {"x": 0.0, "net": -stake, "kind": "nicked", "text": f"Nicked: -{stake:,}" if stake else "Nicked"}
+    net = r["payout"] - stake
+    if not stake:
+        kind = "profit" if x > 1.0 else "even" if x >= 1.0 else "short"
+        return {"x": x, "net": 0, "kind": kind, "text": f"Out at {x:.2f}x"}
+    if x >= 1.0 and net <= 0:
+        up = r["payout"] - in_play(stake, base)
+        return {"x": x, "net": net, "kind": "even",
+                "text": f"Out at {x:.2f}x: broke even" if not net
+                else f"Out at {x:.2f}x: stake back, broke even less the bank's cut ({net:,})" if up <= 0
+                else f"Out at {x:.2f}x: +{up:,} on the stake, less the bank's cut ({net:,})"}
+    if net > 0:
+        return {"x": x, "net": net, "kind": "profit", "text": f"Out at {x:.2f}x: +{net:,}"}
+    return {"x": x, "net": net, "kind": "short",
+            "text": f"Out at {x:.2f}x, before the stake was back: {net:,}" + (f" (the bank's cut was {cut:,})" if cut else "")}
 
 
 # ---- the puzzles -----------------------------------------------------------------------------
@@ -864,7 +904,8 @@ def _bots_leg(room: dict, now: float) -> None:
         t = v["safe"] + b["leave"] * v["secs"]
         if uid in v["out"] or b["leave"] >= 1.0 or t > gone or (v["police"] is not None and t >= v["police"]):
             continue
-        v["out"][uid] = [round(t, 3), _floor2(bag(room, int(uid), t))]
+        held = bag(room, int(uid), t)
+        v["out"][uid] = [round(t, 3), _floor2(held), shown(held, v["base"])]
         _bot_says(room, int(uid), "leg", v["start"] + t)
 
 
@@ -1455,12 +1496,14 @@ def outcome(room: dict) -> dict:
         left = v["out"].get(str(u))
         if left:
             take = left[1]
-            out[str(u)] = {"how": "escaped", "take": take, "payout": int(stake * take)}
+            out[str(u)] = {"how": "escaped", "take": take, "payout": int(stake * take),
+                           "shown": left[2] if len(left) > 2 else shown(take, v["base"])}
         elif not police_came:
-            take = _floor2(bag(room, u, v["safe"] + v["secs"]))
-            out[str(u)] = {"how": "cleared", "take": take, "payout": int(stake * take)}
+            held = bag(room, u, v["safe"] + v["secs"])
+            take = _floor2(held)
+            out[str(u)] = {"how": "cleared", "take": take, "payout": int(stake * take), "shown": shown(held, v["base"])}
         else:
-            out[str(u)] = {"how": "nicked", "take": 0.0, "payout": 0}
+            out[str(u)] = {"how": "nicked", "take": 0.0, "payout": 0, "shown": 0.0}
         out[str(u)]["loose"] = int(loose.get(str(u), 0))
     return out
 
@@ -1478,6 +1521,7 @@ def _finish(room: dict, now: float) -> None:
              and all(r["take"] >= CLEAN_TAKE for r in results.values()))
     if v["police"] is not None and v["police"] < v["safe"] + v["secs"]:
         v["police_take"] = _floor2(pile_at(v, room["cap"], v["police"]))
+        v["police_shown"] = shown(pile_at(v, room["cap"], v["police"]), v["base"])
     if room.get("practice"):
         # play money: nothing paid, no bonus, no heat, no records, no badges, no post
         room.update(over=True, ended=now, how="clean" if clean else "nicked" if nicked else "done", results=results,
@@ -1673,10 +1717,10 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
             # in a loud job everyone's somewhere different: you're in the room of the task you're on (or your last)
             mine_tasks = _tasks(room, uid)
             at = cur["i"] if cur else next((t["i"] for t in mine_tasks if t["state"] != "done"), len(room["rooms"]) - 1)
-            shown = mine_tasks + [th for th in room.get("extra", []) if th["who"] == uid]
+            listed = mine_tasks + [th for th in room.get("extra", []) if th["who"] == uid]
         else:
             at = room["at"]
-            shown = room["rooms"][at]["things"]
+            listed = room["rooms"][at]["things"]
         rm = room["rooms"][at]
         out["job"] = {"at": at, "count": len(room["rooms"]), "key": rm["key"], "name": rooms_of.ROOMS[rm["key"]][0],
                       "walk": round(max(0.0, room["arrive"] - now), 2), "alarm": 0.0 if loud else room["alarm"],
@@ -1685,7 +1729,7 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
                       "cap": round(room["cap"] * (1 + room["loot"]), 2), "route": room.get("approach"),
                       "rooms": [{"key": x["key"], "name": rooms_of.ROOMS[x["key"]][0], "pin": pins.get(x["key"]),
                                  "done": j < at} for j, x in enumerate(room["rooms"])],
-                      "things": [_thing_view(th, now) for th in shown]}
+                      "things": [_thing_view(th, now) for th in listed]}
         if loud:
             b = room["breach"]
             out["job"]["breach"] = {"t0": b["t0"], "cut": b["cut"], "safe": b["safe"], "safeMax": LOUD_SAFE[2],
@@ -1719,6 +1763,10 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
                          "edge": room["edge"], "waiting": False, "loud": loud, "safe": room.get("vault", {}).get("safe"),
                          "loose": room.get("loose", {}).get(me, 0), "how": briefs.brief("vault")[0],
                          "loot": room.get("loot", 0.0), "blown": room.get("blown"), "roles": _role_scores(room)}
+        if room.get("vault"):
+            # the bank's cut, taken up front: the vault's figures are multiples of what's left in play
+            ip = in_play(room["stake"], room["vault"]["base"])
+            out["report"].update(inPlay=ip, cut=room["stake"] - ip)
     if room.get("vault"):
         v = room["vault"]
         t = now - v["start"]
@@ -1727,6 +1775,8 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         # scanner's figure is the honest hazard, the same for any job like this one, so it says nothing of the draw
         out["vault"] = {"at": round(t, 2), "secs": v["secs"], "safe": v["safe"], "base": round(v["base"], 4),
                         "cap": room["cap"], "window": GRAB_WINDOW, "out": {u: x[1] for u, x in v["out"].items()},
+                        "outX": {u: x[2] if len(x) > 2 else shown(x[1], v["base"]) for u, x in v["out"].items()},
+                        "inPlay": in_play(room["stake"], v["base"]),
                         "bag": round(bag(room, uid, t), 4),
                         "grab": {"done": g["done"], "a": g["a"], "b": g["b"], "bars": g.get("bars", 0)} if g else None,
                         "risk": round(hazard(v, room["cap"], t), 4)}
@@ -1738,8 +1788,10 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
                                    "left": round(bar["t"] + BAR_DELAY + BAR_WINDOW - t, 2), "hold": BAR_HOLD}
         if room.get("over"):
             out["vault"]["police"] = v.get("police_take")
+            out["vault"]["policeX"] = v.get("police_shown", shown(v["police_take"], v["base"]) if v.get("police_take") else None)
     if room.get("over") and room.get("results"):
         out["results"] = room["results"]
+        out["verdicts"] = {u: verdict(room["stake"], room["vault"]["base"], x) for u, x in room["results"].items()}
         out["bonus"] = room.get("bonus", {})
         out["heat"] = room.get("heat")
     return out
@@ -2128,7 +2180,9 @@ def leg_it(uid: int, rid: str, taps=None) -> dict:
         raise Refuse("Too late. The police are here.")
     if taps:
         _grab(r, uid, taps, t)
-    v["out"][str(uid)] = [round(t, 3), _floor2(bag(r, uid, t))]
+    held = bag(r, uid, t)
+    # [when, the take (what's paid: stake x this), the take as the vault showed it (of the stake in play)]
+    v["out"][str(uid)] = [round(t, 3), _floor2(held), shown(held, v["base"])]
     _advance(r, now)
     _save()
     _emit("out", r)

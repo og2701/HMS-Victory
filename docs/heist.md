@@ -137,6 +137,29 @@ something, a "Leg it!" as they get out).
 
 ## The money
 
+### What the player sees: the bank's cut up front
+
+The sums below are all in multiples of the buy-in (m), and that's how the bot works them out and pays them. The page
+shows them another way, so a good job doesn't read as a loss: **the bank's cut is taken up front and the vault is
+shown in multiples of the stake left in play.**
+
+- The report (as the vault door opens) shows the cut, tied to the job: "Buy-in 100 · Bank's cut 1 · In play 99",
+  "a clean job: the bank only takes 1%". The stake in play is `in_play(S, b) = int(S * floor2(b))`, what getting out
+  at exactly 1.00x pays, and the cut is `S - in_play`.
+- Every multiplier in the vault is `m' = m / b` (`shown()`, floored to 0.01). The safe time fills the piles from 0
+  to **1.00x: your stake back** ("GETTING YOUR STAKE BACK", then "STAKE BACK · ANYTHING MORE IS PROFIT"). After it the
+  bag shows profit over the stake in play ("STAY IN TO PROFIT", "+0.12x · +11") and the climb runs on to the cap,
+  shown as `cap / b`. The police come at `M' = M / b = 1 / U`, so the chance of reaching m' is `1 / m'`, the same
+  for every job: the report's "police by 1.5x / 2x / 3x" are 33% / 50% / 67% whatever the edge.
+- Leaving at m' pays `int(S * floor2(m' * b)) = int(S * floor2(m))`, exactly what it always did
+  (`test_the_vault_shown_of_the_stake_in_play_pays_the_same_at_every_moment`).
+- The end screen and the #casino card say the result against the buy-in, the cut included: "Out at 1.00x: stake
+  back, broke even less the bank's cut (-4)", "Out at 1.40x: +34", or, for leaving in the safe time, "before the
+  stake was back". The police are shown at m' too. The target picker keeps the target's cap in buy-in terms ("x6, up
+  to 600"): in the vault that same 600 is `6 / b` of the stake in play.
+- What's stored is unchanged: a result's `take` and the clean job bonus's CLEAN_TAKE (1.5) and Greedy Git's 8x stay
+  multiples of the buy-in; `shown` sits beside `take` in the results for the page.
+
 ### What the bank keeps
 
 The vault has two parts. In the **safe time** (S seconds) the piles fill from 0 to `b = 1 - e`, and the police can't

@@ -175,9 +175,10 @@ BRIEFS: dict[str, tuple[list[str], str]] = {
                    "Bundles pop up in the squares. Tap each one before it drops back down.",
                    "Don't tap the blue dye packs. That costs you."], "Tap the cash as it pops up. Not the dye packs."),
     # the vault (the report shows it, as the door opens)
-    "vault": (["Fill your bag, then get out before the police come.",
+    "vault": (["Grab your stake back (1.00x), then stay in for profit till you dare.",
                "Tap GRAB and keep tapping. If GRAB locks and a gold bar appears, tap the bar instead: tapping GRAB then drops it.",
-               "Tap LEG IT to leave with what's in your bag."], "Keep tapping GRAB. Gold bar? Tap the bar, not GRAB."),
+               "Tap LEG IT to leave with what's in your bag. Still inside when the police come: you lose your buy-in."],
+              "Keep tapping GRAB. Gold bar? Tap the bar, not GRAB."),
 }
 
 

@@ -470,6 +470,65 @@ def test_the_scanner_is_the_honest_hazard():
         assert came / len(alive) == pytest.approx(H.hazard(v, cap, t), abs=0.01), t
 
 
+def test_the_vault_shown_of_the_stake_in_play_pays_the_same_at_every_moment():
+    """The page shows the bank's cut taken up front and the vault in multiples of the stake left in play (m' = m / base).
+    Only the labels move: at every moment, leaving pays what it always did, stake x floor2(m), and m' x the stake in
+    play is that payout; the police still come at m' = 1 / U, so the chance of reaching m' is 1 / m'."""
+    rng = random.Random(11)
+    for e in (0.01, 0.027, 0.045, 0.06, 0.08):
+        for stake in (1, 37, 100, 250, 1000):
+            v, cap = _vault(e, cap=rng.choice((3.0, 6.0, 12.0)), safe=rng.choice((4.0, 9.0, 12.0)))
+            base, ip = v["base"], H.in_play(stake, v["base"])
+            assert ip == int(stake * H._floor2(1 - e)) and stake - ip >= 0
+            for t in [i * 0.37 for i in range(int((v["safe"] + v["secs"]) / 0.37) + 2)]:
+                m = H.pile_at(v, cap, t)
+                old = int(stake * H._floor2(m))                     # the payout before the rescale
+                x = H.shown(m, base)
+                assert x == H._floor2(m / base)
+                assert abs(x * base - m) <= 0.01 * base + 1e-9     # m' is m over the stake in play, nothing else
+                r = {"how": "escaped", "take": H._floor2(m), "payout": old, "shown": x}
+                assert H.verdict(stake, base, r)["net"] == old - stake   # the end screen's sum is the real one
+                if t < v["safe"]:
+                    assert x < 1.0 + 1e-9                           # the safe time only gets your stake back
+                else:
+                    assert x >= 1.0 and old >= ip                   # after it, at least the stake in play
+        for u in (1.0, 0.8, 0.5, 0.1, 1e-6):
+            assert H.police_take(e, u) / (1 - e) == pytest.approx(1 / u)
+
+
+def test_the_safe_time_ends_at_exactly_one_and_leaving_there_is_breaking_even(em):
+    for e in (0.01, 0.0333, 0.045, 0.0712, 0.08):
+        v, cap = _vault(e, safe=7.3)
+        assert H.shown(H.pile_at(v, cap, v["safe"]), v["base"]) == 1.00
+        assert H.shown(H.pile_at(v, cap, v["safe"] - 0.05), v["base"]) < 1.00
+    rid = crew(em, stake=100)
+    to_vault(em, rid, police_take=None)
+    r = H._rooms[rid]
+    v = r["vault"]
+    H.grab(A, rid, [0.0])                                           # in on the first instant: a perfect bag
+    grab_to(em, rid, v["safe"] + 0.001)
+    H.leg_it(A, rid)
+    t, take, x = v["out"][str(A)]
+    assert x == 1.00 and take == H._floor2(H.bag(r, A, t))           # 1.00x shown, the old take paid
+    page = H.view(r, A, name_of)
+    assert page["vault"]["outX"][str(A)] == 1.00 and page["vault"]["inPlay"] == H.in_play(100, v["base"])
+    assert page["report"]["cut"] == 100 - page["report"]["inPlay"] > 0
+    grab_to(em, rid, v["safe"] + v["secs"] + 1, uids=(B, D))
+    H.sweep()
+    res = r["results"][str(A)]
+    assert res["payout"] == int(100 * take) == H.in_play(100, v["base"])
+    vd = H.view(r, A, name_of)["verdicts"][str(A)]
+    cut = 100 - res["payout"]
+    assert vd["kind"] == "even" and vd["net"] == -cut
+    assert vd["text"] == f"Out at 1.00x: stake back, broke even less the bank's cut (-{cut})"
+    assert H.verdict(100, v["base"], {"how": "escaped", "take": 1.2, "payout": 120, "shown": 1.25})["text"] == "Out at 1.25x: +20"
+    assert H.verdict(100, v["base"], {"how": "nicked", "take": 0.0, "payout": 0})["text"] == "Nicked: -100"
+    assert "before the stake was back" in H.verdict(100, v["base"], {"how": "escaped", "take": 0.5, "payout": 50, "shown": 0.52})["text"]
+    from lib.activities import heist_card
+    html = heist_card.game_page(r, {A: "Ann", B: "Ben", D: "Dot"})
+    assert "BROKE EVEN" in html and f"+{-cut}" not in html and "+-" not in html
+
+
 def test_the_take_climbs_from_one_to_the_cap():
     assert H.take_at(0, 6.0, 30) == 1.0
     assert H.take_at(15, 16.0, 30) == pytest.approx(2.0)                   # halfway in time, a quarter of the way in powers

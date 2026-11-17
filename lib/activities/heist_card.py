@@ -71,6 +71,8 @@ _CSS = """*{margin:0;box-sizing:border-box} html,body{background:transparent} bo
 .row.out{background:linear-gradient(#FFD56A,#F2B930);color:#111;box-shadow:inset 0 0 0 3px #111,5px 5px 0 #000}
 .row.out .who small{color:rgba(0,0,0,.55)}
 .row.out .x small{color:#0E6B2E}
+.row.out.even .x small{color:rgba(0,0,0,.6)}
+.row.out.short .x small{color:#A3142B}
 .row.nicked{background:rgba(232,54,79,.16);box-shadow:inset 0 0 0 2px rgba(232,54,79,.6)}
 .row.nicked .x b{color:#FF8A9A;font-size:22px;letter-spacing:.08em}
 .row.nicked .x small{color:#FF8A9A}
@@ -176,17 +178,24 @@ def _rows(room: dict, names: dict, faces: dict | None = None) -> str:
     stake = int(room.get("stake") or 0)
     ranked = sorted(room["players"], key=lambda u: (-(results.get(str(u), {}).get("take") or (out.get(str(u)) or [0, 0])[1]),
                                                     room["players"].index(u)))
+    base = (room.get("vault") or {}).get("base", 1.0)
     rows = []
     for u in ranked:
         r = results.get(str(u))
-        if r is None:                       # still inside, or out with the take so far
+        if r is None:                       # still inside, or out with the take so far (as the vault showed it)
             took = out.get(str(u))
-            cls, big, small = ("out", f"{took[1]:.2f}x", "OUT") if took else ("", "INSIDE", "")
+            x = (took[2] if len(took) > 2 else heist.shown(took[1], base)) if took else 0.0
+            cls, big, small = ("out", f"{x:.2f}x", "OUT") if took else ("", "INSIDE", "")
         elif r["how"] == "nicked":
             cls, big, small = "nicked", "NICKED", (f"-{stake:,}" if stake else "")
         else:
-            cls, big = "out", f"{r['take']:.2f}x"
-            small = (f"+{r['payout'] - stake:,}" if stake else ("CLEARED IT" if r["how"] == "cleared" else "GOT OUT"))
+            # against the buy-in, the bank's cut included: stake back reads as breaking even, not a loss
+            vd = heist.verdict(stake, base, r)
+            cls, big = "out", f"{vd['x']:.2f}x"
+            small = (("BROKE EVEN" if not vd["net"] else f"BROKE EVEN · CUT {vd['net']:,}") if vd["kind"] == "even"
+                     else f"{vd['net']:+,}" if stake else ("CLEARED IT" if r["how"] == "cleared" else "GOT OUT"))
+            if stake and vd["kind"] in ("short", "even"):
+                cls = f"out {vd['kind']}"
         rows.append(f'<div class="row {cls}">{_av(room, u, names, faces)}<span class="who"><b>{_e(names.get(u, "Someone"))}</b>'
                     f'<small>{_e(_role(room, u))}</small></span><span class="x"><b>{big}</b>'
                     f'{f"<small>{_e(small)}</small>" if small else ""}</span></div>')
@@ -216,8 +225,10 @@ def game_page(room: dict, names: dict, faces: dict | None = None) -> str:
         stake = int(room.get("stake") or 0)
         took = sum(r["payout"] for r in results.values()) if stake else 0
         chips = (f'<span class="chip light">{_coin()}{took:,} TAKEN</span>' if stake else '<span class="chip light">A PRACTICE JOB</span>')
-        police = v.get("police_take")
+        police = v.get("police_shown", heist.shown(v["police_take"], v.get("base", 1.0)) if v.get("police_take") else None)
         chips += (f'<span class="chip">THE POLICE CAME AT {police:.2f}x</span>' if police else '<span class="chip">THE POLICE NEVER CAME</span>')
+        if stake and v.get("base"):
+            chips += f'<span class="chip">BANK\'S CUT {stake - heist.in_play(stake, v["base"]):,} EACH</span>'
         if room.get("bonus"):
             chips += '<span class="chip gold">CLEAN JOB BONUS</span>'
         body = f"""<div class="lab"><i>BANK JOB · {_e(t['short'].upper())} · {_e(tag)}</i>{title}</div>
