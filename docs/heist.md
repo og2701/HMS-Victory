@@ -46,11 +46,8 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    left scores 0. The job score J is 1 minus the alarm.
 4. **A loud job: the breach.** Real time, one timer for the whole crew. Each player gets up to three tasks, their own
    things on the way in (the building's first, the most important first, then spares) and nothing for Terry, and
-   does them one after another at their own pace, moving on the moment they're done. Every task is a quick bit of
-   action (`heist_games/loud.py`), easier and quicker than a puzzle: the Hacker fries a panel, the Safecracker drills
-   a lock and the Wheelman rams a gate (tap while the swinging marker's in the zone), the Lookout smashes the cameras
-   and leaves the pigeons and the Face floors whoever reaches for the alarm (tap the right ones as they pop up), the
-   Muscle smashes and grabs (mash GRAB). The timer starts at 60s plus 15s a room on the way in (plus a run-down's
+   does them one after another at their own pace, moving on the moment they're done. Every task is a bit of action
+   for that role, 10-13 seconds (15-18 at the vault door), all judgement and control, never tap speed (below). The timer starts at 60s plus 15s a room on the way in (plus a run-down's
    15s): 120s for the Village Branch, 150s for the High Street's front door, 180s for the Vault's roof. **Every task
    done, by anyone, takes 5s off it and adds 1s of safe time in the vault**, each times how well it went; the safe
    time starts at 3s and stops at 15s. When the timer runs out (or nobody has anything left to do) the whole crew's
@@ -65,6 +62,21 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    player's own.
 
    A loud job's score J is the average of its tasks' scores, and its edge runs from 8% down to 4% (`loud_edge`).
+
+   **Each role's loud game** (`heist_games/loud_roles.py`, the page's `src/heist/games/loudroles.ts`):
+   - *Lookout, CALL IT:* police cars race in on the roads round the bank, 2 to 4 a round (4 rounds, 6 at the vault
+     door), some at a red light for a moment. Tap the one that will reach the bank first before it gets there. Right
+     calls over rounds; a wrong or late call scores nothing, and calling early scores no more.
+   - *Hacker, Safecracker, Wheelman:* tap while the swinging marker's in the green (`loud.py`'s strike).
+   - *Face:* tap whoever reaches for the alarm as they pop up, not the ones with their hands up (pop).
+   - *Muscle:* mash GRAB (mash).
+
+   Each is a schedule made by the bot and shown in full, and the page sends what you did as a timeline (every half
+   second, and at the end), which the bot judges against the schedule. A timeline can't be from the future (the bot
+   refuses anything more than 2s past how long the task's clock has been going by its own clock), out of order, past
+   the end or faster than 25 events a second. A task whose page stops (a tab closed) is scored as it stands 5s after
+   its end (`LOUD_GRACE`), and the player moves on. The run-down is keyed by the game (`loud:<role>:<kind>`), so
+   someone who's met a role's old loud game gets the full run-down for its new one.
 5. **The run-down.** No puzzle or task throws anyone straight onto the clock. First comes a run-down: what it is and
    how to play it (`lib/activities/heist_briefs.py`: for each of the 42 games, the six loud tasks and the three kinds
    of loose cash, the goal in plain words, then the one thing you do, naming what's on screen, then what scores best
@@ -133,7 +145,7 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    the crew bag a bit for them (half of what the piles hold).
 
 A Village Branch job takes about a minute and a half in the rooms quiet, the High Street about five and the Vault
-about six and a half; a loud one, about a minute.
+about six and a half; a loud one, about a minute and a half.
 
 **Quick chat.** On every screen of a crew (the lobby, the plan, the rooms, the vault) a chat button opens a dozen
 set lines ("Hurry up!", "Nice one!", "Well done!", "Help!", "Leg it!", "Oops", "Where's Terry?", "Put the kettle on",
@@ -325,7 +337,7 @@ alarm, vault and police) with play money:
   always six and Two-Pint Terry never turns up (unless someone walks off). The bots back whatever way in the crew
   votes for, so the plan waits only on the people. Each bot rolls a skill level (35-95%); in every room it gets
   straight on with its things and finishes each 30-85% of the way into the room's time, with a score near its
-  skill; in a loud job it does its tasks one after another, each 6-14s, and its scores cut the timer like anyone's
+  skill; in a loud job it does its tasks one after another, each 9-18s (about as long as a person), and its scores cut the timer like anyone's
   (bots don't go after loose cash). In the vault it grabs about as well as its skill (75-100% of the piles) and legs
   it at a moment it picked (some bottle it early, some hold to the cap), and one still inside when the police come is
   nicked like anyone else. Your own loose cash in practice is play money. Bots have negative ids in the room and are

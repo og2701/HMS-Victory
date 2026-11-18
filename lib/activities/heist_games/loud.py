@@ -14,6 +14,7 @@ Every loud thing's key is "loud" (heist_games.get() finds the role's one here); 
 their own tasks are done is "loose-atm", "loose-till" or "loose-box" (LOOSE)."""
 
 from lib.activities.heist_games import Game, Refuse
+from lib.activities.heist_games.loud_roles import GAMES as _ROLE_GAMES
 
 
 def _num(x) -> bool:
@@ -194,6 +195,8 @@ LOUD = {
     "face": Pop("face", "EVERYONE DOWN!"),
     "muscle": Mash("muscle", "SMASH AND GRAB"),
 }
+# each role's own game where it has one (loud_roles.py); strike, pop and mash stay for the loose cash
+LOUD.update(_ROLE_GAMES)
 
 
 # loose cash: a loud job's bonus tasks for anyone whose own are done, until the crew goes into the vault
