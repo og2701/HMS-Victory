@@ -268,18 +268,19 @@ def test_mash_counts_taps_against_the_target():
 
 
 def test_mash_drops_taps_faster_than_any_thumb():
+    from lib.activities.heist_games import pace
     g = M.Mash()
     p = made(g, "big")
     play(g, p, [{"taps": [p["go"] + 20 * i for i in range(50)]}])        # fifty a second for a second
-    assert p["counted"] == 13                                            # one every MIN_GAP (80ms on this grid)
+    assert 12 <= p["counted"] <= pace.BURST + pace.RATE                  # the four in hand, then twelve a second
     p = made(g, "big")
-    play(g, p, [{"taps": [p["go"] + 70 * i for i in range(15)]}])        # a touch over fourteen a second
-    assert p["counted"] == g.CAP
+    play(g, p, [{"taps": [p["go"] + 50 * i for i in range(100)]}])       # twenty a second for five seconds
+    assert p["counted"] <= 5 * pace.RATE + pace.BURST
 
 
 def test_mash_counts_two_hands_as_one_thumb():
-    """The space bar and the mouse together (or a page sending a doubled burst): a tap within MIN_GAP of the last
-    one that counted doesn't, so two at once make no more steps than one quick thumb's taps."""
+    """The space bar and the mouse together (or a page sending a doubled burst): a press read twice, within
+    pace.MIN_GAP, counts once, so two at once make no more steps than one quick thumb's taps."""
     g = M.Mash()
     one, two = made(g, "big"), made(g, "big")
     taps = [one["go"] + 100 * i for i in range(1, 41)]                   # ten a second, the vault's target pace
@@ -287,8 +288,24 @@ def test_mash_counts_two_hands_as_one_thumb():
     play(g, two, [{"taps": sorted(taps + [t + 30 for t in taps])}])
     assert one["counted"] == two["counted"] == 40
     p = made(g, "big")
-    play(g, p, [{"taps": [p["go"] + 1, p["go"] + 60, p["go"] + 71, p["go"] + 140, p["go"] + 141]}])
-    assert p["taps"] == [p["go"] + 1, p["go"] + 71, p["go"] + 141]
+    play(g, p, [{"taps": [p["go"] + 1, p["go"] + 30, p["go"] + 41, p["go"] + 70, p["go"] + 141]}])
+    assert p["taps"] == [p["go"] + 1, p["go"] + 41, p["go"] + 141]
+
+
+def test_mash_never_drops_a_real_thumbs_taps():
+    """HEAVE at a strong thumb's 9 or 10 a second with the taps wobbling, sent in the page's half-second lots: every
+    one's a step. (The old rule, nothing within 70ms of the last, cut a tap whenever two landed close.)"""
+    g = M.Mash()
+    rng = random.Random(4)
+    for rate in (7, 9, 10):
+        p = made(g, "big")
+        taps, t = [], p["go"] + 30.0
+        while t < p["go"] + p["secs"] - 60:
+            taps.append(round(t + rng.uniform(-25, 25)))
+            t += 1000 / rate
+        taps = sorted(taps)
+        play(g, p, [{"taps": taps[k:k + 5]} for k in range(0, len(taps), 5)])
+        assert p["counted"] == len(taps), rate
 
 
 def test_mash_refuses_taps_out_of_time_or_out_of_order():

@@ -14,6 +14,7 @@ Every loud thing's key is "loud" (heist_games.get() finds the role's one here); 
 their own tasks are done is "loose-atm", "loose-till" or "loose-box" (LOOSE)."""
 
 from lib.activities.heist_games import Game, Refuse
+from lib.activities.heist_games.pace import paced
 
 
 def _num(x) -> bool:
@@ -142,15 +143,14 @@ class Pop(Game):
 class Mash(Game):
     key, pace = "loud", (1.0, 2.0)
     SECS = {"s": 6, "m": 7, "big": 8}
-    RATE, CAP = 7, 12                # taps a second for full marks, and the most a thumb manages
-    MIN_GAP = 70                     # ms: a tap this soon after the last one that counted doesn't (two hands at it, the
-                                     # space bar and the mouse, are no faster than one thumb; the page holds to 80ms)
+    RATE = 7                         # taps a second for full marks (pace.py holds them to one thumb's 12 a second at
+                                     # most, two hands at it or the space bar and the mouse together no faster)
 
     def __init__(self, role: str, title: str, key: str = "loud"):
         self.role, self.title, self.key = role, title, key
 
     def make(self, rng, size, story):
-        return {"kind": "mash", "secs": self.SECS.get(size, 6), "n": 0, "last": 0, "per": {}, "over": False}
+        return {"kind": "mash", "secs": self.SECS.get(size, 6), "n": 0, "last": 0, "over": False}
 
     def public(self, p):
         return {"kind": "mash", "secs": p["secs"], "n": p["n"], "need": p["secs"] * self.RATE, "over": p["over"]}
@@ -160,12 +160,8 @@ class Mash(Game):
         if not isinstance(taps, list) or len(taps) > 200 or not all(_num(t) for t in taps):
             raise Refuse("Mash it.")
         for ms in taps:
-            if ms < p["last"] or ms > p["secs"] * 1000 or (p["n"] and ms < p["last"] + self.MIN_GAP):
+            if ms < p["last"] or ms > p["secs"] * 1000 or not paced(p, ms):
                 continue
-            sec = str(int(ms // 1000))
-            if p["per"].get(sec, 0) >= self.CAP:
-                continue
-            p["per"][sec] = p["per"].get(sec, 0) + 1
             p["last"] = ms
             p["n"] += 1
         if body.get("end") is True:

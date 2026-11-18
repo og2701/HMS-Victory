@@ -91,16 +91,42 @@ def test_the_dev_bots_can_finish_one(role, key, size):
 
 
 def test_a_loud_mash_counts_two_hands_as_one_thumb():
-    """MASH GRAB TILL THE TIME'S UP: a tap within MIN_GAP of the last one that counted doesn't, so the space bar and
-    the mouse at once (or a doctored page's doubled taps) count no more than one quick thumb's."""
+    """MASH GRAB TILL THE TIME'S UP: a press read twice (two taps within pace.MIN_GAP) counts once, and two hands at
+    it (the space bar and the mouse, or a doctored page's doubled taps) are held to one thumb's 12 a second."""
     from lib.activities.heist_games import loud as L
+    from lib.activities.heist_games import pace
     g = L.LOUD["muscle"]
     assert isinstance(g, L.Mash)
     one, two = g.make(random.Random(1), "big", {}), g.make(random.Random(1), "big", {})
     taps = [i * 100 + 5 for i in range(70)]                               # ten a second for seven seconds
     g.move(one, {"taps": taps})
-    g.move(two, {"taps": sorted(taps + [t + 40 for t in taps])})
+    g.move(two, {"taps": sorted(taps + [t + 20 for t in taps])})          # each one read twice
     assert one["n"] == two["n"] == 70
     p = g.make(random.Random(1), "big", {})
-    g.move(p, {"taps": [0, 10, 69, 70, 100, 140, 141]})
-    assert p["n"] == 3 and p["last"] == 140
+    g.move(p, {"taps": [0, 10, 39, 40, 100, 120, 141]})
+    assert p["n"] == 4 and p["last"] == 141
+    # two hands mashing 10 a second each, out of step: no more than one thumb's 12 a second (and a few in hand)
+    p = g.make(random.Random(1), "big", {})
+    g.move(p, {"taps": sorted(taps + [t + 50 for t in taps])})
+    assert p["n"] <= 7 * pace.RATE + pace.BURST
+
+
+def test_a_loud_mash_never_drops_a_real_thumbs_taps():
+    """A thumb at 6 to 9 taps a second, its taps wobbling by up to 25ms either way, or a few landing close together
+    (a quick double, a run bunched up): every one counts."""
+    from lib.activities.heist_games import loud as L
+    g = L.LOUD["muscle"]
+    rng = random.Random(3)
+    for rate in (6, 7, 8, 9):
+        p = g.make(random.Random(1), "big", {})
+        taps, t = [], 20.0
+        while t < 6900:
+            taps.append(round(t + rng.uniform(-25, 25)))
+            t += 1000 / rate
+        taps = sorted(taps)
+        for k in range(0, len(taps), 5):                                  # sent a few at a time, as the page does
+            g.move(p, {"taps": taps[k:k + 5]})
+        assert p["n"] == len(taps), rate
+    p = g.make(random.Random(1), "big", {})
+    g.move(p, {"taps": [100, 150, 200, 260, 420, 470, 520, 640]})         # bunched pairs and runs, 8 a second overall
+    assert p["n"] == 8

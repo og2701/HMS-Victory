@@ -123,12 +123,14 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    in three lines, with the demo. On the page every grab shows at once (the button punches, a note flies into the
    bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up.
    **Tap races are one finger's pace.** The vault's GRAB, a loud job's MASH GRAB and the Muscle's HEAVE count a tap
-   no sooner than 80ms after the last one that counted, and only from the same kind of input as it (mouse, finger,
-   pen or keyboard) unless it's been a quarter of a second; a held key's auto-repeat and a key pressing the focused
-   button on top of its own tap don't count either. So the space bar and the mouse mashed together are no quicker
-   than one quick finger. The bot holds them to the same pace: it drops a grab within 70ms of the last it took
-   (`GRAB_GAP`), and a mash or heave tap within 70ms of the last that counted (`MIN_GAP`), on top of their caps a
-   second.
+   the moment the finger goes down, unless it's within 40ms of the last one that counted (one press read twice), or
+   from a different kind of input than it (mouse, finger, pen or keyboard) within 150ms, or it's over the pace: a
+   bucket that fills at 12 taps a second and holds 4, so a real thumb's 6-10 a second never loses a tap however its
+   taps bunch up, and a held key's auto-repeat or a key pressing the focused button on top of its own tap don't
+   count. So the space bar and the mouse mashed together are no quicker than one quick finger. The bot holds every
+   race to the same pace with the same numbers (`heist_games/pace.py`), on the times the page sends; the vault's
+   clock on the page runs on the device's own clock nudged towards the bot's, so its grabs never bunch up or come
+   out of order, and a grab stamped up to `GRAB_AHEAD` (0.3s) ahead of the bot's clock still counts.
    If the police never come before the cap, everyone left inside walks out with their bag. Someone who walked off has
    the crew bag a bit for them (half of what the piles hold).
 
@@ -182,7 +184,7 @@ the police do is `(1 - e) / m`.
 - **Grabbing.** A grab keeps the bag up for half a second, and the bag only gains what the piles gained over the time
   it was kept up, so it's never worth more than the piles. A bag kept up a fraction q of the way returns q of the
   above (at most). Perfect grabbing (or a page doctored to grab perfectly) reaches 1 - e and no further. Grabs sent
-  from the future, out of order, more than 2s late or within 70ms of the last one are dropped.
+  more than 0.3s from the future, out of order, more than 2s late or over one finger's pace (`pace.py`) are dropped.
 - **Gold bars.** Catching one adds half of (piles - bag) to the bag and keeps it up for a few seconds, so the bag is
   still never worth more than the piles: for a perfect grabber a bar is worth nothing but a rest, and for anyone
   else it wins back part of what slow grabbing lost. Always catching them, never catching them or hammering through

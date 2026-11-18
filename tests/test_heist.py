@@ -407,27 +407,52 @@ def test_a_bag_is_never_worth_more_than_the_piles(em):
 
 
 def test_grabs_quicker_than_one_finger_dont_count():
-    """Two hands at it (the space bar and the mouse together) or a doctored page sending a burst: a grab within
-    GRAB_GAP of the last one isn't one, so it can't count towards a gold bar or move the bag on, and the bag's what
-    one quick finger's grabs would make of it."""
+    """Two hands at it (the space bar and the mouse together) or a doctored page sending a burst: a grab read twice
+    (within pace.MIN_GAP of the last one) isn't one, and a flood is held to one finger's 12 a second, so it can't
+    count towards a gold bar or move the bag on past what one quick finger's grabs would."""
+    from lib.activities.heist_games import pace
     v, cap = _vault(H.EDGE_BEST, 6.0, 28.0, 8.0)
     v["police"] = None
     room = {"vault": v, "cap": cap, "left": [], "bots": {}}
     H._grab(room, A, [1.0, 1.0, 1.01, 1.03, 1.06, 1.069, 1.07, 1.1, 1.13, 1.2], 1.2)
     g = room["vault"]["grab"][str(A)]
-    assert g["recent"] == [1.0, 1.07, 1.2] and g["last"] == 1.2
+    assert g["recent"] == [1.0, 1.06, 1.1, 1.2] and g["last"] == 1.2 and g["n"] == 4
     assert g["b"] == pytest.approx(1.2 + H.GRAB_WINDOW)
-    # a run of grabs at one finger's pace (80ms apart, as the page sends them, rounded to the ms) all count
+    # a run of grabs at one finger's pace all count
     room = {"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}}
     taps = [round(2.0 + i * 0.08, 3) for i in range(12)]
     H._grab(room, A, taps, taps[-1])
-    assert room["vault"]["grab"][str(A)]["recent"] == taps[-8:]
+    assert room["vault"]["grab"][str(A)]["recent"] == taps[-8:] and room["vault"]["grab"][str(A)]["n"] == 12
     # the same burst sent twice over (two inputs at once) makes no more of the bag than sent once
     once, twice = ({"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}} for _ in range(2))
     H._grab(once, A, taps, taps[-1])
     H._grab(twice, A, sorted(taps + [x + 0.01 for x in taps]), taps[-1] + 0.01)
     assert H.bag(twice, A, 5.0) == pytest.approx(H.bag(once, A, 5.0))
     assert twice["vault"]["grab"][str(A)]["recent"] == once["vault"]["grab"][str(A)]["recent"]
+    # a flood of 50 a second for two seconds: no more than 12 a second and the few in hand
+    room = {"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}}
+    flood = [round(3.0 + i * 0.02, 3) for i in range(100)]
+    H._grab(room, A, flood, flood[-1])
+    assert room["vault"]["grab"][str(A)]["n"] <= 2 * pace.RATE + pace.BURST
+
+
+def test_a_real_fingers_grabs_all_count():
+    """A finger grabbing 6 to 8 times a second, its grabs wobbling (the page's clock nudged to the bot's, the
+    network) and some stamped a little ahead of the bot's clock: every one counts."""
+    v, cap = _vault(H.EDGE_BEST, 6.0, 28.0, 8.0)
+    v["police"] = None
+    rng = random.Random(9)
+    for rate in (6, 7, 8):
+        room = {"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}}
+        t, taps = 1.0, []
+        while t < 12.0:
+            taps.append(round(t + rng.uniform(-0.04, 0.04), 3))
+            t += 1 / rate
+        taps = sorted(taps)
+        for k in range(0, len(taps), 3):
+            lot = taps[k:k + 3]
+            H._grab(room, A, lot, lot[-1] - 0.2)                         # the bot's clock 200ms behind the page's
+        assert room["vault"]["grab"][str(A)]["n"] == len(taps), rate
 
 
 def _bar_run(style, rate, seed, lazy=0.0):
