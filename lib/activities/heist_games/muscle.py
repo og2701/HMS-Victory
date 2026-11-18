@@ -450,13 +450,15 @@ class Dye(Game):
 class Mash(Game):
     """Carry the sacks up the stairs: mash HEAVE as fast as you can for a few seconds, a step a tap. The page sends
     its taps in batches with their times and says when the time's up; taps outside the time are refused, and no thumb
-    manages more than CAP in a second, so any over that don't count. Nine a second (ten at the vault), a strong steady
+    manages more than CAP in a second or one within MIN_GAP of the last, so any like that don't count. Nine a second (ten at the vault), a strong steady
     thumb, gets the sack to the top, and the score falls away faster than the taps do short of it."""
     key, role, title = "mash", "muscle", "HEAVE"
     pace = (0.4, 0.6)
     SIZES = {"s": (6000, 9), "m": (7000, 9), "big": (8000, 10)}     # ms of heaving, and taps a second to the top
     GO = 2400                                      # ms of 3, 2, 1 before it starts
     CAP = 14
+    MIN_GAP = 70                                   # ms: a tap this soon after the last one that counted doesn't (two
+                                                   # hands, the space bar and the mouse; the page holds to 80ms)
     CURVE = 1.3                                    # score = share of the target to this power: 80% of it is 0.75
     EARLY, LATE = 150, 500                         # ms a tap can be off the window and still be the page's
 
@@ -479,6 +481,8 @@ class Mash(Game):
                 raise Refuse("Those taps don't add up.")
             last = t
         for t in taps:
+            if p["taps"] and t - p["taps"][-1] < self.MIN_GAP:
+                continue
             recent = sum(1 for x in p["taps"][-self.CAP:] if t - x < 1000)
             if recent < self.CAP:
                 p["taps"].append(t)

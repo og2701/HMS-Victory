@@ -88,3 +88,19 @@ def test_the_dev_bots_can_finish_one(role, key, size):
             except G.Refuse:
                 pass
         assert g.done(p) and 0.0 <= g.score(p) <= 1.0
+
+
+def test_a_loud_mash_counts_two_hands_as_one_thumb():
+    """MASH GRAB TILL THE TIME'S UP: a tap within MIN_GAP of the last one that counted doesn't, so the space bar and
+    the mouse at once (or a doctored page's doubled taps) count no more than one quick thumb's."""
+    from lib.activities.heist_games import loud as L
+    g = L.LOUD["muscle"]
+    assert isinstance(g, L.Mash)
+    one, two = g.make(random.Random(1), "big", {}), g.make(random.Random(1), "big", {})
+    taps = [i * 100 + 5 for i in range(70)]                               # ten a second for seven seconds
+    g.move(one, {"taps": taps})
+    g.move(two, {"taps": sorted(taps + [t + 40 for t in taps])})
+    assert one["n"] == two["n"] == 70
+    p = g.make(random.Random(1), "big", {})
+    g.move(p, {"taps": [0, 10, 69, 70, 100, 140, 141]})
+    assert p["n"] == 3 and p["last"] == 140

@@ -271,7 +271,24 @@ def test_mash_drops_taps_faster_than_any_thumb():
     g = M.Mash()
     p = made(g, "big")
     play(g, p, [{"taps": [p["go"] + 20 * i for i in range(50)]}])        # fifty a second for a second
+    assert p["counted"] == 13                                            # one every MIN_GAP (80ms on this grid)
+    p = made(g, "big")
+    play(g, p, [{"taps": [p["go"] + 70 * i for i in range(15)]}])        # a touch over fourteen a second
     assert p["counted"] == g.CAP
+
+
+def test_mash_counts_two_hands_as_one_thumb():
+    """The space bar and the mouse together (or a page sending a doubled burst): a tap within MIN_GAP of the last
+    one that counted doesn't, so two at once make no more steps than one quick thumb's taps."""
+    g = M.Mash()
+    one, two = made(g, "big"), made(g, "big")
+    taps = [one["go"] + 100 * i for i in range(1, 41)]                   # ten a second, the vault's target pace
+    play(g, one, [{"taps": taps}])
+    play(g, two, [{"taps": sorted(taps + [t + 30 for t in taps])}])
+    assert one["counted"] == two["counted"] == 40
+    p = made(g, "big")
+    play(g, p, [{"taps": [p["go"] + 1, p["go"] + 60, p["go"] + 71, p["go"] + 140, p["go"] + 141]}])
+    assert p["taps"] == [p["go"] + 1, p["go"] + 71, p["go"] + 141]
 
 
 def test_mash_refuses_taps_out_of_time_or_out_of_order():

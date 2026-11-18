@@ -143,6 +143,8 @@ class Mash(Game):
     key, pace = "loud", (1.0, 2.0)
     SECS = {"s": 6, "m": 7, "big": 8}
     RATE, CAP = 7, 12                # taps a second for full marks, and the most a thumb manages
+    MIN_GAP = 70                     # ms: a tap this soon after the last one that counted doesn't (two hands at it, the
+                                     # space bar and the mouse, are no faster than one thumb; the page holds to 80ms)
 
     def __init__(self, role: str, title: str, key: str = "loud"):
         self.role, self.title, self.key = role, title, key
@@ -158,7 +160,7 @@ class Mash(Game):
         if not isinstance(taps, list) or len(taps) > 200 or not all(_num(t) for t in taps):
             raise Refuse("Mash it.")
         for ms in taps:
-            if ms < p["last"] or ms > p["secs"] * 1000:
+            if ms < p["last"] or ms > p["secs"] * 1000 or (p["n"] and ms < p["last"] + self.MIN_GAP):
                 continue
             sec = str(int(ms // 1000))
             if p["per"].get(sec, 0) >= self.CAP:

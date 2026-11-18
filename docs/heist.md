@@ -121,10 +121,14 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    The bot decides when bars come, whose they are and whether one was caught (the page is only told about the one
    showing now), and bot crewmates catch some, by their skill. The report screen before the vault says all this
    in three lines, with the demo. On the page every grab shows at once (the button punches, a note flies into the
-   bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up. However many ways you grab at
-   once (the mouse, a finger or two, the space bar), it's one quick finger's pace at most: the page counts a grab no
-   sooner than 80ms after the last (and ignores a held key repeating, and a key pressing the focused button on top),
-   and the bot drops any within 70ms of the last it took (`GRAB_GAP`).
+   bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up.
+   **Tap races are one finger's pace.** The vault's GRAB, a loud job's MASH GRAB and the Muscle's HEAVE count a tap
+   no sooner than 80ms after the last one that counted, and only from the same kind of input as it (mouse, finger,
+   pen or keyboard) unless it's been a quarter of a second; a held key's auto-repeat and a key pressing the focused
+   button on top of its own tap don't count either. So the space bar and the mouse mashed together are no quicker
+   than one quick finger. The bot holds them to the same pace: it drops a grab within 70ms of the last it took
+   (`GRAB_GAP`), and a mash or heave tap within 70ms of the last that counted (`MIN_GAP`), on top of their caps a
+   second.
    If the police never come before the cap, everyone left inside walks out with their bag. Someone who walked off has
    the crew bag a bit for them (half of what the piles hold).
 
