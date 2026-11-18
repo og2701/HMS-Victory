@@ -116,7 +116,7 @@ class Timed(Game):
         end = body.get("end") is True
         at = body.get("at", 0)
         now = body.get("_now")
-        if not isinstance(ev, list) or len(ev) > 4 * RATE or not _int(at):
+        if not isinstance(ev, list) or len(ev) > MOST or not _int(at):
             raise Refuse("That's not a go.")
         T = p["secs"] * 1000
         last = p["ev"][-1][0] if p["ev"] else 0
@@ -253,3 +253,139 @@ class Call(Timed):
 
 
 GAMES = {"lookout": Call("lookout", "CALL IT")}
+
+
+# ---- the Muscle: CARRY THE SWAG ----------------------------------------------------------------------------------
+# A tottering stack of cash bags, carried at a jog across a hall full of chaos. The stack sways like a broom balanced
+# on a hand: tilt is a (past 1 or -1 it's gone too far), and it tips further the taller it is. Hold LEFT to push it
+# back left, RIGHT to push it right (both, or neither: no push). Barges (short, hard) and wet floor (longer, gentler)
+# come from the schedule, each flagged WARN steps ahead with the side it'll shove from. Past the tipping point the top
+# bag falls off and the stack comes back to half its tilt. The walking's done for you: speed's no part of it.
+
+class Carry(Timed):
+    kind = "carry"
+    SECS = {"s": 12, "m": 16}
+    BAGS = {"s": 6, "m": 8}
+    G0, G1 = 0.9, 0.15         # how hard the stack falls further as it tilts: more for every bag on it
+    LEAN = 2.6                 # a lean's push back
+    DAMP = 0.8                 # how much the sway drags
+    WARN = 12                  # steps a shove is flagged before it lands (0.4s)
+    EVERY = 3                  # steps between a perfect player's changes of mind (10 a second at most)
+
+    def make_table(self, rng, size, secs):
+        n = secs * 30
+        for tries in range(40):
+            soft = 0.92 ** tries
+            push, k, i = [], 36 + rng.randint(0, 12), 0
+            while True:
+                barge = rng.random() < 0.6
+                dur = rng.randint(7, 11) if barge else rng.randint(30, 45)
+                f = (rng.uniform(3.0, 4.6) if barge else rng.uniform(1.3, 2.1)) * (0.75 + 0.25 * min(1.0, i / 3)) * soft
+                if k + dur >= n - 15:
+                    break
+                push.append([k, k + dur, round(f * rng.choice([-1, 1]), 2)])
+                k += dur + rng.randint(26, 46)
+                i += 1
+            p = {"bags": self.BAGS[size], "a0": round(rng.uniform(0.04, 0.1) * rng.choice([-1, 1]), 3), "push": push,
+                 "warn": self.WARN, "secs": secs}
+            if self.run(p, self._ideal(p), n)["bags"] == p["bags"]:
+                break
+        del p["secs"]
+        return p
+
+    def ok(self, p, e):
+        return 0 <= e[1] <= 3
+
+    def fresh(self, p) -> dict:
+        return {"a": p["a0"], "w": 0.0, "bags": p["bags"], "hold": 0, "drops": []}
+
+    def step(self, p, st, k) -> None:
+        """One step of the stack (the page's carryStep is this, sum for sum)."""
+        f = 0.0
+        for s0, s1, pf in p["push"]:
+            if s0 <= k < s1:
+                f = f + pf
+        h = st["hold"]
+        lean = -self.LEAN if h == 1 else self.LEAN if h == 2 else 0.0
+        acc = (self.G0 + self.G1 * st["bags"]) * st["a"] + f + lean - self.DAMP * st["w"]
+        st["w"] = st["w"] + acc * DT
+        st["a"] = st["a"] + st["w"] * DT
+        if st["a"] >= 1.0 or st["a"] <= -1.0:
+            if st["bags"] > 0:
+                st["bags"] -= 1
+                st["drops"].append(k)
+            st["a"] = st["a"] * 0.5
+            st["w"] = 0.0
+
+    def run(self, p, ev, n) -> dict:
+        st = self.fresh(p)
+
+        def step(st, k, fired):
+            for e in fired:
+                st["hold"] = e[1]
+            self.step(p, st, k)
+        _replay(ev, n, st, step)
+        return st
+
+    def trace(self, p, n):
+        """For the golden timelines: the tilt every half second and where it all ends up."""
+        st, out = self.fresh(p), []
+        ev, i = p["ev"], 0
+        for k in range(n):
+            while i < len(ev) and step_of(ev[i][0]) <= k:
+                st["hold"] = ev[i][1]
+                i += 1
+            self.step(p, st, k)
+            if k % 15 == 14:
+                out.append(st["a"])
+        return {"a": out, "w": st["w"], "bags": st["bags"], "drops": st["drops"]}
+
+    def judge(self, p, n):
+        kept = self.run(p, p["ev"], n)["bags"] / p["bags"]
+        return kept if p["over"] else kept * n / self.steps(p)
+
+    def _plan(self, p, lag: int, every: int, look: int, rng=None, slip: float = 0.0) -> list:
+        """A timeline from a player who, every few steps, picks LEFT, RIGHT or neither by trying each a little way
+        ahead (seeing the shoves coming if look > 0), from what the stack was doing lag steps ago."""
+        n = p.get("secs", 0) * 30 or self.steps(p)
+        st, past, ev, hold = self.fresh(p), [], [], 0
+
+        def ahead(s, k, first):
+            s = {**s, "drops": []}
+            worst = 0.0
+            for j in range(look or 12):
+                if j < every:
+                    s["hold"] = first
+                else:
+                    u = s["a"] + 0.35 * s["w"]
+                    s["hold"] = 1 if u > 0.05 else 2 if u < -0.05 else 0
+                q = p if look else {**p, "push": [x for x in p["push"] if x[0] <= k]}
+                self.step(q, s, k + j)
+                worst = max(worst, abs(s["a"]) + (10.0 if s["drops"] else 0.0))
+            return worst
+
+        for k in range(n):
+            past.append({**st, "drops": []})
+            if k % every == 0:
+                seen = past[max(0, k - lag)]
+                best = min((0, 1, 2), key=lambda o: (ahead(seen, k, o), o != hold))
+                if rng is not None and rng.random() < slip:
+                    best = rng.choice((0, 1, 2))
+                if best != hold:
+                    hold = best
+                    ev.append([ms_of(k), hold])
+            st["hold"] = hold
+            self.step(p, st, k)
+        return ev
+
+    def _ideal(self, p):
+        return self._plan(p, 0, self.EVERY, 24)
+
+    def ideal(self, p):
+        return self._ideal(p)
+
+    def lazy(self, p, rng, skill):
+        return self._plan(p, round((1 - skill) * 10) + 2, 4, 24 if skill > 0.7 else 0, rng, (1 - skill) * 0.25)
+
+
+GAMES["muscle"] = Carry("muscle", "CARRY THE SWAG")

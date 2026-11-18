@@ -165,8 +165,10 @@ BRIEFS: dict[str, tuple[list[str], str]] = {
     "loud:face:pop": (["Stop the staff hitting the alarm.",
                    "People pop up in the squares. Tap the ones reaching for the red button.",
                    "Don't tap the ones with their hands up. That costs you."], "Tap whoever reaches for the red button. Not hands up."),
-    "loud:muscle:mash": (["Grab as much as you can.",
-                     "Tap GRAB as fast as you can until the time runs out."], "Tap GRAB as fast as you can."),
+    "loud:muscle:carry": (["Carry the stack of cash bags across the hall without dropping any.",
+                           "It sways. If it leans right, hold LEFT. If it leans left, hold RIGHT. Ease off as it comes back.",
+                           "A ! shows which side the next shove comes from. Bags kept is your score."],
+                          "Leaning right? Hold LEFT. Leaning left? Hold RIGHT. Watch for the !"),
     # loose cash, once your own tasks are done: each pays you a little, straight away
     "loose:atm": (["Crack an ATM. The cash is yours, straight away.",
                    "Tap CRACK when the white marker is in the green.",

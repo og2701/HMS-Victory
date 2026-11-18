@@ -69,10 +69,18 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
      calls over rounds; a wrong or late call scores nothing, and calling early scores no more.
    - *Hacker, Safecracker, Wheelman:* tap while the swinging marker's in the green (`loud.py`'s strike).
    - *Face:* tap whoever reaches for the alarm as they pop up, not the ones with their hands up (pop).
-   - *Muscle:* mash GRAB (mash).
+   - *Muscle, CARRY THE SWAG:* a tottering stack of cash bags (6, 8 at the vault door) carried across a hall full of
+     chaos. It sways like a broom balanced on a hand, worse the taller it is: hold LEFT to push it back left, RIGHT to
+     push it right (two thumbs on the two halves of the bar, or the arrow keys). Barges and wet floor shove it, each
+     flagged with a ! on its side 0.4s ahead. Past the tipping point the top bag falls off and the stack comes back to
+     half its tilt. Bags kept over bags started (on a loot thing that's what swells the vault). No tap speed in it at
+     all: the loud mash is gone.
 
    Each is a schedule made by the bot and shown in full, and the page sends what you did as a timeline (every half
-   second, and at the end), which the bot judges against the schedule. A timeline can't be from the future (the bot
+   second, and at the end), which the bot judges against the schedule. The ones with something moving (all but CALL
+   IT) are played through fixed steps, 30 a second (`_replay`), with only + - * / and sqrt on the schedule's numbers,
+   and the page runs a copy of the same steps (`src/heist/games/loudsim.ts`) to draw it, so what you see is exactly
+   what's judged: golden timelines (`tests/data/heist_loud_golden.json`) are checked against both, to the bit. A timeline can't be from the future (the bot
    refuses anything more than 2s past how long the task's clock has been going by its own clock), out of order, past
    the end or faster than 25 events a second. A task whose page stops (a tab closed) is scored as it stands 5s after
    its end (`LOUD_GRACE`), and the player moves on. The run-down is keyed by the game (`loud:<role>:<kind>`), so
@@ -134,7 +142,7 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    showing now), and bot crewmates catch some, by their skill. The report screen before the vault says all this
    in three lines, with the demo. On the page every grab shows at once (the button punches, a note flies into the
    bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up.
-   **Tap races are one finger's pace.** The vault's GRAB, a loud job's MASH GRAB and the Muscle's HEAVE count a tap
+   **Tap races are one finger's pace.** The vault's GRAB, the loose cash till's GRAB and the Muscle's HEAVE count a tap
    no sooner than 80ms after the last one that counted, and only from the same kind of input as it (mouse, finger,
    pen or keyboard) unless it's been a quarter of a second; a held key's auto-repeat and a key pressing the focused
    button on top of its own tap don't count either. So the space bar and the mouse mashed together are no quicker

@@ -94,7 +94,7 @@ def test_a_loud_mash_counts_two_hands_as_one_thumb():
     """MASH GRAB TILL THE TIME'S UP: a tap within MIN_GAP of the last one that counted doesn't, so the space bar and
     the mouse at once (or a doctored page's doubled taps) count no more than one quick thumb's."""
     from lib.activities.heist_games import loud as L
-    g = L.LOUD["muscle"]
+    g = L.LOOSE["till"]                                                   # (the loud Muscle's CARRY THE SWAG now)
     assert isinstance(g, L.Mash)
     one, two = g.make(random.Random(1), "big", {}), g.make(random.Random(1), "big", {})
     taps = [i * 100 + 5 for i in range(70)]                               # ten a second for seven seconds
