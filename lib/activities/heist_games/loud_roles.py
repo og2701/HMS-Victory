@@ -678,3 +678,137 @@ class Jam(Timed):
 
 
 GAMES["hacker"] = Jam("hacker", "JAM THE SIGNAL")
+
+
+# ---- the Wheelman: BACK IT IN ------------------------------------------------------------------------------------
+# Reversing the van to the loading door at speed, so the Muscle can throw the bags in. Each round (3, 4 at the vault
+# door, W steps each) the van rolls back towards the dock from x0 metres at v0 m/s, on its own slope (downhill adds
+# speed) and grip (wet: the brake does less). Hold BRAKE: it builds up over 0.4s while held and lets off over 0.25s
+# when you let go, so you feather it. Stopped is parked; touching the dock is a bump. Per round, by the gap: within
+# 0.2m scores 1, sliding to 0.2 at 2m (and to nothing at 4m); a bump scores 0.3; still rolling at the end, half.
+
+class Brake(Timed):
+    kind = "brake"
+    ROUNDS = {"s": 3, "m": 4}
+    SECS = {"s": 12, "m": 16}
+    W = 120                    # steps a round (4s)
+    BMAX = 8.0                 # m/s/s at full brake, dry
+
+    def make_table(self, rng, size, secs):
+        rounds = []
+        for r in range(self.ROUNDS[size]):
+            for tries in range(60):
+                rd = {"x0": round(rng.uniform(7.5, 11.0), 2), "v0": round(rng.uniform(3.4, 4.2) + 0.5 * r, 2),
+                      "slope": 0.0 if r == 0 else rng.choice([0.0, 0.6, 1.2]), "grip": 1.0 if r == 0 else rng.choice([1.0, 1.0, 0.65])}
+                if self._best(rd)[1] >= 0.9999:
+                    break
+            rounds.append(rd)
+        return {"rounds": rounds, "w": self.W}
+
+    def ok(self, p, e):
+        return e[1] in (0, 1)
+
+    def fresh(self, p) -> dict:
+        return {"x": 0.0, "v": 0.0, "b": 0.0, "parked": False, "touched": False, "hold": 0, "res": []}
+
+    def step(self, p, st, k) -> None:
+        """One step of the van (the page's brakeStep is this, sum for sum)."""
+        W = p["w"]
+        rd = p["rounds"][k // W]
+        if k % W == 0:
+            st.update(x=rd["x0"], v=rd["v0"], b=0.0, parked=False, touched=False)
+        if st["hold"]:
+            st["b"] = min(1.0, st["b"] + DT / 0.4)
+        else:
+            st["b"] = max(0.0, st["b"] - DT / 0.25)
+        if not st["parked"] and not st["touched"]:
+            st["v"] = st["v"] + (rd["slope"] - self.BMAX * rd["grip"] * st["b"]) * DT
+            if st["v"] <= 0.0:
+                st["v"] = 0.0
+                st["parked"] = True
+            st["x"] = st["x"] - st["v"] * DT
+            if st["x"] <= 0.0:
+                st["x"] = 0.0
+                st["touched"] = True
+        if k % W == W - 1:
+            st["res"].append([st["x"], st["parked"], st["touched"]])
+
+    @staticmethod
+    def rscore(x: float, parked: bool, touched: bool) -> float:
+        if touched:
+            return 0.3
+        s = 1.0 if x <= 0.2 else 1 - 0.8 * (x - 0.2) / 1.8 if x <= 2.0 else max(0.0, 0.2 - 0.1 * (x - 2.0))
+        return s if parked else s * 0.5
+
+    def run(self, p, ev, n) -> dict:
+        st = self.fresh(p)
+
+        def step(st, k, fired):
+            for e in fired:
+                st["hold"] = e[1]
+            self.step(p, st, k)
+        _replay(ev, n, st, step)
+        return st
+
+    def trace(self, p, n):
+        st = self.run(p, p["ev"], n)
+        return {"res": [[x, 1 if a else 0, 1 if b else 0] for x, a, b in st["res"]], "x": st["x"], "v": st["v"], "b": st["b"]}
+
+    def judge(self, p, n):
+        st = self.run(p, p["ev"], n)
+        got = [self.rscore(*r) for r in st["res"]]
+        if len(st["res"]) < len(p["rounds"]) and n % p["w"] and (st["parked"] or st["touched"]):
+            got.append(self.rscore(st["x"], st["parked"], st["touched"]))      # this round's, if it's stopped
+        return sum(got) / len(p["rounds"])
+
+    def _round(self, rd: dict, on: int, off: int = -1, again: int = -1) -> tuple:
+        """One round on its own: brake from step `on` (let off at `off`, back on at `again`)."""
+        p = {"rounds": [rd], "w": self.W}
+        st = self.fresh(p)
+        for j in range(self.W):
+            st["hold"] = 1 if j >= on and not (off >= 0 and off <= j < again) else 0
+            self.step(p, st, j)
+        return st["res"][0]
+
+    def _best(self, rd: dict) -> tuple:
+        """The best braking for a round: when to start, and if it helps, a quick let-off to land it."""
+        best = (0, -1, -1), -1.0
+        for on in range(self.W):
+            s = self.rscore(*self._round(rd, on))
+            if s > best[1]:
+                best = (on, -1, -1), s
+        if best[1] < 0.9999:
+            on = best[0][0]
+            for start in range(max(0, on - 6), on + 2):
+                for off in range(start + 2, min(self.W, start + 40)):
+                    for again in range(off + 1, min(self.W, off + 6)):
+                        s = self.rscore(*self._round(rd, start, off, again))
+                        if s > best[1]:
+                            best = (start, off, again), s
+                if best[1] >= 0.9999:
+                    break
+        return best
+
+    def _timeline(self, p, plan: list) -> list:
+        ev = []
+        for r, (on, off, again) in enumerate(plan):
+            base = r * p["w"]
+            ev.append([ms_of(base + on), 1])
+            if off >= 0:
+                ev += [[ms_of(base + off), 0], [ms_of(base + again), 1]]
+            if r < len(p["rounds"]) - 1:
+                ev.append([ms_of(base + p["w"]), 0])
+        return ev
+
+    def ideal(self, p):
+        return self._timeline(p, [self._best(rd)[0] for rd in p["rounds"]])
+
+    def lazy(self, p, rng, skill):
+        plan = []
+        for rd in p["rounds"]:
+            on = self._best(rd)[0][0]
+            plan.append((max(0, min(self.W - 1, round(on + rng.gauss(0, (1 - skill) * 14)))), -1, -1))
+        return self._timeline(p, plan)
+
+
+GAMES["wheelman"] = Brake("wheelman", "BACK IT IN")
