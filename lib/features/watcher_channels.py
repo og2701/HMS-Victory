@@ -4,7 +4,9 @@ The watcher skill (.claude/skills/watcher) keeps ``data/watcher/extra_channels.j
 the channel, the users whose pings go to the watcher there, and when it ends. While a watch runs, Vic's own chat
 replies (direct-mention answers and live chat) stand down for everyone in that channel, not just the listed users
 (Oggers, 17 Nov 2026: a regular's tag got a live answer mid-watch and talked over the watcher). The listed users'
-pings are the ones the watcher answers; everyone else there simply gets no Vic reply until the watch ends.
+pings are the ones the watcher answers; everyone else there simply gets no Vic reply until the watch ends, unless
+the watch has ``"open_tags": true``: then only the listed users' tags go to the watcher and everyone else's direct
+tags get Vic's own answer as usual (Oggers, 18 Nov 2026). Live chat still stands down channel-wide either way.
 
 Two time checks mean a crashed session can never leave a channel muted: an entry stops counting the moment its
 ``expires_at`` passes, and every entry stops counting when the watcher's heartbeat file is more than

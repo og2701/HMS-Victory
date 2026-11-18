@@ -111,6 +111,31 @@ class ResponderStandsDownTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await handle_chat_message(client, self._message(client, USERS.OGGERS)))
         one_off.assert_called_once()
 
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention", new_callable=AsyncMock)
+    async def test_open_tags_watch_lets_others_through(self, one_off):
+        one_off.return_value = True
+        client = MagicMock()
+        client.user.id = 999999999
+        live_chat_manager.active = False
+        watch = {"request_id": "1", "expires_at": time.time() + 60, "open_tags": True}
+        with patch("lib.features.watcher_channels.channel_watch", return_value=watch), \
+                patch("lib.features.watcher_channels.watch_for", return_value=None), \
+                patch("lib.features.chat_responder.has_direct_access", return_value=True), \
+                patch("lib.features.persona_control.persona_live", return_value=False):
+            self.assertTrue(await handle_chat_message(client, self._message(client, OTHER_USER)))
+        one_off.assert_called_once()
+
+    @patch("lib.features.chat_responder.handle_one_off_owner_mention", new_callable=AsyncMock)
+    async def test_open_tags_watch_still_hands_listed_users_to_the_watcher(self, one_off):
+        client = MagicMock()
+        client.user.id = 999999999
+        live_chat_manager.active = False
+        watch = {"request_id": "1", "expires_at": time.time() + 60, "open_tags": True}
+        with patch("lib.features.watcher_channels.channel_watch", return_value=watch), \
+                patch("lib.features.watcher_channels.watch_for", return_value=watch):
+            self.assertFalse(await handle_chat_message(client, self._message(client, USERS.OGGERS)))
+        one_off.assert_not_called()
+
 
 class ChannelWatchTest(unittest.TestCase):
     """While a channel is watched, Vic's own replies stand down there for everyone, not just the listed users."""

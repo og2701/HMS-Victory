@@ -6678,8 +6678,14 @@ async def handle_chat_message(client: discord.Client, message: discord.Message) 
 
     # While the hand-run watcher covers this channel (Oggers asked for it in #bot-workshop), Vic's own replies
     # (direct mentions and live chat) stand down there for everyone until it ends, so nothing talks over it.
-    from lib.features.watcher_channels import channel_watch
-    watch = channel_watch(getattr(message.channel, "id", None))
+    # A watch marked open_tags is for its listed users only: everyone else's tags still get Vic's own answer
+    # (Oggers, 18 Nov 2026: "the general watcher is for me only, re-enable the direct tag vic here").
+    from lib.features.watcher_channels import channel_watch, watch_for
+    channel_id = getattr(message.channel, "id", None)
+    watch = channel_watch(channel_id)
+    if watch and watch.get("open_tags") and not live_chat_manager.active \
+            and not watch_for(channel_id, getattr(message.author, "id", None)):
+        watch = None
     if watch:
         if is_bot_explicitly_mentioned(client, message) or live_chat_manager.active:
             logger.info("Message from %s (%s) in #%s left to the watcher (watch %s, until %s).", message.author,
