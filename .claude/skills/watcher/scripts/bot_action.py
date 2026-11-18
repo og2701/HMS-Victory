@@ -22,12 +22,14 @@ Actions (the bot refuses anything else, and any arg not listed):
                  winner: an option's text (any case) or its 1-based number; pays out and posts the result
                  (in the pred's own channel unless announce_channel_id is given). Only on a go typed by Oggers.
   pred_draw      message_id   refunds every bet. Only on a go typed by Oggers.
+  chat_replay    channel_id message_id   hands a missed tag to Vic's chat responder as if it just arrived
+                 (same access gates). Only when Oggers asks for that message to be answered.
 
 Everything runs as Oggers and is logged to #bot-usage-log."""
 import base64, json, sys, uuid
 
 ACTIONS = {"pred_list", "pred_list_scheduled", "pred_schedule", "pred_create", "pred_cancel_scheduled",
-           "pred_lock", "pred_unlock", "pred_resolve", "pred_draw"}
+           "pred_lock", "pred_unlock", "pred_resolve", "pred_draw", "chat_replay"}
 WAIT_SECONDS = 60
 
 

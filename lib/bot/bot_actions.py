@@ -283,6 +283,20 @@ async def _pred_draw(client, args):
     return summary
 
 
+async def _chat_replay(client, args):
+    """Hand one already-sent message to Vic's chat responder, as if it had just arrived. The usual gates (who has
+    direct access, paused, watched channels, the persona bot) all still apply. For a tag Vic missed (it came in
+    while a watch had the channel, or the bot was restarting) that Oggers wants answered."""
+    from lib.features.chat_responder import handle_chat_message
+    channel = await _resolve_channel(client, args["channel_id"])
+    try:
+        message = await channel.fetch_message(args["message_id"])
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        raise ActionError(f"Message {args['message_id']} not found in that channel.")
+    answered = bool(await handle_chat_message(client, message))
+    return {"message_id": str(message.id), "author_id": str(message.author.id), "answered": answered}
+
+
 # name -> (arg spec {arg: (type, required)}, handler(client, args))
 ACTIONS = {
     "pred_list": ({}, _pred_list),
@@ -303,6 +317,7 @@ ACTIONS = {
         "message_id": ("int", True), "winner": ("str_or_int", True), "announce_channel_id": ("int", False),
     }, _pred_resolve),
     "pred_draw": ({"message_id": ("int", True)}, _pred_draw),
+    "chat_replay": ({"channel_id": ("int", True), "message_id": ("int", True)}, _chat_replay),
 }
 
 
