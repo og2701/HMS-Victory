@@ -121,7 +121,10 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    The bot decides when bars come, whose they are and whether one was caught (the page is only told about the one
    showing now), and bot crewmates catch some, by their skill. The report screen before the vault says all this
    in three lines, with the demo. On the page every grab shows at once (the button punches, a note flies into the
-   bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up.
+   bag, a count ticks up) and a GRAB SPEED meter reads MAX while you're keeping up. However many ways you grab at
+   once (the mouse, a finger or two, the space bar), it's one quick finger's pace at most: the page counts a grab no
+   sooner than 80ms after the last (and ignores a held key repeating, and a key pressing the focused button on top),
+   and the bot drops any within 70ms of the last it took (`GRAB_GAP`).
    If the police never come before the cap, everyone left inside walks out with their bag. Someone who walked off has
    the crew bag a bit for them (half of what the piles hold).
 
@@ -175,7 +178,7 @@ the police do is `(1 - e) / m`.
 - **Grabbing.** A grab keeps the bag up for half a second, and the bag only gains what the piles gained over the time
   it was kept up, so it's never worth more than the piles. A bag kept up a fraction q of the way returns q of the
   above (at most). Perfect grabbing (or a page doctored to grab perfectly) reaches 1 - e and no further. Grabs sent
-  from the future, out of order or more than 2s late are dropped.
+  from the future, out of order, more than 2s late or within 70ms of the last one are dropped.
 - **Gold bars.** Catching one adds half of (piles - bag) to the bag and keeps it up for a few seconds, so the bag is
   still never worth more than the piles: for a perfect grabber a bar is worth nothing but a rest, and for anyone
   else it wins back part of what slow grabbing lost. Always catching them, never catching them or hammering through
