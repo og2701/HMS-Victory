@@ -95,7 +95,7 @@ def test_a_loud_mash_counts_two_hands_as_one_thumb():
     it (the space bar and the mouse, or a doctored page's doubled taps) are held to one thumb's 12 a second."""
     from lib.activities.heist_games import loud as L
     from lib.activities.heist_games import pace
-    g = L.LOUD["muscle"]
+    g = L.LOOSE["till"]                                                   # (the loud Muscle's CARRY THE SWAG now)
     assert isinstance(g, L.Mash)
     one, two = g.make(random.Random(1), "big", {}), g.make(random.Random(1), "big", {})
     taps = [i * 100 + 5 for i in range(70)]                               # ten a second for seven seconds
@@ -115,7 +115,7 @@ def test_a_loud_mash_never_drops_a_real_thumbs_taps():
     """A thumb at 6 to 9 taps a second, its taps wobbling by up to 25ms either way, or a few landing close together
     (a quick double, a run bunched up): every one counts."""
     from lib.activities.heist_games import loud as L
-    g = L.LOUD["muscle"]
+    g = L.LOOSE["till"]                                                   # (the loud Muscle plays CARRY THE SWAG now)
     rng = random.Random(3)
     for rate in (6, 7, 8, 9):
         p = g.make(random.Random(1), "big", {})

@@ -93,15 +93,17 @@ def _sandbox(app, heist) -> None:
     async def games(request):
         for role in heist_games.ROLES:
             reload(role)
+        from lib.activities.heist_games.loud import LOUD
         return web.json_response({role: [{"key": k, "title": (heist_games.FIRST_TITLES.get(k) or heist_games.GAMES[role][k].title)}
-                                         for k in heist_games.keys(role)] for role in heist_games.ROLES})
+                                         for k in heist_games.keys(role)] + [{"key": "loud", "title": f"LOUD: {LOUD[role].title}"}]
+                                  for role in heist_games.ROLES})
 
     async def make(request):
         body = await request.json()
         role, game, size = body.get("role"), body.get("game"), body.get("size") or "s"
         if role in heist_games.ROLES:
             reload(role)
-        if role not in heist_games.ROLES or game not in heist_games.keys(role):
+        if role not in heist_games.ROLES or (game not in heist_games.keys(role) and game != "loud"):
             return web.json_response({"error": "No such game."}, status=400)
         sid = f"sb{len(puzzles) + 1}"
         try:

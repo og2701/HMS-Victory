@@ -160,25 +160,36 @@ def to_vault(em, rid, police_take=None, way=None, style="quiet"):
     assert r["state"] == "vault"
 
 
+def task_secs(th):
+    """How long a loud task's clock runs before it can be finished (a timed one can't be played faster than it lasts;
+    the old quick ones, no time at all)."""
+    g = H.heist_games.get(th["role"], th["p"].get("game"))
+    return g.secs(th["p"]) if hasattr(g, "secs") else 0.0
+
+
 def loud_through(em, rid, loose=True):
-    """A loud job's breach: everyone does every task they get, perfectly (loose cash too, if ``loose``), then waits."""
+    """A loud job's breach: everyone does every task they get, perfectly (loose cash too, if ``loose``), then waits.
+    Everyone starts their task together and plays it out as its clock runs."""
     r = H._rooms[rid]
     tick(em, H.MOVE_SECONDS + 0.01)
     for _ in range(200):
         if r["state"] != "job":
             return
-        busy = False
+        on = []
         for u in [u for u in r["players"] if u not in r["left"] and u > 0]:
             th = H._current(r, u)
             if th is None or (th["mode"] == "loose" and not loose):
                 continue
-            busy = True
             H.play(u, rid, {"ob": th["id"], "go": True})
-            for mv in moves(th["role"], th["p"]):
-                if r["state"] == "job":
-                    H.play(u, rid, {"ob": th["id"], **mv})
-        if not busy:
+            on.append((u, th))
+        if not on:
             break
+        tick(em, max(task_secs(th) for _, th in on) + 0.01)
+        H.room(r["host"], rid, name_of)
+        for u, th in on:
+            for mv in moves(th["role"], th["p"]):
+                if r["state"] == "job" and th["state"] == "active":
+                    H.play(u, rid, {"ob": th["id"], **mv})
     tick(em, max(0.0, r.get("deadline", 0) - H.time.time()) + 0.01)
     H.room(r["host"], rid, name_of)
 
@@ -743,6 +754,7 @@ def test_a_loud_job_is_a_breach_against_one_timer(em):
     # Anne does her first task: the timer comes down, the safe time goes up, and she's straight on to her next
     first = H._current(r, A)
     H.play(A, rid, {"ob": first["id"], "go": True})
+    tick(em, task_secs(first) + 0.01)
     for mv in moves(first["role"], first["p"]):
         H.play(A, rid, {"ob": first["id"], **mv})
     assert first["state"] == "done" and first["score"] == pytest.approx(1.0)
@@ -798,7 +810,9 @@ def test_every_game_has_its_run_down():
         # the goal in a few plain words, then what you do, and maybe what scores best: two or three lines
         assert 2 <= len(how) <= 3 and len(how[0]) <= 90 and len(line) <= 75, key
         assert not any(w in " ".join(how).lower() for w in ("going loud", "revs", "the zone")), key
-    assert {f"loud:{r}" for r in H.ROLES} | {"loose:atm", "loose:till", "loose:box"} <= set(H.briefs.BRIEFS)
+    from lib.activities.heist_games.loud import LOUD
+    loud = {f"loud:{r}:{LOUD[r].make(random.Random(1), 's', {})['kind']}" for r in H.ROLES}
+    assert loud | {"loose:atm", "loose:till", "loose:box"} <= set(H.briefs.BRIEFS)
 
 
 def test_a_puzzles_clock_waits_for_its_run_down(em):

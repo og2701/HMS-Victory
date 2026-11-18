@@ -12,7 +12,8 @@ Every run-down is written for someone who has never seen the game and can't see 
     line 3  (if it helps) what scores best, or what to avoid
 
 No scene-setting line, and no word for a control unless that word is printed on it. Keyed "role:game" (a role's
-first game by its heist_games.FIRST key), "loud:role" for a loud job's tasks and "loose:kind" for loose cash."""
+first game by its heist_games.FIRST key), "loud:role:kind" for a loud job's tasks (heist_games/loud_roles.py) and
+"loose:kind" for loose cash."""
 
 # key: (the full run-down; the one-line reminder)
 BRIEFS: dict[str, tuple[list[str], str]] = {
@@ -148,23 +149,30 @@ BRIEFS: dict[str, tuple[list[str], str]] = {
                       "A bar slides from side to side. Tap to drop it when it's right over the stack.",
                       "Any part that hangs over the edge is cut off."], "Tap to drop each bar right over the stack."),
     # a loud job: a quick bit of action for each role's tasks
-    "loud:hacker": (["Fry the alarm panel.",
-                     "Tap ZAP when the white marker is in the green.",
-                     "The middle of the green scores most. It gets faster each go."], "Tap ZAP when the white marker is in the green."),
-    "loud:safecracker": (["Drill out the lock.",
-                          "Tap DRILL when the white marker is in the green.",
-                          "The middle of the green scores most. It gets faster each go."], "Tap DRILL when the white marker is in the green."),
-    "loud:wheelman": (["Ram the van through the shutter.",
-                       "Tap RAM IT when the white marker is in the green.",
-                       "The middle of the green scores most. It gets faster each go."], "Tap RAM IT when the white marker is in the green."),
-    "loud:lookout": (["Smash every camera.",
-                      "Cameras pop up in the squares. Tap each one before it drops back down.",
-                      "Don't tap the pigeons. That costs you."], "Tap the cameras as they pop up. Not the pigeons."),
-    "loud:face": (["Stop the staff hitting the alarm.",
-                   "People pop up in the squares. Tap the ones reaching for the red button.",
-                   "Don't tap the ones with their hands up. That costs you."], "Tap whoever reaches for the red button. Not hands up."),
-    "loud:muscle": (["Grab as much as you can.",
-                     "Tap GRAB as fast as you can until the time runs out."], "Tap GRAB as fast as you can."),
+    "loud:hacker:jam": (["Jam the alarm's call to the police.",
+                         "Hold to lift your jammer, let go to drop it. Keep it on the wavy signal line.",
+                         "The band narrows as you go. A flicker means the signal's about to jump."],
+                        "Hold to lift, let go to drop. Stay on the signal."),
+    "loud:safecracker:lance": (["Burn the lock out of the door with the thermal lance.",
+                                "Drag round the dotted ring. The flame follows at its own pace and only cuts on the line.",
+                                "Ease off over the dark lumps or the lance jams. Off the line costs you."],
+                               "Drag round the ring, on the line. Slow down over the dark lumps."),
+    "loud:wheelman:brake": (["Back the van up to the loading door, as close as you can without hitting it.",
+                             "Hold BRAKE to slow the van. The brake takes a moment to bite, so ease on early.",
+                             "Each go has its own speed and slope. Wet ground grips less. A bump costs you."],
+                            "Hold BRAKE to stop right by the door. It takes a moment to bite."),
+    "loud:lookout:call": (["Tell the crew which police car gets to the bank first.",
+                           "Cars race in on the roads. Tap the one that will reach the bank first, before it does.",
+                           "Watch speed and distance. A car at a red light waits. Quick doesn't score more."],
+                          "Tap the car that will reach the bank first. Red lights wait."),
+    "loud:face:room": (["Keep the customers calm so nobody runs for the door.",
+                        "Each one has a panic bar. Tap someone to shout them down and empty their bar.",
+                        "After a shout you need a breath: taps too soon don't count. Pick who's worst."],
+                       "Tap whoever's panicking most. You need a breath between shouts."),
+    "loud:muscle:carry": (["Carry the stack of cash bags across the hall without dropping any.",
+                           "It sways. If it leans right, hold LEFT. If it leans left, hold RIGHT. Ease off as it comes back.",
+                           "A ! shows which side the next shove comes from. Bags kept is your score."],
+                          "Leaning right? Hold LEFT. Leaning left? Hold RIGHT. Watch for the !"),
     # loose cash, once your own tasks are done: each pays you a little, straight away
     "loose:atm": (["Crack an ATM. The cash is yours, straight away.",
                    "Tap CRACK when the white marker is in the green.",

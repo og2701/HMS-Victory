@@ -835,7 +835,8 @@ LOOSE_EACH = (3, 15, 4)      # each bonus task a few UKPence: 3 to 15, nearer th
 LOOSE_TOP_STAKE = 1000       # the draw over the last 4 of it, times how well it's done (and never past LOOSE_MAX)
 LOOSE_TASKS = 4              # bonus tasks a player can do in a breach
 LOOSE_KINDS = ["atm", "till", "box"]
-BOT_LOUD = (6.0, 14.0)       # how long a bot crewmate takes over each loud task
+BOT_LOUD = (9.0, 18.0)       # how long a bot crewmate takes over each loud task (a person takes 10-18s)
+LOUD_GRACE = 5.0             # a loud task left this long past its end (a tab closed) is scored as it stands
 # quick chat: a few set things to shout to the crew (no free text), one every CHAT_EVERY seconds each, shown for a bit
 CHAT = {"hurry": "Hurry up!", "nice": "Nice one!", "well": "Well done!", "help": "Help!", "leg": "Leg it!",
         "oops": "Oops", "terry": "Where's Terry?", "kettle": "Put the kettle on", "brian": "It's Brian!",
@@ -1054,11 +1055,12 @@ def _room_secs(rm: dict) -> float:
 
 
 def _game_key(th: dict) -> str:
-    """Which run-down a thing gets: its game's ("role:game"), a loud task's role's ("loud:role"), or the loose
-    cash's kind ("loose:atm")."""
+    """Which run-down a thing gets: its game's ("role:game"), a loud task's role's and kind's ("loud:role:kind", so
+    someone who's met a role's old loud game still gets the full run-down for its new one), or the loose cash's kind
+    ("loose:atm")."""
     g = th["p"].get("game")
     if g == "loud":
-        return f"loud:{th['role']}"
+        return f"loud:{th['role']}:{th['p'].get('kind')}"
     if (g or "").startswith("loose-"):
         return f"loose:{g[6:]}"
     return f"{th['role']}:{g or heist_games.FIRST[th['role']]}"
@@ -1180,6 +1182,11 @@ def _breach(room: dict, now: float) -> bool:
         _bot_says(room, th["who"], "nice" if th["bot"] >= 0.85 else "oops" if th["bot"] < 0.4 else "", th["at"])
         _next_task(room, th["who"], th["at"])
         changed = True
+    for th in [t for t in _all_things(room) if t["state"] == "active" and t.get("bot") is None and _overdue(t, now)]:
+        # a timed loud task whose page has stopped (a tab closed): scored as it stands, and on to the next
+        _settle(room, th, _played(th))
+        _next_task(room, th["who"], now)
+        changed = True
     for u in _present(room):
         if _current(room, u) is None:
             before = len(room.get("extra", []))
@@ -1188,6 +1195,13 @@ def _breach(room: dict, now: float) -> bool:
     if now >= room["arrive"] and not any(t["state"] == "active" and t["who"] not in room["left"] for t in _all_things(room)):
         room["deadline"] = min(room["deadline"], now)
     return changed
+
+
+def _overdue(th: dict, now: float) -> bool:
+    """A loud task timed by its game (heist_games/loud_roles.py) that's LOUD_GRACE past its end."""
+    g = heist_games.get(th["role"], th["p"].get("game")) if th["p"].get("game") == "loud" else None
+    secs = getattr(g, "secs", None)
+    return secs is not None and now >= th.get("go", now) + secs(th["p"]) + LOUD_GRACE
 
 
 def _pay_loose(room: dict, uid: int, amount: int) -> None:
@@ -1765,7 +1779,7 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
                 how, line = briefs.brief(_game_key(cur))
                 full = cur.get("brief") == "full"
                 out["puzzle"].update(game=pub["game"], title=pub["title"], briefing={
-                    "full": full, "how": how, "line": line, "left": round(cur["go"] - now, 2),
+                    "full": full, "how": how, "line": line, "left": round(cur["go"] - now, 2), "key": _game_key(cur),
                     "secs": BRIEF_FULL if full else BRIEF_SHORT})
             else:
                 out["puzzle"].update(pub)
@@ -2132,6 +2146,9 @@ def play(uid: int, rid: str, body: dict) -> dict:
             raise Refuse("You're not on that one.")
         if now < th.get("go", 0):
             raise Refuse("Read the run-down first, or tap GOT IT.")
+        if th["p"].get("game") == "loud":
+            # a loud task's timeline can't be from the future: how long its clock's been going, by ours
+            body = {**body, "_now": int((now - th.get("go", now)) * 1000)}
         _move(th["role"], th["p"], body)
         if _done(th["role"], th["p"]):
             _settle(r, th, _played(th))

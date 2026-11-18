@@ -15,6 +15,7 @@ their own tasks are done is "loose-atm", "loose-till" or "loose-box" (LOOSE)."""
 
 from lib.activities.heist_games import Game, Refuse
 from lib.activities.heist_games.pace import paced
+from lib.activities.heist_games.loud_roles import GAMES as _ROLE_GAMES
 
 
 def _num(x) -> bool:
@@ -182,14 +183,8 @@ class Mash(Game):
         return {"taps": [i * 1000 / rate + 1 for i in range(int(p["secs"] * rate))], "end": True}
 
 
-LOUD = {
-    "hacker": Strike("hacker", "FRY THE PANEL"),
-    "safecracker": Strike("safecracker", "DRILL THE LOCK"),
-    "wheelman": Strike("wheelman", "RAM IT"),
-    "lookout": Pop("lookout", "SMASH THE CAMERAS"),
-    "face": Pop("face", "EVERYONE DOWN!"),
-    "muscle": Mash("muscle", "SMASH AND GRAB"),
-}
+# a loud job's tasks: each role's own game (loud_roles.py); strike, pop and mash are the loose cash's now
+LOUD = dict(_ROLE_GAMES)
 
 
 # loose cash: a loud job's bonus tasks for anyone whose own are done, until the crew goes into the vault
