@@ -389,3 +389,140 @@ class Carry(Timed):
 
 
 GAMES["muscle"] = Carry("muscle", "CARRY THE SWAG")
+
+
+# ---- the Face: HOLD THE ROOM -------------------------------------------------------------------------------------
+# "Everybody stay calm!" A few customers on the floor (4, 6 at the vault door), each with a panic meter rising at its
+# own rate, and jolts from the schedule (a phone rings, a baby cries) that shove one up at once. Tap someone to shout
+# them down (their meter back to nothing); then the Face needs BREATH steps to draw breath, and a shout in that time
+# isn't heard. A meter that fills is someone bolting for the door (or the alarm): it counts, and they start again.
+# Mashing does nothing: who to shout at next is the game.
+
+class Room(Timed):
+    kind = "room"
+    SECS = {"s": 12, "m": 16}
+    PEOPLE = {"s": 4, "m": 6}
+    BREATH = 21                # steps after a shout before the next is heard (0.7s)
+    RED = 0.75                 # a meter this high is in the red
+    WARN = 10                  # steps a jolt shows before it lands
+
+    def make_table(self, rng, size, secs):
+        n, people = secs * 30, self.PEOPLE[size]
+        for tries in range(40):
+            soft = 0.93 ** tries
+            m0 = [round(rng.uniform(0.0, 0.3), 3) for _ in range(people)]
+            rate = [round(rng.uniform(0.1, 0.16) * soft, 3) for _ in range(people)]
+            jolts, k = [], 30 + rng.randint(0, 20)
+            while k < n - 20:
+                jolts.append([k, rng.randrange(people), round(rng.uniform(0.2, 0.32) * soft, 3)])
+                k += rng.randint(24, 44)
+            p = {"m0": m0, "rate": rate, "jolts": jolts, "breath": self.BREATH, "red": self.RED, "warn": self.WARN, "secs": secs}
+            st = self.run(p, self._ideal(p), n)
+            if st["bolts"] == 0 and st["reds"] == 0:
+                break
+        del p["secs"]
+        return p
+
+    def ok(self, p, e):
+        return 0 <= e[1] < len(p["m0"])
+
+    def fresh(self, p) -> dict:
+        return {"m": list(p["m0"]), "ready": 0, "bolts": 0, "reds": 0, "shouts": 0}
+
+    def step(self, p, st, k, fired) -> None:
+        """One step of the room (the page's roomStep is this, sum for sum)."""
+        m = st["m"]
+        for e in fired:
+            if k >= st["ready"]:
+                m[e[1]] = 0.0
+                st["ready"] = k + p["breath"]
+                st["shouts"] += 1
+        for i in range(len(m)):
+            m[i] = m[i] + p["rate"][i] * DT
+        for jk, who, amt in p["jolts"]:
+            if jk == k:
+                m[who] = m[who] + amt
+        hot = False
+        for i in range(len(m)):
+            if m[i] >= 1.0:
+                st["bolts"] += 1
+                m[i] = 0.0
+            if m[i] >= p["red"]:
+                hot = True
+        if hot:
+            st["reds"] += 1
+
+    def run(self, p, ev, n) -> dict:
+        st = self.fresh(p)
+        _replay(ev, n, st, lambda st, k, fired: self.step(p, st, k, fired))
+        return st
+
+    def trace(self, p, n):
+        st, out = self.fresh(p), []
+        ev, i = p["ev"], 0
+        for k in range(n):
+            fired = []
+            while i < len(ev) and step_of(ev[i][0]) <= k:
+                fired.append(ev[i])
+                i += 1
+            self.step(p, st, k, fired)
+            if k % 15 == 14:
+                out.append(list(st["m"]))
+        return {"m": out, "bolts": st["bolts"], "reds": st["reds"], "shouts": st["shouts"], "ready": st["ready"]}
+
+    def judge(self, p, n):
+        st = self.run(p, p["ev"], n)
+        N = self.steps(p)
+        s = max(0.0, 1 - 0.25 * st["bolts"] - 0.3 * st["reds"] / N)
+        return s if p["over"] else s * n / N
+
+    def _due(self, p, m: list, k: int, n: int) -> list:
+        """For each person, the step their meter would hit the red if nobody shouted at them (n if never)."""
+        out = []
+        for i in range(len(m)):
+            v, j = m[i], k
+            while j < n:
+                v = v + p["rate"][i] * DT
+                for jk, who, amt in p["jolts"]:
+                    if jk == j and who == i:
+                        v = v + amt
+                if v >= p["red"]:
+                    break
+                j += 1
+            out.append(j)
+        return out
+
+    def _plan(self, p, lag: int, rng=None, miss: float = 0.0) -> list:
+        """Shout, as soon as there's breath (and lag steps more), at whoever's going to be in the red soonest (or for
+        a so-so player, whoever looks worst, now and then the wrong one)."""
+        n = p.get("secs", 0) * 30 or self.steps(p)
+        st, ev, want = self.fresh(p), [], None
+        for k in range(n):
+            fired = []
+            if k >= st["ready"] + lag:
+                if rng is None:
+                    due = self._due(p, st["m"], k, n)
+                    who = min(range(len(due)), key=lambda i: (due[i], -st["m"][i]))
+                    want = who if due[who] < n else None
+                else:
+                    who = max(range(len(st["m"])), key=lambda i: st["m"][i])
+                    if rng.random() < miss:
+                        who = rng.randrange(len(st["m"]))
+                    want = who if st["m"][who] > 0.35 else None
+                if want is not None:
+                    fired = [[ms_of(k), want]]
+                    ev.append(fired[0])
+            self.step(p, st, k, fired)
+        return ev
+
+    def _ideal(self, p):
+        return self._plan(p, 0)
+
+    def ideal(self, p):
+        return self._ideal(p)
+
+    def lazy(self, p, rng, skill):
+        return self._plan(p, round((1 - skill) * 18) + 4, rng, (1 - skill) * 0.5)
+
+
+GAMES["face"] = Room("face", "HOLD THE ROOM")

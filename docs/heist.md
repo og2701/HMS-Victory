@@ -68,7 +68,11 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
      door), some at a red light for a moment. Tap the one that will reach the bank first before it gets there. Right
      calls over rounds; a wrong or late call scores nothing, and calling early scores no more.
    - *Hacker, Safecracker, Wheelman:* tap while the swinging marker's in the green (`loud.py`'s strike).
-   - *Face:* tap whoever reaches for the alarm as they pop up, not the ones with their hands up (pop).
+   - *Face, HOLD THE ROOM:* "Everybody stay calm!" Four customers on the floor (six at the vault door), each with a
+     panic bar rising at their own rate, and jolts (a phone rings, a baby cries) that shove one up at once, shown just
+     before. Tap someone to shout them down and empty their bar; then the Face needs 0.7s to draw breath, and a tap
+     in it isn't heard, so mashing does nothing and who to shout at next is the game. A bar that fills is someone
+     bolting for the door. 1 - 0.25 a bolt - 0.3 x the share of the time anyone's in the red, never under 0.
    - *Muscle, CARRY THE SWAG:* a tottering stack of cash bags (6, 8 at the vault door) carried across a hall full of
      chaos. It sways like a broom balanced on a hand, worse the taller it is: hold LEFT to push it back left, RIGHT to
      push it right (two thumbs on the two halves of the bar, or the arrow keys). Barges and wet floor shove it, each
