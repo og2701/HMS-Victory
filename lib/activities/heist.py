@@ -842,6 +842,9 @@ CHAT = {"hurry": "Hurry up!", "nice": "Nice one!", "well": "Well done!", "help":
 CHAT_EVERY, CHAT_SHOW, CHAT_KEEP = 2.5, 4.0, 12
 # the vault's grab
 GRAB_WINDOW = 0.5            # a grab keeps your bag up with the piles for this long after it (two a second will do)
+GRAB_GAP = 0.07             # a grab this soon after the last one isn't one: the most a quick finger manages (the page
+                             # holds to 80ms; this is a touch under for the rounding of the times it sends), so two
+                             # hands, a key and a mouse or a doctored page can't mash faster than one finger
 GRAB_LAG = 2.0               # grabs sent in more than this late (a slow connection's) are dropped
 # gold bars: now and then, for anyone mashing GRAB faster than it can use, it locks and a bar turns up somewhere in
 # the vault to tap instead
@@ -1447,8 +1450,10 @@ def _catch(room: dict, uid: int, k, x, t_now: float) -> None:
 
 def _grab(room: dict, uid: int, taps, t_now: float) -> None:
     """Grabs from the page, each its time in seconds since the vault opened: in order, none from the future or more
-    than GRAB_LAG late, none after the police came. Each keeps the bag up for GRAB_WINDOW after it. A grab while a
-    gold bar's showing (GRAB is locked then) doesn't count, and past the first BAR_GRACE of it, fumbles the bar."""
+    than GRAB_LAG late, none after the police came, none within GRAB_GAP of the last one (however many hands or
+    keys are at it, it's one quick finger's pace at most). Each keeps the bag up for GRAB_WINDOW after it. A grab
+    while a gold bar's showing (GRAB is locked then) doesn't count, and past the first BAR_GRACE of it, fumbles the
+    bar."""
     if not isinstance(taps, list):
         return
     v = room["vault"]
@@ -1459,7 +1464,7 @@ def _grab(room: dict, uid: int, taps, t_now: float) -> None:
         if not isinstance(x, (int, float)) or isinstance(x, bool) or not math.isfinite(x):
             continue
         x = float(x)
-        if x < lo or x > stop or (g and x < g["last"]):
+        if x < lo or x > stop or (g and x < g["last"] + GRAB_GAP):
             continue
         if g is None:
             g = v["grab"][str(uid)] = {"done": 0.0, "a": x, "b": x + GRAB_WINDOW, "last": x, "recent": [x]}

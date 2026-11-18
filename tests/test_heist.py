@@ -384,6 +384,30 @@ def test_a_bag_is_never_worth_more_than_the_piles(em):
             assert H.bag(room, A, t) == pytest.approx(H.pile_at(v, cap, t), rel=0.02)
 
 
+def test_grabs_quicker_than_one_finger_dont_count():
+    """Two hands at it (the space bar and the mouse together) or a doctored page sending a burst: a grab within
+    GRAB_GAP of the last one isn't one, so it can't count towards a gold bar or move the bag on, and the bag's what
+    one quick finger's grabs would make of it."""
+    v, cap = _vault(H.EDGE_BEST, 6.0, 28.0, 8.0)
+    v["police"] = None
+    room = {"vault": v, "cap": cap, "left": [], "bots": {}}
+    H._grab(room, A, [1.0, 1.0, 1.01, 1.03, 1.06, 1.069, 1.07, 1.1, 1.13, 1.2], 1.2)
+    g = room["vault"]["grab"][str(A)]
+    assert g["recent"] == [1.0, 1.07, 1.2] and g["last"] == 1.2
+    assert g["b"] == pytest.approx(1.2 + H.GRAB_WINDOW)
+    # a run of grabs at one finger's pace (80ms apart, as the page sends them, rounded to the ms) all count
+    room = {"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}}
+    taps = [round(2.0 + i * 0.08, 3) for i in range(12)]
+    H._grab(room, A, taps, taps[-1])
+    assert room["vault"]["grab"][str(A)]["recent"] == taps[-8:]
+    # the same burst sent twice over (two inputs at once) makes no more of the bag than sent once
+    once, twice = ({"vault": dict(v, grab={}), "cap": cap, "left": [], "bots": {}} for _ in range(2))
+    H._grab(once, A, taps, taps[-1])
+    H._grab(twice, A, sorted(taps + [x + 0.01 for x in taps]), taps[-1] + 0.01)
+    assert H.bag(twice, A, 5.0) == pytest.approx(H.bag(once, A, 5.0))
+    assert twice["vault"]["grab"][str(A)]["recent"] == once["vault"]["grab"][str(A)]["recent"]
+
+
 def _bar_run(style, rate, seed, lazy=0.0):
     """A vault played by one way of going at the gold bars: "catch" taps each bar that shows, "never" stops grabbing
     for it but leaves it, "spam" just keeps hammering GRAB. ``rate`` grabs a second, skipping ``lazy`` of the time.
