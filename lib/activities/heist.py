@@ -2112,8 +2112,11 @@ def play(uid: int, rid: str, body: dict) -> dict:
             raise Refuse("Finish what you're on first.")
         _start(th, uid, now)
         th["stepped"] = True
-    elif body.get("go") is True:
-        # GOT IT: cut the run-down short and start the clock now
+    elif body.get("go") is True and (body.get("brief") or now < th.get("go", 0) or th["p"].get("go") is not False):
+        # GOT IT: cut the run-down short and start the clock now (and after it, a no-op). But once the run-down's
+        # over, a game that waits on a go of its own (Route Memory's "I've watched the way out") gets it: taken for
+        # GOT IT, the game never heard it and refused every turn, and the page sat on WATCH till time ran out. The page
+        # marks its GOT IT (brief) so one that lands just after the run-down can't skip the showing
         if th["who"] != uid or th["state"] != "active":
             raise Refuse("You're not on that one.")
         th["go"] = min(th.get("go", now), now)

@@ -290,6 +290,28 @@ def test_the_page_never_sees_an_answer(em):
         assert '"terry":' not in text and '"p":' not in text
 
 
+def test_route_memorys_go_after_its_run_down_is_the_games_not_got_it(em):
+    """The page's go at the end of Route Memory's showing reaches the game: it used to be taken for GOT IT, so the
+    game never heard it, refused every turn (Watch the route first.) and the page sat on WATCH till time ran out."""
+    rid = crew(em, stake=0)
+    r = H._rooms[rid]
+    for u in r["players"]:
+        H.vote(u, rid, "front", "quiet")
+    tick(em, H.MOVE_SECONDS + 0.01)
+    th = next(t for t in here(rid) if t["state"] == "active")
+    th.update(role="wheelman", p=H.heist_games.get("wheelman", "memory").make(random.Random(1), "m", None))
+    th["p"]["game"] = "memory"
+    H.play(th["who"], rid, {"ob": th["id"], "go": True, "brief": True})     # GOT IT
+    assert not th["p"]["go"]
+    tick(em, 6)                                                               # the showing
+    H.play(th["who"], rid, {"ob": th["id"], "go": True, "brief": True})     # a late GOT IT: still not the game's
+    assert not th["p"]["go"]
+    H.play(th["who"], rid, {"ob": th["id"], "go": True})                    # the showing's over
+    assert th["p"]["go"] and "route" not in H.view(r, th["who"], name_of)["puzzle"]["g"]
+    H.play(th["who"], rid, {"ob": th["id"], "turns": th["p"]["route"][:2]})
+    assert th["p"]["turns"] == th["p"]["route"][:2]
+
+
 # ---- the vault's maths -------------------------------------------------------------------------
 
 def test_the_bank_keeps_its_edge_however_long_anyone_waits():
