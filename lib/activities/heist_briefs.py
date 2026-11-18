@@ -149,9 +149,10 @@ BRIEFS: dict[str, tuple[list[str], str]] = {
                       "A bar slides from side to side. Tap to drop it when it's right over the stack.",
                       "Any part that hangs over the edge is cut off."], "Tap to drop each bar right over the stack."),
     # a loud job: a quick bit of action for each role's tasks
-    "loud:hacker:strike": (["Fry the alarm panel.",
-                     "Tap ZAP when the white marker is in the green.",
-                     "The middle of the green scores most. It gets faster each go."], "Tap ZAP when the white marker is in the green."),
+    "loud:hacker:jam": (["Jam the alarm's call to the police.",
+                         "Hold to lift your jammer, let go to drop it. Keep it on the wavy signal line.",
+                         "The band narrows as you go. A flicker means the signal's about to jump."],
+                        "Hold to lift, let go to drop. Stay on the signal."),
     "loud:safecracker:strike": (["Drill out the lock.",
                           "Tap DRILL when the white marker is in the green.",
                           "The middle of the green scores most. It gets faster each go."], "Tap DRILL when the white marker is in the green."),

@@ -526,3 +526,155 @@ class Room(Timed):
 
 
 GAMES["face"] = Room("face", "HOLD THE ROOM")
+
+
+# ---- the Hacker: JAM THE SIGNAL ----------------------------------------------------------------------------------
+# The alarm's dialling out to the police: ride its frequency to jam the call. The signal wanders up and down a scope
+# (straight lines between the schedule's keypoints; at the vault door it also hops, flickered WARN steps ahead). Your
+# jammer rises while you hold and falls when you let go, with some weight to it. Keep it on the signal: the band you
+# have to stay in narrows as it goes. Scored on the share of steps in the band, a little squared (90% is about 0.85).
+
+class Jam(Timed):
+    kind = "jam"
+    SECS = {"s": 12, "m": 16}
+    UP, DOWN, DRAG = 3.5, 3.5, 5.0     # the jammer's push while held, its fall when not, and its drag
+    BAND = {"s": (0.13, 0.08), "m": (0.12, 0.07)}   # the band's half-width, from the start to the end
+    WARN = 9                           # steps a hop flickers before it comes (0.3s)
+    EVERY = 2                          # steps between a perfect player's changes of mind (15 a second at most)
+
+    def make_table(self, rng, size, secs):
+        n = secs * 30
+        for tries in range(40):
+            soft = 0.92 ** tries
+            y = round(rng.uniform(0.35, 0.65), 3)
+            keys, hops, k = [[0, y]], [], 0
+            hop_at = sorted(rng.sample(range(90, n - 60, 30), 3 if size == "m" else 0))
+            while k < n:
+                if hop_at and k >= hop_at[0]:
+                    hop_at.pop(0)
+                    jump = rng.uniform(0.22, 0.32) * soft
+                    y = round(y + jump if y < 0.5 else y - jump, 3)
+                    k += 9
+                    hops.append(k - 9)
+                else:
+                    dk = rng.randint(24, 42)
+                    most = 0.42 * soft * dk / 30
+                    y = round(min(0.85, max(0.15, y + rng.uniform(-most, most))), 3)
+                    k += dk
+                keys.append([k, y])
+            hw = self.BAND[size]
+            p = {"keys": keys, "hops": hops, "band": [round(hw[0] + 0.03 * (1 - soft), 3), round(hw[1] + 0.03 * (1 - soft), 3)],
+                 "warn": self.WARN, "secs": secs}
+            if self.run(p, self._ideal(p), n)["inside"] == n:
+                break
+        del p["secs"]
+        return p
+
+    def ok(self, p, e):
+        return e[1] in (0, 1)
+
+    @staticmethod
+    def sig(p, k) -> float:
+        """The signal at step k: a straight line between the keypoints either side (the page's jamSig)."""
+        keys = p["keys"]
+        i = 0
+        while i < len(keys) - 2 and keys[i + 1][0] <= k:
+            i += 1
+        k0, y0 = keys[i]
+        k1, y1 = keys[i + 1]
+        return y0 + (y1 - y0) * (k - k0) / (k1 - k0)
+
+    def fresh(self, p) -> dict:
+        return {"y": p["keys"][0][1], "v": 0.0, "hold": 0, "inside": 0}
+
+    def step(self, p, st, k, n) -> None:
+        """One step of the jammer (the page's jamStep is this, sum for sum); n is the whole task's steps."""
+        acc = self.UP if st["hold"] else -self.DOWN
+        st["v"] = st["v"] + acc * DT
+        st["v"] = st["v"] - self.DRAG * st["v"] * DT
+        st["y"] = st["y"] + st["v"] * DT
+        if st["y"] < 0.0:
+            st["y"] = 0.0
+            st["v"] = 0.0
+        if st["y"] > 1.0:
+            st["y"] = 1.0
+            st["v"] = 0.0
+        b0, b1 = p["band"]
+        if abs(st["y"] - self.sig(p, k)) <= b0 + (b1 - b0) * k / n:
+            st["inside"] += 1
+
+    def run(self, p, ev, n) -> dict:
+        st, N = self.fresh(p), p.get("secs", 0) * 30 or self.steps(p)
+
+        def step(st, k, fired):
+            for e in fired:
+                st["hold"] = e[1]
+            self.step(p, st, k, N)
+        _replay(ev, n, st, step)
+        return st
+
+    def trace(self, p, n):
+        st, out = self.fresh(p), []
+        ev, i = p["ev"], 0
+        for k in range(n):
+            while i < len(ev) and step_of(ev[i][0]) <= k:
+                st["hold"] = ev[i][1]
+                i += 1
+            self.step(p, st, k, n)
+            if k % 15 == 14:
+                out.append(st["y"])
+        return {"y": out, "v": st["v"], "inside": st["inside"]}
+
+    def judge(self, p, n):
+        share = self.run(p, p["ev"], n)["inside"] / self.steps(p)
+        return share * math.sqrt(share)
+
+    def _plan(self, p, lag: int, every: int, rng=None, err: float = 0.0) -> list:
+        """Every few steps, hold or let go: a perfect player tries both a little way ahead against the signal coming
+        (hops and all); a so-so one chases where the signal is now, from what the jammer was doing lag steps ago."""
+        n = p.get("secs", 0) * 30 or self.steps(p)
+        st, past, ev, hold = self.fresh(p), [], [], 0
+        off = 0.0
+
+        def cost(s, k, first):
+            s = dict(s)
+            c = 0.0
+            for j in range(18):
+                if j < every:
+                    s["hold"] = first
+                else:
+                    s["hold"] = 1 if s["y"] + 0.12 * s["v"] < self.sig(p, min(k + j + 3, n - 1)) else 0
+                before = s["inside"]
+                self.step(p, s, min(k + j, n - 1), n)
+                d = abs(s["y"] - self.sig(p, min(k + j, n - 1)))
+                c += (0.0 if s["inside"] > before else 1.0 + d) + 0.05 * d
+            return c
+
+        for k in range(n):
+            past.append(dict(st))
+            if k % every == 0:
+                if rng is None:
+                    want = min((0, 1), key=lambda o: (cost(st, k, o), o != hold))
+                else:
+                    seen = past[max(0, k - lag)]
+                    if k % 30 == 0:
+                        off = rng.gauss(0, err)
+                    want = 1 if seen["y"] + 0.2 * seen["v"] < self.sig(p, k) + off else 0
+                if want != hold:
+                    hold = want
+                    ev.append([ms_of(k), hold])
+            st["hold"] = hold
+            self.step(p, st, k, n)
+        return ev
+
+    def _ideal(self, p):
+        return self._plan(p, 0, self.EVERY)
+
+    def ideal(self, p):
+        return self._ideal(p)
+
+    def lazy(self, p, rng, skill):
+        return self._plan(p, round((1 - skill) * 12) + 3, 3, rng, (1 - skill) * 0.12)
+
+
+GAMES["hacker"] = Jam("hacker", "JAM THE SIGNAL")

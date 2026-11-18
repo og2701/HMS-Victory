@@ -67,7 +67,11 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
    - *Lookout, CALL IT:* police cars race in on the roads round the bank, 2 to 4 a round (4 rounds, 6 at the vault
      door), some at a red light for a moment. Tap the one that will reach the bank first before it gets there. Right
      calls over rounds; a wrong or late call scores nothing, and calling early scores no more.
-   - *Hacker, Safecracker, Wheelman:* tap while the swinging marker's in the green (`loud.py`'s strike).
+   - *Hacker, JAM THE SIGNAL:* the alarm's dialling out to the police. Its signal wanders up and down a scope (and at
+     the vault door it hops, flickering 0.3s before); hold to lift your jammer and let go to drop it, with a little
+     weight to it, like the helicopter game, and keep it on the signal. The band you have to stay in narrows as it
+     goes. The share of the time in the band, a little squared (90% scores about 0.85).
+   - *Safecracker, Wheelman:* tap while the swinging marker's in the green (`loud.py`'s strike).
    - *Face, HOLD THE ROOM:* "Everybody stay calm!" Four customers on the floor (six at the vault door), each with a
      panic bar rising at their own rate, and jolts (a phone rings, a baby cries) that shove one up at once, shown just
      before. Tap someone to shout them down and empty their bar; then the Face needs 0.7s to draw breath, and a tap
