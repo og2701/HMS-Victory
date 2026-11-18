@@ -812,3 +812,157 @@ class Brake(Timed):
 
 
 GAMES["wheelman"] = Brake("wheelman", "BACK IT IN")
+
+
+# ---- the Safecracker: THERMAL LANCE ------------------------------------------------------------------------------
+# No finesse tonight: burn the lock out of the door. A dotted cut ring round the lock plate (M points, clockwise from
+# the top, where the lance starts), and you drag the lance round it: its tip follows your finger at its own capped
+# speed (dragging faster doesn't help), and cuts only while it's on the line (within tol of it): off it, it scorches
+# the door and cuts nothing. Dark rebar lumps on the ring are slower to burn through, and the lance jams there if your
+# finger's more than `lead` ahead of its tip, so you ease off over them. Events are [ms, x, y], the finger on the door
+# in thousandths of its side, or [ms, -1, -1] when it lifts. Scored on the share of the ring cut by the end, times
+# (1 - 0.3 x the share of the time spent off the line).
+
+class Lance(Timed):
+    kind = "lance"
+    SECS = {"s": 12, "m": 16}
+    WIDTH = 3
+    M = 96                                 # points round the ring
+    R = 0.36                               # its radius, in the door's sides
+    FAST, SLOW = 0.28, 0.11                # the tip's top speed (door sides a second), and through rebar
+    LEAD = 0.05                            # on rebar, a finger further ahead than this jams the lance
+    TOL = {"s": 0.035, "m": 0.028}         # how far off the line the tip still cuts
+    BARS = {"s": (3, 5, 7), "m": (4, 6, 9)}  # rebar lumps, and their lengths in points
+    EVERY = 2                              # steps between a perfect player's finger moves (15 a second)
+
+    def make_table(self, rng, size, secs):
+        M, n = self.M, secs * 30
+        pts = [[round(0.5 + self.R * math.sin(2 * math.pi * j / M), 4), round(0.5 - self.R * math.cos(2 * math.pi * j / M), 4)]
+               for j in range(M)]
+        lumps, lo, hi = self.BARS[size]
+        for tries in range(40):
+            bar = [0] * M
+            for _ in range(max(1, lumps - tries // 10)):
+                for _ in range(20):
+                    at, ln = rng.randint(8, M - 14), rng.randint(lo, hi)
+                    if not any(bar[max(0, at - 4):at + ln + 4]):
+                        for j in range(at, at + ln):
+                            bar[j] = 1
+                        break
+            p = {"pts": pts, "bar": bar, "tol": self.TOL[size], "fast": self.FAST, "slow": self.SLOW, "lead": self.LEAD,
+                 "secs": secs}
+            if self.judge({**p, "ev": self._ideal(p), "over": True}, n) >= 0.9999:
+                break
+        del p["secs"]
+        return p
+
+    def ok(self, p, e):
+        return (e[1] == -1 and e[2] == -1) or (0 <= e[1] <= 1000 and 0 <= e[2] <= 1000)
+
+    def fresh(self, p) -> dict:
+        x, y = p["pts"][0]
+        return {"tx": x, "ty": y, "fx": x, "fy": y, "down": False, "cut": [0] * len(p["pts"]), "off": 0, "stuck": 0}
+
+    @staticmethod
+    def near(p, x, y) -> tuple:
+        """The ring point nearest (x, y), and its distance squared (the first of any tie)."""
+        best, bd = 0, 9.0
+        for j, (px, py) in enumerate(p["pts"]):
+            ex, ey = px - x, py - y
+            d2 = ex * ex + ey * ey
+            if d2 < bd:
+                best, bd = j, d2
+        return best, bd
+
+    def step(self, p, st, k, fired) -> None:
+        """One step of the lance (the page's lanceStep is this, sum for sum)."""
+        for e in fired:
+            if e[1] < 0:
+                st["down"] = False
+            else:
+                st["fx"], st["fy"], st["down"] = e[1] / 1000, e[2] / 1000, True
+        if not st["down"]:
+            return
+        tol2 = p["tol"] * p["tol"]
+        j, d2 = self.near(p, st["tx"], st["ty"])
+        onbar = d2 <= tol2 and p["bar"][j] == 1
+        dx, dy = st["fx"] - st["tx"], st["fy"] - st["ty"]
+        d = math.sqrt(dx * dx + dy * dy)
+        if onbar and d > p["lead"]:
+            st["stuck"] += 1
+        else:
+            s = (p["slow"] if onbar else p["fast"]) * DT
+            if d > s:
+                st["tx"] = st["tx"] + dx * s / d
+                st["ty"] = st["ty"] + dy * s / d
+            else:
+                st["tx"], st["ty"] = st["fx"], st["fy"]
+        on = False
+        for i, (px, py) in enumerate(p["pts"]):
+            ex, ey = px - st["tx"], py - st["ty"]
+            if ex * ex + ey * ey <= tol2:
+                st["cut"][i] = 1
+                on = True
+        if not on:
+            st["off"] += 1
+
+    def run(self, p, ev, n) -> dict:
+        st = self.fresh(p)
+        _replay(ev, n, st, lambda st, k, fired: self.step(p, st, k, fired))
+        return st
+
+    def trace(self, p, n):
+        st, out = self.fresh(p), []
+        ev, i = p["ev"], 0
+        for k in range(n):
+            fired = []
+            while i < len(ev) and step_of(ev[i][0]) <= k:
+                fired.append(ev[i])
+                i += 1
+            self.step(p, st, k, fired)
+            if k % 15 == 14:
+                out.append([st["tx"], st["ty"]])
+        return {"tip": out, "cut": st["cut"], "off": st["off"], "stuck": st["stuck"]}
+
+    def judge(self, p, n):
+        st = self.run(p, p["ev"], n)
+        N = p.get("secs", 0) * 30 or self.steps(p)
+        return sum(st["cut"]) / len(p["pts"]) * (1 - 0.3 * st["off"] / N)
+
+    def _plan(self, p, every: int, rng=None, skill: float = 1.0) -> list:
+        """A finger going round the ring ahead of the tip, a few points ahead (just one over rebar, or as it comes);
+        a so-so one wobbles off the line and doesn't always ease off in time."""
+        M, n = len(p["pts"]), p.get("secs", 0) * 30 or self.steps(p)
+        st, ev, gone = self.fresh(p), [], 0
+        for k in range(n):
+            fired = []
+            if k % every == 0 and gone < 2:
+                j = self.near(p, st["tx"], st["ty"])[0]
+                if all(st["cut"]) and j == 0:
+                    gone = 2
+                    fired = [[ms_of(k), -1, -1]]
+                else:
+                    ahead = 1 if any(p["bar"][(j + a) % M] for a in range(4)) else 3
+                    if rng is not None and rng.random() > skill:
+                        ahead += 2
+                    x, y = p["pts"][(j + ahead) % M]
+                    if rng is not None:
+                        wob = (1 - skill) * 0.06
+                        x, y = x + rng.gauss(0, wob), y + rng.gauss(0, wob)
+                    fx, fy = max(0, min(1000, round(x * 1000))), max(0, min(1000, round(y * 1000)))
+                    fired = [[ms_of(k), fx, fy]]
+                ev += fired
+            self.step(p, st, k, fired)
+        return ev
+
+    def _ideal(self, p):
+        return self._plan(p, self.EVERY)
+
+    def ideal(self, p):
+        return self._ideal(p)
+
+    def lazy(self, p, rng, skill):
+        return self._plan(p, 3, rng, skill)
+
+
+GAMES["safecracker"] = Lance("safecracker", "THERMAL LANCE")

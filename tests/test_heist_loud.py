@@ -86,7 +86,7 @@ def test_rubbish_is_refused_and_changes_nothing(role):
            {"ev": [[i * 20] + ok[0][1:] for i in range(40)]},                                # 50 a second
            {"ev": ok, "_now": ok[0][0] - LR.GRACE - 50},                                     # from the future
            {"ev": [], "end": True, "_now": T - LR.GRACE - 500},                              # over before it's over
-           {"ev": [], "at": "soon"}, {"ev": [[0] + [99] * (w - 1)]}]
+           {"ev": [], "at": "soon"}, {"ev": [[0] + [5000] * (w - 1)]}]
     for body in bad:
         before = copy.deepcopy(p)
         with pytest.raises(Refuse):

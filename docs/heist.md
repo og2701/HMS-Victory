@@ -76,7 +76,14 @@ picture), routes in `lib/activities/server.py`, `/heist` and a Join/Play button 
      bites over 0.4s and lets off over a quarter of a second when you let go, so you feather it. Stop as close to the
      dock as you can without touching it: within 20cm scores 1, sliding to 0.2 at 2m; a bump scores 0.3 and still
      rolling at the end, half. The average over the goes.
-   - *Safecracker:* tap while the swinging marker's in the green (`loud.py`'s strike).
+   - *Safecracker, THERMAL LANCE:* no finesse tonight, burn the lock out of the door. Drag the lance round the dotted
+     cut ring from its start mark: the flame follows your finger at its own capped speed (dragging faster doesn't
+     help) and cuts only while it's on the line; off it, it scorches the door. Dark rebar lumps on the ring burn
+     slower, and the lance jams there if your finger runs on ahead, so you ease off. On a computer the arrow keys
+     move the finger (Shift to go slow). The share of the ring cut by the end, times 1 - 0.3 x the share of the time
+     spent off the line.
+
+   Strike, pop and mash (`loud.py`) stay for the loose cash only.
    - *Face, HOLD THE ROOM:* "Everybody stay calm!" Four customers on the floor (six at the vault door), each with a
      panic bar rising at their own rate, and jolts (a phone rings, a baby cries) that shove one up at once, shown just
      before. Tap someone to shout them down and empty their bar; then the Face needs 0.7s to draw breath, and a tap
