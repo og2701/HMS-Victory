@@ -141,6 +141,7 @@ AMERICAN_TO_BRITISH.update({
     "monetize": "monetise", "monetized": "monetised",
     "normalize": "normalise", "normalized": "normalised",
     "optimize": "optimise", "optimized": "optimised", "optimizing": "optimising",
+    "unoptimized": "unoptimised", "unoptimize": "unoptimise",
     "organization": "organisation", "organizations": "organisations",
     "personalize": "personalise", "personalized": "personalised",
     "prioritize": "prioritise", "prioritized": "prioritised", "prioritizing": "prioritising",
