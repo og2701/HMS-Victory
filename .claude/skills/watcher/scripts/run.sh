@@ -11,10 +11,15 @@ script=$1
 shift
 remote="cd ~/HMS-Victory && venv/bin/python - $*"
 mac_key="$HOME/Documents/Personal/owen-dev-key.pem"
+# Fail fast instead of hanging. ConnectTimeout also bounds the wait for the VM's SSH banner, which is where a stalled
+# SSM tunnel sits (19 Nov 2026: every call hung for ~4 minutes until Claude's 2-minute Bash limit killed it).
+# ServerAlive drops a dead connection after ~1 minute rather than 3. A long, quiet watch.py is fine: keepalives are
+# answered by sshd, not by the script.
+ssh_opts="-o BatchMode=yes -o ConnectTimeout=${VIC_SSH_CONNECT_TIMEOUT:-30} -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
 
 if [ -f "$mac_key" ] && [ "${VIC_SSH_ROUTE:-}" != "ssm" ]; then
     vm() {
-        ssh -o BatchMode=yes -o ServerAliveInterval=60 -i "$mac_key" \
+        ssh $ssh_opts -i "$mac_key" \
             ubuntu@ec2-16-61-145-183.eu-west-2.compute.amazonaws.com "$remote"
     }
 else
@@ -33,7 +38,7 @@ else
         command -v "$tool" >/dev/null 2>&1 || { echo "run.sh: the SSM tunnel needs $tool installed." >&2; exit 2; }
     done
     vm() {
-        ssh -o BatchMode=yes -o ServerAliveInterval=60 -o StrictHostKeyChecking=accept-new -i "$key" \
+        ssh $ssh_opts -o StrictHostKeyChecking=accept-new -i "$key" \
             -o ProxyCommand="aws ssm start-session --region eu-west-2 --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" \
             ubuntu@i-0ce7cc704a996a899 "$remote"
     }
@@ -44,3 +49,10 @@ if [ "$script" = "-" ]; then
 else
     vm < "$here/$script"
 fi
+rc=$?
+if [ "$rc" -eq 255 ]; then
+    echo "run.sh: couldn't reach the VM, or lost the connection (ssh exit 255). If it timed out, the tunnel is" \
+        "stalled; wait a minute and try once more. Don't re-run anything that posts or changes data without checking" \
+        "whether the first try got through." >&2
+fi
+exit "$rc"
