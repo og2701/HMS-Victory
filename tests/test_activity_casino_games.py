@@ -580,6 +580,52 @@ def test_baccarat_refuses_no_side_and_counts_in_the_banks_figures(em, monkeypatc
     assert BankManager._game_amounts(100, "Baccarat bet")[-2] == 100
 
 
+def test_baccarat_pair_bets_pay_eleven_to_one_whoever_wins(em, monkeypatch):
+    _shoe(monkeypatch, "4H", "KC", "4S", "KD")                         # Player 8 on a pair of fours, Banker 0 on two kings
+    out = play("baccarat", "deal", {"bet": 100, "side": "banker", "pairs": {"player": 50, "banker": 20}})
+    t = out["table"]
+    assert t["winner"] == "player" and t["outcome"] == "lose" and t["mainPayout"] == 0
+    assert t["pairs"] == {"player": {"bet": 50, "hit": True, "payout": 600}, "banker": {"bet": 20, "hit": True, "payout": 240}}
+    assert (t["staked"], t["payout"], t["net"]) == (170, 840, 670)
+    assert out["round"]["staked"] == 170 and "Player Pair and Banker Pair at 11:1" in out["round"]["outcome"]
+    assert em.get_bb(UID) == 10_000 + 670
+    assert rows() == [("baccarat", 170, 840, "banker player 8-0 PP:hit BP:hit")]
+    assert reasons()[-2:] == ["Baccarat bet", "Baccarat win"]
+
+
+def test_baccarat_a_missed_pair_loses_its_stake_and_a_pair_beats_a_push(em, monkeypatch):
+    _shoe(monkeypatch, "4H", "3C", "5S", "4D")                         # no pairs: Player 9, Banker 7
+    out = play("baccarat", "deal", {"bet": 100, "side": "player", "pairs": {"banker": 100}})
+    assert (out["table"]["staked"], out["table"]["payout"], out["table"]["net"]) == (200, 200, 0)
+    assert em.get_bb(UID) == 10_000
+    _shoe(monkeypatch, "4H", "4C", "4S", "4D")                         # 8-8 tie on two pairs
+    out = play("baccarat", "deal", {"bet": 100, "side": "player", "pairs": {"player": 10}})
+    t = out["table"]
+    assert (t["outcome"], t["mainPayout"], t["payout"]) == ("push", 100, 220)
+    assert reasons()[-1] == "Baccarat win"
+
+
+def test_baccarat_refuses_pair_bets_off_the_table(em, monkeypatch):
+    _shoe(monkeypatch, "4H", "3C", "5S", "4D")
+    for pairs, msg in (({"tie": 10}, "isn't on this table"), ({"player": 5}, "at least 10"),
+                       ({"banker": 101}, "more than your main bet"), ({"player": "10"}, "whole number"),
+                       ({"player": True}, "whole number"), ({"player": -10}, "whole number")):
+        with pytest.raises(casino.Refuse, match=msg):
+            play("baccarat", "deal", {"bet": 100, "side": "player", "pairs": pairs})
+    em.remove_bb(UID, 9_850, reason="spend")                            # 150 left: the main bet fits, the pair doesn't
+    with pytest.raises(casino.Refuse, match="enough UKPence"):
+        play("baccarat", "deal", {"bet": 100, "side": "player", "pairs": {"player": 100}})
+    assert em.get_bb(UID) == 150 and rows() == []
+
+
+def test_baccarat_pairs_keep_the_usual_edge():
+    """Six decks: the first two cards share a rank 23 times in 311, so 11:1 leaves the house about 11.25%."""
+    from lib.activities.casino.games import baccarat as B
+    p = (4 * B.DECKS - 1) / (52 * B.DECKS - 1)
+    assert -0.1130 < p * (1 + B.PAIR_PAYS) - 1 < -0.1120
+    assert B.is_pair(["QH", "QS"]) and not B.is_pair(["QH", "KH"]) and not B.is_pair(["TH", "JH"])
+
+
 def test_every_game_has_rules_and_a_label(em):
     for key, a in casino.registry().items():
         assert a.label and a.rules(), key

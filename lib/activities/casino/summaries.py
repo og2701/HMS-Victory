@@ -102,7 +102,8 @@ def _d_reddog(v):
 
 def _d_baccarat(v):
     return {"player": list(v["player"]), "banker": list(v["banker"]), "p": int(v["playerTotal"]), "b": int(v["bankerTotal"]),
-            "side": v.get("side"), "winner": v.get("winner"), "natural": bool(v.get("natural"))}
+            "side": v.get("side"), "winner": v.get("winner"), "natural": bool(v.get("natural")),
+            "pairs": [h for h, p in (v.get("pairs") or {}).items() if p.get("payout")]}
 
 
 def _d_tcp(v):
@@ -1000,6 +1001,7 @@ def _baccarat(st: _Sitting) -> tuple[str, str]:
     bd = best["d"]
     won = bd["winner"]
     head = ("TIE" if won == "tie" else f"{won.upper()} WINS") + f" {bd['p']}-{bd['b']}" + (" · A NATURAL" if bd["natural"] else "")
+    head += "".join(f" · {h.upper()} PAIR" for h in bd.get("pairs", []))
     tally = Counter(h["d"]["winner"] for h in st.rounds)
     cells = "".join(f'<div><b style="{"color:#E2BE78" if k == won else ""}">{tally[k]}</b><span>{k.upper()}</span></div>'
                     for k in ("player", "banker", "tie"))
