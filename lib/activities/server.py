@@ -32,6 +32,7 @@ mapping's prefix isn't worth betting the launch on:
          /heist/target {id, target, stake?}, /heist/leave|start {id}
     GET  /heist/room/<id>, POST /heist/room/<id>/vote {approach?, style?}, /heist/room/<id>/play {...the puzzle's move},
          /heist/room/<id>/grab {taps, bar?, at?}, /heist/room/<id>/leg {taps?}, /heist/room/<id>/say {key}, /heist/room/<id>/leave
+    TEMP GET /heist/test, POST /heist/test {game}, /heist/test/done   /heisttest's TEST MODE (heist_test.py)
     GET  /kart                UKP Kart: your race room and the ones you could join
     POST /kart/open {stake, car, track?}, /kart/join {id, car}, /kart/car {id, car}, /kart/leave|start {id}
     POST /kart/practice {track, field: [{cpu, name, car, place, time, lap}]}  a practice race, kept
@@ -241,6 +242,12 @@ def _opening(client, uid: int, game: str, channel=None) -> dict:
     if game == "heist" or game.startswith("heist:"):
         if not _casino_open(channel) or not _heist_allowed(uid):
             return {"game": "home", "home": _home(client, uid, channel)}
+        if game == "heist:test":
+            # TEMP: /heisttest opens on TEST MODE, its list of every game (heist_test.py)
+            from lib.activities import heist_test
+            if heist_test.refusal(uid) is None:
+                return {"game": "heist", "heist": {**_heist_lobby(client, uid), "focus": None,
+                                                   "test": heist_test.picker(uid)}}
         # opened from a crew's Join button: pick that crew out
         return {"game": "heist", "heist": {**_heist_lobby(client, uid), "focus": game[6:] or None}}
     if game == "skyrim":
@@ -1028,6 +1035,37 @@ async def heist_room(request):
         return _error("Something went wrong. Your buy-in is safe; try again.", 500)
 
 
+# TEMP: /heisttest's TEST MODE (heist_test.py): GET its list, POST {game} to play one (answers with the lobby, the
+# test job in it, and the list), POST /done to call the test job off and go back to the list (answers with the list)
+async def heist_test_list(request):
+    from lib.activities import heist_test
+    who, err = _heist_request(request)
+    if err is not None:
+        return err
+    if not heist.can_practise(who["uid"]):
+        return _error("This is for the Bank Job testers.", 403)
+    return _json(heist_test.picker(who["uid"]))
+
+
+async def heist_test_play(request):
+    from lib.activities import heist_test
+    who, err = _heist_request(request)
+    if err is not None:
+        return err
+    uid = who["uid"]
+    try:
+        if request.match_info.get("action") == "done":
+            heist_test.close(uid)
+            return _json(heist_test.picker(uid))
+        heist_test.open_test(uid, str((await _duel_body(request)).get("game") or ""))
+    except heist.Refuse as e:
+        return _error(str(e), 422)
+    except Exception:
+        log.error("heist test failed", exc_info=True)
+        return _error("Something went wrong. Try again.", 500)
+    return _json({**_heist_lobby(request.app[CLIENT], uid), "test": heist_test.picker(uid)})
+
+
 async def health(_request):
     return _json({"ok": True})
 
@@ -1083,6 +1121,9 @@ def build_app(client) -> web.Application:
         app.router.add_post(f"{prefix}/countdown/room/{{id}}/{{action}}", countdown_room)
         app.router.add_post(f"{prefix}/countdown/{{action}}", countdown_action)
         app.router.add_get(f"{prefix}/heist", heist_lobby)
+        app.router.add_get(f"{prefix}/heist/test", heist_test_list)                        # TEMP: /heisttest
+        app.router.add_post(f"{prefix}/heist/test", heist_test_play)
+        app.router.add_post(f"{prefix}/heist/test/{{action:done}}", heist_test_play)
         app.router.add_get(f"{prefix}/heist/room/{{id}}", heist_room)
         app.router.add_post(f"{prefix}/heist/room/{{id}}/{{action}}", heist_room)
         app.router.add_post(f"{prefix}/heist/{{action}}", heist_action)

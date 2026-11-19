@@ -1826,6 +1826,8 @@ def view(room: dict, uid: int, name_of, now: float | None = None) -> dict:
         out["verdicts"] = {u: verdict(room["stake"], room["vault"]["base"], x) for u, x in room["results"].items()}
         out["bonus"] = room.get("bonus", {})
         out["heat"] = room.get("heat")
+    if room.get("test"):            # TEMP: a tester's /heisttest game (heist_test.py), so the page goes back to its list
+        out["test"] = room["test"]
     return out
 
 

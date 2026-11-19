@@ -1,13 +1,17 @@
-"""TEMP: /heisttest, so a Bank Job tester can play any one of its games on its own and tick it off.
+"""TEMP: /heisttest, so a Bank Job tester can go through every one of its games on its own and tick each off.
 
-Rip it all out once the games are tested: this file, tests/test_heist_test.py, the two hooks in heist.py (search
-"heist_test"), the command in launcher.py (search "heisttest") and its line in docs/heist.md under Practice.
+Rip it all out once the games are tested: this file, tests/test_heist_test.py, the hooks in heist.py (search
+"heist_test" and "TEMP"), the command in launcher.py (search "heisttest"), the /heist/test routes and the
+"heist:test" opening in server.py (search "heist_test"), its line in docs/heist.md under Practice, and on the page
+src/heist/testmode.ts and its hooks in src/heist/index.ts and src/api.ts.
 
-Picking a game opens a one-thing practice job (heist.open_room's rules: play money, nothing moves, never posted,
-nobody else sees it) that drops the tester straight into that game, through the real rooms, run-downs, scoring and
-screens: a quiet game in one room on its own, a loud task or loose cash as a one-task breach, or the vault's GRAB
-straight after the report. Its score is on the report screen as usual, and kept here (best and last) for the
-tester's checklist, /heisttest with no game (or "all")."""
+/heisttest opens the activity on its TEST MODE screen (the opening "heist:test"): every game in a list (picker()),
+each with the tester's tick and best score, to tap and play straight away, back to the list after each, or one after
+another (the next untested, or all of them in order). Tapping one (POST /heist/test {game}) opens a one-thing practice
+job (heist.open_room's rules: play money, nothing moves, never posted, nobody else sees it) that drops the tester
+straight into that game, through the real rooms, run-downs, scoring and screens: a quiet game in one room on its own,
+a loud task or loose cash as a one-task breach, or the vault's GRAB straight after the report. Its score is kept here
+(best and last) once it's scored, and the page calls the job off (POST /heist/test/done) to go back to the list."""
 
 import logging
 import os
@@ -24,10 +28,7 @@ from lib.core.file_operations import atomic_write_json
 log = logging.getLogger(__name__)
 
 COMMAND = "heisttest"
-DESCRIPTION = "TEMP Bank Job testers: play any one game on its own, or see your checklist"
-OPTIONS = [{"type": 3, "name": "game", "description": "The game to play, or all for your checklist",
-            "required": False, "autocomplete": True}]
-ALL = "all"
+DESCRIPTION = "TEMP Bank Job testers: open test mode, to play every game one at a time"
 
 _FILE = os.path.join(config.JSON_DATA_DIR, "activity_heist_test.json")
 _played: dict[str, dict[str, dict]] = {}      # uid -> {entry key: {"best", "last", "n"}}
@@ -151,40 +152,45 @@ def find(text: str) -> str | None:
     return (exact or hits)[0] if len(exact) == 1 or len(hits) == 1 else None
 
 
-def _score(key: str, best: float) -> str:
-    """A best score for the list: a game's out of 100%, the GRAB's as the take the vault showed."""
-    return f"{best:.2f}x" if key == "grab" else f"{round(best * 100)}%"
-
-
-def choices(uid, typed: str = "") -> list[tuple[str, str]]:
-    """The autocomplete list (25 at most): "all" for the checklist, then the games matching what's typed, the ones
-    not played yet first, each ticked if it has been."""
+def refusal(uid) -> str | None:
+    """Why a tester can't go into test mode now (None if they can): it's testers only, and not from a real crew."""
+    H._load()
     if not H.can_practise(uid):
-        return []
-    mine = played(uid)
-    t = (typed or "").strip().lower()
-    rows = [(k, e) for k, e in GAMES.items() if not t or t in e["label"].lower() or t in k]
-    rows.sort(key=lambda x: x[0] in mine)
-    out = [(f"All: your checklist ({len(mine)}/{len(GAMES)} played)", ALL)] if not t or t in ALL else []
-    for k, e in rows:
-        done = mine.get(k)
-        out.append(((f"✓ {e['label']} ({_score(k, done['best'])})" if done else e["label"])[:100], k))
-    return out[:25]
+        return "This is for the Bank Job testers."
+    seated = H._seated(uid)
+    if seated is not None and not seated.get("practice"):
+        return "You're in a real crew. Finish or leave it first."
+    return None
 
 
-def checklist(uid) -> tuple[str, str]:
-    """(title, body) of a tester's checklist: every game, ticked with its best score once played."""
+def _name_in_list(e: dict) -> str:
+    """A game's name under its group's heading: its label without the group (a loud task's keeps its role)."""
+    return e["label"] if e["kind"] == "loud" else e["label"].split(": ", 1)[1]
+
+
+def picker(uid) -> dict:
+    """The TEST MODE screen's list: every game in order, grouped, each with the tester's best and last score and how
+    many times they've played it, and how many of them they've played."""
     mine = played(uid)
-    lines, last = [], None
+    games = []
     for k, e in GAMES.items():
-        group = e["group"]
-        if group != last:
-            lines.append(f"\n**{group}**")
-            last = group
         done = mine.get(k)
-        what = e["label"] if e["kind"] == "loud" else e["label"].split(": ", 1)[1]
-        lines.append(f"✓ {what}: best {_score(k, done['best'])}" if done else f"☐ {what}")
-    return f"Bank Job test: {len(mine)} of {len(GAMES)} played", "\n".join(lines).strip()
+        games.append({"key": k, "group": e["group"], "kind": e["kind"], "role": e["role"], "name": _name_in_list(e),
+                      "label": e["label"], "best": done["best"] if done else None,
+                      "last": done["last"] if done else None, "n": done["n"] if done else 0})
+    return {"games": games, "played": sum(1 for k in mine if k in GAMES), "total": len(GAMES)}
+
+
+def close(uid, now: float | None = None) -> None:
+    """Back to the list: the test job a tester's still in (a run-down, a game, its report or the vault) is called
+    off. Play money, so there's nothing to give back. Never a real crew, nor an ordinary practice job."""
+    H._load()
+    if not H.can_practise(uid):
+        raise H.Refuse("This is for the Bank Job testers.")
+    seated = H._seated(uid)
+    if seated is not None and seated.get("test"):
+        seated.update(over=True, how="closed", ended=time.time() if now is None else now)
+        H._save()
 
 
 def open_test(uid: int, key: str, now: float | None = None) -> dict:

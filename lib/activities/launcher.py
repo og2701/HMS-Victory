@@ -314,38 +314,18 @@ def _heisttest_on() -> bool:
 
 
 def _heisttest() -> app_commands.Command:
-    """TEMP /heisttest (heist_test.py): a Bank Job tester picks any one game and plays it on its own, straight away
-    (a one-thing practice job), or sees their checklist with no game or "all". Rip out with heist_test.py."""
-    from lib.activities import heist, heist_test
+    """TEMP /heisttest (heist_test.py): opens the activity on Bank Job's TEST MODE, a list of every game for a tester
+    to play one at a time and tick off. Rip out with heist_test.py."""
+    from lib.activities import heist_test
 
-    async def run(interaction: discord.Interaction, game: str = heist_test.ALL):
-        uid = interaction.user.id
-        if not heist.can_practise(uid):
-            await interaction.response.send_message("This is for the Bank Job testers.", ephemeral=True)
+    async def run(interaction: discord.Interaction):
+        refusal = heist_test.refusal(interaction.user.id)
+        if refusal:
+            await interaction.response.send_message(refusal, ephemeral=True)
             return
-        if (game or "").strip().lower() in ("", heist_test.ALL):
-            title, body = heist_test.checklist(uid)
-            await interaction.response.send_message(
-                embed=discord.Embed(title=title, description=body[:4096], colour=discord.Colour.gold()), ephemeral=True)
-            return
-        if not _allowed(interaction.channel_id):
-            await interaction.response.send_message(_refusal(), ephemeral=True)
-            return
-        try:
-            heist_test.open_test(uid, game)
-        except heist.Refuse as e:
-            await interaction.response.send_message(str(e), ephemeral=True)
-            return
-        want(uid, "heist")
-        await interaction.response.launch_activity()
+        await _launch(interaction, "heist:test")
 
-    async def games(interaction: discord.Interaction, current: str):
-        return [app_commands.Choice(name=n, value=v) for n, v in heist_test.choices(interaction.user.id, current)]
-
-    run = app_commands.describe(game=heist_test.OPTIONS[0]["description"])(run)
-    cmd = app_commands.Command(name=heist_test.COMMAND, description=heist_test.DESCRIPTION, callback=run)
-    cmd.autocomplete("game")(games)
-    return cmd
+    return app_commands.Command(name=heist_test.COMMAND, description=heist_test.DESCRIPTION, callback=run)
 
 
 def _wanted() -> dict:
@@ -353,7 +333,7 @@ def _wanted() -> dict:
     out = {name: {"description": description} for name, (_game, description) in _commands().items()}
     if _heisttest_on():
         from lib.activities import heist_test
-        out[heist_test.COMMAND] = {"description": heist_test.DESCRIPTION, "options": heist_test.OPTIONS}
+        out[heist_test.COMMAND] = {"description": heist_test.DESCRIPTION, "options": []}   # (clears its old game list)
     return out
 
 
