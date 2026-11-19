@@ -163,7 +163,8 @@ def test_the_launcher_builds_a_command_per_game():
     from lib.activities import launcher
     bot = launcher.Launcher()
     names = sorted(c.name for c in bot.tree.get_commands())
-    assert names == sorted(config.ACTIVITIES_LAUNCH_COMMANDS)
+    temp = ["heisttest"] if launcher._heisttest_on() else []          # TEMP: /heisttest, with /heist (heist_test.py)
+    assert names == sorted([*config.ACTIVITIES_LAUNCH_COMMANDS, *temp])
 
 
 def test_a_requested_game_is_handed_over_once_and_expires(monkeypatch):

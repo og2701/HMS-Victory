@@ -1302,6 +1302,9 @@ def _end_job(room: dict, now: float) -> None:
     room["vault"]["bars"] = _bar_plan(room["vault"], rng)
     for b in (room.get("bots") or {}).values():           # a bot crewmate catches some, by its skill
         b["bars"] = [rng.random() < b["skill"] for _ in room["vault"]["bars"]]
+    if room.get("test"):            # TEMP: a tester's /heisttest game, ticked off with its score
+        from lib.activities import heist_test
+        heist_test.scored(room)
 
 
 def _advance(room: dict, now: float) -> bool:
@@ -1554,6 +1557,9 @@ def _finish(room: dict, now: float) -> None:
                     bonus={}, paid=True)
         room["heat"] = round(heat(now), 3)
         _save()
+        if room.get("test"):        # TEMP: a tester's /heisttest GRAB, ticked off with its take
+            from lib.activities import heist_test
+            heist_test.finished(room)
         return
     bonus = {}
     if clean:

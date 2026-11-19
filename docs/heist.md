@@ -378,6 +378,11 @@ alarm, vault and police) with play money:
 - **Private.** It's never posted (no listener sees it), it doesn't show in anyone else's list of crews, and nobody
   can join it.
 - **Testers only**, whether Bank Job is live or not (`heist.can_practise`).
+- **TEMP: `/heisttest`** (`heist_test.py`, the activities bot's command, rip out once the games are tested). A tester
+  picks any one game from its `game` list (every role's quiet games at each size they come in, the loud tasks, the
+  loose cash and the vault's GRAB, 76 in all) and the activity opens straight into it: a one-thing practice job, alone,
+  no bots, free (nothing moves, never posted), then the report with its score and the vault. `/heisttest` with no
+  game (or `all`) shows their checklist, each game ticked with its best score once played (`activity_heist_test.json`).
 
 ## Rolling out
 

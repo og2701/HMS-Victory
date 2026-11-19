@@ -308,12 +308,69 @@ class HeistPlay(discord.ui.DynamicItem[discord.ui.Button], template=r"ukplace:pl
         await _launch(interaction, "heist")
 
 
+def _heisttest_on() -> bool:
+    """TEMP: /heisttest is registered alongside /heist, while there's a /heist."""
+    return any(game == "heist" for game, _ in _commands().values())
+
+
+def _heisttest() -> app_commands.Command:
+    """TEMP /heisttest (heist_test.py): a Bank Job tester picks any one game and plays it on its own, straight away
+    (a one-thing practice job), or sees their checklist with no game or "all". Rip out with heist_test.py."""
+    from lib.activities import heist, heist_test
+
+    async def run(interaction: discord.Interaction, game: str = heist_test.ALL):
+        uid = interaction.user.id
+        if not heist.can_practise(uid):
+            await interaction.response.send_message("This is for the Bank Job testers.", ephemeral=True)
+            return
+        if (game or "").strip().lower() in ("", heist_test.ALL):
+            title, body = heist_test.checklist(uid)
+            await interaction.response.send_message(
+                embed=discord.Embed(title=title, description=body[:4096], colour=discord.Colour.gold()), ephemeral=True)
+            return
+        if not _allowed(interaction.channel_id):
+            await interaction.response.send_message(_refusal(), ephemeral=True)
+            return
+        try:
+            heist_test.open_test(uid, game)
+        except heist.Refuse as e:
+            await interaction.response.send_message(str(e), ephemeral=True)
+            return
+        want(uid, "heist")
+        await interaction.response.launch_activity()
+
+    async def games(interaction: discord.Interaction, current: str):
+        return [app_commands.Choice(name=n, value=v) for n, v in heist_test.choices(interaction.user.id, current)]
+
+    run = app_commands.describe(game=heist_test.OPTIONS[0]["description"])(run)
+    cmd = app_commands.Command(name=heist_test.COMMAND, description=heist_test.DESCRIPTION, callback=run)
+    cmd.autocomplete("game")(games)
+    return cmd
+
+
+def _wanted() -> dict:
+    """Every typed command to register: name -> its description, and its options if it has any."""
+    out = {name: {"description": description} for name, (_game, description) in _commands().items()}
+    if _heisttest_on():
+        from lib.activities import heist_test
+        out[heist_test.COMMAND] = {"description": heist_test.DESCRIPTION, "options": heist_test.OPTIONS}
+    return out
+
+
+def _options(opts) -> list:
+    """A command's options, as much of them as says whether Discord's copy is out of date."""
+    return [(o.get("name"), o.get("type"), o.get("description"), bool(o.get("required")), bool(o.get("autocomplete")))
+            for o in opts or []]
+
+
 class Launcher(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.none())
         self.tree = app_commands.CommandTree(self)
         for name, (game, description) in _commands().items():
             self.tree.add_command(self._command(name, game, description))
+        if _heisttest_on():
+            self.tree.add_command(_heisttest())
 
     @staticmethod
     def _command(name: str, game: str, description: str) -> app_commands.Command:
@@ -349,16 +406,18 @@ async def _register(session) -> None:
     app_id = auth._env("ACTIVITIES_CLIENT_ID")
     base = f"{auth.API}/applications/{app_id}/commands"
     headers = {"Authorization": f"Bot {auth._env('ACTIVITIES_BOT_TOKEN')}"}
-    wanted = _commands()
+    wanted = _wanted()
     status, existing = await _call(session, "GET", base, headers=headers)
     typed = {c.get("name"): c for c in (existing if status == 200 and isinstance(existing, list) else [])
              if c.get("type") == 1}
-    for name, (_game, description) in wanted.items():
-        body = {"name": name, "description": description, "type": 1,
+    for name, extra in wanted.items():
+        body = {"name": name, "type": 1,
                 "integration_types": [0],   # installed to a server
-                "contexts": [0]}            # used in a server channel
+                "contexts": [0],            # used in a server channel
+                **extra}
         have = typed.get(name)
-        if have and all(have.get(k) == body[k] for k in ("description", "integration_types", "contexts")):
+        if have and all(have.get(k) == body[k] for k in ("description", "integration_types", "contexts")) \
+                and _options(have.get("options")) == _options(body.get("options")):
             continue
         status, _ = await _call(session, "POST", base, json=body, headers=headers)
         log.info("activity launch command /%s registered (%s)", name, status)
