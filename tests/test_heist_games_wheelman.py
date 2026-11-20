@@ -122,6 +122,18 @@ def test_dodge_scores_how_far_it_got_and_never_more():
     refused(g, p, {"steer": p["steer"], "t": p["end"] + 1})
 
 
+def test_dodge_a_lane_change_takes_the_slide_so_leaving_late_still_clips_it():
+    g = W["dodge"]
+    p = made("dodge", "m", seed=3)
+    i, wv = next((i, wv) for i, wv in enumerate(p["waves"]) if g._blocked(wv) == {1})   # just the middle shut
+    a = wv["t"] - wv["w"]
+    late = {**p, "steer": [[a - g.SLIDE // 2, -1]], "t": wv["t"]}
+    early = {**p, "steer": [[a - g.SLIDE - 10, -1]], "t": wv["t"]}
+    assert i in g._hits(late)                                        # still crossing as it comes alongside
+    assert i not in g._hits(early)
+    assert g.public(p)["slide"] == g.SLIDE
+
+
 def test_dodge_cannot_leave_the_road():
     g = W["dodge"]
     p = made("dodge")

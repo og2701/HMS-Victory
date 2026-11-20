@@ -120,7 +120,8 @@ class Dodge(Game):
     """Three lanes of road scrolling at you, with cones, police cars and roadblocks in some of them; steer left
     and right round them. The road (when each thing reaches the van, and in which lanes) is the public schedule;
     the page sends every lane change with its time and how far it's driven, and the server drives the same road to
-    count what the van hit. A thing hits if the van's in its lane at any moment it's alongside. Two-lane blocks
+    count what the van hit. A thing hits if the van's in its lane at any moment it's alongside, and a lane change
+    takes SLIDE ms (as long as the page slides the van across), so it's in both lanes till then. Two-lane blocks
     come thick and fast later on, often leaving the gap on the far side from the last one, so you're across two
     lanes in a hurry."""
     key, role, title = "dodge", "wheelman", "LANE DODGE"
@@ -130,7 +131,9 @@ class Dodge(Game):
     SIZES = {"s": (15000, 0.15, 1 / 1500, 1 / 900, 820), "m": (22000, 0.18, 1 / 1300, 1 / 750, 560),
              "big": (30000, 0.14, 1 / 1200, 1 / 650, 500)}
     START = 2000                    # ms of lights before the road moves
-    REACH = 0.085                   # how close (in screen-heights) a thing and the van have to be to touch
+    REACH = 0.15                    # how close (in screen-heights) a thing and the van have to be to touch: the page
+                                    # keeps the van and every car no taller than this, so it touches when it looks it
+    SLIDE = 120                     # ms the van takes to cross to the next lane (the page's slide)
     LANES = 3
 
     def make(self, rng, size, story):
@@ -169,10 +172,10 @@ class Dodge(Game):
             if wv["t"] > upto:
                 break
             a, b = wv["t"] - wv["w"], wv["t"] + wv["w"]
-            lane = 1 + sum(d for t, d in steer if t <= a)
+            lane = 1 + sum(d for t, d in steer if t <= a - self.SLIDE)
             lanes = {lane}
             for t, d in steer:
-                if a < t <= b:
+                if a - self.SLIDE < t <= b:      # still crossing from the lane it left as the thing comes alongside
                     lane += d
                     lanes.add(lane)
             if lanes & self._blocked(wv):
@@ -181,7 +184,7 @@ class Dodge(Game):
 
     def public(self, p):
         return {"start": p["start"], "end": p["end"], "v0": p["v0"], "v1": p["v1"], "waves": p["waves"],
-                "steer": p["steer"], "t": p["t"], "hits": self._hits(p)}
+                "steer": p["steer"], "t": p["t"], "hits": self._hits(p), "slide": self.SLIDE}
 
     def move(self, p, body):
         steer, t = body.get("steer"), body.get("t")
@@ -225,7 +228,8 @@ class Dodge(Game):
             blocked = self._blocked(wv)
             if lane in blocked and (rng is None or rng.random() < skill):
                 free = sorted((x for x in range(self.LANES) if x not in blocked), key=lambda x: abs(x - lane))
-                at = round((max(clear, now) + a) / 2)
+                # halfway through the gap, but across before it's alongside (and not back while the last one is)
+                at = round(max(max(clear, now) + 1, min((max(clear, now) + a) / 2, a - self.SLIDE)))
                 step = 1 if free[0] > lane else -1
                 while lane != free[0]:
                     lane += step
