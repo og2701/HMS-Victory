@@ -170,6 +170,19 @@ def test_the_needle_is_worked_out_from_the_tap_time():
     assert g.score(p) == pytest.approx((1 + p["set"][1]) / 3 * (1 - g.MISS))
 
 
+def test_any_red_over_the_green_counts_as_an_edge_tap():
+    g = S.Needle()
+    p = fresh(g, "s", 7)
+    w, v = p["widths"][0], p["speeds"][0]
+    graze = g._next(p, 500) + (w + 0.8 * g.GRACE) / v * 1000            # the blade's edge just over the green
+    needle_at(g, p, graze)
+    assert p["set"] == [pytest.approx(g.EDGE)] and p["misses"] == 0
+    past = g._next(p, graze + 300) + (p["widths"][1] + 1.5 * g.GRACE) / p["speeds"][1] * 1000
+    needle_at(g, p, past)
+    assert len(p["set"]) == 1 and p["misses"] == 1
+    assert g.public(p)["grace"] == g.GRACE
+
+
 def test_three_misses_on_a_tumbler_slip_the_last_one_back():
     g = S.Needle()
     p = fresh(g, "m", 1)

@@ -281,6 +281,8 @@ class Needle(Game):
     SPARE = 8           # taps allowed beyond one a tumbler
     DEAD = 0.15         # a tap this near the notch's middle (of its half-width) is spot on
     EDGE = 0.6          # what a tap right on the notch's edge is worth
+    GRACE = 4.0         # degrees past the notch's edge that still count (as an edge tap): the needle's blade is
+                        # that wide where it crosses the notch, so any red over the green is in
     MISS = 0.06         # what each miss takes off
 
     def make(self, rng, size, story):
@@ -308,7 +310,7 @@ class Needle(Game):
 
     def public(self, p):
         return {"n": len(p["notches"]), "speeds": p["speeds"], "ways": p["ways"], "notches": p["notches"],
-                "widths": p["widths"], "len": p["len"], "seg": p["seg"], "set": len(p["set"]), "miss": p["miss"],
+                "widths": p["widths"], "grace": self.GRACE, "len": p["len"], "seg": p["seg"], "set": len(p["set"]), "miss": p["miss"],
                 "slip": self.SLIP, "misses": p["misses"], "taps": len(p["taps"]), "limit": p["limit"],
                 "last": p["taps"][-1] if p["taps"] else None}
 
@@ -323,8 +325,8 @@ class Needle(Game):
             raise Refuse("That tap's out of time.")
         off, w, a = self._off(p, t), p["widths"][len(p["set"])], round(self._angle(p, t), 3)
         p["taps"].append(t)
-        if off <= w:
-            worth = 1 - (1 - self.EDGE) * (off / w - self.DEAD) / (1 - self.DEAD)
+        if off <= w + self.GRACE:
+            worth = 1 - (1 - self.EDGE) * (min(off, w) / w - self.DEAD) / (1 - self.DEAD)
             p["set"].append(1.0 if off <= self.DEAD * w else round(worth, 4))
             p["miss"], p["seg"] = 0, {"t": t, "a": a}
             return
