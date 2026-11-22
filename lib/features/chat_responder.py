@@ -25,6 +25,7 @@ from config import (
     IMAGE_GEN_MODEL, IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
+from lib.features import vic_brain
 from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, judge_identify, MENTION_SIGNALS_MODEL
 
 logger = logging.getLogger(__name__)
@@ -1963,7 +1964,10 @@ def synthesize_image_caption(
     system_prompt = (
         "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
         f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
-        "Write the 1-2 sentence caption in your voice introducing the picture and dryly roasting them based on their records or the request. "
+        "Write the caption in your voice: one sentence, two at most, about THIS picture and what was asked for, with a dry dig at whoever it is of. "
+        "Only use something from THEIR RECORDS if it bears on the picture or the request; never bolt on unrelated chat trivia, and never quote the chat. "
+        "The picture is of the SUBJECT, who is not necessarily the person who asked. Use the short name people call them, not a full decorated nickname. "
+        "Never open with 'Ah', 'Behold' or 'In a'. "
         "For a GROUP picture: still 1-2 sentences in total; do NOT go round everyone, single out at most two people. "
         "Only if WHO IS WHO shows assigned roles, add exactly one extra line in the form 'Roles: <@id> the dad, <@id> the mum, ...' "
         "(a comma-separated list, no prose, no jokes in it). "
@@ -5656,6 +5660,172 @@ async def handle_shut_request(client: discord.Client, message: discord.Message, 
     await message.reply("Couldn't shut them.", mention_author=False)
 
 
+# With a picture attached to the tagging message itself, Jev has to be this sure it only wants words.
+OWN_ATTACHMENT_REPLY_CONFIDENCE = 0.95
+BRAIN_RECENT_MESSAGES = 30
+BRAIN_ABOUT_PEOPLE = 3
+
+
+def _components_text(msg: Any) -> str:
+    """Text inside a Components V2 card (the watcher's replies as Vic carry no plain content)."""
+    parts: List[str] = []
+    stack = list(getattr(msg, "components", None) or [])
+    while stack and len(parts) < 12:
+        comp = stack.pop(0)
+        content = getattr(comp, "content", None)
+        if isinstance(content, str) and content.strip():
+            parts.append(content.strip())
+        children = getattr(comp, "children", None) or getattr(comp, "components", None) or []
+        try:
+            stack[:0] = list(children)
+        except TypeError:
+            pass
+    return " / ".join(parts)
+
+
+def _brain_line(msg: Any, bot_id: Optional[int], limit_note: bool = True) -> Optional[Any]:
+    """One Discord message as a vic_brain.Line, or None when there is nothing in it to show."""
+    author = getattr(msg, "author", None)
+    is_vic = getattr(author, "id", None) == bot_id
+    text = getattr(msg, "content", "") or ""
+    if not isinstance(text, str):
+        text = ""
+    if bot_id:
+        text = re.sub(rf"<@!?{bot_id}>", "@Vic", text)
+    if not text.strip() and is_vic:
+        text = _components_text(msg)
+    images = len(own_image_attachments(msg))
+    if not text.strip() and not images:
+        return None
+    created = getattr(msg, "created_at", None)
+    try:
+        ts = created.timestamp() if created is not None else None
+    except Exception:
+        ts = None
+    reply_to = None
+    resolved = getattr(getattr(msg, "reference", None), "resolved", None)
+    resolved_author = getattr(resolved, "author", None)
+    if resolved_author is not None and isinstance(getattr(resolved, "content", None), str):
+        reply_to = "you" if getattr(resolved_author, "id", None) == bot_id else _member_display_name(resolved_author, "someone")
+    mid = getattr(msg, "id", None)
+    return vic_brain.Line(
+        author=("Vic" if is_vic else _member_display_name(author, "someone")), text=text.strip(), is_vic=is_vic,
+        ts=ts if isinstance(ts, (int, float)) else None, images=images, reply_to=reply_to,
+        note=(vic_brain.note_for(mid) if is_vic and isinstance(mid, int) else None),
+    )
+
+
+async def answer_with_brain(
+    client: Any, message: Any, *, typed_prompt: str, caller_name: str, caller_role: str, caller_id: Optional[int],
+    bot_id: Optional[int], reply_chain: List[Any], directory: List[Tuple[str, int]], other_mentions: List[Any],
+    signals: Any,
+) -> Any:
+    """Gather the scene for a text reply and have the brain write it. Returns a vic_brain.BrainReply."""
+    channel = getattr(message, "channel", None)
+    channel_id = getattr(channel, "id", None)
+
+    thread = [line for line in (_brain_line(m, bot_id) for m in reversed(reply_chain or [])) if line is not None]
+
+    chain_ids = {getattr(m, "id", None) for m in (reply_chain or [])}
+    recent: List[Any] = []
+    try:
+        if hasattr(channel, "history"):
+            async for prev in channel.history(limit=BRAIN_RECENT_MESSAGES, before=message):
+                if getattr(prev, "id", None) in chain_ids and len(chain_ids) > 1:
+                    pass  # also in THREAD; kept here too so the order of the chat still reads right
+                line = _brain_line(prev, bot_id)
+                if line is not None:
+                    recent.append(line)
+        recent.reverse()
+    except Exception as e:
+        logger.debug("Could not read recent chat for the brain: %s", e)
+
+    # Who the reply might be about: people tagged in the message and whoever it replies to. Their recent
+    # lines are the material a roast or an answer about them is made from.
+    about: List[Tuple[str, List[str]]] = []
+    subjects: List[Any] = list(other_mentions or [])
+    ref_author = getattr(reply_chain[0], "author", None) if reply_chain else None
+    if ref_author is not None and getattr(ref_author, "id", None) not in (bot_id, caller_id) \
+            and getattr(ref_author, "id", None) not in {getattr(u, "id", None) for u in subjects}:
+        subjects.append(ref_author)
+    for u in subjects[:BRAIN_ABOUT_PEOPLE]:
+        uid = getattr(u, "id", None)
+        if not isinstance(uid, int) or uid in (bot_id, caller_id) or getattr(u, "bot", False) is True:
+            continue
+        try:
+            chat = await fetch_user_recent_chat_async(client, uid, channel, limit=20)
+            lines = [c.get("content", "") for c in chat or [] if isinstance(c, dict) and c.get("content")]
+            if lines:
+                about.append((_member_display_name(u), lines))
+        except Exception as e:
+            logger.debug("Could not fetch recent chat for %s: %s", uid, e)
+
+    records = ""
+    opinion = signals is not None and signals.says("stats_opinion")
+    if opinion or (signals is not None and signals.records_sure):
+        try:
+            records = await records_digest_for(client, message, bot_id) or ""
+        except Exception as e:
+            logger.warning("Stats digest failed: %s", e)
+
+    extras: List[str] = []
+    guild = getattr(message, "guild", None)
+    try:
+        overview = await build_server_overview_context(client, guild, bot_id=bot_id)
+        if overview:
+            extras.append(overview)
+    except Exception as e:
+        logger.debug("Could not build server overview for the brain: %s", e)
+    if guild is not None and hasattr(guild, "fetch_scheduled_events") and re.search(r"\bevents?\b", typed_prompt or "", re.IGNORECASE):
+        try:
+            events = [e for e in await guild.fetch_scheduled_events()
+                      if getattr(e, "status", None) in (discord.EventStatus.scheduled, discord.EventStatus.active)]
+            if events:
+                extras.append("SERVER EVENTS (give these exact links if asked for one)\n" + "\n".join(
+                    f"- {e.name}: {getattr(e, 'url', None) or f'https://discord.com/events/{guild.id}/{e.id}'}" for e in events[:3]))
+        except Exception as e:
+            logger.debug("Could not fetch scheduled events for the brain: %s", e)
+
+    image_urls: List[str] = []
+    try:
+        image_urls = await extract_image_urls(message, client)
+    except Exception as e:
+        logger.debug("Could not collect images for the brain: %s", e)
+
+    req = vic_brain.BrainRequest(
+        asker_name=caller_name, asker_role=caller_role, text=typed_prompt or "",
+        channel_name=str(getattr(channel, "name", None) or "chat"), thread=thread, recent=recent,
+        people=[(n, i) for n, i in directory if i != bot_id], about=about, records=records, extras=extras,
+        bits=(vic_brain.active_bits(channel_id) if isinstance(channel_id, int) else []), image_urls=image_urls,
+        force_search=bool(signals is not None and signals.says("live_query")),
+    )
+    reply = await asyncio.to_thread(vic_brain.generate_reply, req, _post_openai_response)
+    logger.info("Vic brain (%s, %s) answered %s: %d in / %d out tokens, %d search(es)%s", reply.provider, reply.model,
+                caller_name, reply.input_tokens, reply.output_tokens, reply.searches,
+                ", after a repeat" if reply.retried_repeat else "")
+    return reply
+
+
+def note_t2_run(message: Any, posted: Any, route: str, *, caller_name: str = "", request: str = "", reply: str = "",
+                started: Optional[float] = None, showed: str = "", cast: str = "", **fields: Any) -> None:
+    """Remember what Vic just posted (so a follow-up under it can be answered from it) and log the run."""
+    try:
+        posted_id = getattr(posted, "id", None)
+        if isinstance(posted_id, int):
+            vic_brain.remember_reply(posted_id, route if route in ("image", "edit") else "text", asker=caller_name,
+                                     request=request, showed=showed, cast=cast, caption=reply)
+        channel = getattr(message, "channel", None)
+        vic_brain.log_run(
+            route=route, channel=str(getattr(channel, "name", "") or ""), channel_id=getattr(channel, "id", None),
+            request_id=getattr(message, "id", None), reply_id=posted_id if isinstance(posted_id, int) else None,
+            asker=caller_name, request=request, reply=reply, showed=showed,
+            ms=(int((time.monotonic() - started) * 1000) if started is not None else None), **fields,
+        )
+    except Exception as e:
+        logger.debug("Could not note the direct reply run: %s", e)
+
+
+
 async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
     """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying."""
     if message.id in _handled_one_off_message_ids:
@@ -5856,6 +6026,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 seen_d.add(uid)
                 directory.append((name, uid))
         _add_dir(caller_name, caller_id)
+        # "Og" is Oggers. Without this the planner matched it to whichever nickname had "og" in it and drew
+        # KaizOgicus for "draw Og outside in a snowstorm" (18 Nov 2026).
+        if caller_id != USERS.OGGERS:
+            _add_dir("Oggers (also called Og, the server owner)", USERS.OGGERS)
         for u in chain_mentions:
             _add_dir(_member_display_name(u), getattr(u, "id", None))
         for m in reply_chain:
@@ -5971,10 +6145,16 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             ):
                 return True
 
-        # Jev already read the message. When it is sure this wants text and nothing is attached that a
-        # picture could be made from, the planner's paraphrase and people-resolution add nothing a text
-        # reply uses, so the gpt-4o call is skipped. Anything less certain still gets planned.
-        skip_planner = signals is not None and signals.confident_reply() and not reference_attachments
+        # Jev already read the message. When it is sure this wants text, the planner's paraphrase and
+        # people-resolution add nothing a text reply uses, so the gpt-4o call is skipped. Anything less
+        # certain still gets planned.
+        # A picture nearby used to send even a sure text reply to the planner, which then found an edit in
+        # it: "WANKER" and "you made this" under one of Vic's pictures each produced another picture (19 and
+        # 21 Nov 2026). Jev is told about attachments and recent pictures, so its confident "reply" stands and
+        # the text reply looks at the image itself. A picture the asker attached to this very message is more
+        # often there to be worked on, so that needs Jev to be surer still.
+        skip_planner = signals is not None and signals.confident_reply() and (
+            not own_image_attachments(message) or signals.action_confidence >= OWN_ATTACHMENT_REPLY_CONFIDENCE)
         plan = None
         if skip_planner:
             logger.info("Jev is confident %s wants a text reply (%.2f); skipping the planner for %r",
@@ -6284,7 +6464,9 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             )
             caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
             caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
-            await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
+            posted = await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
+            note_t2_run(message, posted, "edit", caller_name=caller_name, request=typed_prompt, reply=caption,
+                        showed=f"the earlier picture changed as follows: {edit_prompt}", model=IMAGE_GEN_MODEL)
 
             live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
             live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Edited Image: {edit_prompt}]"})
@@ -6508,7 +6690,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 )
                 caption = strip_leading_self_address(caption, caller_id, [caller_name, getattr(message.author, 'name', None)])
                 caption = cap_caption_length(restrict_caption_mentions(caption, {caller_id, target_id, *[getattr(u, 'id', None) for u in other_mentions], *(plan_state['recipients'] if plan_state else [])}, context))
-                await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
+                posted = await message.reply(caption, file=file, mention_author=True, allowed_mentions=ping_only(caller_id, target_id, *[getattr(u, 'id', None) for u in own_mentions], *(plan_state['recipients'] if plan_state else []), *extra_pings))
+                note_t2_run(message, posted, "image", caller_name=caller_name, request=typed_prompt, reply=caption,
+                            showed=image_prompt, cast=summarise_characters(_LAST_CHARACTERS[0], context or ""),
+                            model=IMAGE_GEN_MODEL)
 
                 live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
                 live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": f"[Generated Image: {image_prompt}]"})
@@ -6523,74 +6708,95 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 await message.reply(fail_msg, mention_author=True)
                 return True
 
-        # 1. Gather context & images
-        gathered = await gather_one_off_context(client, message, return_targets=True)
-        if isinstance(gathered, tuple) and len(gathered) == 2:
-            context, target_users = gathered
-        else:
-            context, target_users = str(gathered), {}
-        opinion = signals is not None and signals.says("stats_opinion")
-        if opinion or (signals is not None and signals.records_sure):
-            # "Who's your favourite member, based on stats": code picks the facts, the model picks among them.
-            # A records question the database path couldn't answer gets the same real figures, so the reply
-            # can use them, or say plainly which figure it couldn't pull, instead of guessing at the world.
+        # The brain: one call that sees the thread as it happened and the words actually typed (not the
+        # delegation rewrite or the planner's paraphrase, which is where "Rewrite those. (then: Jesus vic)" came
+        # from). The old gather-and-ask path below stays as the fallback when it is off or fails.
+        started = time.monotonic()
+        brain = None
+        if vic_brain.ENABLED:
             try:
-                digest = await records_digest_for(client, message, bot_id)
-                if digest:
-                    how = ("Base your pick or verdict on these and say which figure swung it" if opinion else
-                           "This message is about the server's own records, not the outside world. Answer from these if they "
-                           "cover it; if the exact figure isn't here, say you couldn't pull that one and name the closest figure that is")
-                    context = (
-                        "SERVER RECORDS DIGEST (real figures from the bot's database; the ONLY figures you may cite. "
-                        f"{how}):\n" + digest + "\n\n" + (context or "")
-                    ).strip()
-                    logger.info("Stats digest attached for %s (%s): %r", caller_name, "opinion" if opinion else "records", clean_prompt[:80])
+                brain = await answer_with_brain(
+                    client, message, typed_prompt=typed_prompt, caller_name=caller_name, caller_role=caller_role,
+                    caller_id=caller_id, bot_id=bot_id, reply_chain=reply_chain, directory=directory,
+                    other_mentions=own_mentions, signals=signals,
+                )
             except Exception as e:
-                logger.warning("Stats digest failed: %s", e)
-        image_urls = await extract_image_urls(message, client)
-
-        # 2. Call OpenAI with retries
-        reply_text = None
+                logger.warning("Vic brain failed for %s, falling back to the old reply path: %s", caller_name, e)
+        target_users: Dict[str, int] = {}
         p_tokens = 0
         c_tokens = 0
-        current_images = image_urls
-        max_attempts = 3
+        if brain is not None:
+            reply_text = brain.text
+            p_tokens, c_tokens = brain.input_tokens, brain.output_tokens
+        else:
+            # 1. Gather context & images
+            gathered = await gather_one_off_context(client, message, return_targets=True)
+            if isinstance(gathered, tuple) and len(gathered) == 2:
+                context, target_users = gathered
+            else:
+                context, target_users = str(gathered), {}
+            opinion = signals is not None and signals.says("stats_opinion")
+            if opinion or (signals is not None and signals.records_sure):
+                # "Who's your favourite member, based on stats": code picks the facts, the model picks among them.
+                # A records question the database path couldn't answer gets the same real figures, so the reply
+                # can use them, or say plainly which figure it couldn't pull, instead of guessing at the world.
+                try:
+                    digest = await records_digest_for(client, message, bot_id)
+                    if digest:
+                        how = ("Base your pick or verdict on these and say which figure swung it" if opinion else
+                               "This message is about the server's own records, not the outside world. Answer from these if they "
+                               "cover it; if the exact figure isn't here, say you couldn't pull that one and name the closest figure that is")
+                        context = (
+                            "SERVER RECORDS DIGEST (real figures from the bot's database; the ONLY figures you may cite. "
+                            f"{how}):\n" + digest + "\n\n" + (context or "")
+                        ).strip()
+                        logger.info("Stats digest attached for %s (%s): %r", caller_name, "opinion" if opinion else "records", clean_prompt[:80])
+                except Exception as e:
+                    logger.warning("Stats digest failed: %s", e)
+            image_urls = await extract_image_urls(message, client)
 
-        for attempt in range(1, max_attempts + 1):
-            try:
-                reply_text, pt, ct = await asyncio.to_thread(
-                    generate_one_off_reply,
-                    prompt=clean_prompt,
-                    context=context,
-                    user_name=caller_name,
-                    caller_role=caller_role,
-                    image_urls=current_images,
-                    force_search=(signals.says("live_query") if signals is not None else None),
-                )
-                p_tokens += pt
-                c_tokens += ct
+            # 2. Call OpenAI with retries
+            reply_text = None
+            p_tokens = 0
+            c_tokens = 0
+            current_images = image_urls
+            max_attempts = 3
 
-                if reply_text and not is_openai_refusal(reply_text):
-                    break
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    reply_text, pt, ct = await asyncio.to_thread(
+                        generate_one_off_reply,
+                        prompt=clean_prompt,
+                        context=context,
+                        user_name=caller_name,
+                        caller_role=caller_role,
+                        image_urls=current_images,
+                        force_search=(signals.says("live_query") if signals is not None else None),
+                    )
+                    p_tokens += pt
+                    c_tokens += ct
 
-                logger.warning(
-                    "Direct mention from %s (%s) attempt %d/%d produced refusal/empty: %r",
-                    caller_name, caller_id, attempt, max_attempts, reply_text
-                )
-                if current_images:
-                    current_images = None
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                logger.warning(
-                    "Direct mention from %s (%s) attempt %d/%d encountered error: %s",
-                    caller_name, caller_id, attempt, max_attempts, e
-                )
-                if current_images:
-                    current_images = None
-                await asyncio.sleep(0.5)
+                    if reply_text and not is_openai_refusal(reply_text):
+                        break
 
-        if not reply_text or is_openai_refusal(reply_text):
-            reply_text = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
+                    logger.warning(
+                        "Direct mention from %s (%s) attempt %d/%d produced refusal/empty: %r",
+                        caller_name, caller_id, attempt, max_attempts, reply_text
+                    )
+                    if current_images:
+                        current_images = None
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.warning(
+                        "Direct mention from %s (%s) attempt %d/%d encountered error: %s",
+                        caller_name, caller_id, attempt, max_attempts, e
+                    )
+                    if current_images:
+                        current_images = None
+                    await asyncio.sleep(0.5)
+
+            if not reply_text or is_openai_refusal(reply_text):
+                reply_text = "I was going to respond to that, but quite frankly, the server's incompetence has overwhelmed my processors."
 
         # Never let the bot ping itself
         if bot_id:
@@ -6629,12 +6835,23 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
 
         # Send reply (with fallback to channel.send if referenced message was deleted)
         try:
-            await message.reply(reply_text, mention_author=True, allowed_mentions=mentions)
+            posted = await message.reply(reply_text, mention_author=True, allowed_mentions=mentions)
         except (discord.NotFound, discord.HTTPException):
-            await message.channel.send(f"{message.author.mention} {reply_text}", allowed_mentions=mentions)
+            posted = await message.channel.send(f"{message.author.mention} {reply_text}", allowed_mentions=mentions)
 
         # Record usage into live_chat_manager and persistent file
-        live_chat_manager.record_usage("gpt-4o", p_tokens, c_tokens, is_reply=True)
+        live_chat_manager.record_usage(brain.model if brain is not None else "gpt-4o", p_tokens, c_tokens, is_reply=True)
+        channel_id = getattr(getattr(message, "channel", None), "id", None)
+        if brain is not None and isinstance(channel_id, int):
+            if brain.bit_clear:
+                vic_brain.clear_bits(channel_id)
+            if brain.bit_set:
+                vic_brain.set_bit(channel_id, brain.bit_set, caller_name)
+                logger.info("Running bit set in #%s by %s: %r", getattr(message.channel, "name", "?"), caller_name, brain.bit_set)
+        note_t2_run(message, posted, "text", caller_name=caller_name, request=typed_prompt, reply=reply_text,
+                    model=(brain.model if brain is not None else "gpt-4o"), provider=(brain.provider if brain is not None else "legacy"),
+                    input_tokens=p_tokens, output_tokens=c_tokens, searches=(brain.searches if brain is not None else None),
+                    started=started)
         live_chat_manager.conversation_history.append({"role": "user", "speaker": caller_name, "content": raw_content})
         live_chat_manager.conversation_history.append({"role": "assistant", "speaker": "HMS Victory", "content": reply_text})
 
