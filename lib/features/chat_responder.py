@@ -26,7 +26,7 @@ from config import (
 )
 from lib.core.file_operations import atomic_write_json, load_json_file
 from lib.features import vic_brain
-from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, judge_identify, MENTION_SIGNALS_MODEL
+from lib.features.mention_signals import judge_mention, judge_named_subject, judge_pick, judge_identify, MENTION_SIGNALS_MODEL, REPLY_GATE_CONFIDENCE
 
 logger = logging.getLogger(__name__)
 
@@ -1521,7 +1521,10 @@ def synthesize_image_prompt_from_context(
         user_payload += (
             "\nSUBJECT: no specific person. Draw exactly what was asked. If the request is about something happening in the chat "
             "(a running joke, what someone just said or did, 'your thoughts on X'), the RECENT CHAT in the context is the source: "
-            "depict that specific situation with its actual details, not a generic take. Skip the character sheet fields that don't apply."
+            "depict that specific situation with its actual details, not a generic take. Otherwise the chat is NOT material: a request "
+            "that stands on its own (an animal, an object, a scene, a change to a reference image) gets exactly that and nothing from the "
+            "chat bolted on. Lines written by HMS Victory are the bot's own earlier replies and are never a source for the picture. "
+            "Skip the character sheet fields that don't apply."
         )
     user_payload += (
         "\nHMS VICTORY IS IN THE PICTURE: yes (add the bot as a character interacting with the subject or situation)"
@@ -1968,6 +1971,8 @@ def synthesize_image_caption(
         "Only use something from THEIR RECORDS if it bears on the picture or the request; never bolt on unrelated chat trivia, and never quote the chat. "
         "The picture is of the SUBJECT, who is not necessarily the person who asked. Use the short name people call them, not a full decorated nickname. "
         "Never open with 'Ah', 'Behold' or 'In a'. "
+        "If there is no specific person as SUBJECT, the caption is one short dry line about the picture itself: no dig at anyone, "
+        "nothing from the chat, and nothing you said earlier. "
         "For a GROUP picture: still 1-2 sentences in total; do NOT go round everyone, single out at most two people. "
         "Only if WHO IS WHO shows assigned roles, add exactly one extra line in the form 'Roles: <@id> the dad, <@id> the mum, ...' "
         "(a comma-separated list, no prose, no jokes in it). "
@@ -1987,7 +1992,7 @@ def synthesize_image_caption(
             "attached to a bare name):\n"
             + characters
         )
-    if context.strip():
+    if context.strip() and (target_name or characters):
         user_payload += f"\n\nTHEIR RECORDS (for roast material):\n{context.strip()[:2500]}"
 
     parsed, p_tokens, c_tokens = _chat_completion_json(
@@ -2772,6 +2777,83 @@ def own_image_attachments(message: Any) -> List[Any]:
 def own_attachment_image_urls(message: discord.Message) -> List[str]:
     """Image URLs attached to this very message by its author (no embeds, no replied-to message)."""
     return [att.url for att in own_image_attachments(message)]
+
+
+_IMAGE_LINK_RE = re.compile(r"https?://[^\s<>]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s<>]*)?", re.IGNORECASE)
+_LINK_RE = re.compile(r"<?https?://[^\s<>]+>?")
+
+
+class LinkedImage:
+    """A picture that arrived as a link or an embed (a GIF from the picker, a pasted image URL) rather than
+    as an upload. Stands in for a discord.Attachment wherever the responder takes one: url, filename, read()."""
+
+    def __init__(self, url: str, filename: Optional[str] = None):
+        self.url = url
+        self.proxy_url = url
+        name = (filename or url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1] or "linked image")[:80]
+        self.filename = name
+        self.content_type = "image/png"
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, LinkedImage) and other.url == self.url
+
+    def __hash__(self) -> int:
+        return hash(("LinkedImage", self.url))
+
+    async def read(self) -> bytes:
+        return await asyncio.to_thread(_still_png, await asyncio.to_thread(download_image_bytes, self.url))
+
+
+def _still_png(data: bytes) -> bytes:
+    """First frame as PNG when the bytes are a GIF or WebP (the edit endpoint wants a still); otherwise unchanged."""
+    if not (data[:4] == b"GIF8" or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
+        return data
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as im:
+            im.seek(0)
+            out = io.BytesIO()
+            im.convert("RGBA").save(out, format="PNG")
+            return out.getvalue()
+    except Exception as e:
+        logger.warning("Could not take a still from a linked image: %s", e)
+        return data
+
+
+def linked_images(message: Any) -> List[Any]:
+    """Pictures on this message that are not uploads: embed images (a GIF link's preview frame) and image URLs
+    in the text. At most four."""
+    out: List[Any] = []
+
+    def _add(url: Any, name: Optional[str] = None) -> None:
+        if isinstance(url, str) and url.startswith("http") and all(o.url != url for o in out):
+            out.append(LinkedImage(url, name))
+
+    try:
+        for emb in list(getattr(message, "embeds", None) or []):
+            # a GIF link embeds as a video with a still thumbnail; a plain image link as an image or thumbnail
+            still = getattr(getattr(emb, "thumbnail", None), "url", None) or getattr(getattr(emb, "image", None), "url", None)
+            title = getattr(emb, "title", None)
+            _add(still, title if isinstance(title, str) and title.strip() else None)
+    except TypeError:
+        pass
+    content = getattr(message, "content", None)
+    if not out and isinstance(content, str):
+        for link in _IMAGE_LINK_RE.findall(content):
+            _add(link)
+    return out[:4]
+
+
+def message_images(message: Any) -> List[Any]:
+    """Every picture on this message the responder can work on: uploads first, then linked or embedded ones."""
+    return (own_image_attachments(message) + linked_images(message))[:4]
+
+
+def _request_words(message: Any, bot_id: Any) -> str:
+    """What a message says once the bot's tag and any bare links are taken out. A message that is only a GIF
+    link says nothing: it is the thing being talked about, not a request."""
+    text = _strip_bot_address(getattr(message, "content", "") or "", bot_id)
+    return text if _LINK_RE.sub("", text).strip() else ""
 
 
 _MODIFY_ATTACHED_RE = re.compile(
@@ -5806,6 +5888,32 @@ async def answer_with_brain(
     return reply
 
 
+_PLAN_REFUSAL_RE = re.compile(r"^\s*(?:i\s+(?:can(?:'|’)?t|cannot|am unable|won(?:'|’)?t)|i'm (?:unable|sorry)|sorry\b|unable to)", re.IGNORECASE)
+
+
+def reconcile_plan_with_signals(plan: Dict[str, Any], signals: Any, has_picture: bool) -> Dict[str, Any]:
+    """Stop the planner talking itself out of a picture job Jev read clearly.
+
+    The planner only restates the request; it is not the one answering. On 22 Nov 2026 it was handed "make
+    this cat much fatter" on a GIF link, wrote "I can't edit external links" as the request and chose reply,
+    though Jev had edit at 0.94. A refusal is never a restatement, so it is dropped, and a confident edit or
+    generate from Jev stands when the planner's only objection was that refusal."""
+    request = (plan.get("request") or "").strip()
+    refused = bool(_PLAN_REFUSAL_RE.match(request))
+    if refused:
+        plan["request"] = ""
+    wanted = getattr(signals, "action", None)
+    sure = float(getattr(signals, "action_confidence", 0.0) or 0.0) >= REPLY_GATE_CONFIDENCE
+    if plan.get("action") == "reply" and refused and sure and wanted in ("edit", "generate"):
+        if wanted == "edit" and not has_picture:
+            wanted = "generate"
+        logger.info("Planner refused a job Jev read as %s (%.2f); going with Jev", wanted, getattr(signals, "action_confidence", 0.0))
+        plan["action"] = wanted
+        if wanted == "edit" and not plan.get("edit_source"):
+            plan["edit_source"] = "attachment"
+    return plan
+
+
 def note_t2_run(message: Any, posted: Any, route: str, *, caller_name: str = "", request: str = "", reply: str = "",
                 started: Optional[float] = None, showed: str = "", cast: str = "", **fields: Any) -> None:
     """Remember what Vic just posted (so a follow-up under it can be answered from it) and log the run."""
@@ -5941,7 +6049,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     m = reply_chain[i]
                     if getattr(getattr(m, "author", None), "id", None) == bot_id:
                         continue
-                    t = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+                    t = _request_words(m, bot_id)
                     if t and not is_delegation_prompt(t):
                         base_idx = i
                         break
@@ -5952,7 +6060,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     for m in reversed(reply_chain[:base_idx]):
                         if getattr(getattr(m, "author", None), "id", None) == bot_id:
                             continue
-                        t = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
+                        t = _request_words(m, bot_id)
                         if t and not is_delegation_prompt(t):
                             tweaks.append(t)
                     new_prompt = base_text + ("".join(f" (then: {t})" for t in tweaks) if tweaks else "")
@@ -5967,18 +6075,18 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                                 other_mentions.append(u)
                     # images: nearest ancestor in the chain (up to and including the base request) that has any
                     for m in reply_chain[: base_idx + 1]:
-                        if own_image_attachments(m):
+                        if message_images(m):
                             delegated_from = m
                             break
 
         # Images the requester attached themselves: used as references, or as the thing to edit. A delegated
         # "pls do this" inherits the images from the message it points at.
-        reference_attachments = own_image_attachments(message)
+        reference_attachments = message_images(message)
         attachment_sources: Dict[int, str] = {id(a): "attached to this request" for a in reference_attachments}
         if reference_attachments and ref_msg is not None and delegated_from is None:
             # An attachment AND a reply to a picture ("put this on a canvas this guy is painting", replying to the
             # bot's image with a portrait attached): offer both, the bot's own picture included, labelled by source.
-            replied_atts = [a for a in own_image_attachments(ref_msg) if a not in reference_attachments]
+            replied_atts = [a for a in message_images(ref_msg) if a not in reference_attachments]
             if replied_atts:
                 ref_author_id = getattr(getattr(ref_msg, "author", None), "id", None)
                 label = ("the bot's own picture that this message replies to" if ref_author_id == bot_id else
@@ -5989,7 +6097,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 logger.info("Request offers %d attached image(s) and %d from the replied-to message for the planner",
                             len(own_image_attachments(message)), len(replied_atts))
         if not reference_attachments and delegated_from is not None:
-            reference_attachments = own_image_attachments(delegated_from)
+            reference_attachments = message_images(delegated_from)
             if reference_attachments:
                 logger.info("Delegated request inherits %d image(s) from the replied-to message", len(reference_attachments))
         if not reference_attachments and reply_chain:
@@ -5998,7 +6106,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             for m in reply_chain:
                 if getattr(getattr(m, "author", None), "id", None) == bot_id:
                     continue
-                atts = own_image_attachments(m)
+                atts = message_images(m)
                 if atts:
                     reference_attachments = atts
                     for a in atts:
@@ -6061,7 +6169,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 "author_id": getattr(a, "id", None),
                 "is_bot": getattr(a, "id", None) == bot_id,
                 "text": _strip_bot_address(getattr(m, "content", "") or "", bot_id),
-                "has_images": bool(own_image_attachments(m)),
+                "has_images": bool(message_images(m)),
             })
 
         # A question about the server's own records ("top 10 shutcoin users", "how much XP has steven
@@ -6167,7 +6275,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 caller_id=caller_id,
                 attachments=[
                     (i, getattr(a, "filename", f"image{i}") + (f" ({attachment_sources[id(a)]})" if id(a) in attachment_sources and a not in own_image_attachments(message) else
-                                                               "" if a in own_image_attachments(message) else " (from a message in the reply chain)"))
+                                                               "" if a in message_images(message) else " (from a message in the reply chain)"))
                     for i, a in enumerate(reference_attachments, 1)
                 ],
                 reply_chain=chain_for_plan,
@@ -6183,6 +6291,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         subject_name = None
         reference_roles: List[str] = ["subject_likeness"] * len(reference_attachments)
         if plan:
+            reconcile_plan_with_signals(plan, signals, has_picture=bool(reference_attachments or recent_img_info))
             if plan.get("input_tokens") or plan.get("output_tokens"):
                 live_chat_manager.record_usage(MENTION_PLANNER_MODEL, plan["input_tokens"], plan["output_tokens"], is_reply=True)
             logger.info(
@@ -6207,11 +6316,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 refs = [a for a in refs if a is not plan_edit_attachment]
             if plan_edit_attachment is not None:
                 is_edit_req, is_fresh_img_req = True, False
-                if plan_edit_attachment in own_image_attachments(message):
+                if plan_edit_attachment in message_images(message):
                     desc = f"An image attached by {caller_name} to this request"
                     src_msg = message
                 else:
-                    src_msg = next((m for m in reply_chain if plan_edit_attachment in own_image_attachments(m)), message)
+                    src_msg = next((m for m in reply_chain if plan_edit_attachment in message_images(m)), message)
                     if getattr(getattr(src_msg, "author", None), "id", None) == bot_id:
                         # one of ours: the prompt it was made from describes it best
                         desc = _extract_recent_image_prompt_from_history() or (getattr(src_msg, "content", "") or "The bot's previous picture")
@@ -6222,7 +6331,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 recent_img_info = (src_msg, plan_edit_attachment, desc)
             elif is_edit_req and plan.get("edit_source") == "replied_image":
                 for m in reply_chain:
-                    atts = own_image_attachments(m)
+                    atts = message_images(m)
                     if atts:
                         who = _member_display_name(getattr(m, "author", None), "a user")
                         cap = _strip_bot_address(getattr(m, "content", "") or "", bot_id)
