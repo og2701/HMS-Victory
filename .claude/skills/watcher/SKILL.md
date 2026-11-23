@@ -223,6 +223,13 @@ python3 <scripts>/board.py show | R -
    - **Attach it** with an `image: /full/path/out.png` line in the card file; it shows under the card, unboxed.
      Up to ten images per card.
 
+8. **Pictures people ask for (portraits, scenes, posters, "draw me...") use real image generation**, not hand-drawn
+   SVG (Oggers, 23 Nov 2026). `scripts/codex_image.py` runs the VM's Codex (logged in with ChatGPT, imagegen on): pass
+   the prompt as base64, optionally `--ref <png on the VM>` (e.g. someone's avatar, downloaded there first), and it
+   prints JSON with the image as base64. See its docstring for the one-liner. About a minute each; one generation per
+   ask, Read the PNG before posting. HTML/SVG rendering stays for charts, data cards, slides and anything with lots of
+   exact text. Same content rules as before: no real people's likenesses, no copyrighted characters.
+
 ## #workshop (testers)
 
 #bot-workshop was renamed **#vic-root** (admin only) on 17 Nov 2026 and is still `workshop` in the scripts. The new
