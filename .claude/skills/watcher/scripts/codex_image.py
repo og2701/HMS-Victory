@@ -22,6 +22,7 @@ if not prompt:
 cmd = ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-C", "/tmp"]
 if ref:
     cmd += ["-i", ref]
+cmd.append("--")  # -i takes several values, so without this it swallows the prompt as another image path
 cmd.append("Use the imagegen skill to generate exactly one image, then stop. Don't run shell commands. Image: " + prompt)
 try:
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
