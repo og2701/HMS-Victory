@@ -167,7 +167,7 @@ def addresses_vic(m):
 
 def wanted(m, cid):
     if cid in extra:  # a channel Oggers asked Vic to watch: only the watch's users, and only when aimed at Vic
-        return not m["author"].get("bot") and m["author"]["id"] in {str(u) for u in extra[cid].get("users", [])} \
+        return not m["author"].get("bot") and ({str(u) for u in extra[cid].get("users", [])} & {m["author"]["id"], "*"}) \
             and addresses_vic(m)
     if cid == DM:  # Vic's own responder answers Oggers' @mentions in DMs, so only plain messages come here
         return not m["author"].get("bot") and not mentions_vic(m)
