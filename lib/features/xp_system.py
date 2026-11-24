@@ -228,7 +228,12 @@ class XPSystem:
                 else:
                     reward_chance = 1.0 / (1.0 + balance / 500.0)
                 try:
-                    from lib.economy.reserve_policy import dividend_rate, spend_dividend
+                    from lib.economy.reserve_policy import (dividend_rate, spend_dividend,
+                                                            throttle_multiplier)
+                    # Passive chat rewards stop entirely while the reserve throttle is on, at
+                    # any tier (Oggers, 24 Nov 2026), and come back once reserves recover.
+                    if throttle_multiplier() < 1.0:
+                        reward_chance = 0.0
                     reward_chance *= dividend_rate()
                 except Exception:
                     logger.error("dividend rate lookup failed; paying at the base rate",
