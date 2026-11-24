@@ -426,6 +426,7 @@ BOND_MAX = 10000                     # max principal per bond (one active bond p
 BOND_BOOK_LIMIT = 150_000            # total principal across all active bonds; new bonds past it are refused
 BOND_COUNTS_FOR_DEMURRAGE = True     # bonded principal counts toward wealth demurrage (charged from the wallet only)
 BOND_EARLY_PENALTY_PCT = 10          # early exit: forfeit interest + lose this % of principal
+BOND_RATES_FOLLOW_THROTTLE = True     # new bonds get the term rates x the reserve throttle (0.75/0.5/0.25); running bonds keep theirs
 BOND_FUNNEL_LOOKBACK_DAYS = 3        # UKP /pay-received in this window can't be bonded
                                      # (stops a whale funnelling UKP to alts to invest past the cap)
 
