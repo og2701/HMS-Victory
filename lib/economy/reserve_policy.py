@@ -113,6 +113,16 @@ def scale_reward(amount: int, reserves: int = None) -> int:
     return max(1, int(amount * mult))
 
 
+def booster_bonus(full: int, reserves: int = None) -> int:
+    """The daily booster bonus: in full while the bank's healthy, half once the throttle is on,
+    or the throttle's own cut if that's deeper (25% at the floor). Paid without a pot top-up
+    (Oggers, 24 Nov 2026)."""
+    mult = throttle_multiplier(reserves)
+    if full <= 0 or mult >= 1.0:
+        return full
+    return max(1, int(full * min(0.5, mult)))
+
+
 def reserve_state() -> dict:
     """Everything the bank report's tax panel needs, in one read."""
     try:

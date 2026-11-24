@@ -67,6 +67,25 @@ def _terms_bp() -> dict:
     return getattr(config, "BOND_TERMS_BP", _DEFAULT_TERMS_BP)
 
 
+def _rate_multiplier() -> float:
+    """New bonds pay the term rates scaled by the reserve throttle (1.0 when the bank's healthy,
+    then 0.75 / 0.5 / 0.25), so a low bank doesn't keep promising full interest. Each bond stores
+    its rates when it opens, so this never touches a running bond."""
+    if not getattr(config, "BOND_RATES_FOLLOW_THROTTLE", True):
+        return 1.0
+    from lib.economy.reserve_policy import throttle_multiplier
+    return min(1.0, max(0.0, float(throttle_multiplier())))
+
+
+def _live_terms_bp() -> dict:
+    """The rates a bond opened right now would get: _terms_bp() scaled by _rate_multiplier()."""
+    mult = _rate_multiplier()
+    terms = _terms_bp()
+    if mult >= 1.0:
+        return dict(terms)
+    return {d: (int(lo * mult), int(hi * mult)) for d, (lo, hi) in terms.items()}
+
+
 def _tier_split() -> int:
     return int(getattr(config, "BOND_TIER_SPLIT", 5000))
 
@@ -133,7 +152,7 @@ def _recent_received(uid, days) -> int:
 
 def open_bond(user_id, principal, term_days):
     """Lock ``principal`` for ``term_days``. Returns (bond, error_message)."""
-    terms = _terms_bp()
+    terms = _live_terms_bp()
     if term_days not in terms:
         return None, "That isn't a valid bond term."
     rate_bp, upper_rate_bp = (int(x) for x in terms[term_days])
@@ -396,7 +415,7 @@ def _term_lines() -> str:
     split = _tier_split()
     mx = int(getattr(config, "BOND_MAX", 10000))
     lines = []
-    for d, (lo, hi) in sorted(_terms_bp().items()):
+    for d, (lo, hi) in sorted(_live_terms_bp().items()):
         top = interest_for(mx, 0, lo, hi, split)
         if hi == lo or mx <= split:
             lines.append(f"- **{d} days**: {_fmt_bp(lo)} (up to +{top:,})")
@@ -404,6 +423,14 @@ def _term_lines() -> str:
             lines.append(f"- **{d} days**: {_fmt_bp(lo)} on the first {split:,}, "
                          f"{_fmt_bp(hi)} on the rest (up to +{top:,})")
     return "\n".join(lines)
+
+
+def _reduced_note() -> str:
+    mult = _rate_multiplier()
+    if mult >= 1.0:
+        return ""
+    return (f"-# Rates are at {round(mult * 100)}% of normal while the Server Bank's reserves are low. "
+            f"Whatever rate you open at is locked in for the whole term.\n")
 
 
 def build_open_panel(user_id) -> discord.ui.LayoutView:
@@ -418,13 +445,14 @@ def build_open_panel(user_id) -> discord.ui.LayoutView:
         "## \U0001f3e6 UKPence Bonds - Treasury Savings\n"
         f"Lock up to **{mx:,} UKPence** for a fixed term and earn interest, paid from the Server Bank.\n"
         f"Your balance: **{bal:,} UKPence**\n\n"
-        f"{_term_lines()}\n\n"
+        f"{_term_lines()}\n"
+        f"{_reduced_note()}\n"
         f"-# Max **{mx:,}** per bond, one at a time. Break early and you forfeit the interest "
         f"plus a {pen}% penalty on your principal.{demurrage_note}"
     ))
     view.add_item(box)
     row = discord.ui.ActionRow()
-    for d, (lo, _hi) in sorted(_terms_bp().items()):
+    for d, (lo, _hi) in sorted(_live_terms_bp().items()):
         b = discord.ui.Button(label=f"{d}d · {_fmt_bp(lo)}", style=discord.ButtonStyle.success,
                               custom_id=f"bond:open:{user_id}:{d}")
         b.callback = _make_open_cb(user_id, d)

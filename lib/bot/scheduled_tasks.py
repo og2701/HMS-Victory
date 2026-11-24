@@ -340,12 +340,15 @@ async def award_booster_bonus(client):
         return
 
     booster_ids = [member.id for member in guild.members if any(role.id == ROLES.SERVER_BOOSTER for role in member.roles)]
-    total_reward_needed = len(booster_ids) * SERVER_BOOSTER_UKP_DAILY_BONUS
+    from lib.economy.reserve_policy import booster_bonus
+    bonus = booster_bonus(SERVER_BOOSTER_UKP_DAILY_BONUS)
+    total_reward_needed = len(booster_ids) * bonus
 
     for member_id in booster_ids:
-        if add_bb(member_id, SERVER_BOOSTER_UKP_DAILY_BONUS, reason="Server booster daily bonus",
-                  discretionary=True):
-            total_booster_rewards_awarded_this_cycle += SERVER_BOOSTER_UKP_DAILY_BONUS
+        # Not discretionary=True: booster_bonus() is already the throttled amount, and
+        # the pot must not top boosters back up to full.
+        if add_bb(member_id, bonus, reason="Server booster daily bonus"):
+            total_booster_rewards_awarded_this_cycle += bonus
         else:
             logger.error(f"Bank insufficient for booster reward for User {member_id}.")
             log_channel = client.get_channel(CHANNELS.LOGS)
