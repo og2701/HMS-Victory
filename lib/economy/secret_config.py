@@ -88,6 +88,16 @@ def _load() -> dict:
     return _cache
 
 
+def game_key(label: str):
+    """A key for one use (e.g. ``'wordle-order'``) derived from BADGE_SECRET_KEY, or None without it.
+    The daily games mix this into how they pick the day's answer, so the open repo can't be used
+    to work out a future day."""
+    password = os.environ.get("BADGE_SECRET_KEY")
+    if not password:
+        return None
+    return hmac.new(password.encode(), label.encode(), hashlib.sha256).digest()
+
+
 def reload() -> dict:
     """Drop the cache and re-read (for tests / after rotating the key)."""
     global _cache

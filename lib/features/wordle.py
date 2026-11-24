@@ -20,6 +20,7 @@ import pytz
 
 import config
 from lib.core.file_operations import load_json_file, save_json_file
+from lib.economy import secret_config
 from lib.economy.economy_manager import add_bb
 
 log = logging.getLogger(__name__)
@@ -57,7 +58,32 @@ def _pretty(d):
     return d.strftime("%-d %b")
 
 
+# Up to 24 Nov 2026 the order was a fixed-seed shuffle anyone could rebuild from the open repo.
+# From the 25th it's shuffled with a key that only lives on the server (secret_config.game_key),
+# and the old order is kept for earlier days so past results still line up.
+_KEYED_FROM = datetime.date(2026, 11, 25)
+
+
+def _keyed_order():
+    key = secret_config.game_key("wordle-order")
+    if not key or not _ANSWERS:
+        if _ANSWERS:
+            log.warning("HMS Wordle: BADGE_SECRET_KEY not set - the daily word follows the public order")
+        return None
+    order = sorted(_ANSWERS)
+    _random.Random(key).shuffle(order)
+    return order
+
+
+_KEYED = []        # built on first use, so the key is read after the bot has loaded its env
+
+
 def _todays_word(d):
+    if d >= _KEYED_FROM:
+        if not _KEYED:
+            _KEYED.append(_keyed_order())
+        if _KEYED[0]:
+            return _KEYED[0][(d - _KEYED_FROM).days % len(_KEYED[0])]
     return _ANSWERS[(d - _EPOCH).days % len(_ANSWERS)]
 
 
