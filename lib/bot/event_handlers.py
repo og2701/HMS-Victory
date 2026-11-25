@@ -2411,8 +2411,18 @@ async def on_reaction_remove(reaction, user):
                 logger.info(f"Reaction removal ignored as {user} did not initiate the timeout.")
                 return
             is_staff = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in getattr(user, "roles", []))
-            if not is_staff and not message_author.is_timed_out():
-                return  # a member's 30s shut already ran out: nothing to end, and the sticker stays
+            if not is_staff:
+                # message.author is a snapshot from when the message was sent, so it never shows the timeout; ask the
+                # guild for the member as it is now.
+                guild = reaction.message.guild
+                current = guild.get_member(message_author.id) if guild else None
+                if current is None and guild is not None:
+                    try:
+                        current = await guild.fetch_member(message_author.id)
+                    except Exception:
+                        current = None
+                if current is not None and not current.is_timed_out():
+                    return  # a member's 30s shut already ran out: nothing to end, and the sticker stays
             reason = f"Timeout removed due to ':Shut:' reaction being removed by {user.name}#{user.discriminator}."
             await message_author.timeout(None, reason=reason)
             logger.info(f"Timeout for user {message_author} was removed due to ':Shut:' reaction being removed by {user}.")
