@@ -725,11 +725,25 @@ def test_dry_run_posts_nothing(poll):
     assert state["daily"] == {} and sum(state["daily_dry"].values()) == 1
 
 
-def test_the_daily_cap_holds(poll, monkeypatch):
-    monkeypatch.setattr(N.config, "NEWSFEED_DAILY_CAP", 0)
+def test_there_is_no_daily_cap(poll):
     forum = FakeForum()
-    state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, _aged_state())
+    state = _aged_state()
+    state["daily"][N.uk_day(NOW)] = 50                         # a very busy day so far
+    state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, state)
+    assert len(forum.created) == 1
+
+
+def test_the_hourly_safety_net_holds(poll, monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_MAX_NEW_PER_HOUR", 2)
+    forum = FakeForum()
+    state = _aged_state()
+    state["threads"] = [{"id": "1", "created": NOW - 600}, {"id": "2", "created": NOW - 1200},
+                        {"id": "3", "created": NOW - 3 * 3600}]
+    assert N.new_posts_last_hour(state, NOW, False) == 2 and N.new_posts_last_hour(state, NOW, True) == 0
+    state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, state)
     assert forum.created == [] and not N.already_posted(state, BARNIER)
+    state, _ = poll(forum, {"Barnier": dict(BIG, tag="UK Politics")}, state, now=NOW + 3100)
+    assert len(forum.created) == 1                             # once the hour has moved on it posts
 
 
 def test_post_body_is_just_link_and_description():
@@ -971,3 +985,132 @@ def test_excluded_topics_israel_palestine():
     assert nf.excluded_topic("Hamstrung council cuts bins") is None  # word boundary, not "hamas" inside a word
     assert nf.story_excluded([{"title": "UK economy grows"}, {"title": "x", "summary": "Hamas says talks stalled"}]) == "hamas"
     assert nf.story_excluded([{"title": "UK economy grows", "summary": "", "url": "https://x/y"}]) is None
+
+
+# ------------------------------------------------------------ breaking fast lane, pins, staleness
+
+def _fresh(outlet, url, minutes_ago=20, top=True, now=NOW):
+    seen = now - minutes_ago * 60
+    return {"outlet": outlet, "url": url, "published": seen, "first_seen": seen,
+            "top_first": seen if top else None, "top_last": now if top else None}
+
+
+def test_breaking_needs_a_fresh_story_carried_widely():
+    bbc, sky = _fresh("bbc", "https://www.bbc.co.uk/news/articles/b1"), _fresh("sky", "https://news.sky.com/story/b1",
+                                                                              top=False)
+    assert N.is_breaking([bbc, sky], NOW, POLL)                                   # front page + a second outlet
+    assert not N.is_breaking([bbc], NOW, POLL)                                    # one outlet alone
+    old = [dict(e, published=NOW - 5 * 3600) for e in (bbc, sky)]
+    assert not N.is_breaking(old, NOW, POLL)                                      # broke hours ago
+    off_front = [dict(e, top_last=None) for e in (bbc, sky)]
+    assert not N.is_breaking(off_front, NOW, POLL)
+    three = off_front + [_fresh("guardian", "https://www.theguardian.com/uk-news/2026/nov/07/b1", top=False)]
+    assert N.is_breaking(three, NOW, POLL)                                        # three outlets, no front page
+    assert N.is_breaking([_fresh("bbc", LIVE, top=False)], NOW, POLL)             # a BBC live page
+
+
+def test_decide_lets_a_breaking_story_in_on_the_lower_bar():
+    th = N.Thresholds(min_signal=7, update_min_signal=5, min_importance=7, update_min_importance=5,
+                      sport_min_importance=9, breaking_min_signal=4, breaking_min_importance=8)
+    v = {"importance": 8, "newsworthy": True, "tags": ["UK Politics"], "tag": "UK Politics"}
+    assert N.decide(4, v, th)[0] == "skip"                                        # not breaking: signal too low
+    assert N.decide(4, v, th, breaking=True) == ("new", "importance 8 (breaking)")
+    assert N.decide(4, dict(v, importance=7), th, breaking=True)[0] == "skip"     # fast lane needs 8+
+    assert N.decide(3, v, th, breaking=True)[0] == "skip"                         # under the breaking bar
+    assert N.decide(8, dict(v, importance=7), th, breaking=True)[0] == "new"      # strong anyway: the usual 7
+
+
+def _breaking_results(minutes_ago=15):
+    bbc = _item("Prime minister resigns after confidence vote defeat", "https://www.bbc.co.uk/news/articles/pmres1")
+    sky = _item("Prime minister resigns after losing confidence vote", "https://news.sky.com/story/pm-resigns-1")
+    for e in (bbc, sky):
+        e["published"] = NOW - minutes_ago * 60
+    return {"bbc_top": [bbc], "sky_home": [sky]}, bbc
+
+
+def test_a_breaking_story_posts_on_its_first_poll_and_is_pinned_for_a_while(poll, monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_MIN_SIGNAL", 7)
+    results, bbc = _breaking_results()
+    forum, calls = FakeForum(), []
+    state, summary = poll(forum, {"Prime minister": dict(BIG, importance=9, tag="UK Politics")},
+                          results=results, calls=calls)
+    assert len(forum.created) == 1 and summary["posted"]                          # signal 5, but breaking
+    assert "breaking: first reported 15 min ago" in calls[0]
+    thread = forum.threads[0]
+    rec = state["threads"][0]
+    assert thread.flags.pinned and rec["breaking"] and rec["importance"] == 9
+    assert rec["pinned_until"] == NOW + N.config.NEWSFEED_BREAKING_PIN_HOURS * 3600
+    asyncio.run(N.unpin_stale_pins(FakeClient(forum), state, NOW + 3600))
+    assert thread.flags.pinned                                                    # still inside its pin time
+    asyncio.run(N.unpin_stale_pins(FakeClient(forum), state, rec["pinned_until"] + 1))
+    assert not thread.flags.pinned and not rec["pinned"]
+
+
+def test_a_breaking_8_posts_without_a_pin_and_a_7_waits(poll, monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_MIN_SIGNAL", 7)
+    results, _ = _breaking_results()
+    forum = FakeForum()
+    poll(forum, {"Prime minister": dict(BIG, importance=7, tag="UK Politics")}, results=results)
+    assert forum.created == []
+    forum = FakeForum()
+    poll(forum, {"Prime minister": dict(BIG, importance=8, tag="UK Politics")}, results=results)
+    assert len(forum.created) == 1 and not forum.threads[0].flags.pinned
+
+
+def test_a_breaking_pin_never_takes_a_mods_pin_but_replaces_vics_lower_one(poll, monkeypatch):
+    monkeypatch.setattr(N.config, "NEWSFEED_MIN_SIGNAL", 7)
+    results, _ = _breaking_results()
+    mods = FakeThread(700, "Server rules for the news forum")
+    mods.flags.pinned = True
+    forum = FakeForum(threads=[mods])
+    poll(forum, {"Prime minister": dict(BIG, importance=10, tag="UK Politics")}, results=results)
+    assert mods.flags.pinned and not forum.threads[-1].flags.pinned
+
+    vics = FakeThread(701, "Earlier breaking story")
+    vics.flags.pinned = True
+    forum = FakeForum(threads=[vics])
+    state = N.empty_state()
+    state["threads"] = [{"id": "701", "pinned": True, "pinned_until": NOW + 3600, "importance": 9, "created": NOW - 7200}]
+    state, _ = poll(forum, {"Prime minister": dict(BIG, importance=9, tag="UK Politics")}, state, results=results)
+    assert not vics.flags.pinned and forum.threads[-1].flags.pinned
+    assert not state["threads"][0]["pinned"]
+
+
+def test_a_stale_story_is_never_opened_as_a_new_post(poll):
+    old = _item("Heat related deaths in England highest in a decade", "https://www.bbc.co.uk/news/articles/heat1")
+    old["published"] = NOW - 6 * 86400
+    sky = _item("Heat deaths in England highest for a decade, figures show", "https://news.sky.com/story/heat-1")
+    results = {"bbc_top": [old], "sky_home": [sky]}
+    forum = FakeForum()
+    state, summary = poll(forum, {"Heat": dict(BIG, tag="World")}, _aged_state(results), results=results)
+    assert forum.created == []
+    assert ("Heat related deaths in England highest in a decade", "skip",
+            f"stale (published over {N.config.NEWSFEED_STALE_HOURS}h ago)") in summary["decisions"]
+    view = {"main": {"published": NOW - 3600}}
+    assert not N.is_stale(view, NOW) and N.is_stale({"main": {"published": NOW - 13 * 3600}}, NOW)
+
+
+@pytest.mark.parametrize("model,reasoning", [("gpt-4o", False), ("gpt-5.4-mini", True), ("gpt-5.5", True)])
+def test_the_judge_model_is_one_config_line(monkeypatch, model, reasoning):
+    import io
+    import json as _json
+    from contextlib import contextmanager
+    from lib.features import chat_responder as cr
+    sent = []
+
+    @contextmanager
+    def fake_urlopen(req, timeout, what=""):
+        sent.append(_json.loads(req.data))
+        yield io.BytesIO(_json.dumps({"choices": [{"message": {"content": '{"importance": 8}'}}],
+                                      "usage": {"prompt_tokens": 10, "completion_tokens": 5}}).encode())
+    monkeypatch.setattr(cr, "_urlopen_with_retry", fake_urlopen)
+    monkeypatch.setenv("OPENAI_TOKEN", "x")
+    monkeypatch.setattr(N.config, "NEWSFEED_MODEL", model)
+    assert N._openai_complete("sys", "{}") == ({"importance": 8}, 10, 5)
+    body = sent[0]
+    assert body["model"] == model
+    if reasoning:   # GPT-5 models refuse max_tokens and a custom temperature
+        assert "max_tokens" not in body and "temperature" not in body
+        assert body["max_completion_tokens"] > 400 and body["reasoning_effort"] == "low"
+    else:
+        assert body["max_tokens"] == 400 and body["temperature"] == 0.2

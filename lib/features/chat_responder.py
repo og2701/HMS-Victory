@@ -330,6 +330,18 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
         # gpt-5.4-mini: $0.75 / 1M prompt, $4.50 / 1M completion (reasoning included)
         input_cost = (prompt_tokens / 1_000_000) * 0.75
         output_cost = (completion_tokens / 1_000_000) * 4.50
+    elif m.startswith(("gpt-5.4-nano", "gpt-5.6-luna")):
+        # gpt-5.4-nano $0.20 / $1.25, gpt-5.6-luna $0.20 / $1.20 per 1M (OpenAI pricing page, Nov 2026)
+        input_cost = (prompt_tokens / 1_000_000) * 0.20
+        output_cost = (completion_tokens / 1_000_000) * (1.20 if "luna" in m else 1.25)
+    elif m.startswith("gpt-5.6-terra"):
+        # gpt-5.6-terra: $2.00 / 1M prompt, $12.00 / 1M completion (short context)
+        input_cost = (prompt_tokens / 1_000_000) * 2.00
+        output_cost = (completion_tokens / 1_000_000) * 12.00
+    elif m.startswith("gpt-5.5") and "pro" not in m:
+        # gpt-5.5: $5.00 / 1M prompt, $30.00 / 1M completion (short context)
+        input_cost = (prompt_tokens / 1_000_000) * 5.00
+        output_cost = (completion_tokens / 1_000_000) * 30.00
     elif "jev" in m:
         # TypeSafe Jev: $0.042 / 1M input; output is not metered
         input_cost = (prompt_tokens / 1_000_000) * 0.042
@@ -1357,6 +1369,10 @@ def download_image_bytes(url: str, timeout: int = 20, max_bytes: int = 12 * 1024
     return data
 
 
+def is_reasoning_model(model: str) -> bool:
+    return (model or "").lower().startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def _chat_completion_json(
     system_prompt: str,
     user_payload: str,
@@ -1367,6 +1383,7 @@ def _chat_completion_json(
     timeout: int = 30,
     what: str = "OpenAI chat completion",
     image_urls: Optional[List[str]] = None,
+    reasoning_effort: Optional[str] = None,
     _retrying_truncated: bool = False,
 ) -> Tuple[Dict[str, Any], int, int]:
     """POST a JSON-mode chat completion (optionally with images) and return (parsed_json, prompt_tokens, completion_tokens)."""
@@ -1382,9 +1399,14 @@ def _chat_completion_json(
             {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": max_tokens,
-        "temperature": temperature,
     }
+    if is_reasoning_model(model):
+        # GPT-5 and o-series models take max_completion_tokens (reasoning counts against it) and no temperature.
+        payload["max_completion_tokens"] = max_tokens + 2000
+        payload["reasoning_effort"] = reasoning_effort or "low"
+    else:
+        payload["max_tokens"] = max_tokens
+        payload["temperature"] = temperature
     req = urllib.request.Request(
         "https://api.openai.com/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -1411,7 +1433,8 @@ def _chat_completion_json(
             # Ran out of tokens mid-JSON: go again with room to finish.
             logger.warning("%s returned truncated JSON at %d tokens; retrying with a larger budget", what, max_tokens)
             return _chat_completion_json(system_prompt, user_payload, api_key, model=model, max_tokens=max_tokens * 2 + 200,
-                                         temperature=temperature, timeout=timeout, what=what, image_urls=image_urls, _retrying_truncated=True)
+                                         temperature=temperature, timeout=timeout, what=what, image_urls=image_urls,
+                                         reasoning_effort=reasoning_effort, _retrying_truncated=True)
         raise
     return parsed, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
