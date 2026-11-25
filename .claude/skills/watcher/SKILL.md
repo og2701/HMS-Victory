@@ -6,7 +6,7 @@ description: Watch #bot-workshop and answer, as Vic, anyone who pings Vic there.
 # Watcher
 
 Claude sits behind Vic in #bot-workshop (1141037835445616640). A poller on the
-VM wakes this session on every human message in #vic-root (admin only; Oggers 25 Nov 2026: no need to say vic or tag), and in other channels when someone pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
+VM wakes this session on every human message in #vic-root (admin only; Oggers 25 Nov 2026: no need to say vic or tag) except ones aimed at someone else (a ping or reply to another person or role that doesn't name Vic: no ACK, no typing, no answer, Owen 25 Nov 2026), and in other channels when someone pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
 leaves the VM: `scripts/run.sh` pipes each script over ssh into `venv/bin/python -` in `~/HMS-Victory`, which loads
 `.env`. Below, `R` is `<base>/scripts/run.sh` and `<scripts>` is `<base>/scripts`, where `<base>` is this skill's
 base directory as shown when it loads. Write the full path in every command, since shell variables don't carry
