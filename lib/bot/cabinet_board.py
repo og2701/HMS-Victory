@@ -53,8 +53,8 @@ HEADINGS = {
     "waiting": "### 🟠 Waiting on a go",
     "received": "### ⏳ Received, processing",
     "blocked": "### 🔴 Blocked",
-    "working": "### 🔵 Working",
-    "done": "### 🟢 Done",
+    "working": "### <a:vic_working:1575137733268078672> Working",
+    "done": "### ✅ Done",
 }
 ACCENTS = {"waiting": 0xE67E22, "received": 0xE67E22, "blocked": 0xE74C3C, "working": 0x00247D, "done": 0x2ECC71}
 RULES = ("o", "m", "a")
@@ -217,7 +217,7 @@ def _url(message_id) -> str:
     return f"https://discord.com/channels/{GUILD_ID}/{CHANNEL_ID}/{message_id}"
 
 
-ICONS = {"waiting": "🟠", "received": "⏳", "blocked": "🔴", "working": "🔵", "done": "🟢"}
+ICONS = {"waiting": "🟠", "received": "⏳", "blocked": "🔴", "working": "<a:vic_working:1575137733268078672>", "done": "✅"}
 SHOW_DONE = 3            # done rows on the board's one-line "done" strip
 DONE_WHAT = 36
 
@@ -292,7 +292,7 @@ def render(state: dict, now: float = None) -> list:
             return ""
         more = f"+{dropped[key]} more" if dropped[key] else ""
         if key == "done":
-            return "-# 🟢 Done: " + " · ".join(rows + ([more] if more else []))
+            return "-# ✅ Done: " + " · ".join(rows + ([more] if more else []))
         if key == "overflow":
             return "\n".join(rows) + (f"\n-# {more}" if more else "") + "\n-# no room for more buttons: answer these on their cards"
         return "\n".join(rows) + (f"\n-# {more}" if more else "")

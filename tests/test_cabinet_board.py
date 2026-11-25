@@ -287,7 +287,7 @@ def test_the_board_is_compact():
     assert [i["type"] for i in items] == [10, 10, 14, 10]
     assert items[1]["content"].count("\n") == 0 and "on it" in items[1]["content"]
     done = items[3]["content"]
-    assert done.startswith("-# 🟢 Done:") and done.count("[#") == cb.SHOW_DONE and "#7 done 5" in done
+    assert done.startswith("-# ✅ Done:") and done.count("[#") == cb.SHOW_DONE and "#7 done 5" in done
 
 
 
