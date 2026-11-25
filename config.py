@@ -1050,10 +1050,26 @@ NEWSFEED_DRY_RUN = False                   # True: judge and log "would post" to
 NEWSFEED_FORUM_ID = 1568698404060536922    # 📰｜news (private trial forum under General)
 NEWSFEED_LOG_CHANNEL_ID = CHANNELS.BOT_USAGE_LOG  # posts, updates, dry-run decisions and errors are logged here
 NEWSFEED_POLL_MINUTES = 10
-NEWSFEED_MODEL = "gpt-4o"                  # through the chat responder's OpenAI client (_chat_completion_json)
-NEWSFEED_DAILY_CAP = 8                     # new posts per UK day (updates don't count)
+# The judge, through the chat responder's OpenAI client (_chat_completion_json). Any chat model works here, GPT-5 ones
+# included (they get reasoning_effort "low"). Benchmarked 25 Nov 2026 on 40 labelled stories: gpt-4o with the current
+# prompt scored as well as any (34/40) at about $0.35/day; gpt-5.5 was stricter (30/40) at about $1/day.
+NEWSFEED_MODEL = "gpt-4o"
+# No daily cap on new posts (Oggers, 25 Nov 2026): a strong story posts when it comes through. The hourly limit is only
+# a safety net against a runaway (a bad feed or a broken AI reply), well above a normal busy hour.
+NEWSFEED_MAX_NEW_PER_HOUR = 6              # new posts in any rolling hour at most (safety net, not a quota)
 NEWSFEED_DAILY_UPDATE_CAP = 20             # update replies per UK day, across all posts
-NEWSFEED_MAX_NEW_PER_RUN = 1               # new posts per poll, so a busy hour is spread out
+NEWSFEED_MAX_NEW_PER_RUN = 2               # new posts per poll (a breaking story always goes first)
+NEWSFEED_STALE_HOURS = 12                  # never open a new post linking an article published longer ago than this
+# Breaking fast lane: a story first seen in the last BREAKING_WINDOW_MINUTES that is on a front page with 2+ outlets,
+# has a BBC live page, or is already carried by 3+ outlets is judged straight away and posted on a lower signal bar,
+# as long as the AI rates it BREAKING_MIN_IMPORTANCE or more. It doesn't have to wait hours on a front page.
+NEWSFEED_BREAKING_WINDOW_MINUTES = 90
+NEWSFEED_BREAKING_MIN_SIGNAL = 4           # e.g. BBC front page + a second outlet, or 3 outlets
+NEWSFEED_BREAKING_MIN_IMPORTANCE = 8
+# A breaking post the AI rates this high is pinned for BREAKING_PIN_HOURS. Discord allows one pinned post per forum:
+# it takes the pin from Vic's own earlier pin when it rates at least as high, and never from a post a mod pinned.
+NEWSFEED_BREAKING_PIN_MIN_IMPORTANCE = 9
+NEWSFEED_BREAKING_PIN_HOURS = 4
 NEWSFEED_UPDATE_MIN_GAP_MINUTES = 45       # at most one update per post in this window (live stories move fast)
 NEWSFEED_MAX_AGE_HOURS = 18                # ignore articles published longer ago than this
 NEWSFEED_MATCH_DAYS = 3                    # open posts this recent are checked before opening a new one
@@ -1076,7 +1092,7 @@ NEWSFEED_MAX_JUDGEMENTS = 3                # AI calls per story at most (re-judg
 NEWSFEED_CROSS_MATCH_MIN = 0.5             # headline word overlap for "the same story" across outlets (heuristic)
 NEWSFEED_CROSS_MATCH_BORDERLINE = 0.3      # overlap from here up to CROSS_MATCH_MIN: the AI is asked if it's the same story
 NEWSFEED_THREAD_PREFILTER_MIN = 0.25       # word overlap for an open post to be shown to the AI as a possible match
-NEWSFEED_PIN_MEGATHREADS = True            # pin a live-page megathread when nothing else in the forum is pinned
+NEWSFEED_PIN_MEGATHREADS = True            # pin a live-page megathread when nothing else in the forum is pinned (or Vic's own lower-rated breaking pin)
 NEWSFEED_UNPIN_AFTER_HOURS = 6             # unpin Vic's megathread once its live page has left the front page this long
 NEWSFEED_STATE_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_state.json")
 NEWSFEED_ENGAGEMENT_FILE = os.path.join(JSON_DATA_DIR, "newsfeed_engagement.json")

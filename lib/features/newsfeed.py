@@ -24,7 +24,14 @@ same developing story as one of the forum's open posts from the last few days. T
     an article of the story already linked in an open post -> nothing (no duplicate)
     same story as an open post  -> an "Update:" reply in that post (unarchived if needed)
     strong enough on its own    -> a new post
+    breaking and rated 8+       -> a new post straight away, on a lower signal bar (the fast lane, below)
     otherwise                   -> nothing; it may be judged again if its signal climbs
+
+The fast lane: a story that broke in the last NEWSFEED_BREAKING_WINDOW_MINUTES and already has a BBC live page, a
+front page plus a second outlet, or three outlets is judged on the poll it qualifies and posts from
+NEWSFEED_BREAKING_MIN_SIGNAL when the AI rates it NEWSFEED_BREAKING_MIN_IMPORTANCE or more, instead of waiting hours
+on a front page to build signal. One it rates NEWSFEED_BREAKING_PIN_MIN_IMPORTANCE+ is pinned for
+NEWSFEED_BREAKING_PIN_HOURS.
 
 "Open posts" means every unlocked post in the forum from the last NEWSFEED_MATCH_DAYS, members' as well as Vic's:
 if a member got there first, the article goes into their post as an update. Members' posts are only ever replied
@@ -35,9 +42,13 @@ the Guardian, the Independent; a partly paywalled outlet only when nothing else 
 then the "why it matters", an "Also covered by" line linking the other outlets (embeds suppressed, so only the main
 link previews) and a footer naming the outlet linked. Updates link the same way.
 
-New posts are capped per UK day and per poll. A story is only ever posted once: every article URL in it is recorded
-(persisted), and an article from another outlet that joins a posted story later is recorded against that post too.
-BBC live pages get the Megathread tag and are pinned when nothing else in the forum is. Every post's message count and
+There is no daily cap on new posts: a strong story posts when it qualifies, at most NEWSFEED_MAX_NEW_PER_RUN per poll
+(breaking ones first) and NEWSFEED_MAX_NEW_PER_HOUR in any hour as a safety net. A story whose linked article was
+published over NEWSFEED_STALE_HOURS ago is never opened as a new post. A story is only ever posted once: every article
+URL in it is recorded (persisted), and an article from another outlet that joins a posted story later is recorded
+against that post too. BBC live pages get the Megathread tag and are pinned while their live page is on the front
+page. Discord allows one pinned post per forum: Vic only ever moves its own pin, to a story rated at least as high,
+and never unpins a post someone else pinned. Every post's message count and
 reactions are recorded at 24h and 72h so the thresholds can be tuned.
 
 Everything that can be is a pure function (parsing, clustering, scoring, matching, caps, the decision) so it can be
@@ -732,6 +743,44 @@ def is_fresh(entry: Dict[str, Any], now: float, max_age_hours: Optional[float] =
     return now - published <= max_age_hours * 3600
 
 
+def story_started(entries: Iterable[Dict[str, Any]], now: float) -> float:
+    """When the story broke: the earliest publish time or first sighting of any of its articles (some feeds move an
+    article's date forward when it's edited, so a re-dated old story doesn't look new)."""
+    times = [t for e in entries for t in (e.get("published"), e.get("first_seen")) if t]
+    return min(times) if times else now
+
+
+def is_breaking(entries: List[Dict[str, Any]], now: float, poll_seconds: float,
+                window_minutes: Optional[float] = None) -> bool:
+    """The fast lane: a story that broke in the last NEWSFEED_BREAKING_WINDOW_MINUTES and already has a BBC live page,
+    is on a front page with a second outlet carrying it, or is carried by three or more outlets."""
+    window_minutes = config.NEWSFEED_BREAKING_WINDOW_MINUTES if window_minutes is None else window_minutes
+    if not entries or now - story_started(entries, now) > window_minutes * 60:
+        return False
+    outlets = {e.get("outlet") for e in entries}
+    if any(is_megathread_url(e.get("link") or e.get("url") or "") for e in entries):
+        return True
+    if len(outlets) >= 2 and any(in_top_now(e, now, poll_seconds) for e in entries):
+        return True
+    return len(outlets) >= 3
+
+
+def is_stale(view: Dict[str, Any], now: float, stale_hours: Optional[float] = None) -> bool:
+    """Too old to open a new post on: the article the post would link was published over NEWSFEED_STALE_HOURS ago (a
+    story that only qualifies days later is old news by then). Updates to an open post aren't affected."""
+    stale_hours = config.NEWSFEED_STALE_HOURS if stale_hours is None else stale_hours
+    main = view.get("main") or {}
+    # Some feeds move an article's date forward when it's edited, so the first time Vic saw it counts too.
+    published = min([t for t in (main.get("published"), main.get("first_seen")) if t] or [now])
+    return now - published > stale_hours * 3600
+
+
+def new_posts_last_hour(state: Dict[str, Any], now: float, dry: bool) -> int:
+    """New posts (or dry-run ones) opened in the last 60 minutes, for the runaway safety net."""
+    return sum(1 for t in state.get("threads", [])
+               if bool(t.get("dry")) == bool(dry) and now - (t.get("created") or 0) < 3600)
+
+
 def already_posted(state: Dict[str, Any], url: str, guid: str = "") -> bool:
     posted = state.get("posted") or {}
     return bool((url and url in posted) or (guid and guid in posted))
@@ -921,8 +970,16 @@ Judge the one story you are given and reply as JSON. "covered_by" lists the outl
 attack or disaster, a war starting).
   7-8: significant UK politics, policy or economy news, or a major world story many people will be discussing.
   4-6: an ordinary news story.
-  1-3: trivia, lifestyle, celebrity, human interest, consumer advice, a local incident, a sport result, an \
-explainer, analysis or opinion piece, a quiz, or a video or audio item.
+  1-3: trivia, lifestyle, celebrity gossip, human interest, consumer advice, a minor local incident, a sport \
+result, an explainer, analysis or opinion piece, a quiz, or a video or audio item.
+  What the national UK outlets are leading on counts: "covered_by" and "signals" show how many of them carry it, \
+whether it is on a front page and whether there is a live page. A news report that three or more of them carry, or \
+that has a BBC live page, is what the country is talking about: give it at least 7 unless it is sport, foreign \
+trivia, or an explainer, analysis, opinion piece or round-up. Crime, court and royal news that the national outlets \
+lead on (a break-in at a royal home, a well-known figure charged, a major UK incident) is national news, not \
+celebrity or local news.
+  Judge the article, not just its subject: an explainer, analysis, column, letters page, "five takeaways", \
+"what it means for you", a newspaper review or an appeal for readers' views is 1-3 even when the story behind it is major (headlines like "What is ...?", "Will ...?", "How ...?" or "Name: ..." are usually these).
 - "newsworthy": true only if it is a real development worth discussing now. A "what we know" round-up counts only \
 when the event itself is major.
 - "tags": one to three names from "allowed_tags", the most relevant first. The first is the story's primary tag; \
@@ -1096,10 +1153,15 @@ class Thresholds:
         self.update_min_importance = overrides.get("update_min_importance", config.NEWSFEED_UPDATE_MIN_IMPORTANCE)
         self.sport_min_importance = overrides.get("sport_min_importance", config.NEWSFEED_SPORT_MIN_IMPORTANCE)
         self.max_judgements = overrides.get("max_judgements", config.NEWSFEED_MAX_JUDGEMENTS)
+        self.breaking_min_signal = overrides.get("breaking_min_signal", config.NEWSFEED_BREAKING_MIN_SIGNAL)
+        self.breaking_min_importance = overrides.get("breaking_min_importance",
+                                                     config.NEWSFEED_BREAKING_MIN_IMPORTANCE)
 
 
-def decide(signal: int, verdict: Dict[str, Any], th: Thresholds, sport: bool = False) -> Tuple[str, str]:
-    """('new' | 'update' | 'skip', why) for a judged story. Caps and gaps are checked by the caller."""
+def decide(signal: int, verdict: Dict[str, Any], th: Thresholds, sport: bool = False, breaking: bool = False
+           ) -> Tuple[str, str]:
+    """('new' | 'update' | 'skip', why) for a judged story. Caps and gaps are checked by the caller. A breaking story
+    (the fast lane) may open a post on the lower breaking signal bar when the AI rates it breaking_min_importance+."""
     if not verdict or verdict.get("error"):
         return "skip", "no usable judgement"
     importance = int(verdict.get("importance") or 0)
@@ -1107,15 +1169,18 @@ def decide(signal: int, verdict: Dict[str, Any], th: Thresholds, sport: bool = F
         if signal >= th.update_min_signal and importance >= th.update_min_importance:
             return "update", f"same story, importance {importance}"
         return "skip", f"same story but too minor for an update ({importance})"
-    if signal < th.min_signal:
+    fast_lane = breaking and th.breaking_min_signal <= signal < th.min_signal
+    if signal < th.min_signal and not fast_lane:
         return "skip", f"signal {signal} under {th.min_signal}"
     if not verdict.get("newsworthy"):
         return "skip", "not newsworthy: " + (verdict.get("reason") or "")
     primary = (post_tags(verdict) or [None])[0]   # the sport bar applies when Sport is the primary tag
     needed = th.sport_min_importance if (sport or primary == SPORT_TAG) else th.min_importance
+    if fast_lane:
+        needed = max(needed, th.breaking_min_importance)
     if importance < needed:
-        return "skip", f"importance {importance} under {needed}"
-    return "new", f"importance {importance}"
+        return "skip", f"importance {importance} under {needed}" + (" (breaking)" if fast_lane else "")
+    return "new", f"importance {importance}" + (" (breaking)" if breaking else "")
 
 
 def needs_judgement(entry: Dict[str, Any], signal: int, shown_threads: List[Dict[str, Any]], th: Thresholds,
@@ -1416,7 +1481,46 @@ async def _jev_tags_or(fallback: List[str], forum, view: Dict[str, Any]) -> Tupl
     return tags, f" (Jev tags; AI said {', '.join(fallback) or 'none'})" if tags != fallback else " (Jev tags)"
 
 
-async def _create_post(client, forum, state, view, verdict, signal, reasons, now, dry: bool) -> Optional[Dict[str, Any]]:
+def _pin_plan(forum, state: Dict[str, Any], new_id, importance: int) -> Tuple[bool, Optional[Any]]:
+    """Whether a new post may take the forum's one pin, and which of Vic's own pinned posts it has to unpin first.
+    A post pinned by anyone else (a mod's pin, or one Vic doesn't know) is never touched: no pin then. Vic's own pin
+    gives way when the new post rates at least as high (a live megathread counts as 10 while it's pinned)."""
+    pinned = [t for t in getattr(forum, "threads", []) if getattr(t.flags, "pinned", False) and t.id != new_id]
+    if not pinned:
+        return True, None
+    own = {str(r["id"]): r for r in state.get("threads", []) if r.get("pinned")}
+    current = pinned[0]
+    rec = own.get(str(current.id))
+    if rec is None or len(pinned) > 1:
+        return False, None
+    held = 10 if rec.get("live") and not rec.get("pinned_until") else int(rec.get("importance") or 0)
+    if importance < held:
+        return False, None
+    return True, current
+
+
+async def _pin_post(client, forum, state, thread, rec, importance: int, until: Optional[float], why: str) -> None:
+    """Pin a new post (Discord allows one per forum), unpinning Vic's own earlier pin first when _pin_plan allows."""
+    try:
+        ok, unpin = _pin_plan(forum, state, thread.id, importance)
+        if not ok:
+            return
+        if unpin is not None:
+            await unpin.edit(pinned=False, reason="News auto-poster: a bigger story takes the pin")
+            for old in state.get("threads", []):
+                if str(old["id"]) == str(unpin.id):
+                    old["pinned"] = False
+            await _log(client, f"unpinned <#{unpin.id}> for a bigger story")
+        await thread.edit(pinned=True, reason=f"News auto-poster: {why}")
+        rec["pinned"] = True
+        if until:
+            rec["pinned_until"] = until
+    except Exception:
+        logger.warning("[NEWSFEED] could not pin %s", thread.id, exc_info=True)
+
+
+async def _create_post(client, forum, state, view, verdict, signal, reasons, now, dry: bool,
+                       breaking: bool = False) -> Optional[Dict[str, Any]]:
     live = is_megathread_url(view["link"])
     title = trim_title(view["title"])
     source = outlet_label(view["outlet"])
@@ -1444,14 +1548,17 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
                                             **extra)
         thread = created.thread
         rec = {"id": str(thread.id)}
+        importance = int(verdict.get("importance") or 0)
         if live and config.NEWSFEED_PIN_MEGATHREADS:
-            try:
-                if not any(getattr(t.flags, "pinned", False) for t in forum.threads if t.id != thread.id):
-                    await thread.edit(pinned=True, reason="News auto-poster: live megathread")
-                    rec["pinned"] = True
-            except Exception:
-                logger.warning("[NEWSFEED] could not pin megathread %s", thread.id, exc_info=True)
-        await _log(client, f"posted <#{thread.id}> {detail}")
+            # Pinned while its live page stays on the front page (unpin_stale_pins).
+            await _pin_post(client, forum, state, thread, rec, 10, None, "live megathread")
+        elif breaking and importance >= config.NEWSFEED_BREAKING_PIN_MIN_IMPORTANCE:
+            await _pin_post(client, forum, state, thread, rec, importance,
+                            now + config.NEWSFEED_BREAKING_PIN_HOURS * 3600, "breaking story")
+        pin_note = ""
+        if rec.get("pinned"):
+            pin_note = f", pinned for {config.NEWSFEED_BREAKING_PIN_HOURS}h" if rec.get("pinned_until") else ", pinned"
+        await _log(client, f"posted <#{thread.id}> {detail}{', breaking' if breaking else ''}{pin_note}")
         engagement = load_engagement()
         engagement[rec["id"]] = {"title": title, "url": view["url"], "outlet": view["outlet"],
                                  "outlets": sorted({e["outlet"] for e in view["entries"]}), "tag": chosen[0] if chosen else verdict.get("tag"),
@@ -1461,7 +1568,7 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
     urls = [e["url"] for e in view["entries"]]
     rec.update({"title": title, "summary": view.get("summary", ""), "url": view["url"], "urls": urls,
                 "outlet": view["outlet"], "tag": chosen[0] if chosen else verdict.get("tag"), "tags": chosen, "created": now, "live": live,
-                "last_update": None, "updates": 0})
+                "last_update": None, "updates": 0, "importance": verdict.get("importance"), "breaking": breaking})
     state["threads"].append(rec)
     mark_story_posted(state, view["entries"], now, rec["id"], "dry" if dry else "new", view["cid"])
     bump_cap(state, "daily_dry" if dry else "daily", now)
@@ -1535,19 +1642,27 @@ async def take_snapshots(client, state: Dict[str, Any], now: float) -> int:
     return len(due)
 
 
-async def unpin_stale_megathreads(client, state: Dict[str, Any], now: float) -> None:
+async def unpin_stale_pins(client, state: Dict[str, Any], now: float) -> None:
+    """Take Vic's pins off when they're done: a breaking post once its NEWSFEED_BREAKING_PIN_HOURS are up, a live
+    megathread once its live page has been off the front page for NEWSFEED_UNPIN_AFTER_HOURS."""
     for rec in state["threads"]:
         if not rec.get("pinned") or rec.get("dry"):
             continue
-        story = state["stories"].get(rec.get("url"), {})
-        last_top = story.get("top_last") or rec.get("created", now)
-        if now - last_top < config.NEWSFEED_UNPIN_AFTER_HOURS * 3600:
-            continue
+        if rec.get("pinned_until"):
+            if now < rec["pinned_until"]:
+                continue
+            why, note = "News auto-poster: breaking pin time is up", "breaking pin time up"
+        else:
+            story = state["stories"].get(rec.get("url"), {})
+            last_top = story.get("top_last") or rec.get("created", now)
+            if now - last_top < config.NEWSFEED_UNPIN_AFTER_HOURS * 3600:
+                continue
+            why, note = "News auto-poster: live page has left the front page", "live page off the front page"
         thread = await _get_thread(client, rec["id"])
         try:
             if thread is not None and getattr(thread.flags, "pinned", False):
-                await thread.edit(pinned=False, reason="News auto-poster: live page has left the front page")
-                await _log(client, f"unpinned <#{rec['id']}> (live page off the front page)")
+                await thread.edit(pinned=False, reason=why)
+                await _log(client, f"unpinned <#{rec['id']}> ({note})")
         except Exception:
             logger.warning("[NEWSFEED] could not unpin %s", rec["id"], exc_info=True)
         rec["pinned"] = False
@@ -1555,10 +1670,11 @@ async def unpin_stale_megathreads(client, state: Dict[str, Any], now: float) -> 
 
 def candidate_stories(state: Dict[str, Any], now: float, th: Thresholds, poll_seconds: float
                       ) -> List[Tuple[int, List[str], Dict[str, Any], List[Tuple[float, str]]]]:
-    """Stories worth looking at this poll, strongest first: (signal, reasons, view, near-matches). A story whose own
-    signal is short of the update bar can still be a candidate when it has some signal of its own (a front page or a
-    second outlet) and near-matches from other outlets would lift it over the new-post bar, since the AI settles
-    those in the same call."""
+    """Stories worth looking at this poll, breaking ones first and then strongest first: (signal, reasons, view,
+    near-matches). A story whose own signal is short of the update bar can still be a candidate when it has some
+    signal of its own (a front page or a second outlet) and near-matches from other outlets would lift it over the
+    new-post bar, since the AI settles those in the same call. A breaking story (is_breaking) is a candidate from the
+    breaking signal bar, and its reasons say so, so the AI knows it has just broken."""
     out = []
     index = cluster_index(state)
     floor = min(th.min_signal, th.update_min_signal)
@@ -1572,14 +1688,19 @@ def candidate_stories(state: Dict[str, Any], now: float, th: Thresholds, poll_se
             continue
         signal, reasons = signal_score(view["entries"], now, poll_seconds)
         cluster["signal"] = signal
+        breaking = is_breaking(view["entries"], now, poll_seconds)
+        if breaking:
+            minutes = max(0, int((now - story_started(view["entries"], now)) / 60))
+            reasons = reasons + [f"breaking: first reported {minutes} min ago"]
+        view["breaking"] = breaking
         maybes = maybe_same(state, cid, index) if signal >= 2 else []
-        if signal < floor:
+        if signal < floor and not (breaking and signal >= th.breaking_min_signal):
             extra = {o for _, m in maybes for o in cluster_outlets(state, m)} - {e["outlet"] for e in view["entries"]}
             room = max(0, 6 - 2 * (len(view["entries"]) - 1))
             if signal < 2 or signal + min(2 * len(extra), room) < th.min_signal:
                 continue
         out.append((signal, reasons, view, maybes))
-    out.sort(key=lambda c: (c[0], len(c[2]["entries"])), reverse=True)
+    out.sort(key=lambda c: (c[2]["breaking"], c[0], len(c[2]["entries"])), reverse=True)
     return out
 
 
@@ -1605,7 +1726,7 @@ async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, j
 
     try:
         await take_snapshots(client, state, now)
-        await unpin_stale_megathreads(client, state, now)
+        await unpin_stale_pins(client, state, now)
     except Exception:
         logger.exception("[NEWSFEED] engagement/unpin pass failed")
 
@@ -1645,7 +1766,8 @@ async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, j
                 maybe_views.append({"id": m, "outlet": outlet_label(best["outlet"]), "title": best.get("title", ""),
                                     "summary": best.get("summary", "")})
         shown = candidate_threads(view, pool)
-        if (signal < th.min_signal and not shown and not maybe_views
+        breaking = view.get("breaking", False)
+        if (signal < th.min_signal and not breaking and not shown and not maybe_views
                 and not (cluster.get("verdict") or {}).get("same_story_thread")):
             continue  # only strong enough to be an update, and there's no open post it could update
         if needs_judgement(cluster, signal, shown, th, [m["id"] for m in maybe_views]):
@@ -1670,26 +1792,41 @@ async def run_once(client, state: Dict[str, Any], now: Optional[float] = None, j
                     summary["decisions"].append((view["title"], "skip", "same story as an existing post"))
                     continue  # one of the near-matches was already posted: this is that story
                 view = story_view(state, cid) or view
+                breaking = is_breaking(view["entries"], now, poll_seconds)
+                view["breaking"] = breaking
                 signal, reasons = signal_score(view["entries"], now, poll_seconds)
                 cluster["signal"] = signal
                 logger.info("[NEWSFEED] merged %s into %r: now %s", merged, view["title"],
                             [e["outlet"] for e in view["entries"]])
         verdict = cluster.get("verdict") or {}
-        action, why = decide(signal, verdict, th, sport=is_sport_url(view["url"]))
+        action, why = decide(signal, verdict, th, sport=is_sport_url(view["url"]), breaking=breaking)
         target = None
         if action == "update":
             target = next((t for t in pool if str(t["id"]) == str(verdict.get("same_story_thread"))), None)
             if target is None:
                 # The post it matched has gone (locked or deleted): judge it as a story of its own.
-                action, why = decide(signal, dict(verdict, same_story_thread=None), th, sport=is_sport_url(view["url"]))
+                action, why = decide(signal, dict(verdict, same_story_thread=None), th, sport=is_sport_url(view["url"]),
+                                     breaking=breaking)
         summary["decisions"].append((view["title"], action, why))
         try:
             if action == "new":
+                if is_stale(view, now):
+                    # Old news by the time it qualified: never opened as a new post, and not looked at again.
+                    cluster["done"] = True
+                    summary["decisions"][-1] = (view["title"], "skip", f"stale (published over "
+                                                f"{config.NEWSFEED_STALE_HOURS}h ago)")
+                    logger.info("[NEWSFEED] %r qualified but is stale; skipped", view["title"])
+                    continue
                 if new_this_run >= config.NEWSFEED_MAX_NEW_PER_RUN:
                     continue
-                if not cap_allows(state, "daily_dry" if dry else "daily", now, config.NEWSFEED_DAILY_CAP):
+                if new_posts_last_hour(state, now, dry) >= config.NEWSFEED_MAX_NEW_PER_HOUR:
+                    if not state.get("hour_cap_logged") or now - state["hour_cap_logged"] > 3600:
+                        state["hour_cap_logged"] = now
+                        await _log(client, f"safety limit: {config.NEWSFEED_MAX_NEW_PER_HOUR} new posts in the last "
+                                           f"hour, holding the rest (NEWSFEED_MAX_NEW_PER_HOUR)")
                     continue
-                made = await _create_post(client, forum, state, view, verdict, signal, reasons, now, dry)
+                made = await _create_post(client, forum, state, view, verdict, signal, reasons, now, dry,
+                                          breaking=breaking)
                 if made:
                     pool.append(made)
                     new_this_run += 1
@@ -1793,7 +1930,8 @@ def status_text(state: Dict[str, Any], now: Optional[float] = None) -> str:
     if state.get("last_run"):
         lines.append(f"Last poll: <t:{int(state['last_run'])}:R>")
     day = uk_day(now)
-    lines.append(f"Today: {state['daily'].get(day, 0)}/{config.NEWSFEED_DAILY_CAP} posts, "
+    lines.append(f"Today: {state['daily'].get(day, 0)} posts (no daily cap; safety net "
+                 f"{config.NEWSFEED_MAX_NEW_PER_HOUR}/hour), "
                  f"{state['daily_updates'].get(day, 0)}/{config.NEWSFEED_DAILY_UPDATE_CAP} updates"
                  + (f", {state['daily_dry'].get(day, 0)} dry-run decisions" if state['daily_dry'].get(day) else ""))
     failing = {n: h for n, h in state.get("feed_health", {}).items() if h.get("failures")}
