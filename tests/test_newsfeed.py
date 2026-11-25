@@ -1247,3 +1247,63 @@ def test_main_link_prefers_neutral_outlets_then_tabloids_then_the_telegraph():
     assert N.main_entry([e for e in entries if e["outlet"] == "telegraph"])["outlet"] == "telegraph"
     for name, (_, outlet, kind) in N.config.NEWSFEED_FEEDS.items():
         assert outlet in N.config.NEWSFEED_OUTLETS and kind in ("top", "section"), name
+
+
+def test_member_post_tags_keeps_theirs_and_adds_jev():
+    assert N.member_post_tags(["UK Politics"], ["Cost of Living", "UK Politics"], "neutral", ALL_TAGS) == \
+        ["UK Politics", "Cost of Living"]
+    assert N.member_post_tags([], ["Health"], "good", ALL_TAGS) == ["Health", "Good News"]
+
+
+def test_member_post_tags_good_news_only_from_a_good_tone_and_never_dropped():
+    assert N.member_post_tags(["Health"], ["Health"], "heavy", ALL_TAGS) is None
+    assert N.member_post_tags(["Good News"], ["Crime & Courts"], "heavy", ALL_TAGS) == ["Good News", "Crime & Courts"]
+
+
+def test_member_post_tags_within_five_and_none_when_nothing_new():
+    own = ["A", "B", "C", "D", "E"]
+    assert N.member_post_tags(own, ["Health"], "good", ALL_TAGS + own) is None
+    assert N.member_post_tags(["A", "B", "C", "D"], ["Health", "World"], "good", ALL_TAGS + ["A", "B", "C", "D"]) == \
+        ["A", "B", "C", "D", "Health"]
+    assert N.member_post_tags(["Health"], ["Not A Tag", "Megathread"], "neutral", ALL_TAGS) is None
+
+
+def test_tag_member_post_tags_a_member_post_and_skips_vics(monkeypatch):
+    import config
+    from lib.features import news_tags_jev
+    from types import SimpleNamespace as NS
+
+    class Tag(NS):
+        pass
+    tags = [Tag(name=n) for n in ALL_TAGS]
+    forum = NS(available_tags=tags)
+    edits = []
+
+    async def fake_jev(title, summary, outlet, names):
+        assert "bakery" in summary and outlet == "BBC News"
+        return ["Nations & Regions"], {"Good News": 0.9}
+
+    async def fetch(_):
+        return NS(content="look https://bbc.co.uk/x", embeds=[NS(title="Bank becomes bakery", description="",
+                                                                    provider=NS(name="BBC News"))])
+
+    async def edit(**kw):
+        edits.append([t.name for t in kw["applied_tags"]])
+
+    async def nolog(*a, **k):
+        pass
+    monkeypatch.setattr(news_tags_jev, "jev_tags", fake_jev)
+    monkeypatch.setattr(N, "MEMBER_POST_WAIT_SECONDS", 0)
+    monkeypatch.setattr(N, "_log", nolog)
+    monkeypatch.setattr(config, "NEWSFEED_MEMBER_JEV_TAGS", True, raising=False)
+    monkeypatch.setattr(config, "NEWSFEED_JEV_TAGS", True)
+
+    def thread(owner_id):
+        return NS(id=5, parent_id=config.NEWSFEED_FORUM_ID, owner_id=owner_id, owner=NS(bot=False), parent=forum,
+                  name="Our bank is a bakery now", applied_tags=[t for t in tags if t.name == "Health"],
+                  fetch_message=fetch, edit=edit)
+    client = NS(user=NS(id=1))
+    asyncio.run(N.tag_member_post(client, thread(1)))
+    assert edits == []
+    asyncio.run(N.tag_member_post(client, thread(2)))
+    assert edits == [["Health", "Nations & Regions", "Good News"]]
