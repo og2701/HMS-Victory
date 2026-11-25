@@ -85,7 +85,10 @@ MAX_JUDGE_PER_RUN = 6         # AI calls per poll at most
 MAX_MAYBE_SAME = 4            # borderline other-outlet stories shown to the AI per judgement
 MEGATHREAD_TAG = "Megathread"
 SPORT_TAG = "Sport"
-MAX_AI_TAGS = 3          # tags the AI may give a post (the primary first)
+MAX_AI_TAGS = 3          # topic tags the AI may give a post (the primary first); a tone tag and Megathread make 5
+GOOD_NEWS_TAG = "Good News"
+HEAVY_TAG = "Heavy"
+TONE_TAGS = {"good": GOOD_NEWS_TAG, "heavy": HEAVY_TAG}
 MAX_POST_TAGS = 5        # Discord's limit on tags per forum post
 TITLE_LIMIT = 100             # Discord's thread name limit
 STORY_TTL = 3 * 86400         # forget an article this long after it was last seen in any feed
@@ -958,6 +961,37 @@ def strip_commentary(text: Optional[str]) -> str:
 
 # ---------------------------------------------------------------- the AI and the decision
 
+# What each forum tag means, shared by the judge prompt and the retagging prompt (config.NEWSFEED_FORUM_TAGS is the set).
+TAG_GUIDE = """Use the most specific tags that fit; a place tag (US, Europe, Middle East or World) goes with a topic \
+tag when one applies:
+  UK Politics: Westminster, the government, ministers, parties and legislation, but not a policy area that has its \
+own tag unless the politics itself is central.
+  UK & EU: the UK's relationship with the EU: Brexit, the reset deal, trade with the EU, youth mobility, EU rules.
+  Nations & Regions: Scotland, Wales, Northern Ireland, the regions of England, and stories about one UK town or city.
+  Business & Economy: companies, markets, jobs, industry, growth, taxes and the public finances.
+  Cost of Living: household money: energy and other bills, prices and inflation, rent and mortgages, pay and benefits.
+  Crime & Courts: crime, police, trials, inquiries, sentencing and prisons.
+  Immigration: immigration, asylum, small boats, visas, migrants and deportations, in the UK or abroad.
+  Health: the NHS, public health, medicine and social care.
+  Education: schools, exams, universities, pupils and students.
+  Environment: climate, extreme weather, nature, pollution and the energy transition.
+  Tech & Science: technology, tech companies, AI, the internet, cyber attacks, space, science and research.
+  Conflict & Defence: wars, attacks by states or armed groups, terrorism, spying, the military and defence policy.
+  US: news from or about the United States: its politics, government, courts and events there.
+  Europe: news from European countries other than the UK (Russia and Ukraine included) and the EU's own affairs.
+  Middle East: news from the Middle East, Iran and the Gulf states included.
+  World: news from anywhere else abroad (Asia, Africa, Latin America, Oceania) or a truly global story. Never \
+together with US, Europe or Middle East.
+  Sport: sport stories only.
+Good News and Heavy are never tags here: they come from "tone"."""
+TONE_GUIDE = """"tone": "good", "heavy" or "neutral", so members can filter for positive news. "good": clearly \
+positive or uplifting (a rescue, a cure or medical breakthrough, a recovery, peace or a ceasefire, an achievement, \
+help arriving, good news for people's money). "heavy": deaths, killings, violence, abuse, war casualties, disasters, \
+or serious crimes against people. "neutral": everything else, ordinary politics, business and court news included. \
+When unsure, "neutral"."""
+REGION_TAGS = ("US", "Europe", "Middle East")   # World is for everywhere else, so it never goes with one of these
+
+
 JUDGE_PROMPT = """You choose and frame news stories for the news forum of a large British Discord server. Members are \
 from all over the UK, mostly young adults, and most interested in UK politics, the economy and major world events. \
 Each story the forum takes gets one post where members discuss it, so only stories people will want to talk about \
@@ -983,22 +1017,8 @@ celebrity or local news.
 - "newsworthy": true only if it is a real development worth discussing now. A "what we know" round-up counts only \
 when the event itself is major.
 - "tags": one to three names from "allowed_tags", the most relevant first. The first is the story's primary tag; \
-add others only when they clearly apply too. Use the most specific tag that fits rather than a general one:
-  World: international news without a better specific tag. US stories go here, with others such as Conflict & \
-Defence or Elections when they apply.
-  UK Politics: Westminster, the government, parties and legislation, but not a policy area that has its own tag \
-unless the politics itself is central.
-  Nations & Regions: Scotland, Wales, Northern Ireland and the regions of England.
-  Local: a story about one specific town or city.
-  Business & Economy: companies, markets, jobs, the cost of living, taxes and the economy.
-  Elections: any election anywhere, its campaigns and its results.
-  Crime & Courts: crime, police, trials, sentencing and prisons.
-  Conflict & Defence: wars, strikes and attacks by states or armed groups, the military and defence policy.
-  Health: the NHS, public health, medicine and care.
-  Education: schools, exams, universities and pupils.
-  Environment: climate, extreme weather, nature and the energy transition.
-  Tech & Science: technology, AI, science and research.
-  Sport: sport stories only.
+add others only when they clearly apply too. """ + TAG_GUIDE + """
+- """ + TONE_GUIDE + """
 - "same_story_post": if one of "open_posts" is about the same developing story (the same event or the same specific \
 ongoing issue, where this article is a new development or follow-up on it), give that post's "id"; otherwise null. \
 Two different stories on the same broad subject (two separate stories about one party, say) are NOT the same story.
@@ -1018,7 +1038,8 @@ speculating about what it could lead to ("This could ...").
 Never take a story about Israel, Palestine, Gaza, the West Bank, Hamas or the Israeli-Palestinian conflict, or one \
 mainly about Israel's wars with its neighbours: give it "newsworthy": false and "importance": 1.
 
-Reply with JSON only: {"importance": int, "newsworthy": bool, "tags": [str], "same_story_post": str or null, \
+Reply with JSON only: {"importance": int, "newsworthy": bool, "tags": [str], "tone": str, \
+"same_story_post": str or null, \
 "same_coverage": [str], "why": str, "reason": str}"""
 
 
@@ -1045,7 +1066,7 @@ def verdict_tag_names(raw: Dict[str, Any], tag_names: List[str]) -> List[str]:
     """The AI's tags matched to the forum's names (any case), unknown ones and Megathread dropped (that one is only
     ever set for live pages), deduped and capped at MAX_AI_TAGS. Reads "tags" (a list, or a single string) and falls
     back to an old single "tag"."""
-    lookup = {t.lower(): t for t in tag_names if t != MEGATHREAD_TAG}
+    lookup = {t.lower(): t for t in tag_names if t != MEGATHREAD_TAG and t not in TONE_TAGS.values()}
     given = raw.get("tags")
     if isinstance(given, str):
         given = [given]
@@ -1056,7 +1077,80 @@ def verdict_tag_names(raw: Dict[str, Any], tag_names: List[str]) -> List[str]:
         tag = lookup.get(str(name or "").strip().lower())
         if tag and tag not in tags:
             tags.append(tag)
+    if any(t in REGION_TAGS for t in tags):
+        tags = [t for t in tags if t != "World"]
     return tags[:MAX_AI_TAGS]
+
+
+RETAG_PROMPT = """You tag posts in the news forum of a large British Discord server. You are given a post's title and \
+its opening message (usually a news link and a short description). Pick its tags.
+
+Reply with JSON only: {"tags": [str], "tone": str}. "tags": one to three names from "allowed_tags", the most \
+relevant first. """ + TAG_GUIDE + "\n" + TONE_GUIDE
+
+
+def retag_payload(title: str, text: str, tag_names: Iterable[str]) -> str:
+    return json.dumps({"title": title or "", "opening_message": (text or "")[:1200],
+                       "allowed_tags": [t for t in tag_names if t != MEGATHREAD_TAG]}, ensure_ascii=False)
+
+
+def retag_post(title: str, text: str, tag_names: List[str], current: Iterable[str] = (),
+               complete: Optional[Callable] = None) -> Optional[List[str]]:
+    """New tags for an existing post: the AI's topic picks from the forum's tags (World dropped beside a region, at
+    most MAX_AI_TAGS), its tone tag, and Megathread if the post had it. None when the AI gave nothing usable: leave the
+    post alone.
+    `complete(system, payload) -> (json, prompt_tokens, completion_tokens)`; by default the newsfeed model."""
+    payload = retag_payload(title, text, tag_names)
+    try:
+        if complete is None:
+            raw, p_tok, c_tok = _openai_complete(RETAG_PROMPT, payload)
+            _record_usage(p_tok, c_tok)
+        else:
+            result = complete(RETAG_PROMPT, payload)
+            raw = result[0] if isinstance(result, tuple) else result
+    except Exception as e:
+        logger.warning("[NEWSFEED] retag failed for %r: %s", (title or "")[:80], e)
+        return None
+    raw = raw if isinstance(raw, dict) else {}
+    tags = verdict_tag_names(raw, tag_names)
+    if not tags:
+        return None
+    return with_extra_tags(tags, tone_of(raw), MEGATHREAD_TAG in set(current), tag_names)
+
+
+def tone_of(raw: Dict[str, Any]) -> str:
+    """The AI's "tone" as "good", "heavy" or "neutral" (anything else is neutral)."""
+    tone = str(raw.get("tone") or "").strip().lower()
+    return tone if tone in TONE_TAGS else "neutral"
+
+
+def with_extra_tags(topic: List[str], tone: str, megathread: bool, tag_names: Iterable[str]) -> List[str]:
+    """A post's full tag list: its topic tags, then its tone tag (Good News or Heavy) and Megathread when the forum
+    has them, within Discord's 5."""
+    names = set(tag_names)
+    extra = [TONE_TAGS[tone]] if tone in TONE_TAGS and TONE_TAGS[tone] in names else []
+    if megathread and MEGATHREAD_TAG in names:
+        extra.append(MEGATHREAD_TAG)
+    topic = [t for t in topic if t not in TONE_TAGS.values() and t != MEGATHREAD_TAG]
+    return topic[:MAX_POST_TAGS - len(extra)] + extra
+
+
+def forum_tag_payload(current: List[Dict[str, Any]], spec=None) -> List[Dict[str, Any]]:
+    """The forum's new available_tags for a PATCH, from config.NEWSFEED_FORUM_TAGS: a tag whose name (or "was" name) is
+    already in the forum keeps its id, so the posts that have it keep it; new ones have no id; anything else goes.
+    `current` is the forum's available_tags as the API gives them."""
+    spec = config.NEWSFEED_FORUM_TAGS if spec is None else spec
+    if len(spec) > 20:
+        raise ValueError("Discord allows at most 20 tags per forum")
+    by_name = {t["name"]: t for t in current}
+    out = []
+    for name, emoji, was in spec:
+        old = by_name.get(name) or (by_name.get(was) if was else None)
+        tag = {"name": name, "emoji_name": emoji, "moderated": bool(old.get("moderated")) if old else False}
+        if old:
+            tag["id"] = old["id"]
+        out.append(tag)
+    return out
 
 
 def post_tags(verdict: Dict[str, Any]) -> List[str]:
@@ -1069,7 +1163,7 @@ def post_tags(verdict: Dict[str, Any]) -> List[str]:
 
 def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
                       maybe_ids: Iterable[str] = ()) -> Dict[str, Any]:
-    """The AI's answer, checked: importance clamped 1-10, one to three tags from the forum's list (deduped, in the
+    """The AI's answer, checked: importance clamped 1-10, one to four tags from the forum's list (deduped, in the
     AI's order; an old single "tag" answer still works), a match only to a post (or a
     near-match story) it was shown, and the text made neutral. Anything unusable comes back as an error verdict that
     never posts."""
@@ -1097,6 +1191,7 @@ def normalise_verdict(raw: Any, tag_names: List[str], thread_ids: Iterable[str],
         "newsworthy": bool(newsworthy),
         "tag": tags[0] if tags else None,   # the primary tag (kept for older readers of the state)
         "tags": tags,
+        "tone": tone_of(raw),
         "same_story_thread": match,
         "same_coverage": same,
         "why": clean_text(strip_commentary(clean_text(raw.get("why"), 400)), 240),
@@ -1529,11 +1624,14 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
     jev_note = ""
     if config.NEWSFEED_JEV_TAGS:
         chosen, jev_note = await _jev_tags_or(chosen, forum, view)
-    tag_names = chosen + ([MEGATHREAD_TAG] if live else [])
+    forum_names = [t.name for t in getattr(forum, "available_tags", [])]
+    tone = verdict.get("tone") or "neutral"
+    tag_names = with_extra_tags(chosen, tone, live, forum_names)
     also = ", ".join(name for name, _ in view["also"])
     detail = (f"\"{title}\" <{view['link']}> via {outlet_short(view['outlet'])}{f' (also {also})' if also else ''} "
               f"(signal {signal}: {', '.join(reasons)}; AI {verdict.get('importance')}/10, "
-              f"{', '.join(chosen) or 'no tag'}{jev_note}{', megathread' if live else ''})")
+              f"{', '.join(chosen) or 'no tag'}{jev_note}{f', {tone}' if tone != 'neutral' else ''}"
+              f"{', megathread' if live else ''})")
     if dry:
         await _log(client, f"[dry run] would post {detail}")
         rec = {"id": f"dry-{int(now)}-{len(state['threads'])}", "dry": True}

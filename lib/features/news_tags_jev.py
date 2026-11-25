@@ -33,25 +33,48 @@ TAG_QUESTIONS: Dict[str, Dict[str, Any]] = {
         "or a UK law or policy being made, changed or fought over?",
         "UK politics, government action or policy is a main part of the story.",
         "UK politics is absent or only mentioned in passing."),
+    "UK & EU": _noul(
+        "Is this story about the UK's relationship with the European Union: Brexit, a UK-EU deal or talks, trade "
+        "with the EU, youth mobility or the UK following EU rules?",
+        "UK-EU relations are a main part of the story.",
+        "The EU is absent, or the story is about the EU or a European country without the UK's relationship to it."),
+    "US": _noul(
+        "Does this story mainly take place in the United States, or is it about the US government, US politics, "
+        "US courts or the US president?",
+        "The United States is a main part of the story.",
+        "The US is absent or only mentioned in passing; a US company's product alone does not count."),
+    "Europe": _noul(
+        "Does this story mainly take place in a European country other than the UK (Russia and Ukraine included), "
+        "or is it about the EU's own affairs?",
+        "Events in Europe outside the UK are a main part of the story.",
+        "It is mainly about the UK, about UK-EU relations, or about somewhere outside Europe."),
+    "Middle East": _noul(
+        "Does this story mainly take place in the Middle East, Iran and the Gulf states included?",
+        "The Middle East is a main part of the story.",
+        "The Middle East is absent or only mentioned in passing."),
     "World": _noul(
-        "Does this story mainly take place outside the UK, or is it about other countries' governments, leaders or "
-        "relations between countries?",
-        "Most of what happens is in other countries or between them.",
-        "It is mainly about the UK, or about a company or product rather than a country."),
+        "Does this story mainly take place outside the UK, the United States, Europe and the Middle East (for "
+        "example Asia, Africa, Latin America or Oceania), or is it a truly global story?",
+        "Most of what happens is in those other parts of the world, or worldwide.",
+        "It is mainly about the UK, the US, Europe or the Middle East, or about a company rather than a country."),
+    "Immigration": _noul(
+        "Is this story about immigration: asylum, small boats, migrants, visas, borders or deportations?",
+        "Immigration or asylum is a main part of the story.",
+        "Immigration is absent or only incidental."),
+    "Cost of Living": _noul(
+        "Is this story about household money: energy and other bills, prices and inflation, rent and mortgages, "
+        "pay, or benefits people live on?",
+        "What people pay or receive is a main part of the story.",
+        "Household money is absent or only incidental; company results and markets alone do not count."),
     "Nations & Regions": _noul(
-        "Is this story specifically about Scotland, Wales or Northern Ireland, their governments, or one region "
-        "of England as a whole?",
-        "It is about one of the UK's nations or an English region specifically.",
-        "It is UK-wide, about one town only, or not about the UK."),
-    "Local": _noul(
-        "Is this a local story: about one specific UK town, city or community and what happens to the people "
-        "living there?",
-        "The local community itself is the subject.",
-        "It is national or international news that merely happens at a place, such as a military base, a court "
-        "or a school named in passing."),
+        "Is this story specifically about Scotland, Wales or Northern Ireland, their governments, one region of "
+        "England, or one UK town or city and the people living there?",
+        "It is about one of the UK's nations, an English region, or one UK place and its community specifically.",
+        "It is UK-wide, not about the UK, or national news that merely happens at a place named in passing (a "
+        "military base, a court, a school)."),
     "Business & Economy": _noul(
-        "Is this story about business or the economy: companies, markets, jobs, pay, strikes over pay, prices, "
-        "the cost of living, taxes or economic figures?",
+        "Is this story about business or the economy: companies, markets, jobs, industry, strikes over pay, "
+        "taxes, the public finances or economic figures?",
         "Money, companies, work or the economy is a main part of the story.",
         "Money and business are absent or only incidental."),
     "Elections": _noul(
@@ -101,16 +124,21 @@ def questions_for(tag_names: Iterable[str]) -> Dict[str, Dict[str, Any]]:
     return {f"t{i}": TAG_QUESTIONS[name] for i, name in enumerate(tag_names) if name in TAG_QUESTIONS}
 
 
-# World is the general tag for anything abroad, so it goes after any specific tag that also applies: a story about
-# Nvidia's boss is Tech first, a Ukraine story is Conflict & Defence first.
-GENERAL_TAGS = ("World",)
+# Place tags go after any topic tag that also applies: a story about Nvidia's boss is Tech first, a Ukraine story is
+# Conflict & Defence first. World is for everywhere else, so it is dropped beside US, Europe or Middle East.
+GENERAL_TAGS = ("World", "US", "Europe", "Middle East")
+REGION_TAGS = ("US", "Europe", "Middle East")
 
 
 def pick_tags(probs: Dict[str, float], threshold: float = TAG_THRESHOLD, limit: int = MAX_TAGS) -> List[str]:
-    """Every tag at or above the threshold, most likely first with World last, capped."""
+    """Every tag at or above the threshold, most likely first with the place tags last (World dropped beside US,
+    Europe or Middle East), capped."""
     ranked = sorted(((p, name) for name, p in probs.items() if p >= threshold),
                     key=lambda x: (x[1] in GENERAL_TAGS, -x[0], x[1]))
-    return [name for _, name in ranked[:limit]]
+    names = [name for _, name in ranked]
+    if any(n in REGION_TAGS for n in names):
+        names = [n for n in names if n != "World"]
+    return names[:limit]
 
 
 async def tag_probabilities(title: str, summary: str, outlet: str, tag_names: Iterable[str],

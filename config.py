@@ -1118,6 +1118,34 @@ NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
 # Forum tags come from Jev (one yes/no question per tag, lib/features/news_tags_jev.py), falling back to the OpenAI
 # judgement's tags when Jev has no verdict. Off goes back to the OpenAI tags only (Oggers, 16 Nov 2026).
 NEWSFEED_JEV_TAGS = True
+# The news forum's tags, in the order they show (Oggers asked for more granular ones, 25 Nov 2026). Discord allows 20
+# per forum. A name already in the forum keeps its tag id, so posts keep it; "was" renames an old tag in place. A tag
+# in the forum but not here is removed (Local went into Nations & Regions, Elections into the politics and place tags).
+# Good News and Heavy are tone tags (Oggers wanted a way to see only positive news): every post gets one or neither.
+# Applied once with the forum sync (newsfeed.forum_tag_payload), then every post is retagged (newsfeed.retag_post).
+NEWSFEED_FORUM_TAGS = (
+    # (name, emoji, old name it replaces or None)
+    ("UK Politics", "🏛️", None),
+    ("UK & EU", "🤝", None),
+    ("Nations & Regions", "🗺️", None),
+    ("Business & Economy", "💷", None),
+    ("Cost of Living", "🛒", None),
+    ("Crime & Courts", "⚖️", None),
+    ("Immigration", "🛂", None),
+    ("Health", "🏥", None),
+    ("Education", "🎓", None),
+    ("Environment", "🌱", None),
+    ("Tech & Science", "🔬", None),
+    ("Conflict & Defence", "⚔️", None),
+    ("US", "🗽", None),
+    ("Europe", "🏰", None),
+    ("Middle East", "🏜️", None),
+    ("World", "🌍", None),
+    ("Sport", "⚽", None),
+    ("Good News", "🌞", None),
+    ("Heavy", "🕯️", None),
+    ("Megathread", "📌", None),
+)
 # Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
 NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
 # name: (url, outlet, kind). kind "top" is a curated front page (being there, and for how long, counts), "section" any
