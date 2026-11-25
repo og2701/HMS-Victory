@@ -1135,6 +1135,12 @@ NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
 NEWSFEED_JEV_TAGS = True
 # Posts members make in the news forum get Jev's tags too, added to the ones they picked (Oggers, 25 Nov 2026).
 NEWSFEED_MEMBER_JEV_TAGS = True
+# A tag a member chose that Jev scores under this gets a card with Remove / Keep buttons for a person to decide; Jev never
+# removes a member's tag itself (Oggers, 25 Nov 2026). The card goes to #vic-root and pings Oggers for now; it could move
+# to the community management channel once the forum is public.
+NEWSFEED_TAG_DISPUTE_BELOW = 0.2
+NEWSFEED_TAG_DISPUTE_CHANNEL_ID = 1141037835445616640
+NEWSFEED_TAG_DISPUTE_PING = 404634271861571584
 # The news forum's tags, in the order they show (Oggers asked for more granular ones, 25 Nov 2026). Discord allows 20
 # per forum. A name already in the forum keeps its tag id, so posts keep it; "was" renames an old tag in place. A tag
 # in the forum but not here is removed (Local went into Nations & Regions, Elections into the politics and place tags).
