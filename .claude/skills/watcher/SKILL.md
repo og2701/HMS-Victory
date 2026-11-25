@@ -153,7 +153,12 @@ python3 <scripts>/board.py show | R -
    later ones get `<id>.alias` files pointing at the first), so a card reply or a react.py reaction to ANY of them
    ends that channel's typing, while other batches' loops (parallel jobs) carry on; plain chatter in pending mode
    gets neither. **Every hit aimed at Vic still needs closing:** answer it, react to it, or for a hit that needs
-   nothing (a "lol", an "oh..."), react anyway. Once a batch is handled, check no ACK is left on its hits. If you decide not to answer, run `R react.py <id> vic_working:1575137733268078672 <channel> remove`.
+   nothing (a "lol", an "oh..." said to Vic), react anyway. Once a batch is handled, check no ACK is left on its hits.
+   **A hit that isn't for Vic gets no sign of Vic** (Owen, 25 Nov 2026): in #vic-root every message wakes you, so
+   people talking to each other (banter between Oggers and Hadidas, a question to someone else) come in with the
+   ACK and typing on. Decide that first thing on waking and run `R dismiss.py <id> [<id> ...] <channel>` on those
+   hits straight away: it takes the ACK off and ends their typing (a batch's shared loop only stops once every hit in
+   it is dismissed or answered, so a real request beside them keeps its typing). Don't react to them either.
    Answered one hit of a batch but still working on another? `R typing_indicator.py start <channel> <request_id>`
    turns typing back on. It gives up by itself after 10 minutes. `R typing_indicator.py stop` (no id) clears every
    loop and alias if one is ever orphaned.
