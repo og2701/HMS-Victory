@@ -1124,8 +1124,8 @@ ALL_TAGS = [name for name, _, _ in N.config.NEWSFEED_FORUM_TAGS]
 
 def test_the_forum_tag_set_fits_discord_and_keeps_megathread():
     assert len(ALL_TAGS) <= 20 and len(set(ALL_TAGS)) == len(ALL_TAGS)
-    assert {N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, "Royals", "World", "US", "Europe", "Middle East"} <= set(ALL_TAGS)
-    assert N.HEAVY_TAG not in ALL_TAGS                       # Oggers dropped Heavy for Royals (25 Nov 2026)
+    assert {N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, "AI", "World", "US", "Europe", "Middle East"} <= set(ALL_TAGS)
+    assert N.HEAVY_TAG not in ALL_TAGS                       # Oggers dropped Heavy (25 Nov 2026)
     from lib.features import news_tags_jev as J
     topic = [t for t in ALL_TAGS if t not in (N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG)]
     assert all(t in J.TAG_QUESTIONS for t in topic)          # Jev can set every topic tag

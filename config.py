@@ -1122,7 +1122,7 @@ NEWSFEED_JEV_TAGS = True
 # per forum. A name already in the forum keeps its tag id, so posts keep it; "was" renames an old tag in place. A tag
 # in the forum but not here is removed (Local went into Nations & Regions, Elections into the politics and place tags).
 # Good News is the tone tag (Oggers wanted a way to see only positive news). Heavy was a tag for a few minutes on 25 Nov
-# 2026; Oggers dropped it for Royals. The "heavy" tone is still judged (it stops a grim story counting as Good News).
+# 2026; Oggers dropped it for Royals, then swapped Royals (too few hits) for AI. The "heavy" tone is still judged (it stops a grim story counting as Good News).
 # Applied once with the forum sync (newsfeed.forum_tag_payload), then every post is retagged (newsfeed.retag_post).
 NEWSFEED_FORUM_TAGS = (
     # (name, emoji, old name it replaces or None)
@@ -1144,7 +1144,7 @@ NEWSFEED_FORUM_TAGS = (
     ("World", "🌍", None),
     ("Sport", "⚽", None),
     ("Good News", "🌞", None),
-    ("Royals", "👑", None),
+    ("AI", "🤖", None),
     ("Megathread", "📌", None),
 )
 # Articles at these URL paths are paywalled whatever the outlet, so they are never the main link.
