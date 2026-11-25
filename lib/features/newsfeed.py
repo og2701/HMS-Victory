@@ -15,7 +15,8 @@ any AI is involved:
     each hour on a front page      +1   (up to +3)
     a BBC live page                +3   (/news/live/: a major ongoing event, posted as a megathread)
     another outlet's live blog     +1   (Guardian /live/: often a general rolling blog, so it counts for less)
-    each outlet beyond the first   +2   (up to +6: the strongest signal)
+    each outlet beyond the first   +2   (+1 for a tabloid or partisan site, NEWSFEED_LIGHT_OUTLETS; up to +6: the
+                                        strongest signal)
 
 Only a story over the signal threshold goes to the AI, through the chat responder's own OpenAI client. The AI rates
 its importance for this server, picks one to three forum tags (most relevant first), writes a neutral "why it matters", and says whether it is the
@@ -116,7 +117,9 @@ def outlet_short(outlet: str) -> str:
 
 _HOSTS = (("bbc.co.uk", "bbc"), ("bbc.com", "bbc"), ("news.sky.com", "sky"), ("skynews.com", "sky"),
           ("itv.com", "itv"), ("theguardian.com", "guardian"), ("independent.co.uk", "independent"),
-          ("telegraph.co.uk", "telegraph"))
+          ("telegraph.co.uk", "telegraph"), ("dailymail.co.uk", "mail"), ("dailymail.com", "mail"),
+          ("express.co.uk", "express"), ("mirror.co.uk", "mirror"), ("huffingtonpost.co.uk", "huffpost"),
+          ("gbnews.com", "gbnews"), ("thesun.co.uk", "sun"), ("inews.co.uk", "i"))
 
 
 def outlet_of(url: str) -> Optional[str]:
@@ -290,6 +293,14 @@ _SECTIONS = {
     "independent": ("/news/", "/bulletin/", "/climate-change/", "/sport/", "/money/", "/tech/"),
     "telegraph": ("/news/", "/politics/", "/world-news/", "/business/", "/money/", "/sport/", "/football/",
                   "/global-health/", "/royal-family/", "/us/"),
+    # News sections only: their showbiz, TV, sport, money advice, lifestyle and picture pages live elsewhere.
+    "mail": ("/news/",),
+    "express": ("/news/",),
+    "mirror": ("/news/",),
+    "sun": ("/news/",),
+    "i": ("/news/",),
+    "gbnews": ("/news/", "/politics/", "/royal/"),   # not /opinion/, /shows/ or video
+    "huffpost": ("/entry/",),                         # every HuffPost article is /entry/; the AI weeds out the rest
 }
 
 
@@ -735,9 +746,17 @@ def signal_score(entries, now: float, poll_seconds: float) -> Tuple[int, List[st
         reasons.append("live blog")
     outlets = {e.get("outlet") for e in entries}
     if len(outlets) > 1:
-        score += min(2 * (len(outlets) - 1), 6)
+        score += min(outlet_points(outlets), 6)
         reasons.append(f"{len(outlets)} outlets")
     return score, reasons
+
+
+def outlet_points(outlets: Iterable[str]) -> int:
+    """Points for the outlets carrying a story beyond its first (the weightiest): +2 for a main outlet, +1 for a
+    tabloid or partisan site (config.NEWSFEED_LIGHT_OUTLETS). Uncapped; signal_score caps it."""
+    light = set(getattr(config, "NEWSFEED_LIGHT_OUTLETS", ()) or ())
+    points = sorted((1 if o in light else 2 for o in set(outlets)), reverse=True)
+    return sum(points[1:])
 
 
 def is_fresh(entry: Dict[str, Any], now: float, max_age_hours: Optional[float] = None) -> bool:
@@ -756,16 +775,17 @@ def story_started(entries: Iterable[Dict[str, Any]], now: float) -> float:
 def is_breaking(entries: List[Dict[str, Any]], now: float, poll_seconds: float,
                 window_minutes: Optional[float] = None) -> bool:
     """The fast lane: a story that broke in the last NEWSFEED_BREAKING_WINDOW_MINUTES and already has a BBC live page,
-    is on a front page with a second outlet carrying it, or is carried by three or more outlets."""
+    is on a front page with a second outlet carrying it (a main one, or two lighter ones), or has 4+ outlet points
+    beyond its first outlet (three main outlets, or the equivalent with tabloids counting half)."""
     window_minutes = config.NEWSFEED_BREAKING_WINDOW_MINUTES if window_minutes is None else window_minutes
     if not entries or now - story_started(entries, now) > window_minutes * 60:
         return False
-    outlets = {e.get("outlet") for e in entries}
+    points = outlet_points({e.get("outlet") for e in entries})
     if any(is_megathread_url(e.get("link") or e.get("url") or "") for e in entries):
         return True
-    if len(outlets) >= 2 and any(in_top_now(e, now, poll_seconds) for e in entries):
-        return True
-    return len(outlets) >= 3
+    if points >= 2 and any(in_top_now(e, now, poll_seconds) for e in entries):
+        return True      # a front page plus a second main outlet (or two lighter ones)
+    return points >= 4   # 3 main outlets, or as much from lighter ones
 
 
 def is_stale(view: Dict[str, Any], now: float, stale_hours: Optional[float] = None) -> bool:
