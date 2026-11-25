@@ -158,11 +158,21 @@ def mentions_vic(m):
 
 
 def addresses_vic(m):
-    if m.get("channel_id") in (DM, CHANNELS["workshop"]):  # everything in the DM, and in #vic-root (admin only, Oggers
-        return True  # 25 Nov 2026: "pick up any msg sent in this channel ... so i dont need to say vic or tag you")
     ref = (m.get("referenced_message") or {}).get("author", {}).get("id")
-    return bool(ref == VIC or any(u["id"] == VIC for u in m.get("mentions", []))
-                or re.search(r"\bvic\b", text_of(m), re.I))
+    direct = bool(ref == VIC or mentions_vic(m) or re.search(r"\bvic\b", text_of(m), re.I))
+    if m.get("channel_id") == DM:
+        return True
+    if m.get("channel_id") == CHANNELS["workshop"]:
+        # #vic-root (admin only): everything counts as aimed at Vic (Oggers 25 Nov 2026: "pick up any msg sent in this
+        # channel ... so i dont need to say vic or tag you"), except a message aimed at someone else: it pings another
+        # person or role, or replies to someone who isn't Vic, without naming Vic. Those get no ACK and no typing
+        # (Owen 25 Nov 2026: "no need to ack or type for stuff not aimed at it").
+        if direct:
+            return True
+        others = [u for u in m.get("mentions", []) if u["id"] != VIC and not u.get("bot")]
+        elsewhere = bool(others or m.get("mention_roles") or (ref and ref != VIC))
+        return not elsewhere
+    return direct
 
 
 def wanted(m, cid):
