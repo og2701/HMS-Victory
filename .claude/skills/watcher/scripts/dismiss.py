@@ -4,7 +4,7 @@ For hits that turn out not to be for Vic (people talking to each other): takes V
 typing that the watcher started for them, so a message Vic isn't answering shows no sign of Vic (Owen, 25 Nov 2026).
 Hits from one batch share a typing loop (watch.py writes <id>.alias files); the loop is only ended once every hit in
 it has been dismissed or answered, so a real request in the same batch keeps its "typing"."""
-import glob, os, signal, sys, urllib.error, urllib.parse, urllib.request
+import glob, json, os, signal, sys, time, urllib.error, urllib.parse, urllib.request
 from dotenv import load_dotenv
 
 load_dotenv(".env")
@@ -23,10 +23,14 @@ def unreact(mid, emoji):
     req = urllib.request.Request(
         f"https://discord.com/api/v10/channels/{channel}/messages/{mid}/reactions/{urllib.parse.quote(emoji)}/@me",
         method="DELETE", headers={"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"})
-    try:
-        urllib.request.urlopen(req, timeout=20)
-    except urllib.error.HTTPError:
-        pass
+    for _ in range(4):  # reaction deletes are rate limited; back-to-back ones get 429s
+        try:
+            urllib.request.urlopen(req, timeout=20)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code != 429:
+                return
+            time.sleep(float(json.loads(e.read() or b"{}").get("retry_after", 1)) + 0.2)
 
 
 def loop_of(mid):
