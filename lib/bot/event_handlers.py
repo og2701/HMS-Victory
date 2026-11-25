@@ -2399,26 +2399,29 @@ async def on_reaction_remove(reaction, user):
     #     return
 
     if ":Shut:" in emoji_str:
-        has_role = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in user.roles)
-        if has_role:
-            message_author = reaction.message.author
-            try:
-                sticker_message_info = sticker_messages.get(reaction.message.id)
-                if not sticker_message_info:
-                    return
-                sticker_message_id, initiating_mod_id = sticker_message_info
-                if initiating_mod_id != user.id:
-                    logger.info(f"Reaction removal ignored as {user} did not initiate the timeout.")
-                    return
-                reason = f"Timeout removed due to ':Shut:' reaction being removed by {user.name}#{user.discriminator}."
-                await message_author.timeout(None, reason=reason)
-                logger.info(f"Timeout for user {message_author} was removed due to ':Shut:' reaction being removed by {user}.")
-                sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
-                await sticker_message.delete()
-                del sticker_messages[reaction.message.id]
-                logger.info(f"Deleted sticker message with ID {sticker_message_id} due to reaction being removed.")
-            except Exception as e:
-                logger.error(f"Failed to remove timeout or delete sticker message for user {message_author}: {e}")
+        # Whoever shut someone can undo it by taking their reaction off: staff, and since 25 Nov 2026 members who
+        # spent a shutcoin too (Oggers). It ends the timeout early and deletes the sticker; the coin isn't refunded.
+        message_author = reaction.message.author
+        try:
+            sticker_message_info = sticker_messages.get(reaction.message.id)
+            if not sticker_message_info:
+                return
+            sticker_message_id, initiating_mod_id = sticker_message_info
+            if initiating_mod_id != user.id:
+                logger.info(f"Reaction removal ignored as {user} did not initiate the timeout.")
+                return
+            is_staff = any(role.id in [ROLES.CABINET, ROLES.BORDER_FORCE] for role in getattr(user, "roles", []))
+            if not is_staff and not message_author.is_timed_out():
+                return  # a member's 30s shut already ran out: nothing to end, and the sticker stays
+            reason = f"Timeout removed due to ':Shut:' reaction being removed by {user.name}#{user.discriminator}."
+            await message_author.timeout(None, reason=reason)
+            logger.info(f"Timeout for user {message_author} was removed due to ':Shut:' reaction being removed by {user}.")
+            sticker_message = await reaction.message.channel.fetch_message(sticker_message_id)
+            await sticker_message.delete()
+            del sticker_messages[reaction.message.id]
+            logger.info(f"Deleted sticker message with ID {sticker_message_id} due to reaction being removed.")
+        except Exception as e:
+            logger.error(f"Failed to remove timeout or delete sticker message for user {message_author}: {e}")
 
 
 # Voice activity is buffered here and flushed to the log thread by
