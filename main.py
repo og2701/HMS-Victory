@@ -111,6 +111,12 @@ class AClient(discord.Client):
             self.add_dynamic_items(*CONTROL_PANEL_BUTTONS)
         except Exception as e:
             logger.warning(f"Could not register control panel buttons: {e}")
+        # Remove / Keep on the news forum's tag dispute cards (Jev disagrees with a member's tag).
+        try:
+            from lib.features.news_tag_disputes import BUTTONS as TAG_DISPUTE_BUTTONS
+            self.add_dynamic_items(*TAG_DISPUTE_BUTTONS)
+        except Exception as e:
+            logger.warning(f"Could not register tag dispute buttons: {e}")
         # Persistent 'Remove timeout' buttons on join-watch police station reports.
         try:
             from commands.moderation.join_watch import UntimeoutButton

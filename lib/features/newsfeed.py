@@ -1660,11 +1660,16 @@ async def tag_member_post(client, thread) -> None:
         new = member_post_tags(own, tags or [], tone, [t.name for t in forum.available_tags])
         if not new:
             logger.info("[NEWSFEED] member post %s: Jev added nothing (%s)", thread.id, ", ".join(tags or []) or "no verdict")
-            return
-        by_name = {t.name: t for t in forum.available_tags}
-        await thread.edit(applied_tags=[by_name[n] for n in new if n in by_name], reason="Jev tags for a member post")
-        await _log(client, f"tagged member post \"{thread.name[:80]}\" <#{thread.id}>: "
-                           f"{', '.join(own) or 'no tags'} -> {', '.join(new)}")
+        else:
+            by_name = {t.name: t for t in forum.available_tags}
+            await thread.edit(applied_tags=[by_name[n] for n in new if n in by_name], reason="Jev tags for a member post")
+            await _log(client, f"tagged member post \"{thread.name[:80]}\" <#{thread.id}>: "
+                               f"{', '.join(own) or 'no tags'} -> {', '.join(new)}")
+        # A tag the member chose that Jev scores well under the line: a person decides (never removed by itself).
+        from lib.features.news_tag_disputes import disputed_tags, post_dispute
+        disputes = disputed_tags(own, probs)
+        if disputes:
+            await post_dispute(client, thread, disputes, [t for t in (new or []) if t not in own])
     except Exception:
         logger.warning("[NEWSFEED] Jev tags for member post %s failed", getattr(thread, "id", "?"), exc_info=True)
 

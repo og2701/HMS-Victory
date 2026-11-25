@@ -1307,3 +1307,54 @@ def test_tag_member_post_tags_a_member_post_and_skips_vics(monkeypatch):
     assert edits == []
     asyncio.run(N.tag_member_post(client, thread(2)))
     assert edits == [["Health", "Nations & Regions", "Good News"]]
+
+
+def test_disputed_tags_only_low_scores_jev_has_a_question_for():
+    from lib.features.news_tag_disputes import disputed_tags
+    probs = {"Good News": 0.05, "Health": 0.15, "Crime & Courts": 0.9}
+    assert disputed_tags(["Crime & Courts", "Good News", "Health", "Megathread"], probs, below=0.2) == \
+        [("Good News", 0.05), ("Health", 0.15)]
+    assert disputed_tags(["Health"], None) == []
+
+
+def test_dispute_card_pings_and_has_remove_and_keep_buttons():
+    from types import SimpleNamespace as NS
+    from lib.features.news_tag_disputes import card_body
+    body = card_body(NS(id=7, name="Grim story"), 9, [("Good News", 0.03)], ["Crime & Courts"], {"Good News": 55}, 42)
+    text = body["components"][0]["components"][0]["content"]
+    assert "<@42>" in text and "<@9>" in text and "**Good News** at 0.03" in text and "Crime & Courts" in text
+    ids = [b["custom_id"] for b in body["components"][0]["components"][1]["components"]]
+    assert ids == ["njt:rm:7:55", "njt:keep:7:0"] and body["allowed_mentions"] == {"users": ["42"]}
+
+
+def test_tag_member_post_posts_a_dispute_card(monkeypatch):
+    import config
+    from lib.features import news_tags_jev, news_tag_disputes
+    from types import SimpleNamespace as NS
+    tags = [NS(name=n, id=i) for i, n in enumerate(ALL_TAGS)]
+    cards = []
+
+    async def fake_jev(title, summary, outlet, names):
+        return ["Crime & Courts"], {"Good News": 0.02, "Crime & Courts": 0.95}
+
+    async def fetch(_):
+        return NS(content="sad", embeds=[])
+
+    async def edit(**kw):
+        pass
+
+    async def nolog(*a, **k):
+        pass
+
+    async def post(client, thread, disputes, added):
+        cards.append((disputes, added))
+    monkeypatch.setattr(news_tags_jev, "jev_tags", fake_jev)
+    monkeypatch.setattr(news_tag_disputes, "post_dispute", post)
+    monkeypatch.setattr(N, "MEMBER_POST_WAIT_SECONDS", 0)
+    monkeypatch.setattr(N, "_log", nolog)
+    monkeypatch.setattr(config, "NEWSFEED_MEMBER_JEV_TAGS", True, raising=False)
+    monkeypatch.setattr(config, "NEWSFEED_JEV_TAGS", True)
+    th = NS(id=5, parent_id=config.NEWSFEED_FORUM_ID, owner_id=2, owner=NS(bot=False), parent=NS(available_tags=tags),
+            name="x", applied_tags=[t for t in tags if t.name == "Good News"], fetch_message=fetch, edit=edit)
+    asyncio.run(N.tag_member_post(NS(user=NS(id=1)), th))
+    assert cards == [([("Good News", 0.02)], ["Crime & Courts"])]
