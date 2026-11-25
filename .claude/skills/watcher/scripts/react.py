@@ -13,7 +13,8 @@ CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640",
 # Reactions that set off Vic's own reaction features: timeouts (Shut, bedtime, oggersglare), translations (flags)
 # and deleting Vic's posts (the cross). Vic must never use them.
 BLOCKED_NAMES = {"shut", "bedtime", "oggersglare"}
-ACK = "hmmnote:1179638366275383297"  # watch.py's "looking into it"
+ACK = "vic_working:1575137733268078672"  # watch.py's "looking into it" (spinning wheel)
+OLD_ACK = "hmmnote:1179638366275383297"  # the ACK before 25 Nov 2026, taken off too
 
 
 def blocked(emoji):
@@ -42,10 +43,11 @@ try:
 except urllib.error.HTTPError as e:
     print("failed", e.code, e.read().decode()[:300])
 if method == "PUT" and emoji != ACK and "keep" not in flags:
-    try:  # the answer is in, so "looking into it" comes off
-        urllib.request.urlopen(reaction("DELETE", ACK), timeout=20)
-    except urllib.error.HTTPError:
-        pass
+    for _ack in (ACK, OLD_ACK):  # the answer is in, so "looking into it" comes off
+        try:
+            urllib.request.urlopen(reaction("DELETE", _ack), timeout=20)
+        except urllib.error.HTTPError:
+            pass
 def _sweep_earlier(target):
     """Also end the loops of the same asker's earlier requests in the same channel: answering their latest message
     answers the thread, so a loop on an earlier one (say the first of a follow-up) would otherwise be orphaned."""

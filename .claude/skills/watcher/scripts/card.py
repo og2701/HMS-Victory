@@ -19,7 +19,8 @@ import base64, json, os, sys, urllib.parse
 
 CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640", "dm": "1231209765754110002",
             "testers": "1570063729947844714"}  # workshop = #vic-root (admin only); testers = the new #workshop; dm: Vic and Oggers
-ACK_QUOTED = urllib.parse.quote("hmmnote:1179638366275383297")  # watch.py's "looking into it"
+ACK_QUOTED = urllib.parse.quote("vic_working:1575137733268078672")  # watch.py's "looking into it" (spinning wheel)
+OLD_ACK_QUOTED = urllib.parse.quote("hmmnote:1179638366275383297")  # the ACK before 25 Nov 2026, taken off too
 src, mode, rest = sys.argv[1], sys.argv[2], sys.argv[3:]
 target = rest.pop(0) if mode in ("reply", "edit") else None
 CH = CHANNELS.get(rest[0], rest[0]) if rest else CHANNELS["workshop"]
@@ -92,12 +93,13 @@ try:
 except urllib.error.HTTPError as e:
     print("failed", e.code, e.read().decode()[:500])
 if {mode == "reply"}:  # the answer is in, so the watcher's "looking into it" comes off the request
-    try:
-        urllib.request.urlopen(urllib.request.Request(
-            "https://discord.com/api/v10/channels/{CH}/messages/{target}/reactions/{ACK_QUOTED}/@me", method="DELETE",
-            headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"}}), timeout=20)
-    except urllib.error.HTTPError:
-        pass
+    for _ack in ("{ACK_QUOTED}", "{OLD_ACK_QUOTED}"):
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                "https://discord.com/api/v10/channels/{CH}/messages/{target}/reactions/" + _ack + "/@me", method="DELETE",
+                headers={{"Authorization": "Bot " + os.environ["DISCORD_TOKEN"], "User-Agent": "DiscordBot (x, 1)"}}), timeout=20)
+        except urllib.error.HTTPError:
+            pass
     def _sweep_earlier(target):
         """Also end the loops of the same asker's earlier requests in the same channel: answering their latest message
         answers the thread, so a loop on an earlier one (say the first of a follow-up) would otherwise be orphaned."""

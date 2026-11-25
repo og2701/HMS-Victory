@@ -6,7 +6,7 @@ description: Watch #bot-workshop and answer, as Vic, anyone who pings Vic there.
 # Watcher
 
 Claude sits behind Vic in #bot-workshop (1141037835445616640). A poller on the
-VM wakes this session when someone there pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
+VM wakes this session on every human message in #vic-root (admin only; Oggers 25 Nov 2026: no need to say vic or tag), and in other channels when someone pings Vic, replies to Vic or says "vic", and Claude answers through Vic's bot token over the REST API. The token never
 leaves the VM: `scripts/run.sh` pipes each script over ssh into `venv/bin/python -` in `~/HMS-Victory`, which loads
 `.env`. Below, `R` is `<base>/scripts/run.sh` and `<scripts>` is `<base>/scripts`, where `<base>` is this skill's
 base directory as shown when it loads. Write the full path in every command, since shell variables don't carry
@@ -148,12 +148,12 @@ python3 <scripts>/board.py show | R -
 ## Answering
 
 1. **Vic has already acked it and is typing when you wake** for a message aimed at Vic (hits have
-   `addresses_vic`): the watcher puts its ACK reaction (`hmmnote:1179638366275383297`) on each request within
+   `addresses_vic`): the watcher puts its ACK reaction (`vic_working:1575137733268078672`) on each request within
    about 5 seconds, and starts typing. All the hits of one batch in one channel share a single typing loop (the
    later ones get `<id>.alias` files pointing at the first), so a card reply or a react.py reaction to ANY of them
    ends that channel's typing, while other batches' loops (parallel jobs) carry on; plain chatter in pending mode
    gets neither. **Every hit aimed at Vic still needs closing:** answer it, react to it, or for a hit that needs
-   nothing (a "lol", an "oh..."), react anyway. Once a batch is handled, check no ACK is left on its hits. If you decide not to answer, run `R react.py <id> hmmnote:1179638366275383297 <channel> remove`.
+   nothing (a "lol", an "oh..."), react anyway. Once a batch is handled, check no ACK is left on its hits. If you decide not to answer, run `R react.py <id> vic_working:1575137733268078672 <channel> remove`.
    Answered one hit of a batch but still working on another? `R typing_indicator.py start <channel> <request_id>`
    turns typing back on. It gives up by itself after 10 minutes. `R typing_indicator.py stop` (no id) clears every
    loop and alias if one is ever orphaned.
