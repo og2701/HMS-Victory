@@ -124,11 +124,11 @@ TAG_QUESTIONS: Dict[str, Dict[str, Any]] = {
         "people?",
         "Death, violence, abuse or serious harm is central to the story.",
         "No death, violence, abuse or serious harm is central."),
-    "Royals": _noul(
-        "Is this story about the British Royal Family: the King, Queen, Prince and Princess of Wales, other members "
-        "current or former (Harry, Andrew and their families included), or a royal event?",
-        "A royal or the Royal Family is a main part of the story.",
-        "No royal is involved, or one is only mentioned in passing."),
+    "AI": _noul(
+        "Is artificial intelligence a main subject of this story: AI models or chatbots, AI companies (OpenAI, "
+        "Anthropic, Nvidia's AI chips and the like), rules for AI, or AI being used in health, schools, work or crime?",
+        "AI is a main part of the story.",
+        "AI is absent or only mentioned in passing."),
     "Sport": _noul(
         "Is this a sport story: a match, a competition, athletes, clubs or sporting bodies?",
         "It is a sport story.",
