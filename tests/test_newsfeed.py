@@ -956,10 +956,11 @@ def test_forum_tags_keep_order_and_the_megathread_within_discords_cap():
 
 
 def test_the_prompt_defines_every_tag_and_asks_for_a_list():
-    for name in ("World", "UK Politics", "Nations & Regions", "Local", "Business & Economy", "Elections",
-                 "Crime & Courts", "Conflict & Defence", "Health", "Education", "Environment", "Tech & Science",
-                 "Sport"):
-        assert f"  {name}: " in N.JUDGE_PROMPT
+    for name, _, _ in N.config.NEWSFEED_FORUM_TAGS:
+        if name in (N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG):
+            continue
+        assert f"  {name}: " in N.JUDGE_PROMPT and f"  {name}: " in N.RETAG_PROMPT
+    assert '"tone": str' in N.JUDGE_PROMPT and '"tone": str' in N.RETAG_PROMPT
     assert '"tags": [str]' in N.JUDGE_PROMPT and "US Politics" not in N.JUDGE_PROMPT
     assert '"tag": exactly one' not in N.JUDGE_PROMPT
 
@@ -1114,3 +1115,64 @@ def test_the_judge_model_is_one_config_line(monkeypatch, model, reasoning):
         assert body["max_completion_tokens"] > 400 and body["reasoning_effort"] == "low"
     else:
         assert body["max_tokens"] == 400 and body["temperature"] == 0.2
+
+
+# ------------------------------------------------------------ granular tags, tone tags, the forum sync and retagging
+
+ALL_TAGS = [name for name, _, _ in N.config.NEWSFEED_FORUM_TAGS]
+
+
+def test_the_forum_tag_set_fits_discord_and_keeps_megathread():
+    assert len(ALL_TAGS) <= 20 and len(set(ALL_TAGS)) == len(ALL_TAGS)
+    assert {N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG, "World", "US", "Europe", "Middle East"} <= set(ALL_TAGS)
+    from lib.features import news_tags_jev as J
+    topic = [t for t in ALL_TAGS if t not in (N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG)]
+    assert all(t in J.TAG_QUESTIONS for t in topic)          # Jev can set every topic tag
+
+
+def test_forum_tag_payload_keeps_ids_of_surviving_tags():
+    current = [{"id": "1", "name": "UK Politics", "moderated": False}, {"id": "2", "name": "Local"},
+               {"id": "3", "name": "Megathread", "moderated": True}, {"id": "4", "name": "Old Name"}]
+    spec = (("UK Politics", "🏛️", None), ("Renamed", "🆕", "Old Name"), ("Brand New", "✨", None),
+            ("Megathread", "📌", None))
+    out = N.forum_tag_payload(current, spec)
+    assert [t.get("id") for t in out] == ["1", "4", None, "3"]                   # Local (2) is dropped
+    assert out[1]["name"] == "Renamed" and out[3]["moderated"] is True
+    assert len(N.forum_tag_payload(current)) == len(ALL_TAGS)
+    with pytest.raises(ValueError):
+        N.forum_tag_payload(current, tuple((f"t{i}", "x", None) for i in range(21)))
+
+
+def test_world_never_goes_with_a_region_and_tone_tags_come_from_tone():
+    v = N.normalise_verdict({"importance": 8, "newsworthy": True, "tags": ["Conflict & Defence", "World", "Europe",
+                                                                           "Heavy"], "tone": "HEAVY"}, ALL_TAGS, [])
+    assert v["tags"] == ["Conflict & Defence", "Europe"] and v["tone"] == "heavy"
+    assert N.normalise_verdict({"tags": ["World"], "tone": "sad"}, ALL_TAGS, [])["tone"] == "neutral"
+    from lib.features import news_tags_jev as J
+    assert J.pick_tags({"World": 0.95, "US": 0.9, "Crime & Courts": 0.8}) == ["Crime & Courts", "US"]
+
+
+def test_with_extra_tags_adds_tone_and_megathread_within_five():
+    assert N.with_extra_tags(["Health"], "good", False, ALL_TAGS) == ["Health", "Good News"]
+    assert N.with_extra_tags(["A", "B", "C", "D"], "heavy", True, ALL_TAGS) == ["A", "B", "C", "Heavy", "Megathread"]
+    assert N.with_extra_tags(["Health"], "neutral", False, ALL_TAGS) == ["Health"]
+    assert N.with_extra_tags(["Health"], "good", False, ["Health"]) == ["Health"]   # forum without the tone tags
+
+
+def test_a_new_post_gets_its_tone_tag(poll):
+    forum = FakeForum()
+    forum.available_tags = [SimpleNamespace(name=n) for n in ALL_TAGS]
+    poll(forum, {"Barnier": dict(BIG, tags=["UK & EU", "Europe"], tone="good")}, _aged_state())
+    _, _, tags = forum.created[0]
+    assert tags[-1] == "Good News" and "UK & EU" in tags
+
+
+def test_retag_post_picks_topic_and_tone_and_keeps_the_megathread():
+    def complete(system, payload):
+        assert system == N.RETAG_PROMPT and '"title": "Quake kills 40 in Japan"' in payload
+        return {"tags": ["World", "Environment", "Megathread"], "tone": "heavy"}, 1, 1
+    tags = N.retag_post("Quake kills 40 in Japan", "https://bbc.co.uk/x", ALL_TAGS, ["World", "Megathread"],
+                        complete=complete)
+    assert tags == ["World", "Environment", "Heavy", "Megathread"]
+    assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: ({"tags": ["Nope"]}, 1, 1)) is None
+    assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: 1 / 0) is None
