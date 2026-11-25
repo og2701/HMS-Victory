@@ -1060,11 +1060,12 @@ NEWSFEED_MAX_NEW_PER_HOUR = 6              # new posts in any rolling hour at mo
 NEWSFEED_DAILY_UPDATE_CAP = 20             # update replies per UK day, across all posts
 NEWSFEED_MAX_NEW_PER_RUN = 2               # new posts per poll (a breaking story always goes first)
 NEWSFEED_STALE_HOURS = 12                  # never open a new post linking an article published longer ago than this
-# Breaking fast lane: a story first seen in the last BREAKING_WINDOW_MINUTES that is on a front page with 2+ outlets,
-# has a BBC live page, or is already carried by 3+ outlets is judged straight away and posted on a lower signal bar,
-# as long as the AI rates it BREAKING_MIN_IMPORTANCE or more. It doesn't have to wait hours on a front page.
+# Breaking fast lane: a story first seen in the last BREAKING_WINDOW_MINUTES that is on a front page with a second
+# outlet (a main one, or two lighter ones), has a BBC live page, or already has 4+ outlet points beyond its first outlet
+# (3 main outlets, 2 main + 2 lighter, or 1 main + 4 lighter: see NEWSFEED_LIGHT_OUTLETS) is judged straight away and
+# posted on a lower signal bar, as long as the AI rates it BREAKING_MIN_IMPORTANCE or more.
 NEWSFEED_BREAKING_WINDOW_MINUTES = 90
-NEWSFEED_BREAKING_MIN_SIGNAL = 4           # e.g. BBC front page + a second outlet, or 3 outlets
+NEWSFEED_BREAKING_MIN_SIGNAL = 4           # e.g. BBC front page + a second main outlet, or 3 main outlets
 NEWSFEED_BREAKING_MIN_IMPORTANCE = 8
 # A breaking post the AI rates this high is pinned for BREAKING_PIN_HOURS. Discord allows one pinned post per forum:
 # it takes the pin from Vic's own earlier pin when it rates at least as high, and never from a post a mod pinned.
@@ -1075,8 +1076,12 @@ NEWSFEED_MAX_AGE_HOURS = 18                # ignore articles published longer ag
 NEWSFEED_MATCH_DAYS = 3                    # open posts this recent are checked before opening a new one
 # Signal score for a story (every outlet carrying it), before any AI call: on a front page now +2, on the front pages
 # of two outlets +1, each hour it has stayed on one +1 (up to +3), a BBC live page +3 (another outlet's live blog +1),
-# and each outlet beyond the first +2 (up to +6). Front pages are the feeds marked "top" below; the outlet count is the
-# strongest signal.
+# and each outlet beyond the first +2 for a main outlet or +1 for a lighter one (NEWSFEED_LIGHT_OUTLETS), up to +6.
+# Front pages are the feeds marked "top" below; the outlet count is the strongest signal.
+# Retuned 25 Nov 2026 for 12 outlets (in practice it had been 4: the Mail and Express links were never recognised).
+# Replaying the live state with the new outlets' feeds added: at +2 for every outlet, 5 more stories crossed signal 7
+# that the AI had already turned down; with the tabloids and partisan sites at +1, 1 did and the posted ones were
+# unchanged, so MIN_SIGNAL stays 7 and the same strength of story qualifies.
 NEWSFEED_MIN_SIGNAL = 7                    # score needed to be considered for a new post
 NEWSFEED_UPDATE_MIN_SIGNAL = 5             # score needed to be considered as an update to an open post
 NEWSFEED_MIN_IMPORTANCE = 7                # AI importance (1-10) needed for a new post
@@ -1102,16 +1107,26 @@ NEWSFEED_OUTLETS = {
     "bbc": ("BBC News", "BBC", "free"),
     "sky": ("Sky News", "Sky", "free"),
     "itv": ("ITV News", "ITV", "free"),
+    "i": ("the i Paper", "i Paper", "free"),
     "guardian": ("the Guardian", "Guardian", "free"),
     "independent": ("the Independent", "Independent", "free"),
+    "mirror": ("the Mirror", "Mirror", "free"),
+    "huffpost": ("HuffPost UK", "HuffPost", "free"),
     "mail": ("the Daily Mail", "Mail", "free"),
     "express": ("the Daily Express", "Express", "free"),
+    "sun": ("the Sun", "Sun", "free"),
+    "gbnews": ("GB News", "GB News", "free"),
     "telegraph": ("the Telegraph", "Telegraph", "partial"),
 }
 # Main link preference, most neutral first. Partial-paywall outlets always come after every free one.
-# The Mail and the Express (added 9 Nov 2026 at Oggers' ask for right-leaning coverage) come after the other free
-# outlets: they count towards coverage and show in "Also covered by", and are the main link only when nobody else has it.
-NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "guardian", "independent", "mail", "express", "telegraph")
+# Sources from all sides (Oggers, 25 Nov 2026): the broadcasters and the i, then the Guardian and the Independent, then
+# the tabloids and partisan sites, left and right. Those count towards coverage and show in "Also covered by", and are
+# the main link only when nobody above has the story. The Telegraph is partly paywalled, so it comes last.
+NEWSFEED_MAIN_LINK_ORDER = ("bbc", "sky", "itv", "i", "guardian", "independent", "mirror", "huffpost", "mail",
+                            "express", "sun", "gbnews", "telegraph")
+# Tabloids and partisan sites: each counts +1 towards a story's signal instead of +2, since they pile onto crime and
+# celebrity stories the broadsheets and broadcasters treat as minor, and six of them would otherwise swamp the score.
+NEWSFEED_LIGHT_OUTLETS = ("mirror", "huffpost", "mail", "express", "sun", "gbnews")
 # Outlets whose links Discord can't preview, so their posts had no thumbnail. Vic attaches the feed's picture instead
 # (Oggers, 16 Nov 2026).
 NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
@@ -1153,8 +1168,10 @@ NEWSFEED_PAYWALL_URL_PATTERNS = ("/independentpremium/", "/premium/")
 # other feed (it only counts as coverage). The Guardian's UK front and the Independent's main feed carry everything they
 # publish (100+ items), so they are sections. All verified from the VM on 9 Nov 2026.
 # Not read: ITV News (www.itv.com accepts the connection from the VM but never answers, on every feed and User-Agent
-# tried) and the Telegraph (its news and politics feeds are stale, newest item about 40 days old, and its main feed is
-# almost all sport). Both stay in NEWSFEED_OUTLETS, so a working feed only needs adding here.
+# tried). It stays in NEWSFEED_OUTLETS, so a working feed only needs adding here.
+# Added 25 Nov 2026, all checked fresh from the VM: the Mirror, HuffPost UK, the Telegraph (its main feed is fresh again;
+# its news and politics feeds are still stale, and much of the main one is sport or older pieces, which the age and
+# section filters drop), GB News, the Sun and the i. None of them is a curated front page, so all are sections.
 NEWSFEED_FEEDS = {
     "bbc_top": ("https://feeds.bbci.co.uk/news/rss.xml", "bbc", "top"),
     "bbc_politics": ("https://feeds.bbci.co.uk/news/politics/rss.xml", "bbc", "section"),
@@ -1179,4 +1196,11 @@ NEWSFEED_FEEDS = {
     "express_news": ("https://www.express.co.uk/posts/rss/1/news", "express", "section"),
     "express_politics": ("https://www.express.co.uk/posts/rss/139/politics", "express", "section"),
     "independent_politics": ("https://www.independent.co.uk/news/uk/politics/rss", "independent", "section"),
+    "mirror_news": ("https://www.mirror.co.uk/news/?service=rss", "mirror", "section"),
+    "huffpost_uk": ("https://www.huffingtonpost.co.uk/feeds/index.xml", "huffpost", "section"),
+    "telegraph_main": ("https://www.telegraph.co.uk/rss.xml", "telegraph", "section"),
+    "gbnews_news": ("https://www.gbnews.com/feeds/news.rss", "gbnews", "section"),
+    "gbnews_politics": ("https://www.gbnews.com/feeds/politics.rss", "gbnews", "section"),
+    "sun_news": ("https://www.thesun.co.uk/news/feed/", "sun", "section"),
+    "i_main": ("https://inews.co.uk/feed", "i", "section"),  # the whole site: lifestyle and culture are filtered out
 }

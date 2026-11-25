@@ -1178,3 +1178,72 @@ def test_retag_post_picks_topic_and_tone_and_keeps_the_megathread():
     assert tags == ["World", "Environment", "Megathread"]   # "heavy" tone, but the forum has no Heavy tag
     assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: ({"tags": ["Nope"]}, 1, 1)) is None
     assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: 1 / 0) is None
+
+
+# ------------------------------------------------------------ outlets from all sides (25 Nov 2026)
+
+def test_new_outlets_are_recognised_and_only_their_news_is_tracked():
+    ok = {
+        "https://www.dailymail.com/news/article-16320803/Two-charged-Anmer-Hall.html": "mail",
+        "https://www.dailymail.co.uk/news/article-1/x.html": "mail",
+        "https://www.express.co.uk/news/uk/2269208/half-grumpy-brits": "express",
+        "https://www.mirror.co.uk/news/politics/andy-burnham-kemi-badenoch-tiktok-37913955": "mirror",
+        "https://www.huffingtonpost.co.uk/entry/andy-burnham-kemi-badenoch_uk_6b06d1ede4b03d2283612ce8": "huffpost",
+        "https://www.gbnews.com/news/shops-knives-licence-labour-crackdown": "gbnews",
+        "https://www.gbnews.com/politics/politics-news-andy-burnham-brexit-reset": "gbnews",
+        "https://www.thesun.co.uk/news/41141009/dad-daughter-jailed-canal-murder": "sun",
+        "https://inews.co.uk/news/politics/burnham-eu-deal-4929000": "i",
+        "https://www.telegraph.co.uk/business/2026/11/24/global-stocks-soar": "telegraph",
+    }
+    for url, outlet in ok.items():
+        assert N.outlet_of(url) == outlet and N.is_postable_url(url), url
+    for url in ("https://www.mirror.co.uk/sport/football/news/john-motson-eafc-27-game-37913976",
+                "https://www.mirror.co.uk/in-pictures/gallery/beaver-moon-supermoon-full-moon-37913756",
+                "https://www.mirror.co.uk/3am/celebrity-news/some-star-123",
+                "https://www.thesun.co.uk/tvandshowbiz/41140000/some-star",
+                "https://www.thesun.co.uk/sport/41140001/match",
+                "https://www.gbnews.com/opinion/criminal-cover-up-conspiracy-nuclear-test-veterans",
+                "https://www.gbnews.com/shows/some-show/clip",
+                "https://www.gbnews.com/news/video/some-clip",
+                "https://inews.co.uk/inews-lifestyle/stay-with-dog-third-young-people-virgins-4929527",
+                "https://inews.co.uk/opinion/some-column-4929000",
+                "https://www.dailymail.com/tvshowbiz/article-1/star.html",
+                "https://www.dailymail.co.uk/sport/football/article-1/x.html"):
+        assert not N.is_postable_url(url), url
+
+
+def test_tabloids_and_partisan_sites_count_half_towards_the_signal():
+    assert N.outlet_points({"bbc"}) == 0
+    assert N.outlet_points({"bbc", "guardian", "sky"}) == 4                      # as before: +2 each beyond the first
+    assert N.outlet_points({"bbc", "sun", "mail"}) == 2                          # tabloids +1 each
+    assert N.outlet_points({"mail", "sun"}) == 1
+    many = [{"outlet": o, "url": f"https://x/{o}"} for o in ("bbc", "sun", "mail", "mirror", "express", "gbnews")]
+    assert N.signal_score(many, NOW, POLL) == (5, ["6 outlets"])
+    every = [{"outlet": o, "url": f"https://x/{o}"} for o in N.config.NEWSFEED_OUTLETS]
+    assert N.signal_score(every, NOW, POLL)[0] == 6                               # still capped at +6
+
+
+def test_breaking_counts_main_outlets_fully_and_tabloids_half():
+    fresh = [_fresh("bbc", "https://www.bbc.co.uk/news/articles/b1", top=False),
+             _fresh("sun", "https://www.thesun.co.uk/news/1/b1", top=False),
+             _fresh("mail", "https://www.dailymail.co.uk/news/article-1/b1.html", top=False)]
+    assert not N.is_breaking(fresh, NOW, POLL)                  # BBC + two tabloids: 2 points, not 3 outlets' worth
+    assert N.is_breaking(fresh + [_fresh("mirror", "https://www.mirror.co.uk/news/b1", top=False),
+                                  _fresh("express", "https://www.express.co.uk/news/uk/1/b1", top=False)], NOW, POLL)
+    front = [dict(fresh[0], top_last=NOW, top_first=NOW - 600), fresh[1]]
+    assert not N.is_breaking(front, NOW, POLL)                  # front page + one tabloid isn't enough
+    assert N.is_breaking(front + [fresh[2]], NOW, POLL)         # front page + two tabloids is
+
+
+def test_main_link_prefers_neutral_outlets_then_tabloids_then_the_telegraph():
+    order = N.config.NEWSFEED_MAIN_LINK_ORDER
+    assert order[:4] == ("bbc", "sky", "itv", "i") and order[-1] == "telegraph"
+    assert set(order) == set(N.config.NEWSFEED_OUTLETS)
+    urls = {"telegraph": "https://www.telegraph.co.uk/news/2026/11/25/x", "gbnews": "https://www.gbnews.com/news/x",
+            "mirror": "https://www.mirror.co.uk/news/uk-news/x-1", "i": "https://inews.co.uk/news/x-1"}
+    entries = [{"outlet": o, "url": u} for o, u in urls.items()]
+    assert N.main_entry(entries)["outlet"] == "i"
+    assert N.main_entry([e for e in entries if e["outlet"] != "i"])["outlet"] == "mirror"
+    assert N.main_entry([e for e in entries if e["outlet"] == "telegraph"])["outlet"] == "telegraph"
+    for name, (_, outlet, kind) in N.config.NEWSFEED_FEEDS.items():
+        assert outlet in N.config.NEWSFEED_OUTLETS and kind in ("top", "section"), name
