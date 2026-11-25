@@ -112,6 +112,18 @@ TAG_QUESTIONS: Dict[str, Dict[str, Any]] = {
         "Technology or science is a main part of the story.",
         "Technology and science are absent or only incidental; transport disruption, weather or politics alone "
         "do not count."),
+    # Tone tags (Oggers 25 Nov 2026: a way to see only positive news). Not topics: jev_tone() reads them, pick_tags
+    # leaves them out. gpt-4o gave Good News to 1 post in 157; these questions gave it to 12.
+    "Good News": _noul(
+        "Is this news story positive or uplifting overall: a success, rescue, recovery, breakthrough, good outcome, "
+        "celebration or kind act, that most readers would be glad to hear?",
+        "Most readers would come away feeling good about what happened.",
+        "The story is neutral, mixed, worrying or bad news."),
+    "Heavy": _noul(
+        "Is this a distressing story: death, killing, violence, abuse, war casualties, disasters or serious harm to "
+        "people?",
+        "Death, violence, abuse or serious harm is central to the story.",
+        "No death, violence, abuse or serious harm is central."),
     "Sport": _noul(
         "Is this a sport story: a match, a competition, athletes, clubs or sporting bodies?",
         "It is a sport story.",
@@ -127,13 +139,14 @@ def questions_for(tag_names: Iterable[str]) -> Dict[str, Dict[str, Any]]:
 # Place tags go after any topic tag that also applies: a story about Nvidia's boss is Tech first, a Ukraine story is
 # Conflict & Defence first. World is for everywhere else, so it is dropped beside US, Europe or Middle East.
 GENERAL_TAGS = ("World", "US", "Europe", "Middle East")
+TONE_NAMES = {"Good News": "good", "Heavy": "heavy"}
 REGION_TAGS = ("US", "Europe", "Middle East")
 
 
 def pick_tags(probs: Dict[str, float], threshold: float = TAG_THRESHOLD, limit: int = MAX_TAGS) -> List[str]:
     """Every tag at or above the threshold, most likely first with the place tags last (World dropped beside US,
     Europe or Middle East), capped."""
-    ranked = sorted(((p, name) for name, p in probs.items() if p >= threshold),
+    ranked = sorted(((p, name) for name, p in probs.items() if p >= threshold and name not in TONE_NAMES),
                     key=lambda x: (x[1] in GENERAL_TAGS, -x[0], x[1]))
     names = [name for _, name in ranked]
     if any(n in REGION_TAGS for n in names):
@@ -170,6 +183,18 @@ async def tag_probabilities(title: str, summary: str, outlet: str, tag_names: It
         logger.warning("[NEWSFEED] Jev tags gave no answers for %r", title[:80])
         return None
     return probs
+
+
+def jev_tone(probs: Optional[Dict[str, float]], threshold: float = TAG_THRESHOLD) -> Optional[str]:
+    """"good", "heavy" or "neutral" from the tone questions, or None when Jev didn't answer them (keep the AI's)."""
+    if not probs or not any(n in probs for n in TONE_NAMES):
+        return None
+    good, heavy = probs.get("Good News", 0.0), probs.get("Heavy", 0.0)
+    if heavy >= threshold and heavy >= good:
+        return "heavy"
+    if good >= threshold:
+        return "good"
+    return "neutral"
 
 
 async def jev_tags(title: str, summary: str, outlet: str, tag_names: Iterable[str],

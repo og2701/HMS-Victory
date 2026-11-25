@@ -30,3 +30,20 @@ def test_answers_become_tags(monkeypatch):
     monkeypatch.setattr(M, "_post", fake_post)
     tags, probs = asyncio.run(J.jev_tags("Man jailed", "", "BBC News", ["Crime & Courts", "Health"], api_key="x"))
     assert tags == ["Crime & Courts"] and probs["Health"] == 0.1
+
+
+def test_tone_tags_are_not_topics():
+    probs = {"Crime & Courts": 0.9, "Heavy": 0.95, "Good News": 0.1}
+    assert J.pick_tags(probs) == ["Crime & Courts"]
+
+
+def test_jev_tone():
+    assert J.jev_tone(None) is None
+    assert J.jev_tone({"Health": 0.9}) is None
+    assert J.jev_tone({"Good News": 0.8, "Heavy": 0.1}) == "good"
+    assert J.jev_tone({"Good News": 0.7, "Heavy": 0.9}) == "heavy"
+    assert J.jev_tone({"Good News": 0.3, "Heavy": 0.2}) == "neutral"
+
+
+def test_tone_questions_exist():
+    assert "Good News" in J.TAG_QUESTIONS and "Heavy" in J.TAG_QUESTIONS

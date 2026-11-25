@@ -1562,18 +1562,20 @@ async def _fetch_picture(url: str):
         return None
 
 
-async def _jev_tags_or(fallback: List[str], forum, view: Dict[str, Any]) -> Tuple[List[str], str]:
-    """Jev's tags for the post, or the OpenAI ones when Jev has no verdict. Also a note for the log line."""
-    from lib.features.news_tags_jev import jev_tags
+async def _jev_tags_or(fallback: List[str], forum, view: Dict[str, Any]) -> Tuple[List[str], str, Optional[str]]:
+    """Jev's tags for the post, or the OpenAI ones when Jev has no verdict; a note for the log line; and Jev's tone
+    ("good", "heavy", "neutral", or None to keep the AI's)."""
+    from lib.features.news_tags_jev import jev_tags, jev_tone
     names = [t.name for t in getattr(forum, "available_tags", []) if t.name != MEGATHREAD_TAG]
     try:
-        tags, _ = await jev_tags(view.get("title", ""), view.get("summary", ""), outlet_label(view["outlet"]), names)
+        tags, probs = await jev_tags(view.get("title", ""), view.get("summary", ""), outlet_label(view["outlet"]), names)
     except Exception:
         logger.warning("[NEWSFEED] Jev tags failed", exc_info=True)
-        tags = None
+        tags, probs = None, None
+    tone = jev_tone(probs)
     if not tags:
-        return fallback, " (Jev: no verdict, AI tags)"
-    return tags, f" (Jev tags; AI said {', '.join(fallback) or 'none'})" if tags != fallback else " (Jev tags)"
+        return fallback, " (Jev: no verdict, AI tags)", tone
+    return tags, (f" (Jev tags; AI said {', '.join(fallback) or 'none'})" if tags != fallback else " (Jev tags)"), tone
 
 
 def _pin_plan(forum, state: Dict[str, Any], new_id, importance: int) -> Tuple[bool, Optional[Any]]:
@@ -1621,11 +1623,11 @@ async def _create_post(client, forum, state, view, verdict, signal, reasons, now
     source = outlet_label(view["outlet"])
     body = build_post_body(view["link"], verdict.get("why", ""), source=source, also=view["also"])
     chosen = post_tags(verdict)
-    jev_note = ""
+    jev_note, jev_tone = "", None
     if config.NEWSFEED_JEV_TAGS:
-        chosen, jev_note = await _jev_tags_or(chosen, forum, view)
+        chosen, jev_note, jev_tone = await _jev_tags_or(chosen, forum, view)
     forum_names = [t.name for t in getattr(forum, "available_tags", [])]
-    tone = verdict.get("tone") or "neutral"
+    tone = jev_tone or verdict.get("tone") or "neutral"  # Jev's tone when it answered: far less stingy with Good News
     tag_names = with_extra_tags(chosen, tone, live, forum_names)
     also = ", ".join(name for name, _ in view["also"])
     detail = (f"\"{title}\" <{view['link']}> via {outlet_short(view['outlet'])}{f' (also {also})' if also else ''} "
