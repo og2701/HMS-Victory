@@ -1600,6 +1600,75 @@ async def _jev_tags_or(fallback: List[str], forum, view: Dict[str, Any]) -> Tupl
     return tags, (f" (Jev tags; AI said {', '.join(fallback) or 'none'})" if tags != fallback else " (Jev tags)"), tone
 
 
+def member_post_tags(own: Iterable[str], jev: Iterable[str], tone: Optional[str],
+                     forum_names: Iterable[str]) -> Optional[List[str]]:
+    """The tags for a member's own post in the news forum: theirs first and all kept, then Jev's topic picks, then Good
+    News when Jev's tone is good, within Discord's 5. A heavy or neutral tone never adds Good News, but a Good News the
+    member chose stays. None when Jev adds nothing new: leave the post alone."""
+    names = set(forum_names)
+    own = [t for t in own if t]
+    out = list(own)
+    adds = [t for t in jev if t in names and t not in TONE_TAGS.values() and t != MEGATHREAD_TAG]
+    if tone == "good" and GOOD_NEWS_TAG in names:
+        adds.append(GOOD_NEWS_TAG)
+    for t in adds:
+        if len(out) >= MAX_POST_TAGS:
+            break
+        if t not in out:
+            out.append(t)
+    return out if len(out) > len(own) else None
+
+
+MEMBER_POST_WAIT_SECONDS = 5   # for the opening message, and again once for a link preview still loading
+
+
+def _member_post_jev_input(message) -> Tuple[str, str]:
+    """(text for Jev, outlet) from a member post's opening message and its link preview."""
+    parts = [getattr(message, "content", "") or ""]
+    outlet = ""
+    for e in getattr(message, "embeds", []) or []:
+        parts += [getattr(e, "title", "") or "", getattr(e, "description", "") or ""]
+        provider = getattr(getattr(e, "provider", None), "name", None)
+        outlet = outlet or (provider or "")
+    return strip_html(" ".join(p for p in parts if p)), outlet
+
+
+async def tag_member_post(client, thread) -> None:
+    """Jev tags for a post a member makes in the news forum, added to the tags they chose (Oggers, 25 Nov 2026).
+    Vic's own posts are tagged when they're made, so they're skipped here, as are other bots' posts."""
+    if not (config.NEWSFEED_JEV_TAGS and getattr(config, "NEWSFEED_MEMBER_JEV_TAGS", False)):
+        return
+    if getattr(thread, "parent_id", None) != config.NEWSFEED_FORUM_ID:
+        return
+    me = getattr(getattr(client, "user", None), "id", None)
+    owner = getattr(thread, "owner", None)
+    if thread.owner_id == me or getattr(owner, "bot", False):
+        return
+    try:
+        from lib.features.news_tags_jev import jev_tags, jev_tone
+        forum = thread.parent
+        names = [t.name for t in getattr(forum, "available_tags", []) if t.name != MEGATHREAD_TAG]
+        await asyncio.sleep(MEMBER_POST_WAIT_SECONDS)
+        message = await thread.fetch_message(thread.id)
+        if re.search(r"https?://", message.content or "") and not message.embeds:
+            await asyncio.sleep(MEMBER_POST_WAIT_SECONDS)
+            message = await thread.fetch_message(thread.id)
+        text, outlet = _member_post_jev_input(message)
+        tags, probs = await jev_tags(thread.name, text, outlet, names)
+        tone = jev_tone(probs)
+        own = [t.name for t in getattr(thread, "applied_tags", [])]
+        new = member_post_tags(own, tags or [], tone, [t.name for t in forum.available_tags])
+        if not new:
+            logger.info("[NEWSFEED] member post %s: Jev added nothing (%s)", thread.id, ", ".join(tags or []) or "no verdict")
+            return
+        by_name = {t.name: t for t in forum.available_tags}
+        await thread.edit(applied_tags=[by_name[n] for n in new if n in by_name], reason="Jev tags for a member post")
+        await _log(client, f"tagged member post \"{thread.name[:80]}\" <#{thread.id}>: "
+                           f"{', '.join(own) or 'no tags'} -> {', '.join(new)}")
+    except Exception:
+        logger.warning("[NEWSFEED] Jev tags for member post %s failed", getattr(thread, "id", "?"), exc_info=True)
+
+
 def _pin_plan(forum, state: Dict[str, Any], new_id, importance: int) -> Tuple[bool, Optional[Any]]:
     """Whether a new post may take the forum's one pin, and which of Vic's own pinned posts it has to unpin first.
     A post pinned by anyone else (a mod's pin, or one Vic doesn't know) is never touched: no pin then. Vic's own pin

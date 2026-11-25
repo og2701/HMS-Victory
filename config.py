@@ -1133,6 +1133,8 @@ NEWSFEED_ATTACH_IMAGE_OUTLETS = ("sky",)
 # Forum tags come from Jev (one yes/no question per tag, lib/features/news_tags_jev.py), falling back to the OpenAI
 # judgement's tags when Jev has no verdict. Off goes back to the OpenAI tags only (Oggers, 16 Nov 2026).
 NEWSFEED_JEV_TAGS = True
+# Posts members make in the news forum get Jev's tags too, added to the ones they picked (Oggers, 25 Nov 2026).
+NEWSFEED_MEMBER_JEV_TAGS = True
 # The news forum's tags, in the order they show (Oggers asked for more granular ones, 25 Nov 2026). Discord allows 20
 # per forum. A name already in the forum keeps its tag id, so posts keep it; "was" renames an old tag in place. A tag
 # in the forum but not here is removed (Local went into Nations & Regions, Elections into the politics and place tags).

@@ -850,6 +850,10 @@ class AClient(discord.Client):
         from lib.features.persona_control import on_controller_thread_update
         await on_controller_thread_update(self, payload)
 
+    async def on_thread_create(self, thread):
+        from lib.features.newsfeed import tag_member_post
+        await tag_member_post(self, thread)
+
     async def on_guild_channel_create(self, channel):
         await add_extra_ticket_roles(channel)
 
