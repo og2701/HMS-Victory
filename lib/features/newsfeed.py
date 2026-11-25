@@ -983,6 +983,7 @@ own tag unless the politics itself is central.
   World: news from anywhere else abroad (Asia, Africa, Latin America, Oceania) or a truly global story. Never \
 together with US, Europe or Middle East.
   Sport: sport stories only.
+  Royals: the Royal Family, its members (current or former) and royal events.
 Good News and Heavy are never tags here: they come from "tone"."""
 TONE_GUIDE = """"tone": "good", "heavy" or "neutral", so members can filter for positive news. "good": clearly \
 positive or uplifting (a rescue, a cure or medical breakthrough, a recovery, peace or a ceasefire, an achievement, \
