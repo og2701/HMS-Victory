@@ -158,8 +158,8 @@ def mentions_vic(m):
 
 
 def addresses_vic(m):
-    if m.get("channel_id") == DM:  # everything in the DM is aimed at Vic
-        return True
+    if m.get("channel_id") in (DM, CHANNELS["workshop"]):  # everything in the DM, and in #vic-root (admin only, Oggers
+        return True  # 25 Nov 2026: "pick up any msg sent in this channel ... so i dont need to say vic or tag you")
     ref = (m.get("referenced_message") or {}).get("author", {}).get("id")
     return bool(ref == VIC or any(u["id"] == VIC for u in m.get("mentions", []))
                 or re.search(r"\bvic\b", text_of(m), re.I))
