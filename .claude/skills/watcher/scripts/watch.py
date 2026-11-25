@@ -37,7 +37,7 @@ CHANNELS = {"cabinet": "1155637791917613147", "workshop": "1141037835445616640",
             "testers": "1570063729947844714"}  # workshop = #vic-root (admin only); testers = the new #workshop; dm: Vic and Oggers
 NAMES = {cid: name for name, cid in CHANNELS.items()}
 VIC = "1171842947440967770"
-ACK = "hmmnote:1179638366275383297"  # "looking into it", added the moment a request is seen
+ACK = "vic_working:1575137733268078672"  # "looking into it", added the moment a request is seen
 POLL_SECONDS = 5
 FOLLOW_UP_SECONDS = 6  # Vic's own chat responder stays out of these channels, so this only waits for a second line
 BOARD_EVENTS = os.path.join("data", "cabinet_board", "events")
@@ -167,7 +167,7 @@ def addresses_vic(m):
 
 def wanted(m, cid):
     if cid in extra:  # a channel Oggers asked Vic to watch: only the watch's users, and only when aimed at Vic
-        return not m["author"].get("bot") and m["author"]["id"] in {str(u) for u in extra[cid].get("users", [])} \
+        return not m["author"].get("bot") and (lambda us: "*" in us or m["author"]["id"] in us)({str(u) for u in extra[cid].get("users", [])}) \
             and addresses_vic(m)
     if cid == DM:  # Vic's own responder answers Oggers' @mentions in DMs, so only plain messages come here
         return not m["author"].get("bot") and not mentions_vic(m)
