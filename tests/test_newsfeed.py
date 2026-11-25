@@ -1124,7 +1124,8 @@ ALL_TAGS = [name for name, _, _ in N.config.NEWSFEED_FORUM_TAGS]
 
 def test_the_forum_tag_set_fits_discord_and_keeps_megathread():
     assert len(ALL_TAGS) <= 20 and len(set(ALL_TAGS)) == len(ALL_TAGS)
-    assert {N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG, "World", "US", "Europe", "Middle East"} <= set(ALL_TAGS)
+    assert {N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, "Royals", "World", "US", "Europe", "Middle East"} <= set(ALL_TAGS)
+    assert N.HEAVY_TAG not in ALL_TAGS                       # Oggers dropped Heavy for Royals (25 Nov 2026)
     from lib.features import news_tags_jev as J
     topic = [t for t in ALL_TAGS if t not in (N.MEGATHREAD_TAG, N.GOOD_NEWS_TAG, N.HEAVY_TAG)]
     assert all(t in J.TAG_QUESTIONS for t in topic)          # Jev can set every topic tag
@@ -1154,7 +1155,8 @@ def test_world_never_goes_with_a_region_and_tone_tags_come_from_tone():
 
 def test_with_extra_tags_adds_tone_and_megathread_within_five():
     assert N.with_extra_tags(["Health"], "good", False, ALL_TAGS) == ["Health", "Good News"]
-    assert N.with_extra_tags(["A", "B", "C", "D"], "heavy", True, ALL_TAGS) == ["A", "B", "C", "Heavy", "Megathread"]
+    assert N.with_extra_tags(["A", "B", "C", "D"], "good", True, ALL_TAGS) == ["A", "B", "C", "Good News", "Megathread"]
+    assert N.with_extra_tags(["A"], "heavy", True, ALL_TAGS) == ["A", "Megathread"]   # no Heavy tag in the forum
     assert N.with_extra_tags(["Health"], "neutral", False, ALL_TAGS) == ["Health"]
     assert N.with_extra_tags(["Health"], "good", False, ["Health"]) == ["Health"]   # forum without the tone tags
 
@@ -1173,6 +1175,6 @@ def test_retag_post_picks_topic_and_tone_and_keeps_the_megathread():
         return {"tags": ["World", "Environment", "Megathread"], "tone": "heavy"}, 1, 1
     tags = N.retag_post("Quake kills 40 in Japan", "https://bbc.co.uk/x", ALL_TAGS, ["World", "Megathread"],
                         complete=complete)
-    assert tags == ["World", "Environment", "Heavy", "Megathread"]
+    assert tags == ["World", "Environment", "Megathread"]   # "heavy" tone, but the forum has no Heavy tag
     assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: ({"tags": ["Nope"]}, 1, 1)) is None
     assert N.retag_post("x", "", ALL_TAGS, complete=lambda s, p: 1 / 0) is None
