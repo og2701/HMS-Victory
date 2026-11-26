@@ -1277,7 +1277,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
 
         # Call 2: caption, persona on, given the finished image prompt
         caption_call = _sent_payload(mock_urlopen, 1)
-        self.assertIn("You are HMS Victory", caption_call["messages"][0]["content"])
+        self.assertIn("You are Vic: HMS Victory", caption_call["messages"][0]["content"])
+        self.assertEqual(caption_call["model"], "gpt-5.5")
         self.assertIn("sides with Britain", caption_call["messages"][0]["content"])
         self.assertIn("THE IMAGE SHOWS: A four-panel comic strip...", caption_call["messages"][1]["content"])
 
@@ -2725,8 +2726,11 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(plan["subjects"][0]["user_id"], "555")
             self.assertEqual((plan["input_tokens"], plan["output_tokens"]), (2000, 120))
             payload = _sent_payload(mock_urlopen)
-            self.assertEqual(payload["model"], "gpt-4o")
+            self.assertEqual(payload["model"], "gpt-5.5")
+            self.assertEqual(payload["reasoning"], {"effort": "low"})
+            self.assertNotIn("temperature", payload)
             self.assertEqual(payload["text"]["format"]["name"], "mention_plan")
+            self.assertIn("edit_instruction", payload["text"]["format"]["schema"]["required"])
             text = payload["input"][0]["content"][0]["text"]
             self.assertIn("ATTACHMENTS ON THIS REQUEST (index: filename): 1: steven.jpg", text)
             self.assertIn('2. Chin (id 795): "draw <@555> as a pirate" [has image attachment(s)', text)
@@ -2879,6 +2883,155 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_synth_edit.call_args[1]["prompt"], "Edit the attached image to show the hoover being smashed up")
         self.assertIn("file", message.reply.call_args[1])
         mock_gen.assert_not_called()
+
+    def _screenshot_reply(self, client, text):
+        """Oggers replying to Dalila's screenshot of chat, as on 26 Nov 2026."""
+        dalila = MagicMock(); dalila.id = 969768729548300288; dalila.nick = "Dalila"; dalila.global_name = None; dalila.display_name = "Dalila"; dalila.name = "dalila"
+        shot = MagicMock(); shot.filename = "imagen.png"; shot.content_type = "image/png"; shot.url = "https://cdn/imagen.png"; shot.read = AsyncMock(return_value=b"SHOT")
+        parent = MagicMock(); parent.id = 1; parent.content = ""; parent.author = dalila; parent.mentions = []; parent.attachments = [shot]; parent.reference = None
+        ref = MagicMock(); ref.message_id = 1; ref.resolved = parent
+        return self._leader_message(client, f"<@{client.user.id}> {text}", reference=ref)
+
+    @patch("lib.features.chat_responder.synthesize_image_caption", return_value=("Rewritten as the saint you claim to be.", 10, 5))
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai", return_value=(b"edited", 30, 200))
+    @patch("lib.features.chat_responder.synthesize_image_edit_prompt")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_edit_uses_the_planners_instruction_and_sees_the_image(self, mock_find, mock_gather, _ch, _act, mock_synth_edit, mock_edit, mock_gen, mock_caption):
+        # 26 Nov 2026: the old synthesiser never saw the screenshot and wrote "make Oggers look kind". The planner sees it.
+        client = MagicMock(); client.user.id = 999999999
+        message = self._screenshot_reply(client, "this image was edited with ai, restore it to what it was (where i was being nice)")
+        instruction = "Discord screenshot. Keep it identical; change only the two lines of his message to 'Hello lovely' and 'you are all wonderful'."
+        plan = self._plan(action="edit", request="Rewrite Oggers' lines in the screenshot so he is being nice", edit_source="attachment",
+                          attachment_roles=[{"index": 1, "role": "edit_target"}], edit_instruction=instruction)
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan) as mock_plan, \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation"), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertIn(("Image 1 (from Dalila's message in the reply chain; this is attachment index 1):", "https://cdn/imagen.png"),
+                      mock_plan.call_args[1]["images"])
+        self.assertEqual(mock_edit.call_args[0][:2], (b"SHOT", instruction))
+        mock_synth_edit.assert_not_called()
+        mock_gen.assert_not_called()
+        self.assertIn("Rewritten as the saint", message.reply.call_args[0][0])
+        self.assertIn("file", message.reply.call_args[1])
+
+    @patch("lib.features.chat_responder.synthesize_image_caption", return_value=("unused", 0, 0))
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.gather_one_off_context", new_callable=AsyncMock, return_value=("ctx", {}))
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_refused_edit_is_answered_in_words_not_redrawn_blind(self, mock_find, mock_gather, _ch, _act, mock_edit, mock_gen, _cap):
+        # The edit was refused and the old code drew a new picture from the instruction alone: a stranger with flowers.
+        import urllib.error
+        from lib.features import vic_brain
+        mock_edit.side_effect = urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(b'{"error": {"code": "moderation_blocked"}}'))
+        client = MagicMock(); client.user.id = 999999999
+        message = self._screenshot_reply(client, "restore it to what it was")
+        plan = self._plan(action="edit", request="rewrite his lines nicely", edit_source="attachment",
+                          attachment_roles=[{"index": 1, "role": "edit_target"}], edit_instruction="change the words")
+        brain = vic_brain.BrainReply(text="The filter wouldn't let me touch that one. For the record, it said 'you are all wonderful'.", model="gpt-5.5")
+        with patch("lib.features.chat_responder.plan_mention", return_value=plan), \
+             patch("lib.features.chat_responder.answer_with_brain", new_callable=AsyncMock, return_value=brain) as mock_brain, \
+             patch.object(vic_brain, "ENABLED", True), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(True, 999999)), \
+             patch("lib.features.chat_responder.record_user_image_generation") as mock_record, \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        mock_gen.assert_not_called()
+        mock_record.assert_not_called()
+        self.assertIn("WHAT JUST HAPPENED", mock_brain.call_args[1]["note"])
+        self.assertIn("filter refused it", mock_brain.call_args[1]["note"])
+        self.assertIn("you are all wonderful", message.reply.call_args[0][0])
+        self.assertNotIn("file", message.reply.call_args[1])
+
+    @patch("lib.features.chat_responder.generate_image_openai")
+    @patch("lib.features.chat_responder.edit_image_openai")
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_a_bare_reaction_under_a_picture_is_not_a_delegation(self, mock_find, _ch, _act, mock_edit, mock_gen):
+        # Johnny's "Um" under Vic's botched picture had delegation at 0.51 beside a clear "reply", was rewritten into
+        # Oggers' request, and the picture was made again. A reaction is passed on as itself.
+        from lib.features import vic_brain
+        client = MagicMock(); client.user.id = 999999999
+        oggers = MagicMock(); oggers.id = USERS.OGGERS; oggers.nick = "oggers"; oggers.global_name = None; oggers.display_name = "oggers"; oggers.name = "oggers"
+        req = MagicMock(); req.id = 2; req.content = f"<@{client.user.id}> restore it to what it was"; req.author = oggers; req.mentions = []; req.attachments = []; req.reference = None
+        pic = MagicMock(); pic.filename = "vic_creation.png"; pic.content_type = "image/png"; pic.url = "https://cdn/vic.png"
+        vic_msg = MagicMock(); vic_msg.id = 3; vic_msg.content = "Restored."; vic_msg.author.id = client.user.id; vic_msg.mentions = []; vic_msg.attachments = [pic]
+        vic_msg.reference = MagicMock(); vic_msg.reference.message_id = 2; vic_msg.reference.resolved = req
+        ref = MagicMock(); ref.message_id = 3; ref.resolved = vic_msg
+        message = self._leader_message(client, f"<@{client.user.id}> Um", reference=ref)
+        plan = self._plan(action="reply", request="React to Vic's picture")
+        brain = vic_brain.BrainReply(text="Um yourself.", model="gpt-5.5")
+        with patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock,
+                   return_value=_jev_signals(action="reply", confidence=0.77, delegation=0.51)), \
+             patch("lib.features.chat_responder.plan_mention", return_value=plan) as mock_plan, \
+             patch("lib.features.chat_responder.answer_with_brain", new_callable=AsyncMock, return_value=brain), \
+             patch.object(vic_brain, "ENABLED", True), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            res = await handle_one_off_owner_mention(client, message)
+        self.assertTrue(res)
+        self.assertEqual(mock_plan.call_args[0][0], "Um")
+        mock_edit.assert_not_called(); mock_gen.assert_not_called()
+        self.assertEqual(message.reply.call_args[0][0], "Um yourself.")
+
+    @patch("urllib.request.urlopen")
+    def test_plan_mention_shows_the_images_and_the_chat(self, mock_urlopen):
+        self._plan_patch.stop()
+        from lib.features import chat_responder as cr
+        import urllib.error
+        try:
+            plan_json = {"action": "edit", "request": "x", "subjects": [], "edit_source": "attachment", "attachment_roles": [],
+                         "recipient_ids": [], "include_bot_in_picture": False, "edit_instruction": "change the words", "reason": ""}
+            mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps(plan_json)))
+            plan = cr.plan_mention("restore it", caller_name="Oggers", caller_id=1, openai_key="test-key",
+                                   recent_chat="[13:16] Dalila: [1 image(s)]", images=[("Image 1 (from Dalila):", "https://cdn/shot.png")])
+            self.assertEqual(plan["edit_instruction"], "change the words")
+            content = _sent_payload(mock_urlopen)["input"][0]["content"]
+            self.assertIn("RECENT CHAT IN THE CHANNEL", content[0]["text"])
+            self.assertIn('THE MESSAGE TO PLAN, from Oggers: "restore it"', content[0]["text"])
+            self.assertIn({"type": "input_image", "image_url": "https://cdn/shot.png", "detail": "auto"}, content)
+            self.assertIn("Reactions are not jobs", _sent_payload(mock_urlopen)["instructions"])
+            # an image OpenAI can't fetch: planned again without the pictures rather than not at all
+            mock_urlopen.reset_mock()
+            mock_urlopen.side_effect = [urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(b"bad image")),
+                                        _mock_resp(_responses_body(json.dumps(plan_json)))]
+            self.assertIsNotNone(cr.plan_mention("restore it", caller_name="Oggers", caller_id=1, openai_key="test-key",
+                                                 images=[("Image 1:", "https://cdn/gone.png")]))
+            retry = _sent_payload(mock_urlopen, 1)["input"][0]["content"]
+            self.assertFalse(any(c.get("type") == "input_image" for c in retry))
+        finally:
+            self._plan_patch.start()
+
+    def test_edit_size_follows_the_pictures_shape(self):
+        from PIL import Image
+        from lib.features.chat_responder import edit_size_for
+        def png(w, h):
+            buf = io.BytesIO(); Image.new("RGB", (w, h)).save(buf, "PNG"); return buf.getvalue()
+        self.assertEqual(edit_size_for(png(512, 107)), "1536x1024")
+        self.assertEqual(edit_size_for(png(400, 800)), "1024x1536")
+        self.assertEqual(edit_size_for(png(500, 480)), "1024x1024")
+        self.assertEqual(edit_size_for(b"not an image"), "1024x1024")
+
+    def test_a_letterboxed_edit_is_cropped_back_to_the_source_shape(self):
+        from PIL import Image
+        from lib.features.chat_responder import crop_to_source_shape
+        def png(w, h):
+            buf = io.BytesIO(); Image.new("RGB", (w, h)).save(buf, "PNG"); return buf.getvalue()
+        out = crop_to_source_shape(png(1536, 1024), png(512, 107))
+        self.assertEqual(Image.open(io.BytesIO(out)).size, (1536, 321))
+        same = png(1024, 1024)
+        self.assertIs(crop_to_source_shape(same, png(500, 480)), same)
+        self.assertEqual(crop_to_source_shape(b"x", b"y"), b"x")
 
     @patch("lib.features.chat_responder.download_image_bytes", side_effect=lambda url, *a, **k: {"https://cdn/pepys.png": b"PEPYS"}[url])
     @patch("lib.features.chat_responder.generate_image_openai")
@@ -3083,7 +3236,8 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("small name labels", img)
         self.assertIn("Exactly 2 people", img)
         # caption budget grew with the who's-who
-        self.assertGreater(_sent_payload(mock_urlopen, 1)["max_tokens"], 120)
+        cap = _sent_payload(mock_urlopen, 1)
+        self.assertGreater(cap.get("max_tokens") or cap.get("max_completion_tokens"), 120)
 
     @patch("urllib.request.urlopen")
     def test_chat_completion_retries_truncated_json(self, mock_urlopen):
