@@ -19,6 +19,7 @@ from collections import deque
 from typing import List, Dict, Optional, Tuple, Any, Union
 
 import discord
+import config as _config
 from config import (
     CHANNELS, BOT_ID, USERS, ROLES, CHATBOT_USAGE_FILE, CHATBOT_CONFIG_FILE, CHATBOT_REPLIES_FILE,
     DIRECT_MENTION_ALLOWED_USERS, IMAGE_GEN_USAGE_FILE, IMAGE_GEN_DAILY_LIMIT,
@@ -1975,11 +1976,15 @@ def synthesize_image_caption(
     caller_role: str,
     target_name: Optional[str] = None,
     openai_key: Optional[str] = None,
-    model: str = "gpt-4o",
-    timeout: int = 20,
+    model: Optional[str] = None,
+    timeout: int = 40,
     characters: str = "",
 ) -> Tuple[str, int, int]:
-    """Write HMS Victory's dry 1-2 sentence caption for a finished image. Returns (caption, prompt_tokens, completion_tokens)."""
+    """Write HMS Victory's dry 1-2 sentence caption for a finished image. Returns (caption, prompt_tokens, completion_tokens).
+
+    On the brain's model since 26 Nov 2026: the gpt-4o captions ("Ah, the noble felines...", "a transformation most
+    profound") read like a different, older bot next to the brain's text replies."""
+    model = model or CAPTION_MODEL
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
@@ -1988,9 +1993,12 @@ def synthesize_image_caption(
     if target_name and target_name.lower().startswith("hms victory"):
         target_str = " of YOURSELF (a self-portrait: introduce it with the dignity of a ship that has been asked to draw itself for a Discord server)"
     system_prompt = (
-        "You are HMS Victory, a cynical, deadpan 18th-century British Royal Navy first-rate ship of the line AI.\n"
-        f"Server leadership ({user_name}, {caller_role}) commanded you to produce an image{target_str}, and it is done.\n"
-        "Write the caption in your voice: one sentence, two at most, about THIS picture and what was asked for, with a dry dig at whoever it is of. "
+        "You are Vic: HMS Victory, the house bot of UKPlace, a British Discord server. You talk like one of the regulars who happens to be a "
+        "250-year-old warship stuck on Discord: dry, deadpan, quick, a bit put-upon. The navy is seasoning, not every line.\n"
+        f"{user_name} ({caller_role}) asked you for a picture{target_str}, and it is done and posted with this caption.\n"
+        "Write the caption: one sentence, two at most, about THIS picture and what was asked for, with a dry dig at whoever it is of. "
+        "The joke is in the specifics of the request and the person; no stock similes, no tea-and-queues British humour. "
+        "Never open with 'Ah', 'Oh', 'Well', 'Right' or 'So', and none of: 'quite the', 'truly', 'indeed', 'splendid', 'delightful', 'one might'. "
         "Only use something from THEIR RECORDS if it bears on the picture or the request; never bolt on unrelated chat trivia, and never quote the chat. "
         "The picture is of the SUBJECT, who is not necessarily the person who asked. Use the short name people call them, not a full decorated nickname. "
         "Never open with 'Ah', 'Behold' or 'In a'. "
@@ -2001,7 +2009,7 @@ def synthesize_image_caption(
         "(a comma-separated list, no prose, no jokes in it). "
         "EXCEPTION: if the request was a kind gesture (a get well soon card, a birthday card, congratulations, good luck, a thank you, a tribute, "
         "cheering someone up), do NOT roast: be genuinely warm to them in your dry, understated way, address them directly, and mean it. "
-        "Aristocratic 18th-century naval tone, blunt and unimpressed. No corporate filler, no AI disclaimers, no exclamation marks. "
+        "Blunt and unimpressed, sentence case or casual lowercase, British spelling. No corporate filler, no AI disclaimers, no emojis, no exclamation marks. "
         "This is a British server and you are a British flagship: if the subject is known for knocking the UK or Britain, or insisting they're "
         "not British, the caption sides with Britain and makes them the butt of it, in one sly line, never preachy. "
         "Do not describe the image in detail; the picture does that.\n\n"
@@ -2077,7 +2085,7 @@ def synthesize_contextual_image_prompt(
     try:
         caption, cp, cc = synthesize_image_caption(
             prompt, img_prompt, context, user_name, caller_role, target_name=target_name,
-            openai_key=openai_key, model=model,
+            openai_key=openai_key,
             characters=summarise_characters(_LAST_CHARACTERS[0], context),
         )
         p_tokens += cp
@@ -3956,7 +3964,14 @@ def looks_like_text_creation(prompt: str) -> bool:
     return bool(_TEXT_FORM_RE.search(prompt)) and not _IMAGE_NOUN_RE.search(prompt)
 
 
-MENTION_PLANNER_MODEL = "gpt-4o"
+# The planner decides what a direct tag wants: words, a new picture, or a change to an existing one. It was gpt-4o,
+# reading the request as one quoted line with filenames for images. Reviewing 22-26 Nov 2026 showed what that cost:
+# "this image was edited with ai, restore it (where i was being nice)" on a screenshot of chat became "make Oggers
+# look kind" (it never saw that the picture was a screenshot), and "Um" / "Bro" under the result were each planned as
+# the same job again. Now it is the brain's model, it sees the pictures themselves, and it reads the recent chat.
+MENTION_PLANNER_MODEL = getattr(_config, "VIC_PLANNER_MODEL", vic_brain.MODEL)
+MENTION_PLANNER_EFFORT = getattr(_config, "VIC_PLANNER_EFFORT", "low")
+CAPTION_MODEL = getattr(_config, "VIC_CAPTION_MODEL", vic_brain.MODEL)
 
 MENTION_PLAN_SCHEMA = {
     "type": "object",
@@ -3993,16 +4008,25 @@ MENTION_PLAN_SCHEMA = {
         },
         "recipient_ids": {"type": "array", "items": {"type": "string"}},
         "include_bot_in_picture": {"type": "boolean"},
+        "edit_instruction": {"type": "string"},
         "reason": {"type": "string"},
     },
-    "required": ["action", "request", "subjects", "edit_source", "attachment_roles", "recipient_ids", "include_bot_in_picture", "reason"],
+    "required": ["action", "request", "subjects", "edit_source", "attachment_roles", "recipient_ids", "include_bot_in_picture",
+                 "edit_instruction", "reason"],
     "additionalProperties": False,
 }
 
-MENTION_PLANNER_INSTRUCTIONS = """You are the planner for HMS Victory ("Vic"), a Discord bot that chats in a dry British persona and can generate or edit images (caricatures, portraits, sprite sheets, comics, anything visual) with an AI image generator. Someone has tagged the bot. Work out exactly what they want and return a plan. Be decisive and handle ANY phrasing; casual, misspelled, lowercase, sarcastic messages are normal.
+MENTION_PLANNER_INSTRUCTIONS = """You are the planner for HMS Victory ("Vic"), a Discord bot that chats in a dry British persona and can generate or edit images (caricatures, portraits, sprite sheets, comics, screenshots, anything visual) with an AI image generator. Someone has tagged the bot. Work out what they actually want and return a plan. Casual, misspelled, lowercase, sarcastic messages are normal.
+
+READ THE SCENE FIRST
+You get the recent chat in the channel, the reply chain, what Vic's own pictures showed, and the IMAGES THEMSELVES. Look at every image you are given and know what it is (a photo of a person, a pet, a meme, a screenshot of a Discord chat, one of Vic's own pictures) before you plan anything. Then ask: given what has just been happening, what does this person want from Vic right now? Read it the way a sharp friend in the chat would, jokes and all.
+- A screenshot of chat is text in a picture. Changing it means changing the WORDS in it (whose line becomes what), keeping the rest of the screenshot as it is. "Restore it to what it was", "fix it", "make it say what I really said" about a screenshot means: rewrite the words the way the asker wants them, keeping the screenshot otherwise identical. Nobody can recover a true original; do what they mean.
+- Reactions are not jobs. A laugh, a groan, a bare "um", "bro", "what", "wtf is this", "who is this", "why", an emoji, an insult, or praise under Vic's picture or reply is action "reply": Vic answers it in words. Only plan another picture when the message itself asks for one or says what to change ("make him bald", "again but darker", "try again", "the green one"). Someone else's reaction is never a request to redo the job above it.
+- A complaint that Vic got it wrong ("not what I asked", "that's not a picture", "wrong person") is a request to get it right: work out from the chat what was originally asked and plan THAT properly (a picture if a picture was asked for, words if words were).
+- "Do this", "answer this", "^", "what he said" points at the job in the message it replies to. Only these pointers do; a reaction does not.
 
 FIELDS
-- action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. A terse statement of fact or a bare descriptor sent shortly after the bot posted an image ("the cat is black", "the green one", "he's bald", "no, blonde") is a CORRECTION to that image: action "edit", edit_source "last_bot_image". When genuinely torn between edit and reply, choose reply (a wasted image costs money).
+- action: "generate" = make a NEW picture. "edit" = change an EXISTING picture (the bot's last image, an image in the reply chain, or an attachment). "reply" = answer in text. Written things are ALWAYS "reply" whatever the verb: poems, soliloquies, songs, raps, roasts in words, speeches, letters, lists, opinions, facts, questions, banter, thanks, comments about an image with no change requested. "Draw it" / "show me" / "picture it" after Vic described something wants a picture of that thing. A terse statement of fact or a bare descriptor sent by the person who asked for Vic's last picture, shortly after it ("the cat is black", "the green one", "he's bald", "no, blonde"), is a CORRECTION to that image: action "edit", edit_source "last_bot_image". When genuinely torn between edit and reply, choose reply (a wasted image costs money).
 - The bot CAN draw anything: any member, any relative or pet of a member inferred from their message history, any scene, the bot itself, anyone at random. NEVER plan a refusal, a disclaimer, or an explanation of limitations; if a picture was asked for, plan the picture. Content moderation is handled elsewhere.
 - request: the full effective request in plain words, with everything resolved. KEEP EVERY INSTRUCTION ABOUT FORMAT WORD FOR WORD - what to label, what text goes in the picture, how many people, the medium, the style, whether it is a card or a comic strip. Summarise who and what; never summarise how it should be made. if the message is a delegation ("pls do this", "^", "what he said") use the request it points at in the REPLY CHAIN; fold in any tweaks posted along the chain; replace "this picture"/"him"/"her" with what they refer to; keep any style, format or scene the requester asked for. Do not add ideas of your own.
 - subjects: who or what the picture is OF (for reply, whatever the text is about). Use the PEOPLE DIRECTORY to turn names, nicknames, partial names and mentions into user_id. Kinds:
@@ -4023,6 +4047,7 @@ FIELDS
 - SEVERAL IMAGES: ATTACHMENTS says where each came from. "this guy" / "this man" / "her" / "him" next to an attached photo of a person means the person IN that photo (subject_likeness), never a server member and never the caller. "this" / "it" in a reply to a picture means the picture replied to. Putting one picture into a new scene with another ("put this on a canvas this guy is painting", "him holding this", "put this in that") is action "generate" with each image given its role (the person: subject_likeness; the thing placed in the scene: content), not an edit of either.
 - recipient_ids: user ids the result should be sent/shown to ("... and send it to @X"). Not subjects.
 - include_bot_in_picture: true if the bot itself should appear (subject kind bot, or "with you", "your history together", "you and him", "your thoughts on ...").
+- edit_instruction (for action=edit, else ""): the instruction the image editor will be given, written by you because you can see the picture. Under 80 words, plain and concrete about THIS image: what it is, exactly what changes (for text in a picture, the exact new words and where they go), and that everything else stays exactly as it is (layout, people, style, colours, framing). Keep it neutral and literal: no insults, no slurs, and do not quote offensive words from the picture; say "the second line of his message" rather than repeating it. Do not describe the people in it by name. The editor sees only the picture and this text.
 - reason: one short line.
 
 Respond ONLY with the JSON object."""
@@ -4040,16 +4065,21 @@ def plan_mention(
     recent_history: str = "",
     has_recent_bot_image: bool = False,
     recent_bot_image_prompt: Optional[str] = None,
+    recent_chat: str = "",
+    images: Optional[List[Tuple[str, str]]] = None,
     openai_key: Optional[str] = None,
     model: str = MENTION_PLANNER_MODEL,
-    timeout: int = 20,
+    timeout: int = 45,
 ) -> Optional[Dict[str, Any]]:
-    """Ask a capable model for a full plan of what a direct mention wants. None if the call fails."""
+    """Ask a capable model for a full plan of what a direct mention wants. None if the call fails.
+
+    `images` is (label, url) for each picture in play: the attachments by index, and the bot's last picture. The
+    model is shown the pictures themselves, so it plans against what they are, not their filenames."""
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key or not (prompt or "").strip():
         return None
 
-    facts = [f"CALLER: {caller_name} (id {caller_id})", f"MESSAGE: \"{prompt.strip()}\""]
+    facts = [f"CALLER: {caller_name} (id {caller_id})"]
     if attachments:
         facts.append("ATTACHMENTS ON THIS REQUEST (index: filename): " + ", ".join(f"{i}: {fn}" for i, fn in attachments))
     else:
@@ -4072,23 +4102,47 @@ def plan_mention(
         facts.append(f"THAT IMAGE WAS: {recent_bot_image_prompt[:300]}")
     if recent_history and recent_history.strip():
         facts.append(f"RECENT EXCHANGES WITH THE BOT:\n{recent_history.strip()[:1500]}")
+    if recent_chat and recent_chat.strip():
+        facts.append("RECENT CHAT IN THE CHANNEL (oldest first; [you] is Vic; a note under Vic's picture says what it showed):\n"
+                     + recent_chat.strip()[-6000:])
+    facts.append(f"THE MESSAGE TO PLAN, from {caller_name}: \"{prompt.strip()}\"")
 
-    payload = {
-        "model": model,
-        "instructions": MENTION_PLANNER_INSTRUCTIONS,
-        "input": [{"role": "user", "content": [{"type": "input_text", "text": "\n".join(facts)}]}],
-        "max_output_tokens": 500,
-        "temperature": 0,
-        "store": False,
-        "text": {"format": {"type": "json_schema", "name": "mention_plan", "schema": MENTION_PLAN_SCHEMA, "strict": True}},
-    }
+    def _payload(with_images: bool) -> Dict[str, Any]:
+        content: List[Dict[str, Any]] = [{"type": "input_text", "text": "\n".join(facts)}]
+        if with_images and images:
+            content.append({"type": "input_text", "text": "THE IMAGES (look at each one):"})
+            for label, url in images[:5]:
+                content.append({"type": "input_text", "text": label})
+                content.append({"type": "input_image", "image_url": url, "detail": "auto"})
+        body: Dict[str, Any] = {
+            "model": model,
+            "instructions": MENTION_PLANNER_INSTRUCTIONS,
+            "input": [{"role": "user", "content": content}],
+            "max_output_tokens": 600,
+            "store": False,
+            "text": {"format": {"type": "json_schema", "name": "mention_plan", "schema": MENTION_PLAN_SCHEMA, "strict": True}},
+        }
+        if is_reasoning_model(model):
+            body["reasoning"] = {"effort": MENTION_PLANNER_EFFORT}
+            body["max_output_tokens"] = 6000
+        else:
+            body["temperature"] = 0
+        return body
 
     data = None
     last_err: Any = None
+    with_images = bool(images)
     for attempt in range(2):
         try:
-            data = _post_openai_response(payload, api_key, timeout)
+            data = _post_openai_response(_payload(with_images), api_key, timeout)
             break
+        except urllib.error.HTTPError as e:
+            if with_images and e.code == 400 and attempt == 0:
+                # An image OpenAI can't fetch (expired link, odd format) fails the whole call; plan without them.
+                logger.warning("Planner call with images failed (HTTP 400); retrying without them")
+                with_images = False
+                last_err = e
+                continue
         except urllib.error.HTTPError as e:
             body = ""
             try:
@@ -4680,6 +4734,71 @@ async def produce_image(
         logger.info("Safety-rewritten prompt: %r", safer[:300])
         img, p, c = await _attempt(safer)
         return img, p, c, safer
+
+
+def image_failure_note(kind: str, request: str, reason: str) -> str:
+    """What the brain is told when a picture was asked for and none came out, so it answers in words knowing that."""
+    why = {
+        "rejected": "the image tool's filter refused it",
+        "outage": "the image tool is down or timed out",
+    }.get(reason, "the image tool failed")
+    job = "change the picture" if kind == "edit" else "draw the picture"
+    return (
+        "WHAT JUST HAPPENED (this overrides the rule that a message reaching you was not read as a picture request)\n"
+        f"This message asked for a picture, and you tried to {job} ({_clip_note(request)}), but {why}, so there is no "
+        "picture. Do not pretend there is one and do not describe one as if it exists. Say so in a line, in voice, "
+        "without blaming the asker or lecturing about filters. If the job can be done in words (the changed text of a "
+        "screenshot, what the picture would have shown), do that instead, briefly."
+    )
+
+
+def _clip_note(text: str, limit: int = 200) -> str:
+    text = (text or "").strip().replace("\n", " ")
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def edit_size_for(image_bytes: bytes) -> str:
+    """The output size nearest the picture's own shape, so a wide screenshot isn't squashed into a padded square."""
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            w, h = im.size
+    except Exception:
+        return IMAGE_GEN_SIZE
+    if not w or not h:
+        return IMAGE_GEN_SIZE
+    ratio = w / h
+    if ratio >= 1.25:
+        return "1536x1024"
+    if ratio <= 0.8:
+        return "1024x1536"
+    return "1024x1024"
+
+
+def crop_to_source_shape(edited: bytes, source: bytes) -> bytes:
+    """Trim the blank bands the editor adds round a picture much wider or taller than any size it can output.
+
+    A Discord screenshot is often 5:1; the widest output is 3:2, so the edit came back as the screenshot on a big
+    white card. The editor centres the picture, so a centred crop back to the source's shape removes the bands."""
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(source)) as src:
+            sw, sh = src.size
+        with Image.open(io.BytesIO(edited)) as out:
+            ow, oh = out.size
+            want, have = sw / sh, ow / oh
+            if not (want > have * 1.25 or want < have / 1.25):
+                return edited
+            if want > have:
+                h = max(1, round(ow / want)); box = (0, (oh - h) // 2, ow, (oh - h) // 2 + h)
+            else:
+                w = max(1, round(oh * want)); box = ((ow - w) // 2, 0, (ow - w) // 2 + w, oh)
+            buf = io.BytesIO()
+            out.crop(box).save(buf, "PNG")
+            return buf.getvalue()
+    except Exception as e:
+        logger.debug("Could not crop the edit back to the source's shape: %s", e)
+        return edited
 
 
 async def image_failure_reply(
@@ -5820,10 +5939,27 @@ def _brain_line(msg: Any, bot_id: Optional[int], limit_note: bool = True) -> Opt
     )
 
 
+PLANNER_RECENT_MESSAGES = 25
+
+
+async def recent_chat_for_planner(message: Any, bot_id: Optional[int], limit: int = PLANNER_RECENT_MESSAGES) -> str:
+    """The last few messages in the channel, formatted the way the brain sees them, for the planner."""
+    channel = getattr(message, "channel", None)
+    if not hasattr(channel, "history"):
+        return ""
+    lines: List[Any] = []
+    async for prev in channel.history(limit=limit, before=message):
+        line = _brain_line(prev, bot_id)
+        if line is not None:
+            lines.append(line)
+    lines.reverse()
+    return "\n".join(vic_brain._format_line(l, 300) for l in lines)
+
+
 async def answer_with_brain(
     client: Any, message: Any, *, typed_prompt: str, caller_name: str, caller_role: str, caller_id: Optional[int],
     bot_id: Optional[int], reply_chain: List[Any], directory: List[Tuple[str, int]], other_mentions: List[Any],
-    signals: Any,
+    signals: Any, note: Optional[str] = None,
 ) -> Any:
     """Gather the scene for a text reply and have the brain write it. Returns a vic_brain.BrainReply."""
     channel = getattr(message, "channel", None)
@@ -5874,6 +6010,8 @@ async def answer_with_brain(
             logger.warning("Stats digest failed: %s", e)
 
     extras: List[str] = []
+    if note:
+        extras.append(note)
     guild = getattr(message, "guild", None)
     try:
         overview = await build_server_overview_context(client, guild, bot_id=bot_id)
@@ -5976,6 +6114,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
     # next, off identical wording. So the words actually typed are kept and the format checks read
     # both. Never used as the request itself; the planner's version is better at everything else.
     typed_prompt = clean_prompt
+    # Set when a picture was asked for and could not be made: the brain then answers in words, told what happened,
+    # instead of a stock excuse or (worse) a different picture drawn blind from the instruction.
+    brain_note: Optional[str] = None
+    picture_failure: Tuple[Any, Optional[str]] = (None, None)   # (the error, who the picture was of)
 
     user_name = (
         getattr(message.author, "nick", None)
@@ -6064,7 +6206,11 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             return True
 
         if ref_msg is not None:
-            if is_delegation_prompt(clean_prompt) or (signals is not None and signals.says("delegation")):
+            # Only a pointer ("pls do this", "answer this", "^") hands over the job above. On 26 Nov 2026 Johnny's
+            # "Um" and "Bro" under a botched picture had Jev's delegation score at 0.51 and 0.27 beside a clear
+            # "reply", were rewritten into Oggers' request, and each produced the same picture again.
+            jev_delegates = signals is not None and signals.says("delegation") and getattr(signals, "action", None) != "reply"
+            if is_delegation_prompt(clean_prompt) or jev_delegates:
                 # "pls do this" on a chain: the original request is the OLDEST human message in the chain that
                 # isn't itself a delegation; everything posted after it on the way here is an amendment.
                 base_idx = None
@@ -6291,9 +6437,25 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             logger.info("Jev is confident %s wants a text reply (%.2f); skipping the planner for %r",
                         caller_name, signals.action_confidence, clean_prompt[:120])
         else:
+            planner_images: List[Tuple[str, str]] = []
+            for i, a in enumerate(reference_attachments, 1):
+                src = attachment_sources.get(id(a)) or ("attached to this request" if a in message_images(message) else "from a message in the reply chain")
+                url = getattr(a, "url", None)
+                if url:
+                    planner_images.append((f"Image {i} ({src}; this is attachment index {i}):", url))
+            if recent_img_info and getattr(recent_img_info[1], "url", None) and recent_img_info[1].url not in {u for _, u in planner_images}:
+                planner_images.append(("Vic's own most recent picture in this channel (edit_source last_bot_image; not an attachment index):",
+                                       recent_img_info[1].url))
+            planner_chat = ""
+            try:
+                planner_chat = await recent_chat_for_planner(message, bot_id)
+            except Exception as e:
+                logger.debug("Could not read recent chat for the planner: %s", e)
             plan = await asyncio.to_thread(
                 plan_mention,
                 clean_prompt,
+                recent_chat=planner_chat,
+                images=planner_images,
                 caller_name=caller_name,
                 caller_id=caller_id,
                 attachments=[
@@ -6480,6 +6642,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 reference_images = reference_images[1:]  # the rest, if any, remain references for the edit
                 logger.info("Edit target is the requester's own attachment for %s: %r", caller_name, clean_prompt)
 
+        img_bytes = None
         if recent_img_info and is_edit_req:
             allowed, remaining = can_user_generate_image(caller_id)
             if not allowed:
@@ -6514,27 +6677,48 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             prev_caption = getattr(prev_msg, "content", "")
             logger.info("Synthesizing image edit for %s: %r (target=%s, prev_prompt=%r)", caller_name, clean_prompt, target_name, prev_prompt)
 
-            try:
-                edit_type, edit_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
-                    synthesize_image_edit_prompt,
-                    prompt=clean_prompt,
-                    prev_prompt=prev_prompt,
-                    prev_caption=prev_caption,
-                    context=context,
-                    user_name=caller_name,
-                    caller_role=caller_role,
-                    target_name=target_name,
-                    reference_image_urls=reference_images,
-                )
-                if synth_p or synth_c:
-                    live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
-            except Exception as synth_err:
-                logger.warning("Image edit synthesis failed, falling back: %s", synth_err)
-                edit_type = "edit"
-                edit_prompt = f"Modify image: {clean_prompt}"
-                caption = f"<@{caller_id}> Adjusted. Let's see if this meets your exacting standards."
+            planned_instruction = ((plan or {}).get("edit_instruction") or "").strip() if plan_state is not None else ""
+            if planned_instruction:
+                # The planner looked at the picture and wrote the instruction for it. The old synthesiser below only
+                # ever saw a description ("An image posted by Dalila (no caption)"), never the image, and on 26 Nov
+                # 2026 turned "restore my screenshot to where I was being nice" into "make Oggers look kind".
+                edit_type, edit_prompt = "edit", planned_instruction
+                try:
+                    caption, synth_p, synth_c = await asyncio.to_thread(
+                        synthesize_image_caption,
+                        prompt=clean_prompt, image_prompt=f"{prev_prompt or 'a picture'}, changed as asked: {planned_instruction}",
+                        context=context, user_name=caller_name, caller_role=caller_role, target_name=target_name,
+                    )
+                    if synth_p or synth_c:
+                        live_chat_manager.record_usage(CAPTION_MODEL, synth_p, synth_c, is_reply=True)
+                except Exception as cap_err:
+                    logger.warning("Edit caption failed: %s", cap_err)
+                    caption = ""
+                caption = caption or "Done."
+            else:
+                try:
+                    edit_type, edit_prompt, caption, synth_p, synth_c = await asyncio.to_thread(
+                        synthesize_image_edit_prompt,
+                        prompt=clean_prompt,
+                        prev_prompt=prev_prompt,
+                        prev_caption=prev_caption,
+                        context=context,
+                        user_name=caller_name,
+                        caller_role=caller_role,
+                        target_name=target_name,
+                        reference_image_urls=reference_images,
+                    )
+                    if synth_p or synth_c:
+                        live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+                except Exception as synth_err:
+                    logger.warning("Image edit synthesis failed, falling back: %s", synth_err)
+                    edit_type = "edit"
+                    edit_prompt = f"Modify image: {clean_prompt}"
+                    caption = "Adjusted."
 
             img_bytes = None
+            orig_bytes = None
+            edit_failure: Any = None
             p_tokens, c_tokens = 0, 0
 
             if edit_type == "edit" and prev_att:
@@ -6554,6 +6738,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     try:
                         img_bytes, p_tokens, c_tokens = await asyncio.to_thread(
                             edit_image_openai, [orig_bytes] + ref_blobs, edit_reference_lead(reference_roles, len(ref_blobs)) + edit_prompt,
+                            size=edit_size_for(orig_bytes),
                         )
                         logger.info("Edited with %d reference image(s) alongside the picture", len(ref_blobs))
                     except Exception as edit_err:
@@ -6566,23 +6751,33 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                             edit_image_openai,
                             orig_bytes,
                             edit_prompt,
+                            size=edit_size_for(orig_bytes),
                         )
                     except Exception as edit_err:
-                        logger.warning("OpenAI image edit call failed (%s), falling back to generations: %s", edit_err, edit_prompt)
+                        logger.warning("OpenAI image edit call failed (%s): %s", edit_err, edit_prompt)
                         img_bytes = None
+                        edit_failure = edit_err
 
-            if img_bytes is None:
+            if img_bytes is None and edit_type == "new":
+                # A new picture that borrows from the old one ("give that hair to piggy"): drawn from scratch by design.
                 try:
                     img_bytes, p_tokens, c_tokens, edit_prompt = await produce_image(edit_prompt, reference_images)
                 except Exception as gen_err:
-                    logger.error("Failed to generate fallback image for edit: %s", gen_err, exc_info=True)
-                    fail_msg = await image_failure_reply(
-                        clean_prompt, caller_id, caller_name, caller_role, target_name, gen_err,
-                        fallback="I attempted to amend that portrait, but the canvas fell overboard.",
-                    )
-                    await message.reply(fail_msg, mention_author=True)
-                    return True
+                    logger.error("Failed to generate the new picture for an edit: %s", gen_err, exc_info=True)
+                    edit_failure = gen_err
+            if img_bytes is None:
+                # No blind redraw. Generating from the edit instruction alone, without the picture, is how a request to
+                # fix the words in a screenshot came back as a stranger holding flowers (26 Nov 2026). The brain answers
+                # in words instead, knowing what was asked and that the picture didn't happen.
+                reason = classify_image_failure(edit_failure) if edit_failure is not None else "unknown"
+                logger.warning("Edit for %s produced no picture (%s); answering in words", caller_name, reason)
+                brain_note = image_failure_note("edit", clean_prompt, reason)
+                picture_failure = (edit_failure, target_name)
+                is_edit_req = is_fresh_img_req = False
 
+        if recent_img_info and is_edit_req and img_bytes is not None:
+            if edit_type == "edit" and orig_bytes is not None:
+                img_bytes = crop_to_source_shape(img_bytes, orig_bytes)
             record_user_image_generation(caller_id)
             live_chat_manager.record_usage(IMAGE_GEN_MODEL, p_tokens, c_tokens, is_reply=True)
 
@@ -6606,10 +6801,10 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             return True
 
         # Check if the prompt is asking to generate/draw an image
-        is_img_req = is_fresh_img_req
+        is_img_req = is_fresh_img_req and brain_note is None
         # The regex net only runs when nobody judged the message: with Jev's verdict in hand, "why do you do
         # this" must not become a picture because "do you" matches the "do @someone" follow-up pattern.
-        if not is_img_req and (
+        if not is_img_req and brain_note is None and (
             (signals is not None and signals.says("follow_up_image"))
             or (signals is None and intent is None and any(re.search(pat, clean_prompt.lower()) for pat in FOLLOW_UP_IMAGE_PATTERNS))
         ):
@@ -6833,12 +7028,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 return True
             except Exception as img_err:
                 logger.error("Failed to generate image for direct mention: %s", img_err, exc_info=True)
-                fail_msg = await image_failure_reply(
-                    clean_prompt, caller_id, caller_name, caller_role, target_name, img_err,
-                    fallback="I attempted to paint that, but the canvas broke. Typical.",
-                )
-                await message.reply(fail_msg, mention_author=True)
-                return True
+                brain_note = image_failure_note("generate", clean_prompt, classify_image_failure(img_err))
+                picture_failure = (img_err, target_name)
 
         # The brain: one call that sees the thread as it happened and the words actually typed (not the
         # delegation rewrite or the planner's paraphrase, which is where "Rewrite those. (then: Jesus vic)" came
@@ -6850,7 +7041,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 brain = await answer_with_brain(
                     client, message, typed_prompt=typed_prompt, caller_name=caller_name, caller_role=caller_role,
                     caller_id=caller_id, bot_id=bot_id, reply_chain=reply_chain, directory=directory,
-                    other_mentions=own_mentions, signals=signals,
+                    other_mentions=own_mentions, signals=signals, note=brain_note,
                 )
             except Exception as e:
                 logger.warning("Vic brain failed for %s, falling back to the old reply path: %s", caller_name, e)
@@ -6860,6 +7051,14 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         if brain is not None:
             reply_text = brain.text
             p_tokens, c_tokens = brain.input_tokens, brain.output_tokens
+        elif brain_note is not None:
+            # The brain is off or failed too: the old excuse writer, which at least knows a picture was asked for.
+            fail_msg = await image_failure_reply(
+                clean_prompt, caller_id, caller_name, caller_role, picture_failure[1], picture_failure[0],
+                fallback="I attempted to paint that, but the canvas broke. Typical.",
+            )
+            await message.reply(fail_msg, mention_author=True)
+            return True
         else:
             # 1. Gather context & images
             gathered = await gather_one_off_context(client, message, return_targets=True)
@@ -6980,7 +7179,8 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
             if brain.bit_set:
                 vic_brain.set_bit(channel_id, brain.bit_set, caller_name)
                 logger.info("Running bit set in #%s by %s: %r", getattr(message.channel, "name", "?"), caller_name, brain.bit_set)
-        note_t2_run(message, posted, "text", caller_name=caller_name, request=typed_prompt, reply=reply_text,
+        note_t2_run(message, posted, "text" if brain_note is None else "picture_failed", caller_name=caller_name,
+                    request=typed_prompt, reply=reply_text, failure=brain_note,
                     model=(brain.model if brain is not None else "gpt-4o"), provider=(brain.provider if brain is not None else "legacy"),
                     input_tokens=p_tokens, output_tokens=c_tokens, searches=(brain.searches if brain is not None else None),
                     started=started)
