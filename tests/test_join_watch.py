@@ -702,3 +702,71 @@ def test_card_channel_names_have_one_hash():
     import inspect
     from commands.moderation import join_watch
     assert '.lstrip("#")' in inspect.getsource(join_watch)
+
+
+class _FakeAutoModAction:
+    def __init__(self, member, content, action_type):
+        self.guild_id, self.user_id, self.channel_id = 1, member.id, 2
+        self.content, self.matched_content = content, "realize"
+        self.action = type("A", (), {"type": action_type})()
+
+    async def fetch_rule(self):
+        return type("R", (), {"name": "Americanism"})()
+
+
+class _FakeGuild:
+    def __init__(self, member):
+        self.member = member
+
+    def get_member(self, _uid):
+        return self.member
+
+    def get_channel(self, _cid):
+        return FakeChannel()
+
+
+def test_a_message_automod_blocked_is_still_screened(monkeypatch, tmp_path):
+    """AutoMod blocks a message before it exists, so on_message never sees it. The screener
+    reads it from the AutoMod action instead, once per block (Oggers, 26 Nov 2026)."""
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+    client.get_guild = lambda _gid: _FakeGuild(member)
+    seen = []
+
+    async def fake_evaluate(_client, _member, messages):
+        seen.append([m["content"] for m in messages])
+        return ({"verdict": "troll", "confidence": 0.95, "reason": "DM bait spam."},
+                {"input": 1000, "output": 50, "model": "gpt-5.4-mini"})
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    join_watch.register_join(member)
+    spam = "hit me off in my dms baby girl"
+    # The alert and timeout actions of the same rule fire too; only the block is screened.
+    asyncio.run(join_watch.maybe_watch_automod(
+        client, _FakeAutoModAction(member, spam, discord.AutoModRuleActionType.send_alert_message)))
+    assert seen == []
+    asyncio.run(join_watch.maybe_watch_automod(
+        client, _FakeAutoModAction(member, spam, discord.AutoModRuleActionType.block_message)))
+    assert len(seen) == 1 and spam in seen[0][0] and "blocked by AutoMod rule Americanism" in seen[0][0]
+    assert len(member.timeouts) == 1
+    import json as _json
+    payload = _json.dumps(client.police.sent[0]["view"].to_components())
+    assert spam in payload and "Deleted" in payload
+
+
+def test_automod_blocks_from_unwatched_members_are_ignored(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    join_watch.set_join_watch_state(True)
+    member = FakeMember()
+    client = FakeClient()
+    client.get_guild = lambda _gid: _FakeGuild(member)
+
+    async def fake_evaluate(*_):
+        raise AssertionError("should not screen")
+
+    monkeypatch.setattr(join_watch, "_evaluate", fake_evaluate)
+    asyncio.run(join_watch.maybe_watch_automod(
+        client, _FakeAutoModAction(member, "hello", discord.AutoModRuleActionType.block_message)))
+    assert member.timeouts == []
