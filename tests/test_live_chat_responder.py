@@ -1632,7 +1632,9 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         # group prompts are assembled from the character entries so nobody is lost
         self.assertTrue(img.startswith("Lanca and Gunner. kitchen fire. Exactly 2 people"))
         self.assertIn("1) Lanca: waffles", img); self.assertIn("2) Gunner: Oxford", img)
-        self.assertEqual(_sent_payload(mock_urlopen, 0)["max_tokens"], 550 + 160)
+        # gpt-5.5 writes the picture now: the budget is the same plus room to think
+        self.assertEqual(_sent_payload(mock_urlopen, 0)["max_completion_tokens"], 550 + 160 + 2000)
+        self.assertEqual(_sent_payload(mock_urlopen, 0)["model"], "gpt-5.5")
 
     @patch("urllib.request.urlopen")
     def test_classify_mention_intent_sees_recent_exchanges_and_correction_rule(self, mock_urlopen):

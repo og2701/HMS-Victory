@@ -290,3 +290,50 @@ async def test_vic_reacts_instead_of_replying_when_that_is_the_answer(monkeypatc
     with open(vic_brain.RUN_LOG_FILE) as f:
         entry = json.loads(f.readline())
     assert entry["route"] == "react" and entry["reply"] == "🫡"
+
+
+
+def test_the_brain_can_hand_a_picture_job_to_the_picture_side():
+    post = MagicMock(return_value={"output": [{"type": "message", "content": [{"type": "output_text", "text": "<picture/>"}]}],
+                                   "usage": {"input_tokens": 50, "output_tokens": 4}})
+    with patch.dict(os.environ, {"OPENAI_TOKEN": "k"}):
+        reply = vic_brain.generate_reply(vic_brain.BrainRequest(asker_name="Kaizo", text="draw this"), post)
+        assert reply.wants_picture and reply.text == ""
+        # once the picture side has had it, the tag is ignored and words are required
+        post.return_value = {"output": [{"type": "message", "content": [{"type": "output_text", "text": "<picture/> Fine, in words then."}]}]}
+        req = vic_brain.BrainRequest(asker_name="Kaizo", text="draw this", can_hand_to_picture=False)
+        reply = vic_brain.generate_reply(req, post)
+        assert not reply.wants_picture and reply.text == "Fine, in words then."
+        assert "PICTURES: the picture side has already looked" in vic_brain.build_user_prompt(req)
+
+
+@pytest.mark.asyncio
+async def test_a_picture_job_the_brain_spots_is_planned_on_a_second_pass(monkeypatch):
+    # Jev sent "draw this" straight to words; the brain, seeing the scene, hands it back and the planner runs.
+    from lib.features import chat_responder as cr
+    from tests.test_live_chat_responder import _jev_signals
+    monkeypatch.setattr(vic_brain, "ENABLED", True)
+    client = MagicMock()
+    client.user.id = 1171842947440967770
+    message = _message("<@1171842947440967770> draw this", mid=5003)
+    calls = []
+
+    def fake_generate(req, post):
+        calls.append(req.can_hand_to_picture)
+        return BrainReply(text="", model="gpt-5.5", wants_picture=True) if req.can_hand_to_picture else \
+            BrainReply(text="In words, then.", model="gpt-5.5")
+
+    monkeypatch.setattr(vic_brain, "generate_reply", fake_generate)
+    with patch.object(cr, "judge_mention", AsyncMock(return_value=_jev_signals(action="reply", confidence=0.97))), \
+         patch.object(cr, "plan_mention", return_value={"action": "reply", "request": "", "subjects": [], "edit_source": "none",
+                                                        "attachment_roles": [], "recipient_ids": [], "include_bot_in_picture": False,
+                                                        "edit_instruction": "", "reason": ""}) as plan, \
+         patch.object(cr, "find_recent_image_attachment", AsyncMock(return_value=None)), \
+         patch.object(cr, "fetch_channel_active_users", return_value=[]), \
+         patch.object(cr, "fetch_most_active_users", return_value=[]), \
+         patch.object(cr.live_chat_manager, "update_dashboard", AsyncMock()):
+        cr._handled_one_off_message_ids.clear()
+        assert await cr.handle_one_off_owner_mention(client, message) is True
+    plan.assert_called_once()            # skipped on the first pass (Jev sure of words), run on the second
+    assert calls == [True, False]
+    assert message.reply.call_args[0][0] == "In words, then."

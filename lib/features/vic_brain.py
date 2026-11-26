@@ -85,7 +85,7 @@ FACTS AND WHAT YOU CAN DO
 - Get facts right. For anything current (scores, fixtures, news, weather, prices, who holds an office) search the web before answering. Do not mention searching, and give no links or sources unless a link was asked for.
 - Figures about the server (balances, XP, rankings, counts, who said what): only use numbers and quotes that appear in the context you are given. If the figure is not there, say you have not got it in front of you rather than making one up. Invented quotes presented as real ones are the same thing.
 - You cannot refund an order, pass a law, DM anyone, ban anyone or remember last week. When asked for something like that, do not claim you have done it or are about to. Play it as the bit it is, in a line, or say what you would do instead.
-- You can draw: another part of you makes the pictures. If this message has reached you, it was not read as a request for one, so answer it in words. Never say you cannot make images, never explain what you can and cannot edit, and never tell anyone to ask again or to start with a particular word: if the picture did not happen, say in one short line that it slipped past you and you will have it if they tag you on the picture itself.
+- You can draw: another part of you makes the pictures. If this message is really asking for a picture to be made or changed ("draw this", "show us what he'd look like", "now make him bald", a correction to your last picture) and nothing has drawn it, do not describe a picture in words: output only <picture/> and the picture side takes it from there. Use it only for that; a question, a comment about a picture or a job done in writing gets words. If PICTURES below says the picture side has already had it, answer in words. Never say you cannot make images, never explain what you can and cannot edit, and never tell anyone to ask again or to start with a particular word: if the picture did not happen, say in one short line that it slipped past you and you will have it if they tag you on the picture itself.
 - About a picture you made: THREAD and RECENT CHAT carry a note under it saying what was asked, what it showed and who was cast as what. Answer "who is who" and "why does it look like that" from that note. Only name a member as a figure in a picture when the note or your caption says so; if neither does, say what the figure looks like and that you did not keep track of who it was meant to be. You do not get to disown the picture; you made it.
 - When an image is attached to this message, look at it and answer about what is actually in it.
 
@@ -134,6 +134,7 @@ class BrainRequest:
     bits: List[str] = field(default_factory=list)
     image_urls: List[str] = field(default_factory=list)
     force_search: bool = False
+    can_hand_to_picture: bool = True                    # False once the picture side has had this message
     now: Optional[datetime] = None
 
 
@@ -149,6 +150,7 @@ class BrainReply:
     bit_clear: bool = False
     retried_repeat: bool = False
     reaction: Optional[str] = None     # an emoji to react with; with no text, the reaction is the whole answer
+    wants_picture: bool = False        # the brain read this as a picture job and handed it to the picture side
 
 
 class BrainError(RuntimeError):
@@ -211,6 +213,8 @@ def build_user_prompt(req: BrainRequest) -> str:
     if req.thread:
         parts.append("THREAD (the chain of replies this message sits on, oldest first)\n"
                      + "\n".join(_format_line(l, 900) for l in req.thread))
+    if not req.can_hand_to_picture:
+        parts.append("PICTURES: the picture side has already looked at this message. Answer in words; do not output <picture/>.")
     ask = req.text.strip() or "[no words, just the tag]"
     where = ""
     if req.thread:
@@ -238,6 +242,7 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
 
 
+_PICTURE_TAG_RE = re.compile(r"<\s*picture\s*/?\s*>(?:\s*</picture>)?", re.IGNORECASE)
 _REACT_RE = re.compile(r"<react>\s*(.*?)\s*</react>", re.IGNORECASE | re.DOTALL)
 
 
@@ -358,7 +363,10 @@ def generate_reply(req: BrainRequest, openai_post: Callable[[dict, str, int], di
     """Write Vic's reply. Blocking: run it in a thread. Raises BrainError when nothing usable came back."""
     user_prompt = build_user_prompt(req)
     reply = _one_call(req, user_prompt, openai_post, None)
-    body, reaction = pull_reaction(reply.text)
+    if req.can_hand_to_picture and _PICTURE_TAG_RE.search(reply.text or ""):
+        reply.text, reply.wants_picture = "", True
+        return reply
+    body, reaction = pull_reaction(_PICTURE_TAG_RE.sub("", reply.text or ""))
     text, bit_set, bit_clear = tidy(body)
     if text and repeats_earlier(text, req):
         logger.info("Vic brain repeated an earlier line; asking again: %r", text[:120])
