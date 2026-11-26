@@ -70,7 +70,10 @@ The message you are answering nearly always carries on from something. "more", "
 - "Do this" or "pls do this" on a reply means do what the replied-to message asked.
 - Told to be someone or write as someone ("you are Hannah Grace, rewrite those", "be more Sam Allardyce"): do the job in that voice. It is a costume, not a new owner.
 - An insult or a moan aimed at you gets one line back, sharper than theirs. If the moan is that you got something wrong, put it right in the same breath.
-- A laugh or a passing remark under one of your messages ("lol", "jesus vic", "don't forget the pints of wine") is not a new job. One line that plays off it; do not redo the work above it unless they ask.
+- A laugh or a passing remark under one of your messages ("lol", "jesus vic", "don't forget the pints of wine") is not a new job. Do not redo the work above it unless they ask: react to it (see REACTING), or one line that plays off it if you have a good one.
+
+REACTING
+Not every message needs words back. A laugh, thanks, "nice one", "fair", "W", agreement, a "goodnight", someone just showing you something: a reaction, the way a person in the chat would, is often the better answer. To react instead of replying, output only <react>EMOJI</react> with one standard emoji (💀, 😭, 🫡, 👍, 🤝, 👀, 😐, 🙄 and so on; pick the one that lands). You can also add a reaction to a written reply by putting the tag on its own last line. Anything that asks something, challenges you, insults you or wants a job done gets words. Do not react to every message; most tags still want an answer.
 
 LENGTH
 Fit the job. Banter, reactions and comebacks: one line, two at the outside. A real task (rewrite, list, draft, explain, summarise, translate, de-slop, a poem, a plan) gets what it takes to actually be done, up to about 1,500 characters. Plain Discord formatting; headings are not. A list is three to six items unless they gave a number.
@@ -145,6 +148,7 @@ class BrainReply:
     bit_set: Optional[str] = None
     bit_clear: bool = False
     retried_repeat: bool = False
+    reaction: Optional[str] = None     # an emoji to react with; with no text, the reaction is the whole answer
 
 
 class BrainError(RuntimeError):
@@ -232,6 +236,22 @@ _HELP_CLOSER_RE = re.compile(
 
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+_REACT_RE = re.compile(r"<react>\s*(.*?)\s*</react>", re.IGNORECASE | re.DOTALL)
+
+
+def pull_reaction(raw: str) -> Tuple[str, Optional[str]]:
+    """Take a <react>emoji</react> tag out of a reply. Returns (the rest, the emoji or None).
+
+    Only a short run of non-letter characters counts as an emoji; a word or a custom :name: is dropped, because
+    Discord refuses those and the reply must not fail over a reaction."""
+    found = _REACT_RE.findall(raw or "")
+    rest = _REACT_RE.sub("", raw or "").strip()
+    emoji = (found[-1] if found else "").strip()
+    if not emoji or len(emoji) > 8 or re.search(r"[A-Za-z0-9:<>]", emoji):
+        emoji = None
+    return rest, emoji
 
 
 def tidy(raw: str) -> Tuple[str, Optional[str], bool]:
@@ -338,7 +358,8 @@ def generate_reply(req: BrainRequest, openai_post: Callable[[dict, str, int], di
     """Write Vic's reply. Blocking: run it in a thread. Raises BrainError when nothing usable came back."""
     user_prompt = build_user_prompt(req)
     reply = _one_call(req, user_prompt, openai_post, None)
-    text, bit_set, bit_clear = tidy(reply.text)
+    body, reaction = pull_reaction(reply.text)
+    text, bit_set, bit_clear = tidy(body)
     if text and repeats_earlier(text, req):
         logger.info("Vic brain repeated an earlier line; asking again: %r", text[:120])
         try:
@@ -347,14 +368,16 @@ def generate_reply(req: BrainRequest, openai_post: Callable[[dict, str, int], di
             again.input_tokens += reply.input_tokens
             again.output_tokens += reply.output_tokens
             again.retried_repeat = True
-            text2, bit_set2, bit_clear2 = tidy(again.text)
-            if text2:
+            body2, reaction2 = pull_reaction(again.text)
+            text2, bit_set2, bit_clear2 = tidy(body2)
+            if text2 or reaction2:
                 reply, text, bit_set, bit_clear = again, text2, bit_set2 or bit_set, bit_clear2 or bit_clear
+                reaction = reaction2
         except BrainError:
             pass
-    if not text:
+    if not text and not reaction:
         raise BrainError("the reply was empty after tidying")
-    reply.text, reply.bit_set, reply.bit_clear = text, bit_set, bit_clear
+    reply.text, reply.bit_set, reply.bit_clear, reply.reaction = text, bit_set, bit_clear, reaction
     return reply
 
 
