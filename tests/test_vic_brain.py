@@ -304,7 +304,7 @@ def test_the_brain_can_hand_a_picture_job_to_the_picture_side():
         req = vic_brain.BrainRequest(asker_name="Kaizo", text="draw this", can_hand_to_picture=False)
         reply = vic_brain.generate_reply(req, post)
         assert not reply.wants_picture and reply.text == "Fine, in words then."
-        assert "PICTURES: the picture side has already looked" in vic_brain.build_user_prompt(req)
+        assert "PICTURES: a picture has already been tried" in vic_brain.build_user_prompt(req)
 
 
 @pytest.mark.asyncio
@@ -337,3 +337,11 @@ async def test_a_picture_job_the_brain_spots_is_planned_on_a_second_pass(monkeyp
     plan.assert_called_once()            # skipped on the first pass (Jev sure of words), run on the second
     assert calls == [True, False]
     assert message.reply.call_args[0][0] == "In words, then."
+
+
+def test_persona_keeps_the_reply_about_the_message_and_vic_in_character():
+    # 26 Nov 2026 review: replies name-checked half the room, leaked "T2 Vic", and leaned on the same closers.
+    p = vic_brain.PERSONA
+    assert "USING THE CHAT" in p and "one well-picked detail beats five" in p
+    assert "Never call yourself T1, T2, T3" in p
+    assert '"Standard X."' in p and "actually do it" in p
