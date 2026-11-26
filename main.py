@@ -623,6 +623,14 @@ class AClient(discord.Client):
         if not guild:
             return
 
+        # A blocked message never reaches on_message, so join-watch reads it here.
+        try:
+            from commands.moderation.join_watch import join_watch_enabled, maybe_watch_automod
+            if join_watch_enabled():
+                asyncio.create_task(maybe_watch_automod(self, payload))
+        except Exception:
+            logger.debug("join-watch automod hook failed", exc_info=True)
+
         # Specifically target the Americanism Block rule by ID
         if payload.rule_id == 1465347564978311242:
             # Only respond to the block_message action to avoid duplicates if 

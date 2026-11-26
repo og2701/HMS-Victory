@@ -386,6 +386,9 @@ def _snapshot(message: Any) -> dict[str, Any]:
     content = " ".join((message.content or "").split())[:400]
     if not content:
         content = f"[no text; {len(getattr(message, 'attachments', None) or [])} attachment(s)]"
+    if getattr(message, "automod_blocked", False):
+        rule = getattr(message, "rule", "")
+        content = f"[blocked by AutoMod{f' rule {rule}' if rule else ''}; nobody saw it] {content}"
     return {
         "channel": f"#{getattr(message.channel, 'name', message.channel)}",
         "content": content,
@@ -416,22 +419,81 @@ async def maybe_watch_message(client: Any, message: Any) -> None:
         # re-checked in case they were given a role after joining.
         if getattr(member, "id", None) not in _buffers or not _eligible(member):
             return
-        lock = _locks.setdefault(member.id, asyncio.Lock())
-        async with lock:
-            entry = _buffers.get(member.id)
-            if entry is None or entry["done"]:
-                return
-            entry["messages"].append(_snapshot(message))
-            # Jev screens alongside OpenAI and never acts; see join_watch_jev.
-            (verdict, usage), jev = await asyncio.gather(
-                _evaluate(client, member, entry["messages"]),
-                _jev_shadow(member, entry["messages"]),
-            )
-            await _apply_verdict(client, member, entry, verdict, usage, message, jev)
-            # After the verdict, so a member marked done drops out of the saved list.
-            _save_buffers()
+        await _screen(client, member, message)
     except Exception:
         logger.exception("join-watch screening failed for message %s", getattr(message, "id", "?"))
+
+
+class _BlockedMessage:
+    """Stands in for a message AutoMod blocked: Discord never creates it, so on_message never
+    sees it, but the joiner still wrote it and the screener should read it (Oggers, 26 Nov 2026)."""
+
+    automod_blocked = True
+    attachments: list = []
+    jump_url = ""
+
+    def __init__(self, guild: Any, member: Any, channel: Any, content: str, rule: str = ""):
+        self.guild, self.author, self.channel = guild, member, channel
+        self.content = content
+        self.rule = rule
+        self.created_at = discord.utils.utcnow()
+        self.type = discord.MessageType.default
+        self.id = None
+
+
+async def maybe_watch_automod(client: Any, payload: Any) -> None:
+    """on_automod_action hook: screen a watched joiner's message that AutoMod blocked.
+
+    Only the block_message action is used, so a rule that also alerts or times out is
+    screened once. A rule that only alerts lets the message through, and on_message sees it."""
+    try:
+        if not join_watch_enabled():
+            return
+        if getattr(getattr(payload, "action", None), "type", None) != discord.AutoModRuleActionType.block_message:
+            return
+        content = getattr(payload, "content", None) or getattr(payload, "matched_content", None)
+        if not content:
+            return
+        guild = client.get_guild(payload.guild_id)
+        if guild is None:
+            return
+        _load_buffers()
+        if payload.user_id not in _buffers:
+            return
+        member = guild.get_member(payload.user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(payload.user_id)
+            except discord.HTTPException:
+                return
+        if not _eligible(member):
+            return
+        channel = guild.get_channel(payload.channel_id) if payload.channel_id else None
+        rule = ""
+        try:
+            rule = (await payload.fetch_rule()).name
+        except Exception:
+            pass
+        await _screen(client, member, _BlockedMessage(guild, member, channel or "unknown", content, rule))
+    except Exception:
+        logger.exception("join-watch screening failed for an AutoMod block of %s", getattr(payload, "user_id", "?"))
+
+
+async def _screen(client: Any, member: Any, message: Any) -> None:
+    lock = _locks.setdefault(member.id, asyncio.Lock())
+    async with lock:
+        entry = _buffers.get(member.id)
+        if entry is None or entry["done"]:
+            return
+        entry["messages"].append(_snapshot(message))
+        # Jev screens alongside OpenAI and never acts; see join_watch_jev.
+        (verdict, usage), jev = await asyncio.gather(
+            _evaluate(client, member, entry["messages"]),
+            _jev_shadow(member, entry["messages"]),
+        )
+        await _apply_verdict(client, member, entry, verdict, usage, message, jev)
+        # After the verdict, so a member marked done drops out of the saved list.
+        _save_buffers()
 
 
 async def _apply_verdict(
@@ -972,6 +1034,10 @@ async def _delete_trigger(entry: dict[str, Any], message: Any) -> str:
     which message was removed.
     """
     trigger_record = entry["messages"][-1] if entry["messages"] else None
+    if getattr(message, "automod_blocked", False):
+        if trigger_record:
+            trigger_record["deleted"] = True
+        return "triggering message was already blocked by AutoMod"
     try:
         await message.delete()
         if trigger_record:
