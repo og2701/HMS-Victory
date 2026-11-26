@@ -4067,6 +4067,7 @@ def plan_mention(
     recent_bot_image_prompt: Optional[str] = None,
     recent_chat: str = "",
     images: Optional[List[Tuple[str, str]]] = None,
+    pointed_at: Optional[str] = None,
     openai_key: Optional[str] = None,
     model: str = MENTION_PLANNER_MODEL,
     timeout: int = 45,
@@ -4106,6 +4107,10 @@ def plan_mention(
         facts.append("RECENT CHAT IN THE CHANNEL (oldest first; [you] is Vic; a note under Vic's picture says what it showed):\n"
                      + recent_chat.strip()[-6000:])
     facts.append(f"THE MESSAGE TO PLAN, from {caller_name}: \"{prompt.strip()}\"")
+    if pointed_at and pointed_at.strip() and pointed_at.strip() != prompt.strip():
+        facts.append("This message is a pointer at the message it replies to. \"This\" / \"it\" is that message, which says: \""
+                     + pointed_at.strip()[:600] + "\". The job is what the caller asked for (e.g. \"draw this\" = a picture of what "
+                     "that message describes), done to that message; the caller is not repeating it.")
 
     def _payload(with_images: bool) -> Dict[str, Any]:
         content: List[Dict[str, Any]] = [{"type": "input_text", "text": "\n".join(facts)}]
@@ -6052,7 +6057,16 @@ async def answer_with_brain(
 _PLAN_REFUSAL_RE = re.compile(r"^\s*(?:i\s+(?:can(?:'|’)?t|cannot|am unable|won(?:'|’)?t)|i'm (?:unable|sorry)|sorry\b|unable to)", re.IGNORECASE)
 
 
-def reconcile_plan_with_signals(plan: Dict[str, Any], signals: Any, has_picture: bool) -> Dict[str, Any]:
+# "draw this", "pls paint him", "can you sketch that": a picture asked for in so many words. When Jev is sure of it too,
+# the planner talking itself into a text reply is overruled (26 Nov 2026: "draw this" got a description in words).
+_PICTURE_COMMAND_RE = re.compile(
+    r"^\s*(?:(?:pls|please|plz|can you|could you|go on|now|ok|okay|vic)[,\s]+)*"
+    r"(?:draw|paint|sketch|illustrate|render|photoshop|make (?:a|an|me a) (?:picture|image|drawing|painting|pic))\b",
+    re.IGNORECASE,
+)
+
+
+def reconcile_plan_with_signals(plan: Dict[str, Any], signals: Any, has_picture: bool, typed: str = "") -> Dict[str, Any]:
     """Stop the planner talking itself out of a picture job Jev read clearly.
 
     The planner only restates the request; it is not the one answering. On 22 Nov 2026 it was handed "make
@@ -6065,11 +6079,15 @@ def reconcile_plan_with_signals(plan: Dict[str, Any], signals: Any, has_picture:
         plan["request"] = ""
     wanted = getattr(signals, "action", None)
     sure = float(getattr(signals, "action_confidence", 0.0) or 0.0) >= REPLY_GATE_CONFIDENCE
-    if plan.get("action") == "reply" and refused and sure and wanted in ("edit", "generate"):
+    commanded = bool(typed and _PICTURE_COMMAND_RE.match(typed)) and float(getattr(signals, "action_confidence", 0.0) or 0.0) >= 0.95
+    if plan.get("action") == "reply" and (refused or commanded) and sure and wanted in ("edit", "generate"):
         if wanted == "edit" and not has_picture:
             wanted = "generate"
-        logger.info("Planner refused a job Jev read as %s (%.2f); going with Jev", wanted, getattr(signals, "action_confidence", 0.0))
+        logger.info("Planner %s a job Jev read as %s (%.2f); going with Jev", "refused" if refused else "chose words for",
+                    wanted, getattr(signals, "action_confidence", 0.0))
         plan["action"] = wanted
+        if not refused:
+            plan["request"] = ""   # its restatement was of a text reply; the typed (or pointed-at) request is used instead
         if wanted == "edit" and not plan.get("edit_source"):
             plan["edit_source"] = "attachment"
     return plan
@@ -6451,9 +6469,13 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                 planner_chat = await recent_chat_for_planner(message, bot_id)
             except Exception as e:
                 logger.debug("Could not read recent chat for the planner: %s", e)
+            # The words actually typed, never the delegation rewrite: on 26 Nov 2026 "draw this" under Labuschagne's
+            # peach-fuzz message was handed over as that message itself, and the planner read it as the caller
+            # repeating her line for banter. The chain shows what "this" is; the pointer says so outright.
             plan = await asyncio.to_thread(
                 plan_mention,
-                clean_prompt,
+                typed_prompt or clean_prompt,
+                pointed_at=(clean_prompt if clean_prompt != typed_prompt else None),
                 recent_chat=planner_chat,
                 images=planner_images,
                 caller_name=caller_name,
@@ -6476,7 +6498,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         subject_name = None
         reference_roles: List[str] = ["subject_likeness"] * len(reference_attachments)
         if plan:
-            reconcile_plan_with_signals(plan, signals, has_picture=bool(reference_attachments or recent_img_info))
+            reconcile_plan_with_signals(plan, signals, has_picture=bool(reference_attachments or recent_img_info), typed=typed_prompt)
             if plan.get("input_tokens") or plan.get("output_tokens"):
                 live_chat_manager.record_usage(MENTION_PLANNER_MODEL, plan["input_tokens"], plan["output_tokens"], is_reply=True)
             logger.info(

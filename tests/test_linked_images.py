@@ -91,6 +91,24 @@ def test_an_unsure_jev_does_not_overrule_but_the_refusal_text_is_still_dropped()
     cr.reconcile_plan_with_signals({"action": "reply", "request": "I can't"}, None, has_picture=False)
 
 
+def test_draw_this_in_so_many_words_overrules_a_text_plan_when_jev_is_sure():
+    # 26 Nov 2026: Kaizo's "draw this" under Labuschagne's message was planned as a text reply.
+    plan = {"action": "reply", "request": "Respond to Batty saying she could have been a handsome man"}
+    cr.reconcile_plan_with_signals(plan, _signals("generate", 0.98), has_picture=False, typed="draw this")
+    assert plan["action"] == "generate" and plan["request"] == ""
+    for typed in ("pls paint him", "can you sketch that", "Vic, draw it, I cant picture it"):
+        p = {"action": "reply", "request": "x"}
+        cr.reconcile_plan_with_signals(p, _signals("generate", 0.97), has_picture=False, typed=typed)
+        assert p["action"] == "generate", typed
+
+
+def test_a_picture_word_alone_does_not_overrule_the_planner():
+    for typed, conf in (("draw this", 0.8), ("what would you draw for him", 0.99), ("lol drawn badly", 0.99)):
+        plan = {"action": "reply", "request": "x"}
+        cr.reconcile_plan_with_signals(plan, _signals("generate", conf), has_picture=False, typed=typed)
+        assert plan["action"] == "reply", typed
+
+
 def test_the_reply_persona_no_longer_sends_people_away_to_ask_again():
     from lib.features import vic_brain
     assert 'starting with "draw"' not in vic_brain.PERSONA
