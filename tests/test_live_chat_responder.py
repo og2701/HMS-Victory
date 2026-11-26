@@ -2984,6 +2984,42 @@ class TestLiveChatResponder(unittest.IsolatedAsyncioTestCase):
         mock_edit.assert_not_called(); mock_gen.assert_not_called()
         self.assertEqual(message.reply.call_args[0][0], "Um yourself.")
 
+    @patch("lib.features.chat_responder.fetch_most_active_users", return_value=[])
+    @patch("lib.features.chat_responder.fetch_channel_active_users", return_value=[])
+    @patch("lib.features.chat_responder.find_recent_image_attachment", new_callable=AsyncMock, return_value=None)
+    async def test_draw_this_reaches_the_planner_as_typed_with_what_it_points_at(self, mock_find, _ch, _act):
+        # 26 Nov 2026: "draw this" under Labuschagne's peach-fuzz message reached the planner as her message itself,
+        # which it read as Kaizo repeating her line, and answered in words.
+        client = MagicMock(); client.user.id = 999999999
+        lab = MagicMock(); lab.id = 1504560326488756309; lab.nick = "Batty"; lab.global_name = None; lab.display_name = "Batty"; lab.name = "lab"
+        parent = MagicMock(); parent.id = 1; parent.author = lab; parent.mentions = []; parent.attachments = []; parent.reference = None
+        parent.content = "I'm looking at the peach fuzz on my face... I could have been such a handsome man"
+        ref = MagicMock(); ref.message_id = 1; ref.resolved = parent
+        message = self._leader_message(client, f"<@{client.user.id}> draw this", reference=ref)
+        with patch("lib.features.chat_responder.plan_mention", return_value=None) as mock_plan, \
+             patch("lib.features.chat_responder.judge_mention", new_callable=AsyncMock, return_value=_jev_signals(action="generate", confidence=0.98)), \
+             patch("lib.features.chat_responder.can_user_generate_image", return_value=(False, 0)), \
+             patch("lib.features.chat_responder.live_chat_manager.update_dashboard", new_callable=AsyncMock):
+            await handle_one_off_owner_mention(client, message)
+        self.assertEqual(mock_plan.call_args[0][0], "draw this")
+        self.assertIn("peach fuzz", mock_plan.call_args[1]["pointed_at"])
+
+    @patch("urllib.request.urlopen")
+    def test_plan_mention_tells_the_planner_what_a_pointer_points_at(self, mock_urlopen):
+        self._plan_patch.stop()
+        from lib.features import chat_responder as cr
+        try:
+            plan_json = {"action": "generate", "request": "x", "subjects": [], "edit_source": "none", "attachment_roles": [],
+                         "recipient_ids": [], "include_bot_in_picture": False, "edit_instruction": "", "reason": ""}
+            mock_urlopen.return_value = _mock_resp(_responses_body(json.dumps(plan_json)))
+            cr.plan_mention("draw this", caller_name="Kaizo", caller_id=1, openai_key="test-key", pointed_at="peach fuzz where a beard would be")
+            text = _sent_payload(mock_urlopen)["input"][0]["content"][0]["text"]
+            self.assertIn('THE MESSAGE TO PLAN, from Kaizo: "draw this"', text)
+            self.assertIn("pointer at the message it replies to", text)
+            self.assertIn("peach fuzz where a beard would be", text)
+        finally:
+            self._plan_patch.start()
+
     @patch("urllib.request.urlopen")
     def test_plan_mention_shows_the_images_and_the_chat(self, mock_urlopen):
         self._plan_patch.stop()
