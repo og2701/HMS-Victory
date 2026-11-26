@@ -343,5 +343,5 @@ def test_persona_keeps_the_reply_about_the_message_and_vic_in_character():
     # 26 Nov 2026 review: replies name-checked half the room, leaked "T2 Vic", and leaned on the same closers.
     p = vic_brain.PERSONA
     assert "USING THE CHAT" in p and "one well-picked detail beats five" in p
-    assert "Never call yourself T1, T2, T3" in p
+    assert "You are tier 2 Vic (T2)" in p and "Do not bring it up unprompted" in p
     assert '"Standard X."' in p and "actually do it" in p
