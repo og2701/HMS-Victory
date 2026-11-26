@@ -50,10 +50,12 @@ GRACE = 15                     # seconds more the bot allows: the photo coming d
 LATE_KM = -1                   # a round run out of time is kept with no pin: km this, lat and lon 0, scoring 0
 LAND_FILE = Path(__file__).resolve().parents[2] / "data" / "guessr" / "uk-land.json"
 API = "https://graph.mapillary.com/images"
-FIELDS = "id,computed_geometry,geometry,thumb_2048_url,thumb_original_url,captured_at,creator,is_pano"
+FIELDS = "id,computed_geometry,geometry,thumb_2048_url,thumb_original_url,captured_at,creator,is_pano,quality_score"
 PHOTO_W = 4096                 # a photo's kept this wide (from Mapillary's full size, 5,760 to 8,000 across): twice
                                # the detail of their 2,048 one, and as big as any phone's graphics can take
 OLDEST_MS = 1451606400000      # photos from 2016 on, so the streets look like today's
+MIN_QUALITY = 0.5              # Mapillary's own 0-1 rating of a photo; seen: 26 Nov 2026's night shot 0.08, good
+                               # daytime streets 0.73-0.89. A photo it hasn't rated is let through
 DARK = 25                      # a pixel darker than this (0-255) counts as black
 MAX_DARK = 0.3                 # a photo whose streets are more than this much black is skipped: a night shot (26 Nov
                                # 2026's round 3 was a black street with a few lamps), or a fisheye through a bus window
@@ -173,6 +175,8 @@ async def _find(session, lat: float, lon: float, r: random.Random) -> dict | Non
         for im in data:
             geo = (im.get("computed_geometry") or im.get("geometry") or {}).get("coordinates")
             if not geo or not im.get("thumb_2048_url") or not im.get("is_pano") or int(im.get("captured_at") or 0) < OLDEST_MS:
+                continue
+            if im.get("quality_score") is not None and float(im["quality_score"]) < MIN_QUALITY:
                 continue
             plon, plat = float(geo[0]), float(geo[1])
             if on_land(plat, plon):
