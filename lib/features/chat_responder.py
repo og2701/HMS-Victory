@@ -1487,7 +1487,7 @@ def synthesize_image_prompt_from_context(
     include_bot: bool = False,
     previous_image_prompts: Optional[List[str]] = None,
     openai_key: Optional[str] = None,
-    model: str = "gpt-4o",
+    model: Optional[str] = None,
     timeout: int = 30,
     subject_seed: Optional[int] = None,
     is_group: bool = False,
@@ -1500,6 +1500,9 @@ def synthesize_image_prompt_from_context(
 
     Returns (image_prompt, prompt_tokens, completion_tokens). Raises on API failure.
     """
+    model = model or IMAGE_WRITER_MODEL
+    if is_reasoning_model(model):
+        timeout = max(timeout, 60)   # it thinks first
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
@@ -2040,7 +2043,7 @@ def synthesize_contextual_image_prompt(
     caller_role: str,
     target_name: Optional[str] = None,
     openai_key: Optional[str] = None,
-    model: str = "gpt-4o",
+    model: Optional[str] = None,
     timeout: int = 30,
     previous_image_prompts: Optional[List[str]] = None,
     include_bot: Optional[bool] = None,
@@ -2056,6 +2059,9 @@ def synthesize_contextual_image_prompt(
     persona in play, so the bot's naval framing can't leak into other people's pictures; the caption
     is written afterwards in HMS Victory's voice.
     """
+    model = model or IMAGE_WRITER_MODEL
+    if is_reasoning_model(model):
+        timeout = max(timeout, 60)   # it thinks first
     if include_bot is None:
         include_bot = prompt_references_bot(prompt)
     if bot_self:
@@ -2106,7 +2112,7 @@ def synthesize_image_edit_prompt(
     caller_role: str = "Commander",
     target_name: Optional[str] = None,
     openai_key: Optional[str] = None,
-    model: str = "gpt-4o",
+    model: Optional[str] = None,
     timeout: int = 30,
     reference_image_urls: Optional[List[str]] = None,
 ) -> Tuple[str, str, str, int, int]:
@@ -2115,6 +2121,9 @@ def synthesize_image_edit_prompt(
     Returns (edit_type, image_prompt, caption, prompt_tokens, completion_tokens).
     edit_type is either 'edit' (modify existing image) or 'new' (generate new image from scratch).
     """
+    model = model or IMAGE_WRITER_MODEL
+    if is_reasoning_model(model):
+        timeout = max(timeout, 60)   # it thinks first
     api_key = openai_key or os.getenv("OPENAI_TOKEN")
     if not api_key:
         raise ValueError("OPENAI_TOKEN is not configured.")
@@ -2164,9 +2173,13 @@ def synthesize_image_edit_prompt(
             {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
-        "max_tokens": 300,
-        "temperature": 0.85,
     }
+    if is_reasoning_model(model):
+        payload["max_completion_tokens"] = 2300
+        payload["reasoning_effort"] = "low"
+    else:
+        payload["max_tokens"] = 300
+        payload["temperature"] = 0.85
 
     url = "https://api.openai.com/v1/chat/completions"
     req = urllib.request.Request(
@@ -3972,6 +3985,9 @@ def looks_like_text_creation(prompt: str) -> bool:
 MENTION_PLANNER_MODEL = getattr(_config, "VIC_PLANNER_MODEL", vic_brain.MODEL)
 MENTION_PLANNER_EFFORT = getattr(_config, "VIC_PLANNER_EFFORT", "low")
 CAPTION_MODEL = getattr(_config, "VIC_CAPTION_MODEL", vic_brain.MODEL)
+# What writes the picture itself (the image prompt, the cast and gags, an edit without a planned instruction). Was
+# gpt-4o; Owen (26 Nov 2026): "it needs to be more aware, it's a powerful ai".
+IMAGE_WRITER_MODEL = getattr(_config, "VIC_IMAGE_WRITER_MODEL", vic_brain.MODEL)
 
 MENTION_PLAN_SCHEMA = {
     "type": "object",
@@ -5964,7 +5980,7 @@ async def recent_chat_for_planner(message: Any, bot_id: Optional[int], limit: in
 async def answer_with_brain(
     client: Any, message: Any, *, typed_prompt: str, caller_name: str, caller_role: str, caller_id: Optional[int],
     bot_id: Optional[int], reply_chain: List[Any], directory: List[Tuple[str, int]], other_mentions: List[Any],
-    signals: Any, note: Optional[str] = None,
+    signals: Any, note: Optional[str] = None, can_hand_to_picture: bool = False,
 ) -> Any:
     """Gather the scene for a text reply and have the brain write it. Returns a vic_brain.BrainReply."""
     channel = getattr(message, "channel", None)
@@ -6046,6 +6062,7 @@ async def answer_with_brain(
         people=[(n, i) for n, i in directory if i != bot_id], about=about, records=records, extras=extras,
         bits=(vic_brain.active_bits(channel_id) if isinstance(channel_id, int) else []), image_urls=image_urls,
         force_search=bool(signals is not None and signals.says("live_query")),
+        can_hand_to_picture=can_hand_to_picture,
     )
     reply = await asyncio.to_thread(vic_brain.generate_reply, req, _post_openai_response)
     logger.info("Vic brain (%s, %s) answered %s: %d in / %d out tokens, %d search(es)%s", reply.provider, reply.model,
@@ -6113,11 +6130,15 @@ def note_t2_run(message: Any, posted: Any, route: str, *, caller_name: str = "",
 
 
 
-async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message) -> bool:
-    """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying."""
-    if message.id in _handled_one_off_message_ids:
+async def handle_one_off_owner_mention(client: discord.Client, message: discord.Message, _replan: bool = False) -> bool:
+    """Handle a direct mention of the bot by Oggers, showing typing, gathering context, and replying.
+
+    `_replan` is the second pass after the brain (gpt-5.5, with the whole scene) read a message Jev had sent
+    straight to words as a picture job: the planner runs this time, and the brain cannot hand it back again."""
+    if message.id in _handled_one_off_message_ids and not _replan:
         return False
-    _handled_one_off_message_ids.append(message.id)
+    if not _replan:
+        _handled_one_off_message_ids.append(message.id)
 
     bot_id = getattr(getattr(client, "user", None), "id", BOT_ID)
 
@@ -6448,7 +6469,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         # 21 Nov 2026). Jev is told about attachments and recent pictures, so its confident "reply" stands and
         # the text reply looks at the image itself. A picture the asker attached to this very message is more
         # often there to be worked on, so that needs Jev to be surer still.
-        skip_planner = signals is not None and signals.confident_reply() and (
+        skip_planner = not _replan and signals is not None and signals.confident_reply() and (
             not own_image_attachments(message) or signals.action_confidence >= OWN_ATTACHMENT_REPLY_CONFIDENCE)
         plan = None
         if skip_planner:
@@ -6731,7 +6752,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                         reference_image_urls=reference_images,
                     )
                     if synth_p or synth_c:
-                        live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+                        live_chat_manager.record_usage(IMAGE_WRITER_MODEL, synth_p, synth_c, is_reply=True)
                 except Exception as synth_err:
                     logger.warning("Image edit synthesis failed, falling back: %s", synth_err)
                     edit_type = "edit"
@@ -6993,7 +7014,7 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                             include_bot=(True if (plan_state is not None and plan_state["include_bot"]) else None),
                         )
                         if synth_p or synth_c:
-                            live_chat_manager.record_usage("gpt-4o", synth_p, synth_c, is_reply=True)
+                            live_chat_manager.record_usage(IMAGE_WRITER_MODEL, synth_p, synth_c, is_reply=True)
                         break
                     except Exception as synth_err:
                         logger.warning("Contextual image synthesis attempt %d/2 failed: %s", synth_attempt, synth_err)
@@ -7064,12 +7085,25 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
                     client, message, typed_prompt=typed_prompt, caller_name=caller_name, caller_role=caller_role,
                     caller_id=caller_id, bot_id=bot_id, reply_chain=reply_chain, directory=directory,
                     other_mentions=own_mentions, signals=signals, note=brain_note,
+                    can_hand_to_picture=(brain_note is None and not _replan and plan is None),
                 )
             except Exception as e:
                 logger.warning("Vic brain failed for %s, falling back to the old reply path: %s", caller_name, e)
         target_users: Dict[str, int] = {}
         p_tokens = 0
         c_tokens = 0
+        if brain is not None and brain.wants_picture:
+            # Jev sent this straight to words, but the brain, seeing the whole scene, reads a picture job ("draw
+            # this" under someone's message). Plan it properly this time; the brain cannot hand it back again.
+            logger.info("Vic brain read %r from %s as a picture job; planning it", typed_prompt[:80], caller_name)
+            live_chat_manager.record_usage(brain.model, brain.input_tokens, brain.output_tokens, is_reply=True)
+            if typing_cm:
+                try:
+                    await typing_cm.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                typing_cm = None
+            return await handle_one_off_owner_mention(client, message, _replan=True)
         if brain is not None and brain.reaction:
             try:
                 await message.add_reaction(brain.reaction)
