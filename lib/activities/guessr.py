@@ -54,11 +54,18 @@ FIELDS = "id,computed_geometry,geometry,thumb_2048_url,thumb_original_url,captur
 PHOTO_W = 4096                 # a photo's kept this wide (from Mapillary's full size, 5,760 to 8,000 across): twice
                                # the detail of their 2,048 one, and as big as any phone's graphics can take
 OLDEST_MS = 1451606400000      # photos from 2016 on, so the streets look like today's
+DARK = 25                      # a pixel darker than this (0-255) counts as black
+MAX_DARK = 0.3                 # a photo whose streets are more than this much black is skipped: a night shot (26 Nov
+                               # 2026's round 3 was a black street with a few lamps), or a fisheye through a bus window
+                               # passed off as a 360° one, with black all round it
 MAP_HOST = "https://tiles.openfreemap.org/"
 MAP_CACHE_MB = 1000
+# OpenFreeMap's style names its tiles as "planet" or, some days, "backup_planet" (26 Nov 2026: the style moved to
+# backup_planet, the bot refused it, and the map showed only the blurry relief picture with no roads, towns or coast).
+_TILESET = r"(?:backup_)?planet"
 _MAP_FILE = re.compile(
-    r"styles/liberty|planet"                                    # these two change, so they're fetched again daily
-    r"|planet/\d{8}_\d{6}_pt/\d{1,2}/\d{1,6}/\d{1,6}\.pbf"
+    rf"styles/liberty|{_TILESET}"                               # these change, so they're fetched again daily
+    rf"|{_TILESET}/\d{{8}}_\d{{6}}_pt/\d{{1,2}}/\d{{1,6}}/\d{{1,6}}\.pbf"
     r"|fonts/[A-Za-z0-9 ,_-]{1,80}/\d{1,5}-\d{1,5}\.pbf"
     r"|sprites/[a-z0-9_]{1,40}/ofm(@2x)?\.(json|png)"
     r"|natural_earth/ne2sr/\d{1,2}/\d{1,6}/\d{1,6}\.png")
@@ -187,6 +194,9 @@ async def _save(session, url: str, dest: Path) -> bool:
             raw = await resp.read()
         from PIL import Image
         im = Image.open(io.BytesIO(raw)).convert("RGB")
+        if too_dark(im):
+            log.info("UKGuessr skipped a photo that's too dark to play")
+            return False
         if im.width > PHOTO_W:
             im = im.resize((PHOTO_W, round(im.height * PHOTO_W / im.width)), Image.LANCZOS)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -195,6 +205,15 @@ async def _save(session, url: str, dest: Path) -> bool:
     except Exception:
         log.warning("couldn't save a Mapillary photo", exc_info=True)
         return False
+
+
+def too_dark(im) -> bool:
+    """Whether a photo's too dark to guess from: too much of it black. Measured on the middle half of its height,
+    the streets and buildings, since a 360° photo's top is sky and its bottom the road or the camera's car. The day's
+    photos so far are 2 to 13% black there; the night shot was 99%, the bus window 51%."""
+    band = im.convert("L").resize((256, 128)).crop((0, 32, 256, 96))
+    hist = band.histogram()
+    return sum(hist[:DARK]) / (256 * 64) > MAX_DARK
 
 
 def spots(iso: str) -> list[dict] | None:
@@ -558,7 +577,7 @@ async def map_file(path: str) -> Path | None:
     for anything that isn't one of the map's files."""
     if not _MAP_FILE.fullmatch(path):
         raise ValueError(path)
-    changes = path in ("planet", "styles/liberty")
+    changes = path == "styles/liberty" or re.fullmatch(_TILESET, path) is not None
     dest = map_dir() / (path + ".json" if changes else path)
     if dest.exists():
         age = time.time() - dest.stat().st_mtime
@@ -593,11 +612,34 @@ async def _fetch_map(path: str, dest: Path) -> Path | None:
     except (aiohttp.ClientError, asyncio.TimeoutError):
         log.warning("UKGuessr's map: couldn't fetch %s", path, exc_info=True)
         return dest if dest.exists() else None
+    if path == "styles/liberty" and not _style_ok(body):
+        log.error("UKGuessr's map: OpenFreeMap's style asks for files the bot won't pass on; keeping the old copy")
+        return dest if dest.exists() else None
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     part.write_bytes(body)
     os.replace(part, dest)
     return dest
+
+
+def _style_ok(body: bytes) -> bool:
+    """Whether every source in a fetched style is one map_file will serve, so a change on OpenFreeMap's side (like
+    a renamed tileset) can't quietly leave the map with nothing on it. Keeps the old copy instead, and says so."""
+    try:
+        sources = json.loads(body).get("sources") or {}
+    except ValueError:
+        return False
+    urls = []
+    for src in sources.values():
+        urls += [src["url"]] if src.get("url") else []
+        urls += src.get("tiles") or []
+    for u in urls:
+        if not u.startswith(MAP_HOST):
+            return False
+        sample = u[len(MAP_HOST):].replace("{z}", "1").replace("{x}", "1").replace("{y}", "1")
+        if not _MAP_FILE.fullmatch(sample):
+            return False
+    return True
 
 
 def trim_map(limit_mb: int = MAP_CACHE_MB) -> None:

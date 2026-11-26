@@ -170,6 +170,53 @@ def test_the_map_passes_on_only_the_maps_own_files_and_keeps_a_copy(tmp_path, mo
     assert left == ["big2.pbf"]
 
 
+def test_the_map_serves_openfreemaps_backup_tiles_too(tmp_path, monkeypatch):
+    """26 Nov 2026: OpenFreeMap's style switched its tiles to backup_planet, which the bot refused, so the map had no
+    roads, towns or coastline."""
+    import asyncio
+    import config
+    monkeypatch.setattr(config, "JSON_DATA_DIR", str(tmp_path))
+    from lib.activities import guessr
+
+    async def fetch(path, dest):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"tile")
+        return dest
+    monkeypatch.setattr(guessr, "_fetch_map", fetch)
+
+    async def run():
+        assert (await guessr.map_file("backup_planet")).name == "backup_planet.json"
+        assert (await guessr.map_file("backup_planet/20261122_124456_pt/8/127/84.pbf")).exists()
+        with pytest.raises(ValueError):
+            await guessr.map_file("other_planet")
+    asyncio.run(run())
+
+
+def test_a_style_asking_for_files_the_bot_wont_serve_keeps_the_old_copy():
+    from lib.activities import guessr
+    style = lambda url: json.dumps({"sources": {
+        "ne2_shaded": {"type": "raster", "tiles": ["https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png"]},
+        "openmaptiles": {"type": "vector", "url": url}}}).encode()
+    assert guessr._style_ok(style("https://tiles.openfreemap.org/planet"))
+    assert guessr._style_ok(style("https://tiles.openfreemap.org/backup_planet"))
+    assert not guessr._style_ok(style("https://tiles.openfreemap.org/new_planet"))
+    assert not guessr._style_ok(style("https://elsewhere.example/planet"))
+    assert not guessr._style_ok(b"not json")
+
+
+def test_night_shots_and_black_edged_photos_are_too_dark_to_play():
+    from PIL import Image, ImageDraw
+    from lib.activities import guessr
+    assert not guessr.too_dark(Image.new("RGB", (2048, 1024), (120, 130, 110)))
+    night = Image.new("RGB", (2048, 1024), (6, 6, 8))
+    ImageDraw.Draw(night).ellipse((300, 400, 340, 420), fill=(255, 240, 200))    # a street lamp
+    assert guessr.too_dark(night)
+    window = Image.new("RGB", (2048, 1024), (120, 130, 110))                     # a fisheye: black either side
+    ImageDraw.Draw(window).rectangle((0, 0, 500, 1024), fill=(0, 0, 0))
+    ImageDraw.Draw(window).rectangle((1548, 0, 2048, 1024), fill=(0, 0, 0))
+    assert guessr.too_dark(window)
+
+
 def test_only_testers_get_in_until_it_goes_live(day, monkeypatch):
     import config
     from lib.activities import home
