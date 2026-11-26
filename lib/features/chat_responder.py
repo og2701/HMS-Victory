@@ -7048,6 +7048,21 @@ async def handle_one_off_owner_mention(client: discord.Client, message: discord.
         target_users: Dict[str, int] = {}
         p_tokens = 0
         c_tokens = 0
+        if brain is not None and brain.reaction:
+            try:
+                await message.add_reaction(brain.reaction)
+            except Exception as e:
+                logger.warning("Could not react %r to %s: %s", brain.reaction, caller_name, e)
+                if not brain.text:
+                    brain.text = brain.reaction   # the reaction was the whole answer; send it as a message instead
+        if brain is not None and brain.reaction and not brain.text:
+            # Some messages want no words back ("lol", "cheers vic"): the reaction is the whole answer.
+            logger.info("Vic brain reacted %s to %s instead of replying", brain.reaction, caller_name)
+            live_chat_manager.record_usage(brain.model, brain.input_tokens, brain.output_tokens, is_reply=True)
+            note_t2_run(message, None, "react", caller_name=caller_name, request=typed_prompt, reply=brain.reaction,
+                        model=brain.model, provider=brain.provider, input_tokens=brain.input_tokens,
+                        output_tokens=brain.output_tokens, started=started)
+            return True
         if brain is not None:
             reply_text = brain.text
             p_tokens, c_tokens = brain.input_tokens, brain.output_tokens

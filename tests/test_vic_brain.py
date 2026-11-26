@@ -248,3 +248,45 @@ async def test_brain_failure_falls_back_to_the_old_path(monkeypatch):
         assert await cr.handle_one_off_owner_mention(client, message) is True
     old.assert_called_once()
     assert message.reply.call_args[0][0] == "Old reply."
+
+
+def test_a_reaction_tag_is_pulled_out_and_checked():
+    assert vic_brain.pull_reaction("<react>💀</react>") == ("", "💀")
+    assert vic_brain.pull_reaction("Fair enough.\n<react>🫡</react>") == ("Fair enough.", "🫡")
+    # words and custom emoji are not reactions Discord will take from a plain string
+    assert vic_brain.pull_reaction("<react>skull</react>") == ("", None)
+    assert vic_brain.pull_reaction("<react>:skull:</react>") == ("", None)
+    assert vic_brain.pull_reaction("no tag here") == ("no tag here", None)
+    assert "REACTING" in vic_brain.PERSONA
+
+
+def test_a_reaction_alone_is_a_whole_answer():
+    post = MagicMock(return_value={"output": [{"type": "message", "content": [{"type": "output_text", "text": "<react>😭</react>"}]}],
+                                   "usage": {"input_tokens": 50, "output_tokens": 4}})
+    with patch.dict(os.environ, {"OPENAI_TOKEN": "k"}):
+        reply = vic_brain.generate_reply(vic_brain.BrainRequest(asker_name="Johnny", text="lol"), post)
+    assert (reply.text, reply.reaction) == ("", "😭")
+
+
+@pytest.mark.asyncio
+async def test_vic_reacts_instead_of_replying_when_that_is_the_answer(monkeypatch):
+    # 26 Nov 2026, Owen: "it should be able to react too - to msgs. if one doesnt need a reply"
+    from lib.features import chat_responder as cr
+    monkeypatch.setattr(vic_brain, "ENABLED", True)
+    client = MagicMock()
+    client.user.id = 1171842947440967770
+    message = _message("<@1171842947440967770> cheers vic", mid=5002)
+    message.add_reaction = AsyncMock()
+    monkeypatch.setattr(vic_brain, "generate_reply", lambda req, post: BrainReply(text="", model="gpt-5.5", reaction="🫡"))
+    with patch.object(cr, "judge_mention", AsyncMock(return_value=None)), \
+         patch.object(cr, "plan_mention", return_value=None), \
+         patch.object(cr, "classify_mention_intent", return_value={"intent": "reply"}), \
+         patch.object(cr, "find_recent_image_attachment", AsyncMock(return_value=None)), \
+         patch.object(cr.live_chat_manager, "update_dashboard", AsyncMock()):
+        cr._handled_one_off_message_ids.clear()
+        assert await cr.handle_one_off_owner_mention(client, message) is True
+    message.add_reaction.assert_awaited_once_with("🫡")
+    message.reply.assert_not_called()
+    with open(vic_brain.RUN_LOG_FILE) as f:
+        entry = json.loads(f.readline())
+    assert entry["route"] == "react" and entry["reply"] == "🫡"
