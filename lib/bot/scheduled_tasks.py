@@ -620,7 +620,7 @@ def _register_client_jobs(client, scheduler):
     _add_process_job(scheduler, backup_database, CronTrigger(minute=0, timezone="Europe/London"), args=[client], id="backup_database_job", name="Backup SQLite Database")
     _add_process_job(scheduler, backup_json_data, CronTrigger(minute=1, timezone="Europe/London"), args=[client], id="backup_json_data_job", name="Backup JSON State")
     # Once a day, locally: chronicle.db is ~2GB and growing, too big for the Discord
-    # backup path, and it's kept on the instance by decision.
+    # backup path. scripts/drive_backup.sh (VM cron) ships this snapshot to Google Drive weekly.
     _add_process_job(scheduler, backup_chronicle, CronTrigger(hour=4, minute=20, timezone="Europe/London"), args=[client], id="backup_chronicle_job", name="Snapshot Chronicle History")
     _add_process_job(scheduler, cleanup_webhook_reactions, IntervalTrigger(minutes=1), args=[client], id="cleanup_webhook_reactions_job", name="Cleanup Webhook Deletion Reactions")
 

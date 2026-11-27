@@ -998,9 +998,9 @@ async def backup_database(client):
 async def backup_chronicle(client):
     """Nightly local snapshot of chronicle.db, the permanent server history.
 
-    Kept on the instance by decision: at ~2GB (540MB zipped) it no longer fits
-    Discord's upload path, and off-box storage was declined. So this guards against a
-    corrupted file - a crash mid-migration, a bad write - not against losing the disk.
+    At ~2GB (540MB zipped) it no longer fits Discord's upload path. This guards against a
+    corrupted file - a crash mid-migration, a bad write. The off-box copy is separate:
+    scripts/drive_backup.sh uploads this snapshot to Google Drive weekly from cron.
     One rolling copy, written to a temp name and renamed into place so a snapshot
     that dies halfway never replaces the last good one.
     """
