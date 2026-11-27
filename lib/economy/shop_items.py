@@ -587,6 +587,20 @@ class VIPCaseItem(ShopItem):
 class LuckyDipCaseItem(ShopItem):
     """Lucky Dip case with CS:GO-style spinning mechanic. Cheaper alternative to VIP Case."""
 
+    # One-day sales: UK date -> price. Black Friday 2026 at half price (Oggers, 27 Nov 2026). Every place that reads
+    # .price (the shop list, the confirm card, the charge, Try Again) picks it up, and it ends by itself at midnight.
+    SALES = {"2026-11-27": 50}
+
+    @property
+    def price(self) -> int:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return self.SALES.get(datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d"), self._base_price)
+
+    @price.setter
+    def price(self, value: int) -> None:
+        self._base_price = value
+
     def __init__(self, id: str, name: str, description: str, price: int, use_inventory: bool = True):
         super().__init__(id, name, description, price, use_inventory)
 
